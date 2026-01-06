@@ -1,1 +1,7 @@
 project_id = "cmvpnsqiefbsqkwnraka"
+
+[functions.gps-auth]
+verify_jwt = false
+
+[functions.gps-data]
+verify_jwt = false
