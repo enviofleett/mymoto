@@ -23,6 +23,7 @@ export interface FleetVehicle {
   offlineDuration: string | null;
   mileage: number | null;
   isOverspeeding: boolean;
+  gpsOwner: string | null;  // GPS51 account that owns this device
   driver?: FleetDriver;
 }
 
@@ -76,8 +77,8 @@ export function useFleetData() {
         setError(null);
       }
 
-      // Fetch GPS data and trigger backend sync, plus get assignments
-      const [gpsListResult, gpsPositionResult, assignmentsResult] = await Promise.all([
+      // Fetch GPS data, assignments, and vehicle metadata (including gps_owner)
+      const [gpsListResult, gpsPositionResult, assignmentsResult, vehiclesResult] = await Promise.all([
         supabase.functions.invoke('gps-data', {
           body: { action: 'querymonitorlist' }
         }),
@@ -95,7 +96,9 @@ export function useFleetData() {
               phone,
               license_number
             )
-          `)
+          `),
+        supabase.from('vehicles')
+          .select('device_id, gps_owner')
       ]);
 
       if (gpsListResult.error) throw new Error(gpsListResult.error.message || "Failed to fetch vehicle list");
@@ -104,6 +107,12 @@ export function useFleetData() {
       const listData = gpsListResult.data;
       const posData = gpsPositionResult.data;
       const assignments = assignmentsResult.data || [];
+      const vehiclesMeta = vehiclesResult.data || [];
+
+      // Create vehicle metadata lookup (for gps_owner)
+      const vehicleMetaMap = new Map(
+        vehiclesMeta.map((v: any) => [v.device_id, v])
+      );
 
       // Handle cached position data from backend
       let positionRecords = [];
@@ -139,6 +148,7 @@ export function useFleetData() {
         const liveInfo = positionRecords.find((r: any) => r.deviceid === dev.deviceid);
         const assignment = assignmentMap.get(dev.deviceid);
         const profile = assignment?.profiles;
+        const vehicleMeta = vehicleMetaMap.get(dev.deviceid);
 
         // GPS51 API uses callat/callon for calculated coordinates
         const latitude = liveInfo?.callat ?? null;
@@ -196,6 +206,7 @@ export function useFleetData() {
           offlineDuration,
           mileage,
           isOverspeeding,
+          gpsOwner: vehicleMeta?.gps_owner || dev.creater || null,
           driver: profile ? {
             id: profile.id,
             name: profile.name,

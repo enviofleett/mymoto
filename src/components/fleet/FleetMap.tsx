@@ -72,6 +72,9 @@ export function FleetMap({ vehicles, loading }: FleetMapProps) {
               <Popup>
                 <div className="text-sm">
                   <p className="font-semibold">{v.name}</p>
+                  {v.gpsOwner && (
+                    <p className="text-xs text-gray-500">Owner: {v.gpsOwner}</p>
+                  )}
                   <p>Status: {getStatusLabel(v.status)}</p>
                   <p>Speed: {v.speed} km/h</p>
                   {v.driver && (
