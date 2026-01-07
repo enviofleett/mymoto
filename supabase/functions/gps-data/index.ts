@@ -18,7 +18,7 @@ interface TokenData {
 }
 
 // Get valid token, auto-refresh if expired
-async function getValidToken(supabase: any): Promise<{ token: string; username: string }> {
+async function getValidToken(supabase: any): Promise<{ token: string; username: string; serverid: string }> {
   const { data: tokenData, error } = await supabase
     .from('app_settings')
     .select('value, expires_at, metadata')
@@ -38,7 +38,8 @@ async function getValidToken(supabase: any): Promise<{ token: string; username: 
 
   return {
     token: tokenData.value,
-    username: tokenData.metadata?.username || ''
+    username: tokenData.metadata?.username || '',
+    serverid: tokenData.metadata?.serverid || '1'
   }
 }
 
@@ -91,10 +92,13 @@ async function logApiCall(supabase: any, action: string, requestBody: any, respo
   }
 }
 
-// Call GPS51 API via proxy
-async function callGps51(proxyUrl: string, action: string, token: string, body: any): Promise<any> {
+// Call GPS51 API via proxy - MUST include serverid per GPS51 spec
+async function callGps51(proxyUrl: string, action: string, token: string, serverid: string, body: any): Promise<any> {
   const startTime = Date.now()
-  const targetUrl = `https://api.gps51.com/openapi?action=${action}&token=${token}`
+  // CRITICAL: serverid MUST be in URL query per GPS51 OpenAPI spec
+  const targetUrl = `https://api.gps51.com/openapi?action=${action}&token=${token}&serverid=${serverid}`
+  
+  console.log(`GPS51 API call: action=${action}, serverid=${serverid}, body keys:`, Object.keys(body || {}))
   
   const response = await fetch(proxyUrl, {
     method: 'POST',
@@ -188,7 +192,7 @@ async function getDeviceIdsFromDb(supabase: any): Promise<string[]> {
 }
 
 // Get all device IDs from querymonitorlist
-async function getAllDeviceIds(supabase: any, proxyUrl: string, token: string, username: string): Promise<string[]> {
+async function getAllDeviceIds(supabase: any, proxyUrl: string, token: string, serverid: string, username: string): Promise<string[]> {
   // First try to get from database (much faster)
   const dbDevices = await getDeviceIdsFromDb(supabase)
   if (dbDevices.length > 0) {
@@ -196,8 +200,8 @@ async function getAllDeviceIds(supabase: any, proxyUrl: string, token: string, u
     return dbDevices
   }
   
-  // Fallback to API call
-  const { result } = await callGps51(proxyUrl, 'querymonitorlist', token, { username })
+  // Fallback to API call - MUST include serverid
+  const { result } = await callGps51(proxyUrl, 'querymonitorlist', token, serverid, { username })
   
   if (result.status !== 0 || !result.groups) {
     console.error('Failed to fetch device list:', result)
@@ -224,8 +228,9 @@ serve(async (req) => {
     const DO_PROXY_URL = Deno.env.get('DO_PROXY_URL')
     if (!DO_PROXY_URL) throw new Error('Missing DO_PROXY_URL secret')
 
-    // Get valid token
-    const { token, username } = await getValidToken(supabase)
+    // Get valid token - now includes serverid
+    const { token, username, serverid } = await getValidToken(supabase)
+    console.log(`Token retrieved: serverid=${serverid}, username=${username}`)
 
     // For lastposition, check cache first
     if (action === 'lastposition' && use_cache) {
@@ -245,23 +250,27 @@ serve(async (req) => {
       finalBody = { username, ...finalBody }
     }
     
-    // For lastposition, we MUST provide device IDs - GPS51 doesn't return positions without them
+    // For lastposition, we MUST provide device IDs and lastquerypositiontime per GPS51 spec
     if (action === 'lastposition') {
       let deviceIds = finalBody.deviceids || []
       
       // If no device IDs provided, fetch them from querymonitorlist first
       if (!Array.isArray(deviceIds) || deviceIds.length === 0) {
         console.log('Fetching device IDs from querymonitorlist...')
-        deviceIds = await getAllDeviceIds(supabase, DO_PROXY_URL, token, username)
+        deviceIds = await getAllDeviceIds(supabase, DO_PROXY_URL, token, serverid, username)
         console.log('Found device IDs:', deviceIds.length)
       }
       
-      // Keep as array - GPS51 API accepts array format
-      finalBody = { ...finalBody, deviceids: deviceIds }
+      // CRITICAL: GPS51 requires deviceids as array AND lastquerypositiontime as number
+      finalBody = { 
+        ...finalBody, 
+        deviceids: deviceIds,
+        lastquerypositiontime: finalBody.lastquerypositiontime ?? 0
+      }
     }
 
-    // Call GPS51 API
-    const { result: apiResponse, duration } = await callGps51(DO_PROXY_URL, action, token, finalBody)
+    // Call GPS51 API - now includes serverid in URL query
+    const { result: apiResponse, duration } = await callGps51(DO_PROXY_URL, action, token, serverid, finalBody)
     
     // Handle null/undefined response
     if (!apiResponse) {
