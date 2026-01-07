@@ -62,11 +62,19 @@ export function useFleetData() {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (isBackground = false) => {
     try {
-      setLoading(true);
-      setError(null);
+      // Only show loading spinner on initial load, not background refreshes
+      if (!isBackground) {
+        setLoading(true);
+      }
+      
+      // Don't clear error on background refresh - only clear on manual/initial fetch
+      if (!isBackground) {
+        setError(null);
+      }
 
       // Fetch GPS data and trigger backend sync, plus get assignments
       const [gpsListResult, gpsPositionResult, assignmentsResult] = await Promise.all([
@@ -219,24 +227,38 @@ export function useFleetData() {
         overspeedingCount: overspeedingVehicles.length,
       });
 
+      // Clear any previous errors on successful fetch
+      if (isBackground && error) {
+        setError(null);
+      }
+
     } catch (err) {
       console.error("Fleet data fetch error:", err);
-      setError(err instanceof Error ? err.message : "Unknown error");
+      // Only set error if we have no data yet (initial load failed)
+      // Don't disrupt the UI with errors during background sync
+      if (!isBackground || vehicles.length === 0) {
+        setError(err instanceof Error ? err.message : "Unknown error");
+      }
     } finally {
-      setLoading(false);
+      if (!isBackground) {
+        setLoading(false);
+      }
+      if (isInitialLoad) {
+        setIsInitialLoad(false);
+      }
     }
-  }, []);
+  }, [error, vehicles.length, isInitialLoad]);
 
   useEffect(() => {
-    fetchData();
+    fetchData(false); // Initial load - not background
 
-    // Auto-refresh every 30 seconds
+    // Auto-refresh every 30 seconds - silent background refresh
     const interval = setInterval(() => {
-      fetchData();
+      fetchData(true); // Background refresh - no loading state
     }, 30000);
 
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  return { vehicles, metrics, loading, error, refetch: fetchData };
+  return { vehicles, metrics, loading, error, refetch: () => fetchData(false) };
 }
