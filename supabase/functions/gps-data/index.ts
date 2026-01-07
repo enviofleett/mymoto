@@ -9,6 +9,7 @@ const corsHeaders = {
 const CACHE_TTL_MS = 30000 // 30 seconds
 const OFFLINE_THRESHOLD_MS = 600000 // 10 minutes
 const TOKEN_REFRESH_ERRORS = [9903, 9906]
+const BATCH_SIZE = 50 // Process devices in batches to avoid memory limits
 
 interface TokenData {
   value: string
@@ -111,67 +112,91 @@ async function callGps51(proxyUrl: string, action: string, token: string, body: 
   return { result, duration }
 }
 
-// Sync vehicles from querymonitorlist
+// Sync vehicles from querymonitorlist - batch insert
 async function syncVehicles(supabase: any, devices: any[]) {
-  for (const device of devices) {
-    await supabase.from('vehicles').upsert({
-      device_id: device.deviceid,
-      device_name: device.devicename || device.deviceid,
-      group_id: device.groupid,
-      group_name: device.groupname,
-      device_type: device.devicetype,
-      sim_number: device.simnumber,
-      last_synced_at: new Date().toISOString()
-    }, { onConflict: 'device_id' })
+  const vehicleData = devices.map(device => ({
+    device_id: device.deviceid,
+    device_name: device.devicename || device.deviceid,
+    group_id: device.groupid,
+    group_name: device.groupname,
+    device_type: device.devicetype,
+    sim_number: device.simnumber,
+    last_synced_at: new Date().toISOString()
+  }))
+  
+  // Batch upsert in chunks
+  for (let i = 0; i < vehicleData.length; i += BATCH_SIZE) {
+    const batch = vehicleData.slice(i, i + BATCH_SIZE)
+    await supabase.from('vehicles').upsert(batch, { onConflict: 'device_id' })
   }
 }
 
-// Sync positions from lastposition
+// Sync positions from lastposition - batch insert
 async function syncPositions(supabase: any, records: any[]) {
   const now = new Date().toISOString()
   
-  for (const record of records) {
-    const positionData = {
-      device_id: record.deviceid,
-      latitude: record.callat && record.callat !== 0 ? record.callat : null,
-      longitude: record.callon && record.callon !== 0 ? record.callon : null,
-      speed: record.speed || 0,
-      heading: record.heading,
-      altitude: record.altitude,
-      battery_percent: record.voltagepercent,
-      ignition_on: parseIgnition(record.strstatus),
-      is_online: isOnline(record.updatetime),
-      is_overspeeding: record.currentoverspeedstate === 1,
-      total_mileage: record.totaldistance,
-      status_text: record.strstatus,
-      gps_time: record.updatetime ? new Date(record.updatetime).toISOString() : null,
-      cached_at: now
-    }
+  const positions = records.map(record => ({
+    device_id: record.deviceid,
+    latitude: record.callat && record.callat !== 0 ? record.callat : null,
+    longitude: record.callon && record.callon !== 0 ? record.callon : null,
+    speed: record.speed || 0,
+    heading: record.heading,
+    altitude: record.altitude,
+    battery_percent: record.voltagepercent,
+    ignition_on: parseIgnition(record.strstatus),
+    is_online: isOnline(record.updatetime),
+    is_overspeeding: record.currentoverspeedstate === 1,
+    total_mileage: record.totaldistance,
+    status_text: record.strstatus,
+    gps_time: record.updatetime ? new Date(record.updatetime).toISOString() : null,
+    cached_at: now
+  }))
 
-    // Upsert to positions cache
-    await supabase.from('vehicle_positions').upsert(positionData, { 
+  // Batch upsert positions
+  for (let i = 0; i < positions.length; i += BATCH_SIZE) {
+    const batch = positions.slice(i, i + BATCH_SIZE)
+    await supabase.from('vehicle_positions').upsert(batch, { 
       onConflict: 'device_id',
       ignoreDuplicates: false 
     })
-
-    // Also insert to history if position is valid
-    if (positionData.latitude && positionData.longitude) {
-      await supabase.from('position_history').insert({
-        device_id: record.deviceid,
-        latitude: positionData.latitude,
-        longitude: positionData.longitude,
-        speed: positionData.speed,
-        heading: positionData.heading,
-        battery_percent: positionData.battery_percent,
-        ignition_on: positionData.ignition_on,
-        gps_time: positionData.gps_time
-      })
-    }
   }
+
+  // Batch insert history (only valid positions)
+  const historyRecords = positions
+    .filter(p => p.latitude && p.longitude)
+    .map(p => ({
+      device_id: p.device_id,
+      latitude: p.latitude,
+      longitude: p.longitude,
+      speed: p.speed,
+      heading: p.heading,
+      battery_percent: p.battery_percent,
+      ignition_on: p.ignition_on,
+      gps_time: p.gps_time
+    }))
+
+  for (let i = 0; i < historyRecords.length; i += BATCH_SIZE) {
+    const batch = historyRecords.slice(i, i + BATCH_SIZE)
+    await supabase.from('position_history').insert(batch)
+  }
+}
+
+// Get device IDs from database (faster than API call)
+async function getDeviceIdsFromDb(supabase: any): Promise<string[]> {
+  const { data } = await supabase.from('vehicles').select('device_id').limit(500)
+  return data?.map((d: any) => d.device_id) || []
 }
 
 // Get all device IDs from querymonitorlist
 async function getAllDeviceIds(supabase: any, proxyUrl: string, token: string, username: string): Promise<string[]> {
+  // First try to get from database (much faster)
+  const dbDevices = await getDeviceIdsFromDb(supabase)
+  if (dbDevices.length > 0) {
+    console.log('Using device IDs from database:', dbDevices.length)
+    return dbDevices
+  }
+  
+  // Fallback to API call
   const { result } = await callGps51(proxyUrl, 'querymonitorlist', token, { username })
   
   if (result.status !== 0 || !result.groups) {
@@ -179,7 +204,6 @@ async function getAllDeviceIds(supabase: any, proxyUrl: string, token: string, u
     return []
   }
 
-  // Flatten all devices from all groups and sync to database
   const allDevices = result.groups.flatMap((g: any) => g.devices || [])
   await syncVehicles(supabase, allDevices)
   
