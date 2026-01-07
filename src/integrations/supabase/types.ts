@@ -207,6 +207,33 @@ export type Database = {
           },
         ]
       }
+      vehicle_chat_history: {
+        Row: {
+          content: string
+          created_at: string | null
+          device_id: string
+          id: string
+          role: string
+          user_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string | null
+          device_id: string
+          id?: string
+          role: string
+          user_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string | null
+          device_id?: string
+          id?: string
+          role?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       vehicle_positions: {
         Row: {
           altitude: number | null
