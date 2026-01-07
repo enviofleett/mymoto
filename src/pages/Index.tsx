@@ -1,4 +1,4 @@
-import { Truck, Users, MapPin, Fuel } from "lucide-react";
+import { Truck, Users, MapPin, Gauge } from "lucide-react";
 import { DashboardLayout } from "@/components/layouts/DashboardLayout";
 import { MetricCard } from "@/components/fleet/MetricCard";
 import { VehicleTable } from "@/components/fleet/VehicleTable";
@@ -6,37 +6,7 @@ import { FleetMap } from "@/components/fleet/FleetMap";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AdminGpsStatus } from "@/components/fleet/AdminGpsStatus";
 import { useAuth } from "@/contexts/AuthContext";
-
-const metrics = [
-  {
-    title: "Total Vehicles",
-    value: 48,
-    change: "+3 this month",
-    changeType: "positive" as const,
-    icon: Truck,
-  },
-  {
-    title: "Active Drivers",
-    value: 42,
-    change: "2 on leave",
-    changeType: "neutral" as const,
-    icon: Users,
-  },
-  {
-    title: "Trips Today",
-    value: 127,
-    change: "+12% vs yesterday",
-    changeType: "positive" as const,
-    icon: MapPin,
-  },
-  {
-    title: "Fuel Cost (MTD)",
-    value: "$24,580",
-    change: "-5% vs last month",
-    changeType: "positive" as const,
-    icon: Fuel,
-  },
-];
+import { useFleetData } from "@/hooks/useFleetData";
 
 const recentActivity = [
   { id: 1, message: "Truck A-101 completed delivery in Denver", time: "2 min ago" },
@@ -48,6 +18,38 @@ const recentActivity = [
 
 const Index = () => {
   const { isAdmin } = useAuth();
+  const { vehicles, metrics, loading, error } = useFleetData();
+
+  const displayMetrics = [
+    {
+      title: "Total Vehicles",
+      value: metrics.totalVehicles,
+      change: loading ? "Loading..." : `${metrics.totalVehicles} tracked`,
+      changeType: "neutral" as const,
+      icon: Truck,
+    },
+    {
+      title: "Moving Now",
+      value: metrics.movingNow,
+      change: loading ? "Loading..." : `${Math.round((metrics.movingNow / Math.max(metrics.totalVehicles, 1)) * 100)}% of fleet`,
+      changeType: metrics.movingNow > 0 ? "positive" as const : "neutral" as const,
+      icon: MapPin,
+    },
+    {
+      title: "Assigned Drivers",
+      value: metrics.assignedDrivers,
+      change: loading ? "Loading..." : `${metrics.totalVehicles - metrics.assignedDrivers} unassigned`,
+      changeType: "neutral" as const,
+      icon: Users,
+    },
+    {
+      title: "Avg Fleet Speed",
+      value: `${metrics.avgFleetSpeed} km/h`,
+      change: loading ? "Loading..." : "Active vehicles",
+      changeType: "neutral" as const,
+      icon: Gauge,
+    },
+  ];
 
   return (
     <DashboardLayout>
@@ -63,9 +65,16 @@ const Index = () => {
         {/* Admin GPS Status */}
         {isAdmin && <AdminGpsStatus />}
 
+        {/* Error State */}
+        {error && (
+          <div className="rounded-lg border border-destructive bg-destructive/10 p-4 text-destructive">
+            Error loading fleet data: {error}
+          </div>
+        )}
+
         {/* Metrics Grid */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {metrics.map((metric) => (
+          {displayMetrics.map((metric) => (
             <MetricCard key={metric.title} {...metric} />
           ))}
         </div>
@@ -73,7 +82,7 @@ const Index = () => {
         {/* Fleet Map */}
         <div className="space-y-4">
           <h2 className="text-lg font-semibold text-foreground">Live Fleet Map</h2>
-          <FleetMap />
+          <FleetMap vehicles={vehicles} loading={loading} />
         </div>
 
         {/* Main Content Grid */}
@@ -86,7 +95,7 @@ const Index = () => {
                 View all →
               </a>
             </div>
-            <VehicleTable />
+            <VehicleTable vehicles={vehicles} loading={loading} />
           </div>
 
           {/* Activity Feed */}
