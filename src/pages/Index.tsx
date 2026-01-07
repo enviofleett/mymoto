@@ -18,7 +18,7 @@ const recentActivity = [
 
 const Index = () => {
   const { isAdmin } = useAuth();
-  const { vehicles, metrics, loading, error, refetch } = useFleetData();
+  const { vehicles, metrics, loading, error, connectionStatus, refetch } = useFleetData();
 
   const displayMetrics = [
     {
@@ -52,7 +52,7 @@ const Index = () => {
   ];
 
   return (
-    <DashboardLayout>
+    <DashboardLayout connectionStatus={connectionStatus}>
       <div className="space-y-6">
         {/* Page Header */}
         <div>

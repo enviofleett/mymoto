@@ -50,6 +50,8 @@ function getOfflineDuration(updateTime: Date): string {
   return `${diffDays}d`;
 }
 
+export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
+
 export function useFleetData() {
   const [vehicles, setVehicles] = useState<FleetVehicle[]>([]);
   const [metrics, setMetrics] = useState<FleetMetrics>({
@@ -64,6 +66,7 @@ export function useFleetData() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasInitialData, setHasInitialData] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
 
   const fetchData = useCallback(async (isBackground = false) => {
     try {
@@ -276,6 +279,13 @@ export function useFleetData() {
       )
       .subscribe((status) => {
         console.log('Realtime subscription status:', status);
+        if (status === 'SUBSCRIBED') {
+          setConnectionStatus('connected');
+        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+          setConnectionStatus('disconnected');
+        } else {
+          setConnectionStatus('connecting');
+        }
       });
 
     // Fallback polling every 60s in case realtime connection drops
@@ -289,5 +299,5 @@ export function useFleetData() {
     };
   }, [fetchData]);
 
-  return { vehicles, metrics, loading, error, refetch: () => fetchData(false) };
+  return { vehicles, metrics, loading, error, connectionStatus, refetch: () => fetchData(false) };
 }
