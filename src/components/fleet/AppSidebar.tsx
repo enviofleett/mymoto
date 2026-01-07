@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   LogOut,
   Brain,
+  UserCircle,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import {
@@ -33,6 +34,7 @@ const mainItems = [
   { title: "Vehicles", url: "/vehicles", icon: Truck },
   { title: "Drivers", url: "/drivers", icon: Users },
   { title: "AI Insights", url: "/insights", icon: Brain },
+  { title: "My Profile", url: "/profile", icon: UserCircle },
   { title: "Trips", url: "/trips", icon: MapPin },
   { title: "Fuel", url: "/fuel", icon: Fuel },
 ];
