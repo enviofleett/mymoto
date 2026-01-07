@@ -7,6 +7,7 @@ import {
   Settings,
   Bell,
   ChevronLeft,
+  LogOut,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import {
@@ -23,6 +24,8 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { useAuth } from "@/contexts/AuthContext";
+import { Button } from "@/components/ui/button";
 
 const mainItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
@@ -39,6 +42,7 @@ const secondaryItems = [
 
 export function AppSidebar() {
   const { state } = useSidebar();
+  const { signOut } = useAuth();
   const isCollapsed = state === "collapsed";
 
   return (
@@ -108,7 +112,15 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="p-4">
+      <SidebarFooter className="p-4 space-y-2">
+        <Button
+          variant="ghost"
+          onClick={signOut}
+          className="w-full flex items-center justify-center gap-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+        >
+          <LogOut className="h-4 w-4" />
+          {!isCollapsed && <span>Logout</span>}
+        </Button>
         <SidebarTrigger className="w-full flex items-center justify-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
           <ChevronLeft className={`h-4 w-4 transition-transform ${isCollapsed ? "rotate-180" : ""}`} />
           {!isCollapsed && <span>Collapse</span>}
