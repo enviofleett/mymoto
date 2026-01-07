@@ -258,12 +258,35 @@ export function useFleetData() {
   useEffect(() => {
     fetchData(false); // Initial load
 
-    // Auto-refresh every 30 seconds - silent background refresh
-    const interval = setInterval(() => {
-      fetchData(true);
-    }, 30000);
+    // Subscribe to real-time updates on vehicle_positions table
+    const channel = supabase
+      .channel('vehicle-positions-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // Listen to INSERT, UPDATE, DELETE
+          schema: 'public',
+          table: 'vehicle_positions'
+        },
+        (payload) => {
+          console.log('Real-time position update received:', payload);
+          // Silently refresh data when positions change
+          fetchData(true);
+        }
+      )
+      .subscribe((status) => {
+        console.log('Realtime subscription status:', status);
+      });
 
-    return () => clearInterval(interval);
+    // Fallback polling every 60s in case realtime connection drops
+    const fallbackInterval = setInterval(() => {
+      fetchData(true);
+    }, 60000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(fallbackInterval);
+    };
   }, [fetchData]);
 
   return { vehicles, metrics, loading, error, refetch: () => fetchData(false) };
