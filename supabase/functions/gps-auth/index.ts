@@ -1,6 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { md5 } from 'https://esm.sh/js-md5@0.8.3'
+import { crypto } from "https://deno.land/std@0.168.0/crypto/mod.ts"
+// MD5 hash helper using Deno std library
+async function md5(text: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(text)
+  const hashBuffer = await crypto.subtle.digest("MD5", data)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -32,7 +40,7 @@ serve(async (req) => {
     if (!DO_PROXY_URL || !GPS_USER || !GPS_PASS_PLAIN) throw new Error('Missing Secrets')
 
     // System automatically hashes the plain password to MD5
-    const passwordHash = md5(GPS_PASS_PLAIN);
+    const passwordHash = await md5(GPS_PASS_PLAIN);
 
     const proxyPayload = {
       targetUrl: `${BASE_URL}?action=login`,
