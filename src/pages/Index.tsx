@@ -1,4 +1,4 @@
-import { Truck, Users, MapPin, Gauge } from "lucide-react";
+import { Truck, Users, MapPin, Gauge, Wifi, BatteryWarning, AlertTriangle } from "lucide-react";
 import { DashboardLayout } from "@/components/layouts/DashboardLayout";
 import { MetricCard } from "@/components/fleet/MetricCard";
 import { VehicleTable } from "@/components/fleet/VehicleTable";
@@ -22,16 +22,16 @@ const Index = () => {
 
   const displayMetrics = [
     {
-      title: "Total Vehicles",
-      value: metrics.totalVehicles,
-      change: loading ? "Loading..." : `${metrics.totalVehicles} tracked`,
-      changeType: "neutral" as const,
-      icon: Truck,
+      title: "Online Vehicles",
+      value: metrics.onlineCount,
+      change: loading ? "Loading..." : `${metrics.totalVehicles} total`,
+      changeType: metrics.onlineCount > 0 ? "positive" as const : "neutral" as const,
+      icon: Wifi,
     },
     {
       title: "Moving Now",
       value: metrics.movingNow,
-      change: loading ? "Loading..." : `${Math.round((metrics.movingNow / Math.max(metrics.totalVehicles, 1)) * 100)}% of fleet`,
+      change: loading ? "Loading..." : `${Math.round((metrics.movingNow / Math.max(metrics.onlineCount, 1)) * 100)}% of online`,
       changeType: metrics.movingNow > 0 ? "positive" as const : "neutral" as const,
       icon: MapPin,
     },
@@ -43,11 +43,11 @@ const Index = () => {
       icon: Users,
     },
     {
-      title: "Avg Fleet Speed",
-      value: `${metrics.avgFleetSpeed} km/h`,
-      change: loading ? "Loading..." : "Active vehicles",
-      changeType: "neutral" as const,
-      icon: Gauge,
+      title: "Low Battery",
+      value: metrics.lowBatteryCount,
+      change: loading ? "Loading..." : metrics.lowBatteryCount > 0 ? "Needs attention" : "All healthy",
+      changeType: metrics.lowBatteryCount > 0 ? "negative" as const : "positive" as const,
+      icon: BatteryWarning,
     },
   ];
 

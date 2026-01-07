@@ -3,7 +3,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FleetVehicle } from "@/hooks/useFleetData";
-import { UserPlus, Battery, BatteryLow, BatteryMedium, BatteryFull, Power } from "lucide-react";
+import { UserPlus, BatteryLow, BatteryMedium, BatteryFull, Power, AlertTriangle, Gauge } from "lucide-react";
 import { AssignDriverDialog } from "./AssignDriverDialog";
 
 interface VehicleTableProps {
@@ -104,25 +104,36 @@ export function VehicleTable({ vehicles, loading, onAssignmentChange }: VehicleT
     );
   };
 
+  const formatMileage = (mileage: number | null) => {
+    if (mileage === null) return <span className="text-muted-foreground text-xs">N/A</span>;
+    const km = (mileage / 1000).toFixed(1);
+    return <span className="text-xs">{km} km</span>;
+  };
+
   return (
     <>
       <div className="rounded-lg border border-border bg-card overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Vehicle Name</TableHead>
-              <TableHead>Assigned Driver</TableHead>
+              <TableHead>Vehicle</TableHead>
+              <TableHead>Driver</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Speed (km/h)</TableHead>
-              <TableHead>Battery</TableHead>
-              <TableHead>Ignition</TableHead>
+              <TableHead>Health</TableHead>
+              <TableHead>Speed</TableHead>
+              <TableHead>Mileage</TableHead>
               <TableHead>Location</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {vehicles.map((v) => (
               <TableRow key={v.id}>
-                <TableCell className="font-medium">{v.name}</TableCell>
+                <TableCell>
+                  <div>
+                    <p className="font-medium">{v.name}</p>
+                    <p className="text-xs text-muted-foreground">{v.plate}</p>
+                  </div>
+                </TableCell>
                 <TableCell>
                   {v.driver ? (
                     <div>
@@ -143,10 +154,32 @@ export function VehicleTable({ vehicles, loading, onAssignmentChange }: VehicleT
                     </Button>
                   )}
                 </TableCell>
-                <TableCell>{getStatusBadge(v)}</TableCell>
-                <TableCell>{v.speed}</TableCell>
-                <TableCell>{getBatteryIcon(v.battery)}</TableCell>
-                <TableCell>{getIgnitionIndicator(v.ignition)}</TableCell>
+                <TableCell>
+                  <div className="flex flex-col gap-1">
+                    {getStatusBadge(v)}
+                    <div className="flex items-center gap-2">
+                      {getIgnitionIndicator(v.ignition)}
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="flex flex-col gap-1">
+                    {getBatteryIcon(v.battery)}
+                    {v.isOverspeeding && (
+                      <div className="flex items-center gap-1 text-orange-500">
+                        <AlertTriangle className="h-3 w-3" />
+                        <span className="text-xs">Overspeed</span>
+                      </div>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-1">
+                    <Gauge className="h-4 w-4 text-muted-foreground" />
+                    <span>{v.speed} km/h</span>
+                  </div>
+                </TableCell>
+                <TableCell>{formatMileage(v.mileage)}</TableCell>
                 <TableCell className="max-w-[200px] truncate">{v.location}</TableCell>
               </TableRow>
             ))}
