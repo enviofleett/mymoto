@@ -275,6 +275,7 @@ export type Database = {
           device_id: string
           device_name: string
           device_type: string | null
+          gps_owner: string | null
           group_id: string | null
           group_name: string | null
           last_synced_at: string | null
@@ -285,6 +286,7 @@ export type Database = {
           device_id: string
           device_name: string
           device_type?: string | null
+          gps_owner?: string | null
           group_id?: string | null
           group_name?: string | null
           last_synced_at?: string | null
@@ -295,6 +297,7 @@ export type Database = {
           device_id?: string
           device_name?: string
           device_type?: string | null
+          gps_owner?: string | null
           group_id?: string | null
           group_name?: string | null
           last_synced_at?: string | null

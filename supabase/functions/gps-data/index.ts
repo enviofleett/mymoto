@@ -125,6 +125,7 @@ async function syncVehicles(supabase: any, devices: any[]) {
     group_name: device.groupname,
     device_type: device.devicetype,
     sim_number: device.simnumber,
+    gps_owner: device.creater || null,  // GPS51 account owner
     last_synced_at: new Date().toISOString()
   }))
   

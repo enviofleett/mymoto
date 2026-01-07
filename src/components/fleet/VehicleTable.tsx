@@ -187,6 +187,7 @@ export function VehicleTable({ vehicles, loading, onAssignmentChange }: VehicleT
             <TableHeader>
               <TableRow>
                 <TableHead>Vehicle</TableHead>
+                <TableHead>Owner</TableHead>
                 <TableHead>Driver</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Health</TableHead>
@@ -208,6 +209,15 @@ export function VehicleTable({ vehicles, loading, onAssignmentChange }: VehicleT
                       <p className="font-medium">{v.name}</p>
                       <p className="text-xs text-muted-foreground">{v.plate}</p>
                     </div>
+                  </TableCell>
+                  <TableCell>
+                    {v.gpsOwner ? (
+                      <Badge variant="outline" className="text-xs font-normal">
+                        {v.gpsOwner}
+                      </Badge>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     {v.driver ? (

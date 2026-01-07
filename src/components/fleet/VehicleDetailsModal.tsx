@@ -13,7 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { 
   MapPin, Gauge, Battery, Power, User, Phone, 
   Calendar, AlertTriangle, Navigation, Car, UserPlus, UserMinus,
-  History, Clock
+  History, Clock, Building2
 } from "lucide-react";
 
 interface Driver {
@@ -186,6 +186,12 @@ export function VehicleDetailsModal({
             <Car className="h-5 w-5" />
             {vehicle.name}
           </DialogTitle>
+          {vehicle.gpsOwner && (
+            <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              <Building2 className="h-3.5 w-3.5" />
+              <span>Owner: {vehicle.gpsOwner}</span>
+            </div>
+          )}
         </DialogHeader>
 
         <Tabs defaultValue="details" className="w-full">
