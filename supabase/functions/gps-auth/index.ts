@@ -19,46 +19,46 @@ serve(async (req) => {
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) throw new Error('Missing Authorization header')
     
-    // Check if user is Admin
     const { data: { user }, error: userError } = await supabaseClient.auth.getUser(authHeader.replace('Bearer ', ''))
     if (userError || !user || user.email !== 'toolbuxdev@gmail.com') {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 403, headers: corsHeaders })
     }
 
-    // Configuration
     const DO_PROXY_URL = Deno.env.get('DO_PROXY_URL')
     const GPS_USER = Deno.env.get('GPS_USERNAME')
-    const GPS_PASS_PLAIN = Deno.env.get('GPS_PASSWORD') // Plain text from secrets
-    const BASE_URL = 'https://api.gps51.com/openapi'   // Correct URL
+    const GPS_PASS_PLAIN = Deno.env.get('GPS_PASSWORD')
+    const BASE_URL = 'https://api.gps51.com/openapi'
 
-    // Hash Password
+    if (!DO_PROXY_URL || !GPS_USER || !GPS_PASS_PLAIN) throw new Error('Missing Secrets')
+
+    // System automatically hashes the plain password to MD5
     const passwordHash = md5(GPS_PASS_PLAIN);
 
-    // Call API via Proxy
+    const proxyPayload = {
+      targetUrl: `${BASE_URL}?action=login`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: {
+        type: "USER",
+        from: "web",
+        username: GPS_USER,
+        password: passwordHash,
+        browser: "Chrome/120.0.0.0"
+      }
+    }
+
     const proxyRes = await fetch(DO_PROXY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        targetUrl: `${BASE_URL}?action=login`,
-        method: 'POST',
-        data: {
-          type: "USER",
-          from: "web",
-          username: GPS_USER,
-          password: passwordHash, // Send Hashed Password
-          browser: "Chrome/120.0.0.0"
-        }
-      })
+      body: JSON.stringify(proxyPayload)
     })
 
     const apiResponse = await proxyRes.json()
 
-    // Validate (Status 0 is success per PDF)
     if (apiResponse.status !== 0 || !apiResponse.token) {
       throw new Error(`GPS Login Failed: ${JSON.stringify(apiResponse)}`)
     }
 
-    // Save Token
     await supabaseClient.from('app_settings').upsert({ 
       key: 'gps_token', 
       value: apiResponse.token,
@@ -68,6 +68,7 @@ serve(async (req) => {
     return new Response(JSON.stringify({ success: true, data: apiResponse }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    return new Response(JSON.stringify({ error: message }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   }
 })

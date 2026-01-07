@@ -27,6 +27,7 @@ serve(async (req) => {
     const API_TOKEN = tokenData.value
     const USERNAME = tokenData.metadata?.username
     const DO_PROXY_URL = Deno.env.get('DO_PROXY_URL')
+    if (!DO_PROXY_URL) throw new Error('Missing DO_PROXY_URL secret')
     const BASE_URL = 'https://api.gps51.com/openapi'
 
     // Parse Request
@@ -53,6 +54,7 @@ serve(async (req) => {
     return new Response(JSON.stringify({ data: apiResponse }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    return new Response(JSON.stringify({ error: message }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   }
 })
