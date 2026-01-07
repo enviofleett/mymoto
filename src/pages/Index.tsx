@@ -3,6 +3,8 @@ import { DashboardLayout } from "@/components/layouts/DashboardLayout";
 import { MetricCard } from "@/components/fleet/MetricCard";
 import { VehicleTable } from "@/components/fleet/VehicleTable";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AdminGpsStatus } from "@/components/fleet/AdminGpsStatus";
+import { useAuth } from "@/contexts/AuthContext";
 
 const metrics = [
   {
@@ -44,6 +46,8 @@ const recentActivity = [
 ];
 
 const Index = () => {
+  const { isAdmin } = useAuth();
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -54,6 +58,9 @@ const Index = () => {
             Welcome back! Here's an overview of your fleet.
           </p>
         </div>
+
+        {/* Admin GPS Status */}
+        {isAdmin && <AdminGpsStatus />}
 
         {/* Metrics Grid */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
