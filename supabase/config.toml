@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.vehicle-chat]
 verify_jwt = false
+
+[functions.fleet-insights]
+verify_jwt = false
