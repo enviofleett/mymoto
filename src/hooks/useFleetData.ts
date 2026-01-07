@@ -21,6 +21,8 @@ export interface FleetVehicle {
   ignition: boolean | null;
   lastUpdate: Date | null;
   offlineDuration: string | null;
+  mileage: number | null;
+  isOverspeeding: boolean;
   driver?: FleetDriver;
 }
 
@@ -30,6 +32,8 @@ export interface FleetMetrics {
   assignedDrivers: number;
   avgFleetSpeed: number;
   onlineCount: number;
+  lowBatteryCount: number;
+  overspeedingCount: number;
 }
 
 // Calculate offline duration string
@@ -69,6 +73,8 @@ export function useFleetData() {
     assignedDrivers: 0,
     avgFleetSpeed: 0,
     onlineCount: 0,
+    lowBatteryCount: 0,
+    overspeedingCount: 0,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -129,6 +135,8 @@ export function useFleetData() {
         const speed = liveInfo?.speed ?? 0;
         const battery = liveInfo?.voltagepercent ?? null;
         const ignition = parseIgnition(liveInfo?.strstatus);
+        const mileage = liveInfo?.totaldistance ?? null;
+        const isOverspeeding = liveInfo?.currentoverspeedstate === 1;
         
         // Parse updatetime for online/offline status
         let lastUpdate: Date | null = null;
@@ -158,7 +166,7 @@ export function useFleetData() {
         return {
           id: dev.deviceid,
           name: assignment?.vehicle_alias || dev.devicename,
-          plate: dev.carplate || "N/A",
+          plate: dev.devicename || "N/A",
           status,
           speed,
           lat: latitude,
@@ -170,6 +178,8 @@ export function useFleetData() {
           ignition,
           lastUpdate,
           offlineDuration,
+          mileage,
+          isOverspeeding,
           driver: profile ? {
             id: profile.id,
             name: profile.name,
@@ -185,6 +195,8 @@ export function useFleetData() {
       const movingVehicles = mergedVehicles.filter(v => v.status === 'moving');
       const onlineVehicles = mergedVehicles.filter(v => v.status !== 'offline');
       const assignedCount = mergedVehicles.filter(v => v.driver).length;
+      const lowBatteryVehicles = mergedVehicles.filter(v => v.battery !== null && v.battery < 20);
+      const overspeedingVehicles = mergedVehicles.filter(v => v.isOverspeeding);
       const avgSpeed = movingVehicles.length > 0
         ? Math.round(movingVehicles.reduce((sum, v) => sum + v.speed, 0) / movingVehicles.length)
         : 0;
@@ -195,6 +207,8 @@ export function useFleetData() {
         assignedDrivers: assignedCount,
         avgFleetSpeed: avgSpeed,
         onlineCount: onlineVehicles.length,
+        lowBatteryCount: lowBatteryVehicles.length,
+        overspeedingCount: overspeedingVehicles.length,
       });
 
     } catch (err) {
