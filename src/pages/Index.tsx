@@ -2,6 +2,7 @@ import { Truck, Users, MapPin, Fuel } from "lucide-react";
 import { DashboardLayout } from "@/components/layouts/DashboardLayout";
 import { MetricCard } from "@/components/fleet/MetricCard";
 import { VehicleTable } from "@/components/fleet/VehicleTable";
+import { FleetMap } from "@/components/fleet/FleetMap";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AdminGpsStatus } from "@/components/fleet/AdminGpsStatus";
 import { useAuth } from "@/contexts/AuthContext";
@@ -67,6 +68,12 @@ const Index = () => {
           {metrics.map((metric) => (
             <MetricCard key={metric.title} {...metric} />
           ))}
+        </div>
+
+        {/* Fleet Map */}
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold text-foreground">Live Fleet Map</h2>
+          <FleetMap />
         </div>
 
         {/* Main Content Grid */}

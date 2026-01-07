@@ -55,6 +55,29 @@ export function AdminGpsStatus() {
     fetchTokenStatus();
   }, []);
 
+  // Auto-refresh token if missing or older than 23 hours
+  useEffect(() => {
+    const autoRefreshIfNeeded = async () => {
+      if (!tokenStatus.updatedAt && tokenStatus.hasToken) return; // Wait for initial status load
+
+      const lastUpdate = tokenStatus.updatedAt ? new Date(tokenStatus.updatedAt) : null;
+      const now = new Date();
+      const hoursDiff = lastUpdate 
+        ? (now.getTime() - lastUpdate.getTime()) / (1000 * 60 * 60)
+        : 24; // If no last update, treat as expired
+
+      // GPS51 Token valid for 24h, refresh at 23h
+      if (hoursDiff >= 23 || !tokenStatus.hasToken) {
+        console.log("Token expired or missing. Attempting auto-refresh...");
+        await handleRefreshToken();
+      }
+    };
+
+    if (!isLoading) {
+      autoRefreshIfNeeded();
+    }
+  }, [isLoading, tokenStatus.updatedAt, tokenStatus.hasToken]);
+
   const handleRefreshToken = async () => {
     setIsRefreshing(true);
 
