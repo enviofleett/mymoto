@@ -170,6 +170,22 @@ async function syncPositions(supabase: any, records: any[]) {
   }
 }
 
+// Get all device IDs from querymonitorlist
+async function getAllDeviceIds(supabase: any, proxyUrl: string, token: string, username: string): Promise<string[]> {
+  const { result } = await callGps51(proxyUrl, 'querymonitorlist', token, { username })
+  
+  if (result.status !== 0 || !result.groups) {
+    console.error('Failed to fetch device list:', result)
+    return []
+  }
+
+  // Flatten all devices from all groups and sync to database
+  const allDevices = result.groups.flatMap((g: any) => g.devices || [])
+  await syncVehicles(supabase, allDevices)
+  
+  return allDevices.map((d: any) => d.deviceid)
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -184,31 +200,49 @@ serve(async (req) => {
     const DO_PROXY_URL = Deno.env.get('DO_PROXY_URL')
     if (!DO_PROXY_URL) throw new Error('Missing DO_PROXY_URL secret')
 
+    // Get valid token
+    const { token, username } = await getValidToken(supabase)
+
     // For lastposition, check cache first
     if (action === 'lastposition' && use_cache) {
       const cached = await getCachedPositions(supabase)
-      if (cached) {
-        console.log('Returning cached positions')
+      if (cached && cached.length > 0) {
+        console.log('Returning cached positions:', cached.length)
         return new Response(JSON.stringify({ 
           data: { records: cached, fromCache: true } 
         }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
       }
     }
 
-    // Get valid token
-    const { token, username } = await getValidToken(supabase)
-
     // Build request body
     let finalBody = body_payload || {}
+    
     if (action === 'querymonitorlist') {
       finalBody = { username, ...finalBody }
     }
-    if (action === 'lastposition' && !finalBody.deviceids) {
-      finalBody = { deviceids: [], ...finalBody }
+    
+    // For lastposition, we MUST provide device IDs - GPS51 doesn't return positions without them
+    if (action === 'lastposition') {
+      let deviceIds = finalBody.deviceids || []
+      
+      // If no device IDs provided, fetch them from querymonitorlist first
+      if (!Array.isArray(deviceIds) || deviceIds.length === 0) {
+        console.log('Fetching device IDs from querymonitorlist...')
+        deviceIds = await getAllDeviceIds(supabase, DO_PROXY_URL, token, username)
+        console.log('Found device IDs:', deviceIds.length)
+      }
+      
+      // Keep as array - GPS51 API accepts array format
+      finalBody = { ...finalBody, deviceids: deviceIds }
     }
 
     // Call GPS51 API
     const { result: apiResponse, duration } = await callGps51(DO_PROXY_URL, action, token, finalBody)
+    
+    // Handle null/undefined response
+    if (!apiResponse) {
+      throw new Error('Empty response from GPS51 API')
+    }
 
     // Log the API call
     await logApiCall(supabase, action, finalBody, apiResponse.status ?? 0, apiResponse, null, duration)
@@ -219,11 +253,13 @@ serve(async (req) => {
     }
 
     // Sync data to database based on action
-    if (action === 'querymonitorlist' && apiResponse.records) {
-      await syncVehicles(supabase, apiResponse.records)
+    if (action === 'querymonitorlist' && apiResponse.groups) {
+      const allDevices = apiResponse.groups.flatMap((g: any) => g.devices || [])
+      await syncVehicles(supabase, allDevices)
     }
     
-    if (action === 'lastposition' && apiResponse.records) {
+    if (action === 'lastposition' && apiResponse.records && apiResponse.records.length > 0) {
+      console.log('Syncing positions:', apiResponse.records.length)
       await syncPositions(supabase, apiResponse.records)
     }
 
