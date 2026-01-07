@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       app_settings: {
         Row: {
+          expires_at: string | null
           id: number
           key: string
           metadata: Json | null
@@ -23,6 +24,7 @@ export type Database = {
           value: string | null
         }
         Insert: {
+          expires_at?: string | null
           id?: never
           key: string
           metadata?: Json | null
@@ -30,6 +32,7 @@ export type Database = {
           value?: string | null
         }
         Update: {
+          expires_at?: string | null
           id?: never
           key?: string
           metadata?: Json | null
@@ -37,6 +40,86 @@ export type Database = {
           value?: string | null
         }
         Relationships: []
+      }
+      gps_api_logs: {
+        Row: {
+          action: string
+          created_at: string | null
+          duration_ms: number | null
+          error_message: string | null
+          id: string
+          request_body: Json | null
+          response_body: Json | null
+          response_status: number | null
+        }
+        Insert: {
+          action: string
+          created_at?: string | null
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: string
+          request_body?: Json | null
+          response_body?: Json | null
+          response_status?: number | null
+        }
+        Update: {
+          action?: string
+          created_at?: string | null
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: string
+          request_body?: Json | null
+          response_body?: Json | null
+          response_status?: number | null
+        }
+        Relationships: []
+      }
+      position_history: {
+        Row: {
+          battery_percent: number | null
+          device_id: string | null
+          gps_time: string | null
+          heading: number | null
+          id: string
+          ignition_on: boolean | null
+          latitude: number | null
+          longitude: number | null
+          recorded_at: string | null
+          speed: number | null
+        }
+        Insert: {
+          battery_percent?: number | null
+          device_id?: string | null
+          gps_time?: string | null
+          heading?: number | null
+          id?: string
+          ignition_on?: boolean | null
+          latitude?: number | null
+          longitude?: number | null
+          recorded_at?: string | null
+          speed?: number | null
+        }
+        Update: {
+          battery_percent?: number | null
+          device_id?: string | null
+          gps_time?: string | null
+          heading?: number | null
+          id?: string
+          ignition_on?: boolean | null
+          latitude?: number | null
+          longitude?: number | null
+          recorded_at?: string | null
+          speed?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "position_history_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "vehicles"
+            referencedColumns: ["device_id"]
+          },
+        ]
       }
       profiles: {
         Row: {
@@ -123,6 +206,101 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      vehicle_positions: {
+        Row: {
+          altitude: number | null
+          battery_percent: number | null
+          cached_at: string | null
+          device_id: string | null
+          gps_time: string | null
+          heading: number | null
+          id: string
+          ignition_on: boolean | null
+          is_online: boolean | null
+          is_overspeeding: boolean | null
+          latitude: number | null
+          longitude: number | null
+          speed: number | null
+          status_text: string | null
+          total_mileage: number | null
+        }
+        Insert: {
+          altitude?: number | null
+          battery_percent?: number | null
+          cached_at?: string | null
+          device_id?: string | null
+          gps_time?: string | null
+          heading?: number | null
+          id?: string
+          ignition_on?: boolean | null
+          is_online?: boolean | null
+          is_overspeeding?: boolean | null
+          latitude?: number | null
+          longitude?: number | null
+          speed?: number | null
+          status_text?: string | null
+          total_mileage?: number | null
+        }
+        Update: {
+          altitude?: number | null
+          battery_percent?: number | null
+          cached_at?: string | null
+          device_id?: string | null
+          gps_time?: string | null
+          heading?: number | null
+          id?: string
+          ignition_on?: boolean | null
+          is_online?: boolean | null
+          is_overspeeding?: boolean | null
+          latitude?: number | null
+          longitude?: number | null
+          speed?: number | null
+          status_text?: string | null
+          total_mileage?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vehicle_positions_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: true
+            referencedRelation: "vehicles"
+            referencedColumns: ["device_id"]
+          },
+        ]
+      }
+      vehicles: {
+        Row: {
+          created_at: string | null
+          device_id: string
+          device_name: string
+          device_type: string | null
+          group_id: string | null
+          group_name: string | null
+          last_synced_at: string | null
+          sim_number: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          device_id: string
+          device_name: string
+          device_type?: string | null
+          group_id?: string | null
+          group_name?: string | null
+          last_synced_at?: string | null
+          sim_number?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          device_id?: string
+          device_name?: string
+          device_type?: string | null
+          group_id?: string | null
+          group_name?: string | null
+          last_synced_at?: string | null
+          sim_number?: string | null
+        }
+        Relationships: []
       }
     }
     Views: {
