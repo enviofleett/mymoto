@@ -41,6 +41,39 @@ export type Database = {
         }
         Relationships: []
       }
+      fleet_insights_history: {
+        Row: {
+          alerts_count: number
+          content: string
+          created_at: string | null
+          id: string
+          low_battery_count: number
+          offline_count: number
+          overspeeding_count: number
+          vehicles_analyzed: number
+        }
+        Insert: {
+          alerts_count?: number
+          content: string
+          created_at?: string | null
+          id?: string
+          low_battery_count?: number
+          offline_count?: number
+          overspeeding_count?: number
+          vehicles_analyzed?: number
+        }
+        Update: {
+          alerts_count?: number
+          content?: string
+          created_at?: string | null
+          id?: string
+          low_battery_count?: number
+          offline_count?: number
+          overspeeding_count?: number
+          vehicles_analyzed?: number
+        }
+        Relationships: []
+      }
       gps_api_logs: {
         Row: {
           action: string

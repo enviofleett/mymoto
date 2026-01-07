@@ -153,6 +153,22 @@ Generate a single insight paragraph. Start with an emoji that reflects the overa
 
     console.log('Fleet insight generated successfully')
 
+    // Save insight to history
+    const { error: insertError } = await supabase
+      .from('fleet_insights_history')
+      .insert({
+        content: insight,
+        vehicles_analyzed: totalVehicles,
+        alerts_count: lowBatteryVehicles.length + overspeedingVehicles.length,
+        overspeeding_count: overspeedingVehicles.length,
+        low_battery_count: lowBatteryVehicles.length,
+        offline_count: offlineVehicles
+      })
+
+    if (insertError) {
+      console.error('Failed to save insight to history:', insertError)
+    }
+
     return new Response(JSON.stringify({ 
       insight,
       stats: {

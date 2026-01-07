@@ -8,6 +8,7 @@ import {
   Bell,
   ChevronLeft,
   LogOut,
+  Brain,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import {
@@ -31,6 +32,7 @@ const mainItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Vehicles", url: "/vehicles", icon: Truck },
   { title: "Drivers", url: "/drivers", icon: Users },
+  { title: "AI Insights", url: "/insights", icon: Brain },
   { title: "Trips", url: "/trips", icon: MapPin },
   { title: "Fuel", url: "/fuel", icon: Fuel },
 ];
