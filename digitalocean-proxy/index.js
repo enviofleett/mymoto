@@ -1,78 +1,44 @@
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
+const bodyParser = require('body-parser');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
 app.use(cors());
-app.use(express.json());
+app.use(bodyParser.json());
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
+// Health Check
+app.get('/', (req, res) => res.status(200).send('GPS Walker Proxy Active 🟢'));
 
-// Proxy endpoint
 app.post('/proxy', async (req, res) => {
-  const { targetUrl, method = 'GET', headers = {}, data } = req.body;
+  const { targetUrl, method, headers, data } = req.body;
 
-  if (!targetUrl) {
-    return res.status(400).json({ 
-      error: 'Missing required field: targetUrl' 
-    });
-  }
+  if (!targetUrl) return res.status(400).json({ error: 'Target URL is required' });
 
-  console.log(`[Proxy] ${method} request to: ${targetUrl}`);
+  console.log(`[Proxy] ${method || 'POST'} -> ${targetUrl}`);
 
   try {
     const response = await axios({
       url: targetUrl,
-      method: method.toUpperCase(),
-      headers: {
-        'Content-Type': 'application/json',
-        ...headers
-      },
-      data: data || undefined,
-      timeout: 30000, // 30 second timeout
+      method: method || 'POST', // GPS51 API uses POST for everything
+      headers: headers || { 'Content-Type': 'application/json' },
+      data: data || {},
+      timeout: 60000, // 60s Timeout (Critical for GPS sync commands)
+      validateStatus: () => true // Prevent crashing on 4xx/5xx errors
     });
 
-    console.log(`[Proxy] Response status: ${response.status}`);
+    // Pass the exact response back
+    res.status(response.status).json(response.data);
 
-    res.status(response.status).json({
-      status: response.status,
-      statusText: response.statusText,
-      headers: response.headers,
-      data: response.data
-    });
   } catch (error) {
-    console.error(`[Proxy] Error:`, error.message);
-
-    if (error.response) {
-      // The request was made and the server responded with a status code
-      res.status(error.response.status).json({
-        error: 'Upstream server error',
-        status: error.response.status,
-        statusText: error.response.statusText,
-        data: error.response.data
-      });
-    } else if (error.request) {
-      // The request was made but no response was received
-      res.status(504).json({
-        error: 'No response from upstream server',
-        message: error.message
-      });
-    } else {
-      // Something happened in setting up the request
-      res.status(500).json({
-        error: 'Proxy request failed',
-        message: error.message
-      });
-    }
+    console.error('[Proxy Error]', error.message);
+    const status = error.response ? error.response.status : 500;
+    res.status(status).json({ error: 'Proxy traversal failed', details: error.message });
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`Proxy server running on port ${PORT}`);
+  console.log(`Walker running on port ${PORT}`);
 });
