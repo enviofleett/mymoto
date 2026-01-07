@@ -18,7 +18,7 @@ const recentActivity = [
 
 const Index = () => {
   const { isAdmin } = useAuth();
-  const { vehicles, metrics, loading, error } = useFleetData();
+  const { vehicles, metrics, loading, error, refetch } = useFleetData();
 
   const displayMetrics = [
     {
@@ -95,7 +95,7 @@ const Index = () => {
                 View all →
               </a>
             </div>
-            <VehicleTable vehicles={vehicles} loading={loading} />
+            <VehicleTable vehicles={vehicles} loading={loading} onAssignmentChange={refetch} />
           </div>
 
           {/* Activity Feed */}

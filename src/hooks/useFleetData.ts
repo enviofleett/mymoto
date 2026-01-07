@@ -5,13 +5,14 @@ export interface FleetDriver {
   id: string;
   name: string;
   phone: string | null;
+  license_number: string | null;
 }
 
 export interface FleetVehicle {
   id: string;
   name: string;
   plate: string;
-  status: 'active' | 'inactive';
+  status: 'moving' | 'stopped' | 'offline';
   speed: number;
   lat: number | null;
   lon: number | null;
@@ -58,7 +59,8 @@ export function useFleetData() {
             profiles (
               id,
               name,
-              phone
+              phone,
+              license_number
             )
           `)
       ]);
@@ -80,25 +82,39 @@ export function useFleetData() {
         assignments.map((a: any) => [a.device_id, a])
       );
 
-      // Merge all data
+      // Merge all data - FIX: GPS51 API returns callat/callon, not lat/lon
       const mergedVehicles: FleetVehicle[] = allDevices.map((dev: any) => {
         const liveInfo = posData?.data?.records?.find((r: any) => r.deviceid === dev.deviceid);
         const assignment = assignmentMap.get(dev.deviceid);
         const profile = assignment?.profiles;
 
+        // Use callat/callon from GPS51 API (not lat/lon)
+        const latitude = liveInfo?.callat || liveInfo?.lat || null;
+        const longitude = liveInfo?.callon || liveInfo?.lon || null;
+        const speed = liveInfo?.speed || 0;
+        
+        // Determine status: moving if speed > 0, stopped if has coords but speed 0, offline if no coords
+        let status: 'moving' | 'stopped' | 'offline' = 'offline';
+        if (latitude && longitude && latitude !== 0 && longitude !== 0) {
+          status = speed > 0 ? 'moving' : 'stopped';
+        }
+
         return {
           id: dev.deviceid,
           name: assignment?.vehicle_alias || dev.devicename,
           plate: dev.carplate || "N/A",
-          status: liveInfo?.speed > 0 ? 'active' : 'inactive',
-          speed: liveInfo?.speed || 0,
-          lat: liveInfo?.lat || null,
-          lon: liveInfo?.lon || null,
-          location: liveInfo ? `${liveInfo.lat}, ${liveInfo.lon}` : "Unknown",
+          status,
+          speed,
+          lat: latitude,
+          lon: longitude,
+          location: (latitude && longitude && latitude !== 0 && longitude !== 0) 
+            ? `${latitude.toFixed(5)}, ${longitude.toFixed(5)}` 
+            : "No GPS",
           driver: profile ? {
             id: profile.id,
             name: profile.name,
-            phone: profile.phone
+            phone: profile.phone,
+            license_number: profile.license_number
           } : undefined
         };
       });
@@ -106,7 +122,7 @@ export function useFleetData() {
       setVehicles(mergedVehicles);
 
       // Calculate metrics
-      const movingVehicles = mergedVehicles.filter(v => v.status === 'active');
+      const movingVehicles = mergedVehicles.filter(v => v.status === 'moving');
       const assignedCount = mergedVehicles.filter(v => v.driver).length;
       const avgSpeed = movingVehicles.length > 0
         ? Math.round(movingVehicles.reduce((sum, v) => sum + v.speed, 0) / movingVehicles.length)

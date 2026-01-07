@@ -31,9 +31,9 @@ export function FleetMap({ vehicles, loading }: FleetMapProps) {
     );
   }
 
-  // Filter vehicles with valid coordinates
+  // Filter vehicles with valid coordinates (exclude offline/no GPS)
   const vehiclesWithLocation = vehicles.filter(
-    (v) => v.lat !== null && v.lon !== null && !isNaN(v.lat) && !isNaN(v.lon)
+    (v) => v.lat !== null && v.lon !== null && v.lat !== 0 && v.lon !== 0
   );
 
   // Calculate center: use first vehicle with location, or default to [0, 0]
@@ -41,6 +41,14 @@ export function FleetMap({ vehicles, loading }: FleetMapProps) {
     vehiclesWithLocation.length > 0
       ? [vehiclesWithLocation[0].lat!, vehiclesWithLocation[0].lon!]
       : [0, 0];
+
+  const getStatusLabel = (status: FleetVehicle['status']) => {
+    switch (status) {
+      case 'moving': return 'Moving';
+      case 'stopped': return 'Stopped';
+      case 'offline': return 'Offline';
+    }
+  };
 
   return (
     <div className="rounded-lg border border-border bg-card overflow-hidden h-[400px]">
@@ -64,7 +72,7 @@ export function FleetMap({ vehicles, loading }: FleetMapProps) {
               <Popup>
                 <div className="text-sm">
                   <p className="font-semibold">{v.name}</p>
-                  <p>Status: {v.status === 'active' ? 'Moving' : 'Stopped'}</p>
+                  <p>Status: {getStatusLabel(v.status)}</p>
                   <p>Speed: {v.speed} km/h</p>
                   {v.driver && (
                     <p className="mt-1 pt-1 border-t">Driver: {v.driver.name}</p>
