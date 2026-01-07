@@ -62,16 +62,16 @@ export function useFleetData() {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [hasInitialData, setHasInitialData] = useState(false);
 
   const fetchData = useCallback(async (isBackground = false) => {
     try {
-      // Only show loading spinner on initial load, not background refreshes
-      if (!isBackground) {
+      // Only show loading on initial load when we have no data yet
+      if (!isBackground && !hasInitialData) {
         setLoading(true);
       }
       
-      // Don't clear error on background refresh - only clear on manual/initial fetch
+      // Only clear error on manual refresh, not background
       if (!isBackground) {
         setError(null);
       }
@@ -205,7 +205,9 @@ export function useFleetData() {
         };
       });
 
+      // Update state - data persists during refresh
       setVehicles(mergedVehicles);
+      setHasInitialData(true);
 
       // Calculate metrics
       const movingVehicles = mergedVehicles.filter(v => v.status === 'moving');
@@ -227,34 +229,27 @@ export function useFleetData() {
         overspeedingCount: overspeedingVehicles.length,
       });
 
-      // Clear any previous errors on successful fetch
-      if (isBackground && error) {
-        setError(null);
-      }
+      // Clear error on successful background fetch
+      setError(null);
 
     } catch (err) {
       console.error("Fleet data fetch error:", err);
-      // Only set error if we have no data yet (initial load failed)
-      // Don't disrupt the UI with errors during background sync
-      if (!isBackground || vehicles.length === 0) {
+      // Only show error if we have no data yet - don't disrupt existing display
+      if (!hasInitialData) {
         setError(err instanceof Error ? err.message : "Unknown error");
       }
     } finally {
-      if (!isBackground) {
-        setLoading(false);
-      }
-      if (isInitialLoad) {
-        setIsInitialLoad(false);
-      }
+      // Always turn off loading after first successful or failed attempt
+      setLoading(false);
     }
-  }, [error, vehicles.length, isInitialLoad]);
+  }, [hasInitialData]);
 
   useEffect(() => {
-    fetchData(false); // Initial load - not background
+    fetchData(false); // Initial load
 
     // Auto-refresh every 30 seconds - silent background refresh
     const interval = setInterval(() => {
-      fetchData(true); // Background refresh - no loading state
+      fetchData(true);
     }, 30000);
 
     return () => clearInterval(interval);
