@@ -55,13 +55,32 @@ serve(async (req) => {
       }
     }
 
+    console.log('Calling proxy at:', DO_PROXY_URL)
+    console.log('Proxy payload:', JSON.stringify(proxyPayload, null, 2))
+
     const proxyRes = await fetch(DO_PROXY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(proxyPayload)
     })
 
-    const apiResponse = await proxyRes.json()
+    console.log('Proxy response status:', proxyRes.status)
+    
+    // Get raw text first to handle non-JSON responses
+    const responseText = await proxyRes.text()
+    console.log('Proxy response body:', responseText.substring(0, 500))
+    
+    // Check if response is HTML (error page)
+    if (responseText.startsWith('<!DOCTYPE') || responseText.startsWith('<html')) {
+      throw new Error(`Proxy returned HTML error page. Status: ${proxyRes.status}. Check DO_PROXY_URL is correct and proxy is running.`)
+    }
+
+    let apiResponse
+    try {
+      apiResponse = JSON.parse(responseText)
+    } catch {
+      throw new Error(`Invalid JSON from proxy: ${responseText.substring(0, 200)}`)
+    }
 
     if (apiResponse.status !== 0 || !apiResponse.token) {
       throw new Error(`GPS Login Failed: ${JSON.stringify(apiResponse)}`)
