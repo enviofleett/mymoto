@@ -49,22 +49,6 @@ function getOfflineDuration(updateTime: Date): string {
   return `${diffDays}d`;
 }
 
-// Check if vehicle is online (updated within last 10 minutes)
-function isOnline(updateTime: Date): boolean {
-  const now = new Date();
-  const diffMs = now.getTime() - updateTime.getTime();
-  return diffMs < 10 * 60 * 1000; // 10 minutes
-}
-
-// Parse ignition status from strstatus string
-function parseIgnition(strStatus: string | null | undefined): boolean | null {
-  if (!strStatus) return null;
-  const upper = strStatus.toUpperCase();
-  if (upper.includes('ACC ON')) return true;
-  if (upper.includes('ACC OFF')) return false;
-  return null;
-}
-
 export function useFleetData() {
   const [vehicles, setVehicles] = useState<FleetVehicle[]>([]);
   const [metrics, setMetrics] = useState<FleetMetrics>({
@@ -84,7 +68,7 @@ export function useFleetData() {
       setLoading(true);
       setError(null);
 
-      // Fetch GPS data, assignments, and profiles in parallel
+      // Fetch GPS data and trigger backend sync, plus get assignments
       const [gpsListResult, gpsPositionResult, assignmentsResult] = await Promise.all([
         supabase.functions.invoke('gps-data', {
           body: { action: 'querymonitorlist' }
@@ -106,26 +90,45 @@ export function useFleetData() {
           `)
       ]);
 
-      if (gpsListResult.error) throw new Error("Failed to fetch vehicle list");
-      if (gpsPositionResult.error) throw new Error("Failed to fetch positions");
+      if (gpsListResult.error) throw new Error(gpsListResult.error.message || "Failed to fetch vehicle list");
+      if (gpsPositionResult.error) throw new Error(gpsPositionResult.error.message || "Failed to fetch positions");
 
       const listData = gpsListResult.data;
       const posData = gpsPositionResult.data;
       const assignments = assignmentsResult.data || [];
 
+      // Handle cached position data from backend
+      let positionRecords = [];
+      if (posData?.data?.fromCache) {
+        // Data came from cache - transform cached format
+        positionRecords = posData.data.records.map((r: any) => ({
+          deviceid: r.device_id,
+          callat: r.latitude,
+          callon: r.longitude,
+          speed: r.speed,
+          voltagepercent: r.battery_percent,
+          strstatus: r.status_text,
+          totaldistance: r.total_mileage,
+          currentoverspeedstate: r.is_overspeeding ? 1 : 0,
+          updatetime: r.gps_time ? new Date(r.gps_time).getTime() : null
+        }));
+      } else if (posData?.data?.records) {
+        positionRecords = posData.data.records;
+      }
+
       if (!listData?.data?.groups) throw new Error("Invalid vehicle list response");
 
       // Flatten groups to get all devices
-      const allDevices = listData.data.groups.flatMap((g: any) => g.devices);
+      const allDevices = listData.data.groups.flatMap((g: any) => g.devices || []);
 
       // Create assignment lookup map
       const assignmentMap = new Map(
         assignments.map((a: any) => [a.device_id, a])
       );
 
-      // Merge all data with correct GPS51 field mappings
+      // Merge all data
       const mergedVehicles: FleetVehicle[] = allDevices.map((dev: any) => {
-        const liveInfo = posData?.data?.records?.find((r: any) => r.deviceid === dev.deviceid);
+        const liveInfo = positionRecords.find((r: any) => r.deviceid === dev.deviceid);
         const assignment = assignmentMap.get(dev.deviceid);
         const profile = assignment?.profiles;
 
@@ -134,9 +137,13 @@ export function useFleetData() {
         const longitude = liveInfo?.callon ?? null;
         const speed = liveInfo?.speed ?? 0;
         const battery = liveInfo?.voltagepercent ?? null;
-        const ignition = parseIgnition(liveInfo?.strstatus);
         const mileage = liveInfo?.totaldistance ?? null;
         const isOverspeeding = liveInfo?.currentoverspeedstate === 1;
+        
+        // Parse ignition from strstatus
+        const strstatus = liveInfo?.strstatus || '';
+        const ignition = strstatus.toUpperCase().includes('ACC ON') ? true : 
+                         strstatus.toUpperCase().includes('ACC OFF') ? false : null;
         
         // Parse updatetime for online/offline status
         let lastUpdate: Date | null = null;
@@ -145,7 +152,8 @@ export function useFleetData() {
         
         if (liveInfo?.updatetime) {
           lastUpdate = new Date(liveInfo.updatetime);
-          vehicleOnline = isOnline(lastUpdate);
+          const diffMs = Date.now() - lastUpdate.getTime();
+          vehicleOnline = diffMs < 10 * 60 * 1000; // 10 minutes
           if (!vehicleOnline) {
             offlineDuration = getOfflineDuration(lastUpdate);
           }

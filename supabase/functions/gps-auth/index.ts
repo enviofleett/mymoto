@@ -1,7 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { crypto } from "https://deno.land/std@0.168.0/crypto/mod.ts"
-// MD5 hash helper using Deno std library
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+const TOKEN_VALIDITY_HOURS = 24
+
 async function md5(text: string): Promise<string> {
   const encoder = new TextEncoder()
   const data = encoder.encode(text)
@@ -10,69 +17,66 @@ async function md5(text: string): Promise<string> {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
-  try {
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    )
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  )
 
+  try {
+    // Verify admin user
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) throw new Error('Missing Authorization header')
     
-    const { data: { user }, error: userError } = await supabaseClient.auth.getUser(authHeader.replace('Bearer ', ''))
+    const { data: { user }, error: userError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''))
     if (userError || !user || user.email !== 'toolbuxdev@gmail.com') {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 403, headers: corsHeaders })
+      return new Response(JSON.stringify({ error: 'Unauthorized - Admin only' }), { 
+        status: 403, 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      })
     }
 
     const DO_PROXY_URL = Deno.env.get('DO_PROXY_URL')
     const GPS_USER = Deno.env.get('GPS_USERNAME')
     const GPS_PASS_PLAIN = Deno.env.get('GPS_PASSWORD')
-    const BASE_URL = 'https://api.gps51.com/openapi'
 
-    if (!DO_PROXY_URL || !GPS_USER || !GPS_PASS_PLAIN) throw new Error('Missing Secrets')
-
-    // System automatically hashes the plain password to MD5
-    const passwordHash = await md5(GPS_PASS_PLAIN);
-
-    const proxyPayload = {
-      targetUrl: `${BASE_URL}?action=login`,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      data: {
-        type: "USER",
-        from: "web",
-        username: GPS_USER,
-        password: passwordHash,
-        browser: "Chrome/120.0.0.0"
-      }
+    if (!DO_PROXY_URL || !GPS_USER || !GPS_PASS_PLAIN) {
+      throw new Error('Missing required secrets (DO_PROXY_URL, GPS_USERNAME, GPS_PASSWORD)')
     }
 
-    console.log('Calling proxy at:', DO_PROXY_URL)
-    console.log('Proxy payload:', JSON.stringify(proxyPayload, null, 2))
+    console.log('Starting GPS51 token refresh for user:', GPS_USER)
 
-    const proxyRes = await fetch(DO_PROXY_URL, {
+    // Hash password
+    const passwordHash = await md5(GPS_PASS_PLAIN)
+
+    // Call GPS51 login
+    const startTime = Date.now()
+    const proxyResponse = await fetch(DO_PROXY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(proxyPayload)
+      body: JSON.stringify({
+        targetUrl: 'https://api.gps51.com/openapi?action=login',
+        method: 'POST',
+        data: {
+          type: "USER",
+          from: "web",
+          username: GPS_USER,
+          password: passwordHash,
+          browser: "Chrome/120.0.0.0"
+        }
+      })
     })
 
-    console.log('Proxy response status:', proxyRes.status)
+    const duration = Date.now() - startTime
+    console.log(`GPS51 login took ${duration}ms`)
+
+    const responseText = await proxyResponse.text()
     
-    // Get raw text first to handle non-JSON responses
-    const responseText = await proxyRes.text()
-    console.log('Proxy response body:', responseText.substring(0, 500))
-    
-    // Check if response is HTML (error page)
+    // Check for HTML error response
     if (responseText.startsWith('<!DOCTYPE') || responseText.startsWith('<html')) {
-      throw new Error(`Proxy returned HTML error page. Status: ${proxyRes.status}. Check DO_PROXY_URL is correct and proxy is running.`)
+      throw new Error(`Proxy returned HTML error page. Check DO_PROXY_URL configuration.`)
     }
 
     let apiResponse
@@ -82,20 +86,54 @@ serve(async (req) => {
       throw new Error(`Invalid JSON from proxy: ${responseText.substring(0, 200)}`)
     }
 
+    // Log the login attempt
+    await supabase.from('gps_api_logs').insert({
+      action: 'login',
+      request_body: { username: GPS_USER },
+      response_status: apiResponse.status ?? 0,
+      response_body: { ...apiResponse, token: apiResponse.token ? '***' : null },
+      error_message: apiResponse.status !== 0 ? `Login failed with status ${apiResponse.status}` : null,
+      duration_ms: duration
+    })
+
     if (apiResponse.status !== 0 || !apiResponse.token) {
-      throw new Error(`GPS Login Failed: ${JSON.stringify(apiResponse)}`)
+      throw new Error(`GPS51 Login Failed: status=${apiResponse.status}, message=${apiResponse.message || 'Unknown'}`)
     }
 
-    await supabaseClient.from('app_settings').upsert({ 
+    // Calculate expiry (24 hours from now, minus 1 hour buffer)
+    const expiresAt = new Date()
+    expiresAt.setHours(expiresAt.getHours() + TOKEN_VALIDITY_HOURS - 1)
+
+    // Store token with expiry
+    await supabase.from('app_settings').upsert({ 
       key: 'gps_token', 
       value: apiResponse.token,
-      metadata: { serverid: apiResponse.serverid, username: GPS_USER, updated_at: new Date().toISOString() }
+      expires_at: expiresAt.toISOString(),
+      metadata: { 
+        serverid: apiResponse.serverid, 
+        username: GPS_USER, 
+        refreshed_by: user.email,
+        refreshed_at: new Date().toISOString()
+      }
     }, { onConflict: 'key' })
 
-    return new Response(JSON.stringify({ success: true, data: apiResponse }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    console.log(`Token refreshed successfully, expires at ${expiresAt.toISOString()}`)
+
+    return new Response(JSON.stringify({ 
+      success: true, 
+      expires_at: expiresAt.toISOString(),
+      serverid: apiResponse.serverid
+    }), { 
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+    })
 
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'
-    return new Response(JSON.stringify({ error: message }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    console.error('GPS Auth Error:', message)
+    
+    return new Response(JSON.stringify({ error: message }), { 
+      status: 400, 
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+    })
   }
 })

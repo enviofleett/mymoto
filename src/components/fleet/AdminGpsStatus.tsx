@@ -3,16 +3,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
-import { RefreshCw, CheckCircle, AlertCircle, Clock } from 'lucide-react';
+import { RefreshCw, CheckCircle, AlertCircle, Clock, Timer } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface TokenStatus {
   hasToken: boolean;
   updatedAt: string | null;
+  expiresAt: string | null;
   metadata: {
     refreshed_by?: string;
     refreshed_at?: string;
-    expires_at?: string;
   } | null;
 }
 
@@ -20,6 +20,7 @@ export function AdminGpsStatus() {
   const [tokenStatus, setTokenStatus] = useState<TokenStatus>({
     hasToken: false,
     updatedAt: null,
+    expiresAt: null,
     metadata: null,
   });
   const [isLoading, setIsLoading] = useState(true);
@@ -30,7 +31,7 @@ export function AdminGpsStatus() {
     try {
       const { data, error } = await supabase
         .from('app_settings')
-        .select('value, metadata, updated_at')
+        .select('value, metadata, updated_at, expires_at')
         .eq('key', 'gps_token')
         .maybeSingle();
 
@@ -42,6 +43,7 @@ export function AdminGpsStatus() {
       setTokenStatus({
         hasToken: !!data?.value,
         updatedAt: data?.updated_at || null,
+        expiresAt: data?.expires_at || null,
         metadata: data?.metadata as TokenStatus['metadata'] || null,
       });
     } catch (error) {
@@ -55,28 +57,23 @@ export function AdminGpsStatus() {
     fetchTokenStatus();
   }, []);
 
-  // Auto-refresh token if missing or older than 23 hours
+  // Auto-refresh token if expired or missing
   useEffect(() => {
     const autoRefreshIfNeeded = async () => {
-      if (!tokenStatus.updatedAt && tokenStatus.hasToken) return; // Wait for initial status load
+      if (isLoading) return;
 
-      const lastUpdate = tokenStatus.updatedAt ? new Date(tokenStatus.updatedAt) : null;
       const now = new Date();
-      const hoursDiff = lastUpdate 
-        ? (now.getTime() - lastUpdate.getTime()) / (1000 * 60 * 60)
-        : 24; // If no last update, treat as expired
+      const expiresAt = tokenStatus.expiresAt ? new Date(tokenStatus.expiresAt) : null;
+      const isExpired = expiresAt ? now >= expiresAt : true;
 
-      // GPS51 Token valid for 24h, refresh at 23h
-      if (hoursDiff >= 23 || !tokenStatus.hasToken) {
+      if (!tokenStatus.hasToken || isExpired) {
         console.log("Token expired or missing. Attempting auto-refresh...");
         await handleRefreshToken();
       }
     };
 
-    if (!isLoading) {
-      autoRefreshIfNeeded();
-    }
-  }, [isLoading, tokenStatus.updatedAt, tokenStatus.hasToken]);
+    autoRefreshIfNeeded();
+  }, [isLoading, tokenStatus.hasToken, tokenStatus.expiresAt]);
 
   const handleRefreshToken = async () => {
     setIsRefreshing(true);
@@ -111,10 +108,9 @@ export function AdminGpsStatus() {
 
       toast({
         title: 'Token Refreshed',
-        description: 'GPS token has been successfully refreshed.',
+        description: `GPS token refreshed. Valid until ${new Date(data.expires_at).toLocaleString()}`,
       });
 
-      // Refresh the status
       await fetchTokenStatus();
     } catch (error) {
       console.error('Failed to refresh token:', error);
@@ -133,18 +129,24 @@ export function AdminGpsStatus() {
     return new Date(dateString).toLocaleString();
   };
 
-  const getTimeSinceUpdate = (dateString: string | null) => {
-    if (!dateString) return null;
-    const updated = new Date(dateString);
+  const getTimeUntilExpiry = (expiresAt: string | null) => {
+    if (!expiresAt) return null;
+    const expires = new Date(expiresAt);
     const now = new Date();
-    const diffMs = now.getTime() - updated.getTime();
+    const diffMs = expires.getTime() - now.getTime();
+    
+    if (diffMs <= 0) return 'Expired';
+    
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
     const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
     
-    if (diffHours > 0) {
-      return `${diffHours}h ${diffMinutes}m ago`;
-    }
-    return `${diffMinutes}m ago`;
+    if (diffHours > 0) return `${diffHours}h ${diffMinutes}m remaining`;
+    return `${diffMinutes}m remaining`;
+  };
+
+  const isTokenValid = () => {
+    if (!tokenStatus.hasToken || !tokenStatus.expiresAt) return false;
+    return new Date() < new Date(tokenStatus.expiresAt);
   };
 
   if (isLoading) {
@@ -163,6 +165,9 @@ export function AdminGpsStatus() {
     );
   }
 
+  const tokenValid = isTokenValid();
+  const timeUntilExpiry = getTimeUntilExpiry(tokenStatus.expiresAt);
+
   return (
     <Card className="bg-card border-border">
       <CardHeader>
@@ -172,10 +177,10 @@ export function AdminGpsStatus() {
             <CardDescription>Manage GPS API authentication token</CardDescription>
           </div>
           <Badge 
-            variant={tokenStatus.hasToken ? 'default' : 'destructive'}
+            variant={tokenValid ? 'default' : 'destructive'}
             className="flex items-center gap-1"
           >
-            {tokenStatus.hasToken ? (
+            {tokenValid ? (
               <>
                 <CheckCircle className="h-3 w-3" />
                 Active
@@ -183,7 +188,7 @@ export function AdminGpsStatus() {
             ) : (
               <>
                 <AlertCircle className="h-3 w-3" />
-                No Token
+                {tokenStatus.hasToken ? 'Expired' : 'No Token'}
               </>
             )}
           </Badge>
@@ -193,14 +198,19 @@ export function AdminGpsStatus() {
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-sm">
             <Clock className="h-4 w-4 text-muted-foreground" />
-            <span className="text-muted-foreground">Last Updated:</span>
+            <span className="text-muted-foreground">Last Refreshed:</span>
             <span className="font-medium">{formatDate(tokenStatus.updatedAt)}</span>
-            {tokenStatus.updatedAt && (
-              <span className="text-xs text-muted-foreground">
-                ({getTimeSinceUpdate(tokenStatus.updatedAt)})
-              </span>
-            )}
           </div>
+          
+          {tokenStatus.expiresAt && (
+            <div className="flex items-center gap-2 text-sm">
+              <Timer className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">Expires:</span>
+              <span className={`font-medium ${tokenValid ? 'text-green-600' : 'text-red-500'}`}>
+                {timeUntilExpiry}
+              </span>
+            </div>
+          )}
           
           {tokenStatus.metadata?.refreshed_by && (
             <div className="flex items-center gap-2 text-sm">
@@ -229,7 +239,7 @@ export function AdminGpsStatus() {
         </Button>
 
         <p className="text-xs text-muted-foreground text-center">
-          Only authorized administrators can refresh the GPS token.
+          Token valid for 24 hours. Auto-refreshes when expired.
         </p>
       </CardContent>
     </Card>
