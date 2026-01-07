@@ -10,10 +10,11 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { FleetVehicle } from "@/hooks/useFleetData";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { VehicleChat } from "./VehicleChat";
 import { 
   MapPin, Gauge, Battery, Power, User, Phone, 
   Calendar, AlertTriangle, Navigation, Car, UserPlus, UserMinus,
-  History, Clock, Building2
+  History, Clock, Building2, MessageSquare
 } from "lucide-react";
 
 interface Driver {
@@ -195,11 +196,15 @@ export function VehicleDetailsModal({
         </DialogHeader>
 
         <Tabs defaultValue="details" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="details">Details</TabsTrigger>
             <TabsTrigger value="history">
               <History className="h-4 w-4 mr-1" />
               History
+            </TabsTrigger>
+            <TabsTrigger value="chat">
+              <MessageSquare className="h-4 w-4 mr-1" />
+              AI Chat
             </TabsTrigger>
           </TabsList>
 
@@ -419,6 +424,10 @@ export function VehicleDetailsModal({
                 </div>
               )}
             </ScrollArea>
+          </TabsContent>
+
+          <TabsContent value="chat" className="mt-4">
+            <VehicleChat deviceId={vehicle.id} vehicleName={vehicle.name} />
           </TabsContent>
         </Tabs>
       </DialogContent>
