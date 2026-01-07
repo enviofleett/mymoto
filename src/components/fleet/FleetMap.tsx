@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import MarkerClusterGroup from "react-leaflet-cluster";
 import { supabase } from "@/integrations/supabase/client";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
@@ -101,17 +102,23 @@ export function FleetMap() {
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        {vehiclesWithLocation.map((v) => (
-          <Marker key={v.id} position={[v.lat!, v.lon!]}>
-            <Popup>
-              <div className="text-sm">
-                <p className="font-semibold">{v.name}</p>
-                <p>Status: {v.status}</p>
-                <p>Speed: {v.speed} km/h</p>
-              </div>
-            </Popup>
-          </Marker>
-        ))}
+        <MarkerClusterGroup
+          chunkedLoading
+          spiderfyOnMaxZoom
+          showCoverageOnHover={false}
+        >
+          {vehiclesWithLocation.map((v) => (
+            <Marker key={v.id} position={[v.lat!, v.lon!]}>
+              <Popup>
+                <div className="text-sm">
+                  <p className="font-semibold">{v.name}</p>
+                  <p>Status: {v.status}</p>
+                  <p>Speed: {v.speed} km/h</p>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+        </MarkerClusterGroup>
       </MapContainer>
     </div>
   );
