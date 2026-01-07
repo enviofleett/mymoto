@@ -17,6 +17,10 @@ export interface FleetVehicle {
   lat: number | null;
   lon: number | null;
   location: string;
+  battery: number | null;
+  ignition: boolean | null;
+  lastUpdate: Date | null;
+  offlineDuration: string | null;
   driver?: FleetDriver;
 }
 
@@ -25,6 +29,36 @@ export interface FleetMetrics {
   movingNow: number;
   assignedDrivers: number;
   avgFleetSpeed: number;
+  onlineCount: number;
+}
+
+// Calculate offline duration string
+function getOfflineDuration(updateTime: Date): string {
+  const now = new Date();
+  const diffMs = now.getTime() - updateTime.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  
+  if (diffMins < 60) return `${diffMins}m`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h`;
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d`;
+}
+
+// Check if vehicle is online (updated within last 10 minutes)
+function isOnline(updateTime: Date): boolean {
+  const now = new Date();
+  const diffMs = now.getTime() - updateTime.getTime();
+  return diffMs < 10 * 60 * 1000; // 10 minutes
+}
+
+// Parse ignition status from strstatus string
+function parseIgnition(strStatus: string | null | undefined): boolean | null {
+  if (!strStatus) return null;
+  const upper = strStatus.toUpperCase();
+  if (upper.includes('ACC ON')) return true;
+  if (upper.includes('ACC OFF')) return false;
+  return null;
 }
 
 export function useFleetData() {
@@ -34,6 +68,7 @@ export function useFleetData() {
     movingNow: 0,
     assignedDrivers: 0,
     avgFleetSpeed: 0,
+    onlineCount: 0,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -82,21 +117,42 @@ export function useFleetData() {
         assignments.map((a: any) => [a.device_id, a])
       );
 
-      // Merge all data - FIX: GPS51 API returns callat/callon, not lat/lon
+      // Merge all data with correct GPS51 field mappings
       const mergedVehicles: FleetVehicle[] = allDevices.map((dev: any) => {
         const liveInfo = posData?.data?.records?.find((r: any) => r.deviceid === dev.deviceid);
         const assignment = assignmentMap.get(dev.deviceid);
         const profile = assignment?.profiles;
 
-        // Use callat/callon from GPS51 API (not lat/lon)
-        const latitude = liveInfo?.callat || liveInfo?.lat || null;
-        const longitude = liveInfo?.callon || liveInfo?.lon || null;
-        const speed = liveInfo?.speed || 0;
+        // GPS51 API uses callat/callon for calculated coordinates
+        const latitude = liveInfo?.callat ?? null;
+        const longitude = liveInfo?.callon ?? null;
+        const speed = liveInfo?.speed ?? 0;
+        const battery = liveInfo?.voltagepercent ?? null;
+        const ignition = parseIgnition(liveInfo?.strstatus);
         
-        // Determine status: moving if speed > 0, stopped if has coords but speed 0, offline if no coords
+        // Parse updatetime for online/offline status
+        let lastUpdate: Date | null = null;
+        let vehicleOnline = false;
+        let offlineDuration: string | null = null;
+        
+        if (liveInfo?.updatetime) {
+          lastUpdate = new Date(liveInfo.updatetime);
+          vehicleOnline = isOnline(lastUpdate);
+          if (!vehicleOnline) {
+            offlineDuration = getOfflineDuration(lastUpdate);
+          }
+        }
+        
+        // Determine status based on online state and speed
         let status: 'moving' | 'stopped' | 'offline' = 'offline';
-        if (latitude && longitude && latitude !== 0 && longitude !== 0) {
+        const hasValidCoords = latitude !== null && longitude !== null && latitude !== 0 && longitude !== 0;
+        
+        if (!vehicleOnline) {
+          status = 'offline';
+        } else if (hasValidCoords) {
           status = speed > 0 ? 'moving' : 'stopped';
+        } else {
+          status = 'offline';
         }
 
         return {
@@ -107,9 +163,13 @@ export function useFleetData() {
           speed,
           lat: latitude,
           lon: longitude,
-          location: (latitude && longitude && latitude !== 0 && longitude !== 0) 
+          location: hasValidCoords 
             ? `${latitude.toFixed(5)}, ${longitude.toFixed(5)}` 
             : "No GPS",
+          battery,
+          ignition,
+          lastUpdate,
+          offlineDuration,
           driver: profile ? {
             id: profile.id,
             name: profile.name,
@@ -123,6 +183,7 @@ export function useFleetData() {
 
       // Calculate metrics
       const movingVehicles = mergedVehicles.filter(v => v.status === 'moving');
+      const onlineVehicles = mergedVehicles.filter(v => v.status !== 'offline');
       const assignedCount = mergedVehicles.filter(v => v.driver).length;
       const avgSpeed = movingVehicles.length > 0
         ? Math.round(movingVehicles.reduce((sum, v) => sum + v.speed, 0) / movingVehicles.length)
@@ -133,6 +194,7 @@ export function useFleetData() {
         movingNow: movingVehicles.length,
         assignedDrivers: assignedCount,
         avgFleetSpeed: avgSpeed,
+        onlineCount: onlineVehicles.length,
       });
 
     } catch (err) {

@@ -3,7 +3,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FleetVehicle } from "@/hooks/useFleetData";
-import { UserPlus } from "lucide-react";
+import { UserPlus, Battery, BatteryLow, BatteryMedium, BatteryFull, Power } from "lucide-react";
 import { AssignDriverDialog } from "./AssignDriverDialog";
 
 interface VehicleTableProps {
@@ -43,15 +43,65 @@ export function VehicleTable({ vehicles, loading, onAssignmentChange }: VehicleT
     );
   }
 
-  const getStatusBadge = (status: FleetVehicle['status']) => {
-    switch (status) {
+  const getStatusBadge = (vehicle: FleetVehicle) => {
+    switch (vehicle.status) {
       case 'moving':
         return <Badge variant="default" className="bg-green-600">Moving</Badge>;
       case 'stopped':
         return <Badge variant="secondary">Stopped</Badge>;
       case 'offline':
-        return <Badge variant="outline" className="text-muted-foreground">Offline</Badge>;
+        return (
+          <div className="flex items-center gap-1">
+            <Badge variant="outline" className="text-muted-foreground">Offline</Badge>
+            {vehicle.offlineDuration && (
+              <span className="text-xs text-muted-foreground">({vehicle.offlineDuration})</span>
+            )}
+          </div>
+        );
     }
+  };
+
+  const getBatteryIcon = (battery: number | null) => {
+    if (battery === null) return <span className="text-muted-foreground text-xs">N/A</span>;
+    
+    if (battery < 20) {
+      return (
+        <div className="flex items-center gap-1 text-red-500">
+          <BatteryLow className="h-4 w-4" />
+          <span className="text-xs">{battery}%</span>
+        </div>
+      );
+    } else if (battery < 50) {
+      return (
+        <div className="flex items-center gap-1 text-yellow-500">
+          <BatteryMedium className="h-4 w-4" />
+          <span className="text-xs">{battery}%</span>
+        </div>
+      );
+    } else {
+      return (
+        <div className="flex items-center gap-1 text-green-500">
+          <BatteryFull className="h-4 w-4" />
+          <span className="text-xs">{battery}%</span>
+        </div>
+      );
+    }
+  };
+
+  const getIgnitionIndicator = (ignition: boolean | null) => {
+    if (ignition === null) return <span className="text-muted-foreground text-xs">N/A</span>;
+    
+    return ignition ? (
+      <div className="flex items-center gap-1 text-green-500">
+        <Power className="h-4 w-4" />
+        <span className="text-xs">ON</span>
+      </div>
+    ) : (
+      <div className="flex items-center gap-1 text-muted-foreground">
+        <Power className="h-4 w-4" />
+        <span className="text-xs">OFF</span>
+      </div>
+    );
   };
 
   return (
@@ -64,6 +114,8 @@ export function VehicleTable({ vehicles, loading, onAssignmentChange }: VehicleT
               <TableHead>Assigned Driver</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Speed (km/h)</TableHead>
+              <TableHead>Battery</TableHead>
+              <TableHead>Ignition</TableHead>
               <TableHead>Location</TableHead>
             </TableRow>
           </TableHeader>
@@ -91,8 +143,10 @@ export function VehicleTable({ vehicles, loading, onAssignmentChange }: VehicleT
                     </Button>
                   )}
                 </TableCell>
-                <TableCell>{getStatusBadge(v.status)}</TableCell>
+                <TableCell>{getStatusBadge(v)}</TableCell>
                 <TableCell>{v.speed}</TableCell>
+                <TableCell>{getBatteryIcon(v.battery)}</TableCell>
+                <TableCell>{getIgnitionIndicator(v.ignition)}</TableCell>
                 <TableCell className="max-w-[200px] truncate">{v.location}</TableCell>
               </TableRow>
             ))}
