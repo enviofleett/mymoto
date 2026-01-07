@@ -38,6 +38,39 @@ export type Database = {
         }
         Relationships: []
       }
+      profiles: {
+        Row: {
+          created_at: string | null
+          email: string | null
+          id: string
+          license_number: string | null
+          name: string
+          phone: string | null
+          status: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          email?: string | null
+          id?: string
+          license_number?: string | null
+          name: string
+          phone?: string | null
+          status?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          email?: string | null
+          id?: string
+          license_number?: string | null
+          name?: string
+          phone?: string | null
+          status?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -58,6 +91,38 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      vehicle_assignments: {
+        Row: {
+          created_at: string | null
+          device_id: string
+          profile_id: string | null
+          updated_at: string | null
+          vehicle_alias: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          device_id: string
+          profile_id?: string | null
+          updated_at?: string | null
+          vehicle_alias?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          device_id?: string
+          profile_id?: string | null
+          updated_at?: string | null
+          vehicle_alias?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vehicle_assignments_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
