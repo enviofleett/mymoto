@@ -140,22 +140,29 @@ async function syncVehicles(supabase: any, devices: any[]) {
 async function syncPositions(supabase: any, records: any[]) {
   const now = new Date().toISOString()
   
-  const positions = records.map(record => ({
-    device_id: record.deviceid,
-    latitude: record.callat && record.callat !== 0 ? record.callat : null,
-    longitude: record.callon && record.callon !== 0 ? record.callon : null,
-    speed: record.speed || 0,
-    heading: record.heading,
-    altitude: record.altitude,
-    battery_percent: record.voltagepercent,
-    ignition_on: parseIgnition(record.strstatus),
-    is_online: isOnline(record.updatetime),
-    is_overspeeding: record.currentoverspeedstate === 1,
-    total_mileage: record.totaldistance,
-    status_text: record.strstatus,
-    gps_time: record.updatetime ? new Date(record.updatetime).toISOString() : null,
-    cached_at: now
-  }))
+  const positions = records.map(record => {
+    // Battery: 0 means "no data" for hardwired devices, treat as null
+    // Only store battery if it's a positive value (real reading)
+    const rawBattery = record.voltagepercent;
+    const battery = (rawBattery && rawBattery > 0) ? rawBattery : null;
+    
+    return {
+      device_id: record.deviceid,
+      latitude: record.callat && record.callat !== 0 ? record.callat : null,
+      longitude: record.callon && record.callon !== 0 ? record.callon : null,
+      speed: record.speed || 0,
+      heading: record.heading,
+      altitude: record.altitude,
+      battery_percent: battery,
+      ignition_on: parseIgnition(record.strstatus),
+      is_online: isOnline(record.updatetime),
+      is_overspeeding: record.currentoverspeedstate === 1,
+      total_mileage: record.totaldistance,
+      status_text: record.strstatus,
+      gps_time: record.updatetime ? new Date(record.updatetime).toISOString() : null,
+      cached_at: now
+    };
+  })
 
   // Batch upsert positions
   for (let i = 0; i < positions.length; i += BATCH_SIZE) {

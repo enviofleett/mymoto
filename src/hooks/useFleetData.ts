@@ -157,7 +157,9 @@ export function useFleetData() {
         const latitude = liveInfo?.callat ?? null;
         const longitude = liveInfo?.callon ?? null;
         const speed = liveInfo?.speed ?? 0;
-        const battery = liveInfo?.voltagepercent ?? null;
+        // Battery: 0 means "no data" for hardwired devices, treat as null
+        const rawBattery = liveInfo?.voltagepercent;
+        const battery = (rawBattery && rawBattery > 0) ? rawBattery : null;
         const mileage = liveInfo?.totaldistance ?? null;
         const isOverspeeding = liveInfo?.currentoverspeedstate === 1;
         
@@ -227,7 +229,8 @@ export function useFleetData() {
       const movingVehicles = mergedVehicles.filter(v => v.status === 'moving');
       const onlineVehicles = mergedVehicles.filter(v => v.status !== 'offline');
       const assignedCount = mergedVehicles.filter(v => v.driver).length;
-      const lowBatteryVehicles = mergedVehicles.filter(v => v.battery !== null && v.battery < 20);
+      // Low battery: only count vehicles with ACTUAL battery data (not null) that are below 20%
+      const lowBatteryVehicles = mergedVehicles.filter(v => v.battery !== null && v.battery > 0 && v.battery < 20);
       const overspeedingVehicles = mergedVehicles.filter(v => v.isOverspeeding);
       const avgSpeed = movingVehicles.length > 0
         ? Math.round(movingVehicles.reduce((sum, v) => sum + v.speed, 0) / movingVehicles.length)
