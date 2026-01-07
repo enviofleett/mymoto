@@ -186,10 +186,27 @@ async function syncPositions(supabase: any, records: any[]) {
   }
 }
 
-// Get device IDs from database (faster than API call)
+// Get ALL device IDs from database (paginated to handle 600+ vehicles)
 async function getDeviceIdsFromDb(supabase: any): Promise<string[]> {
-  const { data } = await supabase.from('vehicles').select('device_id').limit(500)
-  return data?.map((d: any) => d.device_id) || []
+  const allDeviceIds: string[] = []
+  const PAGE_SIZE = 1000
+  let offset = 0
+  
+  while (true) {
+    const { data, error } = await supabase
+      .from('vehicles')
+      .select('device_id')
+      .range(offset, offset + PAGE_SIZE - 1)
+    
+    if (error || !data || data.length === 0) break
+    
+    allDeviceIds.push(...data.map((d: any) => d.device_id))
+    
+    if (data.length < PAGE_SIZE) break
+    offset += PAGE_SIZE
+  }
+  
+  return allDeviceIds
 }
 
 // Get all device IDs from querymonitorlist
