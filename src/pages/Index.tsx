@@ -1,8 +1,9 @@
-import { Truck, Users, MapPin, Gauge, Wifi, BatteryWarning, AlertTriangle } from "lucide-react";
+import { Users, MapPin, Wifi, BatteryWarning } from "lucide-react";
 import { DashboardLayout } from "@/components/layouts/DashboardLayout";
 import { MetricCard } from "@/components/fleet/MetricCard";
 import { VehicleTable } from "@/components/fleet/VehicleTable";
 import { FleetMap } from "@/components/fleet/FleetMap";
+import { FleetInsights } from "@/components/fleet/FleetInsights";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AdminGpsStatus } from "@/components/fleet/AdminGpsStatus";
 import { useAuth } from "@/contexts/AuthContext";
@@ -78,6 +79,9 @@ const Index = () => {
             <MetricCard key={metric.title} {...metric} />
           ))}
         </div>
+
+        {/* AI Fleet Insights */}
+        <FleetInsights />
 
         {/* Fleet Map */}
         <div className="space-y-4">
