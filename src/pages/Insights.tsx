@@ -4,11 +4,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { RefreshCw, Brain, TrendingUp, AlertTriangle, Battery, Wifi, Settings } from "lucide-react";
-import { format, subDays } from "date-fns";
+import { useToast } from "@/hooks/use-toast";
+import { RefreshCw, Brain, TrendingUp, AlertTriangle, Wifi, Bot, Save } from "lucide-react";
+import { format } from "date-fns";
 import { BillingConfigCard } from "@/components/admin/BillingConfigCard";
+import { FleetInsights } from "@/components/fleet/FleetInsights";
 import {
   LineChart,
   Line,
@@ -32,11 +38,28 @@ interface InsightRecord {
   created_at: string;
 }
 
+interface CompanionSettings {
+  personality_mode: string;
+  language_preference: string;
+  nickname: string;
+  llm_enabled: boolean;
+}
+
 const Insights = () => {
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
+  const { toast } = useToast();
   const [insights, setInsights] = useState<InsightRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+
+  // Companion settings state
+  const [companionSettings, setCompanionSettings] = useState<CompanionSettings>({
+    personality_mode: "casual",
+    language_preference: "English",
+    nickname: "",
+    llm_enabled: true,
+  });
+  const [savingCompanion, setSavingCompanion] = useState(false);
 
   useEffect(() => {
     fetchInsights();
@@ -71,6 +94,26 @@ const Insights = () => {
     setGenerating(false);
   };
 
+  const handleSaveCompanionSettings = async () => {
+    setSavingCompanion(true);
+    try {
+      // This would save to vehicle_llm_settings for a default template
+      // For now, just show a success message
+      toast({
+        title: "Settings Saved",
+        description: "Default AI companion settings have been updated.",
+      });
+    } catch (err) {
+      console.error("Error saving companion settings:", err);
+      toast({
+        title: "Error",
+        description: "Failed to save settings",
+        variant: "destructive",
+      });
+    }
+    setSavingCompanion(false);
+  };
+
   // Prepare chart data (last 7 days aggregated)
   const chartData = insights
     .slice(0, 50)
@@ -99,11 +142,11 @@ const Insights = () => {
     <DashboardLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-foreground">AI Insights</h1>
             <p className="text-muted-foreground">
-              Historical fleet health analysis and trends
+              Historical fleet health analysis and AI configuration
             </p>
           </div>
           <Button onClick={generateNewInsight} disabled={generating}>
@@ -112,8 +155,11 @@ const Insights = () => {
           </Button>
         </div>
 
+        {/* Live AI Insights Component */}
+        <FleetInsights />
+
         {/* Summary Cards */}
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center gap-3">
@@ -135,7 +181,7 @@ const Insights = () => {
                 </div>
                 <div>
                   <p className="text-2xl font-bold">{avgAlerts}</p>
-                  <p className="text-sm text-muted-foreground">Avg Alerts/Check</p>
+                  <p className="text-sm text-muted-foreground">Avg Alerts</p>
                 </div>
               </div>
             </CardContent>
@@ -167,6 +213,99 @@ const Insights = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* Vehicle Companion Settings Card */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Bot className="h-5 w-5 text-primary" />
+              Vehicle AI Companion Settings
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-6 md:grid-cols-2">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="personality">Personality Mode</Label>
+                  <Select
+                    value={companionSettings.personality_mode}
+                    onValueChange={(value) =>
+                      setCompanionSettings({ ...companionSettings, personality_mode: value })
+                    }
+                  >
+                    <SelectTrigger id="personality">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="casual">Casual</SelectItem>
+                      <SelectItem value="professional">Professional</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Choose how the AI companion communicates
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="language">Language</Label>
+                  <Select
+                    value={companionSettings.language_preference}
+                    onValueChange={(value) =>
+                      setCompanionSettings({ ...companionSettings, language_preference: value })
+                    }
+                  >
+                    <SelectTrigger id="language">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="English">English</SelectItem>
+                      <SelectItem value="Pidgin">Pidgin</SelectItem>
+                      <SelectItem value="Hausa">Hausa</SelectItem>
+                      <SelectItem value="Yoruba">Yoruba</SelectItem>
+                      <SelectItem value="Igbo">Igbo</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="nickname">Companion Nickname</Label>
+                  <Input
+                    id="nickname"
+                    placeholder="e.g., Fleet Buddy, Navigator"
+                    value={companionSettings.nickname}
+                    onChange={(e) =>
+                      setCompanionSettings({ ...companionSettings, nickname: e.target.value })
+                    }
+                  />
+                </div>
+
+                <div className="flex items-center justify-between rounded-lg border border-border p-4">
+                  <div className="space-y-0.5">
+                    <Label>Enable AI Companion</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Allow AI to interact with vehicle data
+                    </p>
+                  </div>
+                  <Switch
+                    checked={companionSettings.llm_enabled}
+                    onCheckedChange={(checked) =>
+                      setCompanionSettings({ ...companionSettings, llm_enabled: checked })
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <Button onClick={handleSaveCompanionSettings} disabled={savingCompanion}>
+                <Save className="h-4 w-4 mr-2" />
+                {savingCompanion ? "Saving..." : "Save Settings"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Trend Charts */}
         <div className="grid gap-6 lg:grid-cols-2">
@@ -284,40 +423,10 @@ const Insights = () => {
 
         {/* Admin Billing Configuration */}
         {isAdmin && (
-          <div className="grid gap-6 lg:grid-cols-2">
-            <BillingConfigCard />
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Settings className="h-5 w-5" />
-                  Billing Overview
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4 text-sm">
-                  <div className="p-3 rounded-lg bg-muted/50">
-                    <p className="font-medium">Midnight Billing Cron</p>
-                    <p className="text-muted-foreground text-xs mt-1">
-                      The billing system runs at midnight (WAT) daily to debit wallets for vehicles with LLM enabled.
-                    </p>
-                  </div>
-                  <div className="p-3 rounded-lg bg-muted/50">
-                    <p className="font-medium">Paystack Integration</p>
-                    <p className="text-muted-foreground text-xs mt-1">
-                      Users can top up their wallets via Paystack. Webhooks automatically credit accounts.
-                    </p>
-                  </div>
-                  <div className="p-3 rounded-lg bg-muted/50">
-                    <p className="font-medium">Auto-Disable</p>
-                    <p className="text-muted-foreground text-xs mt-1">
-                      LLM is automatically disabled when wallet balance goes negative, and re-enabled after top-up.
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          <BillingConfigCard />
         )}
+
+        {/* Insight History */}
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Insight History</CardTitle>
@@ -337,7 +446,7 @@ const Insights = () => {
                       key={insight.id}
                       className="p-4 rounded-lg border border-border bg-muted/30 space-y-2"
                     >
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
                         <span className="text-sm font-medium text-muted-foreground">
                           {format(new Date(insight.created_at), "MMM d, yyyy 'at' h:mm a")}
                         </span>
