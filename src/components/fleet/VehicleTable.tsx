@@ -11,6 +11,7 @@ import { usePrefetchVehicleDetails } from "@/hooks/useVehicleDetails";
 import { UserPlus, BatteryLow, BatteryMedium, BatteryFull, Power, AlertTriangle, Gauge, Search, Filter, Eye, Truck, Plus } from "lucide-react";
 import { AssignDriverDialog } from "./AssignDriverDialog";
 import { VehicleDetailsModal } from "./VehicleDetailsModal";
+import { LocationCell } from "./LocationCell";
 
 interface VehicleTableProps {
   vehicles: FleetVehicle[];
@@ -379,7 +380,9 @@ export function VehicleTable({ vehicles, loading, onAssignmentChange }: VehicleT
                       </div>
                     </TableCell>
                     <TableCell>{formatMileage(v.mileage)}</TableCell>
-                    <TableCell className="max-w-[200px] truncate">{v.location}</TableCell>
+                    <TableCell className="max-w-[200px]">
+                      <LocationCell lat={v.lat} lon={v.lon} />
+                    </TableCell>
                     <TableCell>
                       <Button 
                         variant="ghost" 
