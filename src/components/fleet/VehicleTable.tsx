@@ -4,8 +4,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { FleetVehicle } from "@/hooks/useFleetData";
-import { UserPlus, BatteryLow, BatteryMedium, BatteryFull, Power, AlertTriangle, Gauge, Search, Filter, Eye } from "lucide-react";
+import { UserPlus, BatteryLow, BatteryMedium, BatteryFull, Power, AlertTriangle, Gauge, Search, Filter, Eye, Truck, Plus } from "lucide-react";
 import { AssignDriverDialog } from "./AssignDriverDialog";
 import { VehicleDetailsModal } from "./VehicleDetailsModal";
 
@@ -64,10 +66,52 @@ export function VehicleTable({ vehicles, loading, onAssignmentChange }: VehicleT
     });
   }, [vehicles, searchQuery, statusFilter]);
 
+  // Skeleton Loading State
   if (loading) {
     return (
-      <div className="rounded-lg border border-border bg-card p-8 text-center text-muted-foreground">
-        Loading Live Fleet Data...
+      <div className="space-y-4">
+        {/* Header Skeleton */}
+        <div className="flex flex-col sm:flex-row gap-3">
+          <Skeleton className="h-10 flex-1" />
+          <Skeleton className="h-10 w-[160px]" />
+        </div>
+        {/* Table Skeleton for Desktop */}
+        <div className="hidden md:block rounded-lg border border-border bg-card overflow-hidden">
+          <div className="p-4 space-y-4">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="flex items-center gap-4">
+                <Skeleton className="h-10 w-10 rounded-full" />
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-4 w-[200px]" />
+                  <Skeleton className="h-3 w-[150px]" />
+                </div>
+                <Skeleton className="h-6 w-16" />
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="h-4 w-16" />
+              </div>
+            ))}
+          </div>
+        </div>
+        {/* Card Skeleton for Mobile */}
+        <div className="md:hidden space-y-3">
+          {[...Array(4)].map((_, i) => (
+            <Card key={i} className="bg-card border-border">
+              <CardContent className="p-4">
+                <div className="flex justify-between items-start">
+                  <div className="space-y-2">
+                    <Skeleton className="h-5 w-[140px]" />
+                    <Skeleton className="h-4 w-[100px]" />
+                    <Skeleton className="h-6 w-[70px]" />
+                  </div>
+                  <div className="text-right space-y-2">
+                    <Skeleton className="h-6 w-16 ml-auto" />
+                    <Skeleton className="h-4 w-12 ml-auto" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       </div>
     );
   }
@@ -178,77 +222,52 @@ export function VehicleTable({ vehicles, loading, onAssignmentChange }: VehicleT
       )}
 
       {filteredVehicles.length === 0 ? (
-        <div className="rounded-lg border border-border bg-card p-8 text-center text-muted-foreground">
-          {vehicles.length === 0 ? "No vehicles found." : "No vehicles match your search."}
+        <div className="flex flex-col items-center justify-center py-12 px-4 text-center border-2 border-dashed border-border rounded-xl bg-card/50">
+          <div className="bg-primary/10 p-4 rounded-full mb-4">
+            <Truck className="h-8 w-8 text-primary" />
+          </div>
+          <h3 className="text-lg font-semibold">No vehicles found</h3>
+          <p className="text-muted-foreground mb-6 max-w-sm">
+            {searchQuery 
+              ? "We couldn't find any vehicles matching your search criteria." 
+              : "Get started by adding your first vehicle to the fleet."}
+          </p>
+          {!searchQuery && (
+            <Button className="gap-2">
+              <Plus className="h-4 w-4" /> Add Vehicle
+            </Button>
+          )}
         </div>
       ) : (
-        <div className="rounded-lg border border-border bg-card overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Vehicle</TableHead>
-                <TableHead>Owner</TableHead>
-                <TableHead>Driver</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Health</TableHead>
-                <TableHead>Speed</TableHead>
-                <TableHead>Mileage</TableHead>
-                <TableHead>Location</TableHead>
-                <TableHead className="w-[60px]"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredVehicles.map((v) => (
-                <TableRow 
-                  key={v.id} 
-                  className="cursor-pointer hover:bg-muted/50"
-                  onClick={() => handleRowClick(v)}
-                >
-                  <TableCell>
-                    <div>
-                      <p className="font-medium">{v.name}</p>
-                      <p className="text-xs text-muted-foreground">{v.plate}</p>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {v.gpsOwner ? (
-                      <Badge variant="outline" className="text-xs font-normal">
-                        {v.gpsOwner}
-                      </Badge>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {v.driver ? (
-                      <div>
-                        <p className="font-medium">{v.driver.name}</p>
-                        {v.driver.phone && (
-                          <p className="text-xs text-muted-foreground">{v.driver.phone}</p>
-                        )}
-                      </div>
-                    ) : (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-muted-foreground hover:text-foreground"
-                        onClick={(e) => handleAssignClick(v, e)}
-                      >
-                        <UserPlus className="h-4 w-4 mr-1" />
-                        Assign
-                      </Button>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-col gap-1">
-                      {getStatusBadge(v)}
-                      <div className="flex items-center gap-2">
+        <>
+          {/* Mobile Card View */}
+          <div className="md:hidden space-y-3">
+            {filteredVehicles.map((v) => (
+              <Card 
+                key={v.id} 
+                className="bg-card border-border cursor-pointer hover:bg-muted/50 transition-colors"
+                onClick={() => handleRowClick(v)}
+              >
+                <CardContent className="p-4">
+                  <div className="flex justify-between items-start">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold truncate">{v.name}</p>
+                      <p className="text-sm text-muted-foreground">{v.plate}</p>
+                      <div className="mt-2 flex flex-wrap gap-2 items-center">
+                        {getStatusBadge(v)}
                         {getIgnitionIndicator(v.ignition)}
                       </div>
+                      {v.driver && (
+                        <p className="text-xs text-muted-foreground mt-2">
+                          Driver: {v.driver.name}
+                        </p>
+                      )}
                     </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-col gap-1">
+                    <div className="text-right flex flex-col items-end gap-1">
+                      <div className="flex items-center gap-1 font-mono text-lg">
+                        <Gauge className="h-4 w-4 text-muted-foreground" />
+                        {v.speed} <span className="text-xs text-muted-foreground">km/h</span>
+                      </div>
                       {getBatteryIcon(v.battery)}
                       {v.isOverspeeding && (
                         <div className="flex items-center gap-1 text-orange-500">
@@ -257,32 +276,115 @@ export function VehicleTable({ vehicles, loading, onAssignmentChange }: VehicleT
                         </div>
                       )}
                     </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1">
-                      <Gauge className="h-4 w-4 text-muted-foreground" />
-                      <span>{v.speed} km/h</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>{formatMileage(v.mileage)}</TableCell>
-                  <TableCell className="max-w-[200px] truncate">{v.location}</TableCell>
-                  <TableCell>
-                    <Button 
-                      variant="ghost" 
-                      size="icon"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleRowClick(v);
-                      }}
-                    >
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* Desktop Table View */}
+          <div className="hidden md:block rounded-lg border border-border bg-card overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Vehicle</TableHead>
+                  <TableHead>Owner</TableHead>
+                  <TableHead>Driver</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Health</TableHead>
+                  <TableHead>Speed</TableHead>
+                  <TableHead>Mileage</TableHead>
+                  <TableHead>Location</TableHead>
+                  <TableHead className="w-[60px]"></TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {filteredVehicles.map((v) => (
+                  <TableRow 
+                    key={v.id} 
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => handleRowClick(v)}
+                  >
+                    <TableCell>
+                      <div>
+                        <p className="font-medium">{v.name}</p>
+                        <p className="text-xs text-muted-foreground">{v.plate}</p>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {v.gpsOwner ? (
+                        <Badge variant="outline" className="text-xs font-normal">
+                          {v.gpsOwner}
+                        </Badge>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {v.driver ? (
+                        <div>
+                          <p className="font-medium">{v.driver.name}</p>
+                          {v.driver.phone && (
+                            <p className="text-xs text-muted-foreground">{v.driver.phone}</p>
+                          )}
+                        </div>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-muted-foreground hover:text-foreground"
+                          onClick={(e) => handleAssignClick(v, e)}
+                        >
+                          <UserPlus className="h-4 w-4 mr-1" />
+                          Assign
+                        </Button>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-1">
+                        {getStatusBadge(v)}
+                        <div className="flex items-center gap-2">
+                          {getIgnitionIndicator(v.ignition)}
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-1">
+                        {getBatteryIcon(v.battery)}
+                        {v.isOverspeeding && (
+                          <div className="flex items-center gap-1 text-orange-500">
+                            <AlertTriangle className="h-3 w-3" />
+                            <span className="text-xs">Overspeed</span>
+                          </div>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <Gauge className="h-4 w-4 text-muted-foreground" />
+                        <span>{v.speed} km/h</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>{formatMileage(v.mileage)}</TableCell>
+                    <TableCell className="max-w-[200px] truncate">{v.location}</TableCell>
+                    <TableCell>
+                      <Button 
+                        variant="ghost" 
+                        size="icon"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRowClick(v);
+                        }}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </>
       )}
 
       <AssignDriverDialog

@@ -115,8 +115,19 @@ export function RecentActivityFeed() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-center py-8 text-muted-foreground">
-            Loading live events...
+          <div className="space-y-3">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="flex items-start gap-3 pb-3 border-b border-border last:border-0">
+                <div className="h-7 w-7 rounded-full bg-muted animate-pulse" />
+                <div className="flex-1 space-y-2">
+                  <div className="flex justify-between">
+                    <div className="h-4 w-24 bg-muted animate-pulse rounded" />
+                    <div className="h-3 w-16 bg-muted animate-pulse rounded" />
+                  </div>
+                  <div className="h-3 w-32 bg-muted animate-pulse rounded" />
+                </div>
+              </div>
+            ))}
           </div>
         </CardContent>
       </Card>
@@ -144,10 +155,11 @@ export function RecentActivityFeed() {
                 No recent activity recorded.
               </p>
             ) : (
-              activities.map((item) => (
+              activities.map((item, index) => (
                 <div
                   key={item.id}
-                  className="flex items-start gap-3 border-b border-border pb-3 last:border-0 last:pb-0"
+                  className="flex items-start gap-3 border-b border-border pb-3 last:border-0 last:pb-0 animate-in slide-in-from-left-2 fade-in duration-300"
+                  style={{ animationDelay: `${index * 50}ms` }}
                 >
                   <div className="mt-0.5 flex h-7 w-7 items-center justify-center rounded-full bg-muted">
                     {getActivityIcon(item.type)}
