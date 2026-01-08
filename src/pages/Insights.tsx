@@ -5,8 +5,10 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/integrations/supabase/client";
-import { RefreshCw, Brain, TrendingUp, AlertTriangle, Battery, Wifi } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { RefreshCw, Brain, TrendingUp, AlertTriangle, Battery, Wifi, Settings } from "lucide-react";
 import { format, subDays } from "date-fns";
+import { BillingConfigCard } from "@/components/admin/BillingConfigCard";
 import {
   LineChart,
   Line,
@@ -31,6 +33,7 @@ interface InsightRecord {
 }
 
 const Insights = () => {
+  const { isAdmin } = useAuth();
   const [insights, setInsights] = useState<InsightRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -279,7 +282,42 @@ const Insights = () => {
           </Card>
         </div>
 
-        {/* Insight History */}
+        {/* Admin Billing Configuration */}
+        {isAdmin && (
+          <div className="grid gap-6 lg:grid-cols-2">
+            <BillingConfigCard />
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Settings className="h-5 w-5" />
+                  Billing Overview
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4 text-sm">
+                  <div className="p-3 rounded-lg bg-muted/50">
+                    <p className="font-medium">Midnight Billing Cron</p>
+                    <p className="text-muted-foreground text-xs mt-1">
+                      The billing system runs at midnight (WAT) daily to debit wallets for vehicles with LLM enabled.
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-muted/50">
+                    <p className="font-medium">Paystack Integration</p>
+                    <p className="text-muted-foreground text-xs mt-1">
+                      Users can top up their wallets via Paystack. Webhooks automatically credit accounts.
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-muted/50">
+                    <p className="font-medium">Auto-Disable</p>
+                    <p className="text-muted-foreground text-xs mt-1">
+                      LLM is automatically disabled when wallet balance goes negative, and re-enabled after top-up.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Insight History</CardTitle>
