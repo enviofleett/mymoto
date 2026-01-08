@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
@@ -8,7 +8,7 @@ import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
-import { format, subDays, startOfDay, endOfDay } from "date-fns";
+import { format, subDays, startOfDay, endOfDay, differenceInSeconds } from "date-fns";
 import { 
   Play, 
   Pause, 
@@ -18,7 +18,10 @@ import {
   Clock,
   MapPin,
   Navigation,
-  X
+  X,
+  Route,
+  Timer,
+  StopCircle
 } from "lucide-react";
 
 // Fix for default Leaflet marker icons in React
@@ -191,6 +194,73 @@ export function TripPlayback({ deviceId, deviceName, onClose }: TripPlaybackProp
     };
   }, [isPlaying, positions.length, playbackSpeed]);
 
+  // Calculate trip summary metrics
+  const tripSummary = useMemo(() => {
+    if (positions.length < 2) {
+      return { distance: 0, avgSpeed: 0, stops: 0, duration: 0 };
+    }
+
+    let totalDistance = 0;
+    let totalSpeed = 0;
+    let speedCount = 0;
+    let stops = 0;
+    let wasMoving = false;
+
+    for (let i = 0; i < positions.length; i++) {
+      const pos = positions[i];
+      
+      // Calculate distance using Haversine formula
+      if (i > 0) {
+        const prev = positions[i - 1];
+        const R = 6371; // Earth's radius in km
+        const dLat = ((pos.latitude - prev.latitude) * Math.PI) / 180;
+        const dLon = ((pos.longitude - prev.longitude) * Math.PI) / 180;
+        const a =
+          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos((prev.latitude * Math.PI) / 180) *
+            Math.cos((pos.latitude * Math.PI) / 180) *
+            Math.sin(dLon / 2) *
+            Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        totalDistance += R * c;
+      }
+
+      // Track speed for average
+      if (pos.speed !== null && pos.speed !== undefined) {
+        totalSpeed += pos.speed;
+        speedCount++;
+      }
+
+      // Count stops (speed drops to 0 after moving)
+      const isMoving = (pos.speed || 0) > 2; // Consider moving if speed > 2 km/h
+      if (wasMoving && !isMoving) {
+        stops++;
+      }
+      wasMoving = isMoving;
+    }
+
+    const startTime = new Date(positions[0].gps_time);
+    const endTime = new Date(positions[positions.length - 1].gps_time);
+    const durationSeconds = differenceInSeconds(endTime, startTime);
+
+    return {
+      distance: totalDistance,
+      avgSpeed: speedCount > 0 ? totalSpeed / speedCount : 0,
+      stops,
+      duration: durationSeconds,
+    };
+  }, [positions]);
+
+  // Format duration to human readable
+  const formatDuration = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    }
+    return `${minutes}m`;
+  };
+
   const currentPosition = positions[currentIndex];
   const traveledPath = positions.slice(0, currentIndex + 1);
   const remainingPath = positions.slice(currentIndex);
@@ -255,10 +325,54 @@ export function TripPlayback({ deviceId, deviceName, onClose }: TripPlaybackProp
             </SelectContent>
           </Select>
           
-          <Badge variant="outline" className="text-xs">
-            {positions.length} points
-          </Badge>
+          {positions.length > 0 && (
+            <Badge variant="outline" className="text-xs">
+              {positions.length} points
+            </Badge>
+          )}
         </div>
+
+        {/* Trip Summary Card */}
+        {positions.length >= 2 && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+              <div className="p-2 rounded-full bg-blue-500/20">
+                <Route className="h-4 w-4 text-blue-500" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Distance</p>
+                <p className="text-sm font-semibold">{tripSummary.distance.toFixed(1)} km</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+              <div className="p-2 rounded-full bg-green-500/20">
+                <Gauge className="h-4 w-4 text-green-500" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Avg Speed</p>
+                <p className="text-sm font-semibold">{tripSummary.avgSpeed.toFixed(0)} km/h</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-orange-500/10 border border-orange-500/20">
+              <div className="p-2 rounded-full bg-orange-500/20">
+                <StopCircle className="h-4 w-4 text-orange-500" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Stops</p>
+                <p className="text-sm font-semibold">{tripSummary.stops}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
+              <div className="p-2 rounded-full bg-purple-500/20">
+                <Timer className="h-4 w-4 text-purple-500" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Duration</p>
+                <p className="text-sm font-semibold">{formatDuration(tripSummary.duration)}</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Map */}
         <div className="rounded-lg border border-border overflow-hidden h-[350px]">
