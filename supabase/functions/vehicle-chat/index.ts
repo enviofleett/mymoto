@@ -15,6 +15,7 @@ serve(async (req) => {
     const { device_id, message, user_id } = await req.json()
     
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY')
+    const MAPBOX_ACCESS_TOKEN = Deno.env.get('MAPBOX_ACCESS_TOKEN')
     if (!LOVABLE_API_KEY) throw new Error('LOVABLE_API_KEY not configured')
 
     const supabase = createClient(
@@ -84,7 +85,33 @@ serve(async (req) => {
       .order('created_at', { ascending: false })
       .limit(10)
 
-    // 6. Build System Prompt with Rich Context
+    // 6. Reverse Geocode Current Position
+    let currentLocationName = 'Unknown location'
+    const lat = position?.latitude
+    const lon = position?.longitude
+    
+    if (MAPBOX_ACCESS_TOKEN && lat && lon) {
+      try {
+        const geocodeUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lon},${lat}.json?access_token=${MAPBOX_ACCESS_TOKEN}&types=address,poi,place`
+        const geocodeResponse = await fetch(geocodeUrl)
+        
+        if (geocodeResponse.ok) {
+          const geocodeData = await geocodeResponse.json()
+          if (geocodeData.features && geocodeData.features.length > 0) {
+            currentLocationName = geocodeData.features[0].place_name
+          } else {
+            currentLocationName = `${lat.toFixed(5)}, ${lon.toFixed(5)}`
+          }
+        }
+      } catch (geocodeError) {
+        console.error('Geocoding error:', geocodeError)
+        currentLocationName = `${lat.toFixed(5)}, ${lon.toFixed(5)}`
+      }
+    } else if (lat && lon) {
+      currentLocationName = `${lat.toFixed(5)}, ${lon.toFixed(5)}`
+    }
+
+    // 7. Build System Prompt with Rich Context
     const pos = position
     const driver = assignment?.profiles as unknown as { name: string; phone: string | null; license_number: string | null } | null
     const vehicleNickname = llmSettings?.nickname || assignment?.vehicle_alias || vehicle?.device_name || 'Unknown Vehicle'
@@ -119,7 +146,8 @@ CURRENT STATUS:
 - Ignition: ${pos?.ignition_on ? 'ON (engine running)' : 'OFF (parked)'}
 - Speed: ${pos?.speed || 0} km/h ${pos?.is_overspeeding ? '(OVERSPEEDING!)' : ''}
 - Battery: ${pos?.battery_percent ?? 'Unknown'}%
-- Location: ${pos?.latitude?.toFixed(5)}, ${pos?.longitude?.toFixed(5)}
+- Current Location: ${currentLocationName}
+- GPS Coordinates: ${pos?.latitude?.toFixed(5)}, ${pos?.longitude?.toFixed(5)}
 - Total Mileage: ${pos?.total_mileage ? (pos.total_mileage / 1000).toFixed(1) + ' km' : 'Unknown'}
 - Status Text: ${pos?.status_text || 'N/A'}
 - Last GPS Update: ${pos?.gps_time || 'Unknown'}
@@ -138,10 +166,10 @@ BEHAVIOR GUIDELINES:
 - If battery is below 20%, proactively warn about low battery
 - If overspeeding, mention it as a safety concern
 - If offline, explain you may have limited recent data
-- For location questions, describe coordinates or suggest checking the map
+- For location questions, use the Current Location address when available
 - Be proactive about potential issues (low battery, overspeeding, offline status)`
 
-    // 7. Prepare messages for Lovable AI
+    // 8. Prepare messages for Lovable AI
     const messages = [
       { role: 'system', content: systemPrompt },
       ...(chatHistory || []).reverse().map(msg => ({

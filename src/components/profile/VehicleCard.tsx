@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
+import { LocationCell } from "@/components/fleet/LocationCell";
 import { 
   Truck, 
   MapPin, 
@@ -108,7 +109,7 @@ export function VehicleCard({ vehicle, onPlayTrip }: VehicleCardProps) {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Speed & Location */}
+        {/* Speed & Mileage */}
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-1.5 text-muted-foreground">
@@ -129,6 +130,13 @@ export function VehicleCard({ vehicle, onPlayTrip }: VehicleCardProps) {
             </p>
           </div>
         </div>
+
+        {/* Location Address */}
+        {pos?.latitude && pos?.longitude && (
+          <div className="pt-2 border-t border-border">
+            <LocationCell lat={pos.latitude} lon={pos.longitude} />
+          </div>
+        )}
 
         {/* Battery & Ignition */}
         <div className="space-y-2">

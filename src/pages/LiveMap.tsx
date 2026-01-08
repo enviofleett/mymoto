@@ -8,7 +8,8 @@ import MarkerClusterGroup from "react-leaflet-cluster";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { useFleetData, FleetVehicle } from "@/hooks/useFleetData";
-import { Crosshair, Layers, User, Battery } from "lucide-react";
+import { Crosshair, Layers } from "lucide-react";
+import { VehiclePopupContent } from "@/components/fleet/VehiclePopupContent";
 
 // Fix for default Leaflet marker icons in React
 import icon from "leaflet/dist/images/marker-icon.png";
@@ -52,17 +53,6 @@ const LiveMap = () => {
     vehiclesWithLocation.length > 0
       ? [vehiclesWithLocation[0].lat!, vehiclesWithLocation[0].lon!]
       : [9.0820, 8.6753]; // Default to Nigeria center
-
-  const getStatusVariant = (status: FleetVehicle["status"]) => {
-    switch (status) {
-      case "moving":
-        return "default";
-      case "stopped":
-        return "secondary";
-      case "offline":
-        return "outline";
-    }
-  };
 
   const handleRecenter = () => {
     setRecenterTrigger((prev) => prev + 1);
@@ -144,37 +134,7 @@ const LiveMap = () => {
             {vehiclesWithLocation.map((v) => (
               <Marker key={v.id} position={[v.lat!, v.lon!]}>
                 <Popup>
-                  <div className="p-1 min-w-[180px]">
-                    <div className="flex justify-between items-center mb-2 gap-2">
-                      <h3 className="font-bold text-sm text-foreground">{v.name}</h3>
-                      <Badge
-                        variant={getStatusVariant(v.status)}
-                        className="text-[10px] h-5"
-                      >
-                        {v.speed} km/h
-                      </Badge>
-                    </div>
-                    {v.gpsOwner && (
-                      <p className="text-xs text-muted-foreground mb-2">
-                        Owner: {v.gpsOwner}
-                      </p>
-                    )}
-                    <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                      <div className="flex items-center gap-1">
-                        <User className="w-3 h-3" />
-                        {v.driver?.name || "Unassigned"}
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Battery className="w-3 h-3" />
-                        {v.battery !== null ? `${v.battery}%` : "N/A"}
-                      </div>
-                    </div>
-                    {v.isOverspeeding && (
-                      <div className="mt-2 text-xs text-orange-500 font-medium">
-                        ⚠️ Overspeeding
-                      </div>
-                    )}
-                  </div>
+                  <VehiclePopupContent vehicle={v} />
                 </Popup>
               </Marker>
             ))}
