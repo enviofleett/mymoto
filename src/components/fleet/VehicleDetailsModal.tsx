@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { FleetVehicle } from "@/hooks/useFleetData";
+import { usePositionHistory, useAvailableDrivers } from "@/hooks/useVehicleDetails";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { VehicleChat } from "./VehicleChat";
@@ -17,22 +18,6 @@ import {
   Calendar, AlertTriangle, Navigation, Car, UserPlus, UserMinus,
   History, Clock, Building2, MessageSquare, Settings2
 } from "lucide-react";
-
-interface Driver {
-  id: string;
-  name: string;
-  phone: string | null;
-}
-
-interface PositionHistory {
-  id: string;
-  latitude: number;
-  longitude: number;
-  speed: number;
-  battery_percent: number | null;
-  ignition_on: boolean | null;
-  gps_time: string;
-}
 
 interface VehicleDetailsModalProps {
   open: boolean;
@@ -47,60 +32,25 @@ export function VehicleDetailsModal({
   vehicle, 
   onAssignmentChange 
 }: VehicleDetailsModalProps) {
-  const [drivers, setDrivers] = useState<Driver[]>([]);
   const [selectedDriverId, setSelectedDriverId] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [showAssignForm, setShowAssignForm] = useState(false);
-  const [positionHistory, setPositionHistory] = useState<PositionHistory[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
   const { toast } = useToast();
 
+  // Use cached queries - data is often already prefetched from hover
+  const { data: positionHistory = [], isLoading: historyLoading } = usePositionHistory(
+    vehicle?.id || null,
+    open && !!vehicle
+  );
+
+  const { data: drivers = [] } = useAvailableDrivers(
+    open && !vehicle?.driver
+  );
+
   useEffect(() => {
-    if (open && !vehicle?.driver) {
-      fetchAvailableDrivers();
-    }
-    if (open && vehicle) {
-      fetchPositionHistory();
-    }
     setShowAssignForm(false);
     setSelectedDriverId("");
   }, [open, vehicle]);
-
-  const fetchAvailableDrivers = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id, name, phone")
-        .eq("status", "active")
-        .order("name");
-
-      if (error) throw error;
-      setDrivers(data || []);
-    } catch (err) {
-      console.error("Error fetching drivers:", err);
-    }
-  };
-
-  const fetchPositionHistory = async () => {
-    if (!vehicle) return;
-    
-    setHistoryLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from("position_history")
-        .select("id, latitude, longitude, speed, battery_percent, ignition_on, gps_time")
-        .eq("device_id", vehicle.id)
-        .order("gps_time", { ascending: false })
-        .limit(50);
-
-      if (error) throw error;
-      setPositionHistory(data || []);
-    } catch (err) {
-      console.error("Error fetching position history:", err);
-    } finally {
-      setHistoryLoading(false);
-    }
-  };
 
   const handleAssign = async () => {
     if (!vehicle || !selectedDriverId) return;
@@ -360,10 +310,7 @@ export function VehicleDetailsModal({
                 <Button 
                   variant="outline" 
                   className="w-full" 
-                  onClick={() => {
-                    fetchAvailableDrivers();
-                    setShowAssignForm(true);
-                  }}
+                  onClick={() => setShowAssignForm(true)}
                 >
                   <UserPlus className="h-4 w-4 mr-2" />
                   Assign Driver
