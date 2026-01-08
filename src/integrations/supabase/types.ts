@@ -41,6 +41,36 @@ export type Database = {
         }
         Relationships: []
       }
+      billing_config: {
+        Row: {
+          currency: string | null
+          description: string | null
+          id: string
+          key: string
+          updated_at: string | null
+          updated_by: string | null
+          value: number
+        }
+        Insert: {
+          currency?: string | null
+          description?: string | null
+          id?: string
+          key: string
+          updated_at?: string | null
+          updated_by?: string | null
+          value: number
+        }
+        Update: {
+          currency?: string | null
+          description?: string | null
+          id?: string
+          key?: string
+          updated_at?: string | null
+          updated_by?: string | null
+          value?: number
+        }
+        Relationships: []
+      }
       fleet_insights_history: {
         Row: {
           alerts_count: number
@@ -272,6 +302,7 @@ export type Database = {
           created_at: string | null
           device_id: string
           language_preference: string | null
+          last_billing_date: string | null
           llm_enabled: boolean | null
           nickname: string | null
           personality_mode: string | null
@@ -281,6 +312,7 @@ export type Database = {
           created_at?: string | null
           device_id: string
           language_preference?: string | null
+          last_billing_date?: string | null
           llm_enabled?: boolean | null
           nickname?: string | null
           personality_mode?: string | null
@@ -290,6 +322,7 @@ export type Database = {
           created_at?: string | null
           device_id?: string
           language_preference?: string | null
+          last_billing_date?: string | null
           llm_enabled?: boolean | null
           nickname?: string | null
           personality_mode?: string | null
@@ -392,6 +425,74 @@ export type Database = {
           group_name?: string | null
           last_synced_at?: string | null
           sim_number?: string | null
+        }
+        Relationships: []
+      }
+      wallet_transactions: {
+        Row: {
+          amount: number
+          created_at: string | null
+          description: string | null
+          id: string
+          metadata: Json | null
+          reference: string | null
+          type: string
+          wallet_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          metadata?: Json | null
+          reference?: string | null
+          type: string
+          wallet_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          metadata?: Json | null
+          reference?: string | null
+          type?: string
+          wallet_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wallet_transactions_wallet_id_fkey"
+            columns: ["wallet_id"]
+            isOneToOne: false
+            referencedRelation: "wallets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      wallets: {
+        Row: {
+          balance: number | null
+          created_at: string | null
+          currency: string | null
+          id: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          balance?: number | null
+          created_at?: string | null
+          currency?: string | null
+          id?: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          balance?: number | null
+          created_at?: string | null
+          currency?: string | null
+          id?: string
+          updated_at?: string | null
+          user_id?: string
         }
         Relationships: []
       }
