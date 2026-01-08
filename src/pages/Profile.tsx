@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { DashboardLayout } from "@/components/layouts/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -24,13 +25,15 @@ import {
   Battery,
   TrendingUp,
   History,
-  Bell
+  Bell,
+  Wallet
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { VehicleCard } from "@/components/profile/VehicleCard";
 import { TripHistoryTable } from "@/components/profile/TripHistoryTable";
 import { AlarmReport } from "@/components/profile/AlarmReport";
 import { TripPlayback } from "@/components/profile/TripPlayback";
+import { WalletSection } from "@/components/wallet/WalletSection";
 
 interface UserProfile {
   id: string;
@@ -63,10 +66,13 @@ interface AssignedVehicle {
 
 const Profile = () => {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [assignedVehicles, setAssignedVehicles] = useState<AssignedVehicle[]>([]);
   const [loading, setLoading] = useState(true);
   const [playbackVehicle, setPlaybackVehicle] = useState<{ deviceId: string; deviceName: string } | null>(null);
+  
+  const defaultTab = searchParams.get("tab") || "vehicles";
 
   useEffect(() => {
     if (user) {
@@ -355,11 +361,15 @@ const Profile = () => {
         </div>
 
         {/* Tabbed Content */}
-        <Tabs defaultValue="vehicles" className="space-y-4">
+        <Tabs defaultValue={defaultTab} className="space-y-4">
           <TabsList className="bg-muted/50">
             <TabsTrigger value="vehicles" className="data-[state=active]:bg-background">
               <Truck className="h-4 w-4 mr-2" />
               My Vehicles
+            </TabsTrigger>
+            <TabsTrigger value="wallet" className="data-[state=active]:bg-background">
+              <Wallet className="h-4 w-4 mr-2" />
+              Wallet
             </TabsTrigger>
             <TabsTrigger value="trips" className="data-[state=active]:bg-background">
               <History className="h-4 w-4 mr-2" />
@@ -403,6 +413,11 @@ const Profile = () => {
                 </div>
               </div>
             )}
+          </TabsContent>
+
+          {/* Wallet Tab */}
+          <TabsContent value="wallet" className="mt-4">
+            <WalletSection />
           </TabsContent>
 
           {/* Trips Tab */}

@@ -11,3 +11,9 @@ verify_jwt = false
 
 [functions.fleet-insights]
 verify_jwt = false
+
+[functions.billing-cron]
+verify_jwt = false
+
+[functions.paystack]
+verify_jwt = false
