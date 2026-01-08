@@ -13,6 +13,7 @@ import Insights from "./pages/Insights";
 import Profile from "./pages/Profile";
 import AdminWallets from "./pages/AdminWallets";
 import NotFound from "./pages/NotFound";
+import InstallApp from "./pages/InstallApp";
 
 // Owner PWA pages
 import OwnerChat from "./pages/owner/OwnerChat";
@@ -21,7 +22,6 @@ import OwnerVehicles from "./pages/owner/OwnerVehicles";
 import OwnerVehicleProfile from "./pages/owner/OwnerVehicleProfile";
 import OwnerWallet from "./pages/owner/OwnerWallet";
 import OwnerProfile from "./pages/owner/OwnerProfile";
-
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -33,6 +33,7 @@ const App = () => (
         <AuthProvider>
           <Routes>
             <Route path="/auth" element={<Auth />} />
+            <Route path="/app" element={<InstallApp />} />
             
             {/* Admin Dashboard Routes */}
             <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
