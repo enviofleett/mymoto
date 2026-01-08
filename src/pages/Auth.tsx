@@ -23,14 +23,16 @@ const Auth = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState('login');
   
-  const { signIn, signUp, user, isLoading } = useAuth();
+  const { signIn, signUp, user, isAdmin, isLoading } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
     if (user && !isLoading) {
-      navigate('/');
+      // Role-based redirect: admins go to dashboard, owners go to chat
+      const targetPath = isAdmin ? '/' : '/owner';
+      navigate(targetPath);
     }
-  }, [user, isLoading, navigate]);
+  }, [user, isAdmin, isLoading, navigate]);
 
   const validateInput = () => {
     const result = authSchema.safeParse({ email, password });
