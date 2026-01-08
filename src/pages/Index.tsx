@@ -13,11 +13,17 @@ const Index = () => {
   const { isAdmin } = useAuth();
   const { vehicles, metrics, loading, error, connectionStatus, refetch } = useFleetData();
 
+  // Calculate vehicles with position data vs total registered
+  const vehiclesWithData = vehicles.length;
+  const noDataCount = metrics.totalVehicles - vehiclesWithData;
+  
   const displayMetrics = [
     {
       title: "Online Vehicles",
       value: metrics.onlineCount,
-      change: loading ? "Loading..." : `${metrics.totalVehicles} total`,
+      change: loading ? "Loading..." : noDataCount > 0 
+        ? `${vehiclesWithData} tracked / ${metrics.totalVehicles} registered` 
+        : `${metrics.totalVehicles} total`,
       changeType: metrics.onlineCount > 0 ? "positive" as const : "neutral" as const,
       icon: Wifi,
     },
