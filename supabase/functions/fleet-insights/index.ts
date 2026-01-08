@@ -20,88 +20,49 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    console.log('Fetching fleet data for insights...')
+    console.log('Fetching fleet stats via RPC...')
 
-    // 1. Fetch all vehicles with current positions
-    const { data: vehicles } = await supabase
-      .from('vehicles')
-      .select(`
-        device_id, device_name, gps_owner
-      `)
+    // Use the database RPC function for aggregated stats - much faster than fetching all rows
+    const { data: stats, error: rpcError } = await supabase.rpc('get_fleet_stats')
+    
+    if (rpcError) {
+      console.error('RPC error:', rpcError)
+      throw new Error('Failed to fetch fleet stats')
+    }
 
-    // 2. Fetch all current positions
-    const { data: positions } = await supabase
-      .from('vehicle_positions')
-      .select('*')
+    console.log('Fleet stats from RPC:', stats)
 
-    // 3. Fetch driver assignments
-    const { data: assignments } = await supabase
-      .from('vehicle_assignments')
-      .select('device_id, profile_id, vehicle_alias')
-
-    // 4. Get recent position history for trend analysis (last hour)
+    // Get recent position history count for trend context
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
-    const { data: recentHistory } = await supabase
+    const { count: historyCount } = await supabase
       .from('position_history')
-      .select('device_id, speed, battery_percent, ignition_on, gps_time')
+      .select('id', { count: 'exact', head: true })
       .gte('gps_time', oneHourAgo)
-      .order('gps_time', { ascending: false })
 
-    // 5. Aggregate fleet statistics
-    const totalVehicles = vehicles?.length || 0
-    const onlineVehicles = positions?.filter(p => p.is_online)?.length || 0
-    const offlineVehicles = totalVehicles - onlineVehicles
-    const movingVehicles = positions?.filter(p => p.speed && p.speed > 0)?.length || 0
-    const lowBatteryVehicles = positions?.filter(p => p.battery_percent !== null && p.battery_percent < 20) || []
-    const overspeedingVehicles = positions?.filter(p => p.is_overspeeding) || []
-    const unassignedVehicles = totalVehicles - (assignments?.filter(a => a.profile_id)?.length || 0)
+    // Build low battery details string
+    const lowBatteryDetails = stats.low_battery_details?.length > 0
+      ? ` - ${stats.low_battery_details.map((v: any) => `${v.name}: ${v.battery}%`).join(', ')}`
+      : ''
 
-    // Calculate average speed for moving vehicles
-    const movingSpeeds = positions?.filter(p => p.speed && p.speed > 0).map(p => p.speed) || []
-    const avgSpeed = movingSpeeds.length > 0 
-      ? (movingSpeeds.reduce((a, b) => a + b, 0) / movingSpeeds.length).toFixed(1) 
-      : 0
+    // Build overspeeding details string
+    const overspeedDetails = stats.overspeeding_details?.length > 0
+      ? ` - ${stats.overspeeding_details.map((v: any) => `${v.name}: ${v.speed}km/h`).join(', ')}`
+      : ''
 
-    // Calculate average battery
-    const batteries = positions?.filter(p => p.battery_percent !== null).map(p => p.battery_percent!) || []
-    const avgBattery = batteries.length > 0 
-      ? Math.round(batteries.reduce((a, b) => a + b, 0) / batteries.length) 
-      : null
-
-    // Get vehicles with low battery details
-    const lowBatteryDetails = lowBatteryVehicles.map(p => {
-      const vehicle = vehicles?.find(v => v.device_id === p.device_id)
-      const assignment = assignments?.find(a => a.device_id === p.device_id)
-      return {
-        name: assignment?.vehicle_alias || vehicle?.device_name || p.device_id,
-        battery: p.battery_percent
-      }
-    })
-
-    // Get overspeeding details
-    const overspeedDetails = overspeedingVehicles.map(p => {
-      const vehicle = vehicles?.find(v => v.device_id === p.device_id)
-      const assignment = assignments?.find(a => a.device_id === p.device_id)
-      return {
-        name: assignment?.vehicle_alias || vehicle?.device_name || p.device_id,
-        speed: p.speed
-      }
-    })
-
-    // Build system prompt with fleet data
+    // Build system prompt with fleet data from RPC
     const systemPrompt = `You are a fleet health analyst AI. Generate a brief, actionable insight about the fleet's current status.
 Be concise (2-3 sentences max), professional, and highlight the most important issue or positive trend.
 
 CURRENT FLEET STATUS:
-- Total Vehicles: ${totalVehicles}
-- Online: ${onlineVehicles} (${offlineVehicles} offline)
-- Currently Moving: ${movingVehicles}
-- Average Speed (moving): ${avgSpeed} km/h
-- Average Battery: ${avgBattery !== null ? avgBattery + '%' : 'N/A'}
-- Low Battery Vehicles (< 20%): ${lowBatteryVehicles.length}${lowBatteryDetails.length > 0 ? ` - ${lowBatteryDetails.map(v => `${v.name}: ${v.battery}%`).join(', ')}` : ''}
-- Overspeeding Alerts: ${overspeedingVehicles.length}${overspeedDetails.length > 0 ? ` - ${overspeedDetails.map(v => `${v.name}: ${v.speed}km/h`).join(', ')}` : ''}
-- Unassigned Vehicles: ${unassignedVehicles}
-- Position updates in last hour: ${recentHistory?.length || 0}
+- Total Vehicles: ${stats.total}
+- Online: ${stats.online} (${stats.offline} offline)
+- Currently Moving: ${stats.moving}
+- Average Speed (moving): ${stats.avg_speed} km/h
+- Average Battery: ${stats.avg_battery}%
+- Low Battery Vehicles (< 20%): ${stats.low_battery}${lowBatteryDetails}
+- Overspeeding Alerts: ${stats.overspeeding}${overspeedDetails}
+- Unassigned Vehicles: ${stats.unassigned}
+- Position updates in last hour: ${historyCount || 0}
 
 PRIORITY RULES:
 1. If there are overspeeding vehicles, mention it as a safety concern first
@@ -158,11 +119,11 @@ Generate a single insight paragraph. Start with an emoji that reflects the overa
       .from('fleet_insights_history')
       .insert({
         content: insight,
-        vehicles_analyzed: totalVehicles,
-        alerts_count: lowBatteryVehicles.length + overspeedingVehicles.length,
-        overspeeding_count: overspeedingVehicles.length,
-        low_battery_count: lowBatteryVehicles.length,
-        offline_count: offlineVehicles
+        vehicles_analyzed: stats.total,
+        alerts_count: stats.low_battery + stats.overspeeding,
+        overspeeding_count: stats.overspeeding,
+        low_battery_count: stats.low_battery,
+        offline_count: stats.offline
       })
 
     if (insertError) {
@@ -172,12 +133,12 @@ Generate a single insight paragraph. Start with an emoji that reflects the overa
     return new Response(JSON.stringify({ 
       insight,
       stats: {
-        total: totalVehicles,
-        online: onlineVehicles,
-        moving: movingVehicles,
-        lowBattery: lowBatteryVehicles.length,
-        overspeeding: overspeedingVehicles.length,
-        unassigned: unassignedVehicles
+        total: stats.total,
+        online: stats.online,
+        moving: stats.moving,
+        lowBattery: stats.low_battery,
+        overspeeding: stats.overspeeding,
+        unassigned: stats.unassigned
       }
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
