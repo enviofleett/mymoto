@@ -10,6 +10,7 @@ import {
   LogOut,
   Brain,
   UserCircle,
+  Wallet,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import {
@@ -29,6 +30,10 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 
+const adminItems = [
+  { title: "Wallet Admin", url: "/admin/wallets", icon: Wallet },
+];
+
 const mainItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Vehicles", url: "/vehicles", icon: Truck },
@@ -46,7 +51,7 @@ const secondaryItems = [
 
 export function AppSidebar() {
   const { state } = useSidebar();
-  const { signOut } = useAuth();
+  const { signOut, isAdmin } = useAuth();
   const isCollapsed = state === "collapsed";
 
   return (
@@ -114,6 +119,32 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {isAdmin && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="text-muted-foreground">
+              Admin
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {adminItems.map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton asChild tooltip={item.title}>
+                      <NavLink
+                        to={item.url}
+                        className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                        activeClassName="bg-sidebar-accent text-primary font-medium"
+                      >
+                        <item.icon className="h-5 w-5" />
+                        <span>{item.title}</span>
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
 
       <SidebarFooter className="p-4 space-y-2">
