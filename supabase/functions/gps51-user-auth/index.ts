@@ -43,17 +43,21 @@ Deno.serve(async (req) => {
     const passwordHash = md5(password);
     console.log(`[gps51-user-auth] Password hashed`);
 
-    // Step 2: Verify credentials with GPS51 API
-    const loginUrl = `${proxyUrl}?action=login`;
+    // Step 2: Verify credentials with GPS51 API via proxy
     const loginPayload = {
-      type: 'USER',
-      from: 'web',
-      username: username,
-      password: passwordHash
+      targetUrl: 'https://api.gps51.com/openapi?action=login',
+      method: 'POST',
+      data: {
+        type: 'USER',
+        from: 'web',
+        username: username,
+        password: passwordHash,
+        browser: 'Chrome/120.0.0.0'
+      }
     };
 
     console.log(`[gps51-user-auth] Calling GPS51 login API`);
-    const loginResponse = await fetch(loginUrl, {
+    const loginResponse = await fetch(proxyUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(loginPayload)
@@ -186,13 +190,16 @@ Deno.serve(async (req) => {
     }
 
     // Step 6: Fetch user's vehicles from GPS51
-    const vehiclesUrl = `${proxyUrl}?action=querymonitorlist&token=${gps51Token}&serverid=${serverId}`;
     const vehiclesPayload = {
-      username: username
+      targetUrl: `https://api.gps51.com/openapi?action=querymonitorlist&token=${gps51Token}&serverid=${serverId}`,
+      method: 'POST',
+      data: {
+        username: username
+      }
     };
 
     console.log(`[gps51-user-auth] Fetching vehicles for user`);
-    const vehiclesResponse = await fetch(vehiclesUrl, {
+    const vehiclesResponse = await fetch(proxyUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(vehiclesPayload)
