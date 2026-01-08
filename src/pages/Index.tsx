@@ -1,17 +1,18 @@
-import { Users, MapPin, Wifi, BatteryWarning } from "lucide-react";
+import { Wifi, MapPin, BatteryWarning, Truck, RefreshCw, UserPlus, Plus } from "lucide-react";
 import { DashboardLayout } from "@/components/layouts/DashboardLayout";
 import { MetricCard } from "@/components/fleet/MetricCard";
-import { VehicleTable } from "@/components/fleet/VehicleTable";
-import { FleetMap } from "@/components/fleet/FleetMap";
-import { FleetInsights } from "@/components/fleet/FleetInsights";
 import { RecentActivityFeed } from "@/components/fleet/RecentActivityFeed";
 import { AdminGpsStatus } from "@/components/fleet/AdminGpsStatus";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/contexts/AuthContext";
 import { useFleetData } from "@/hooks/useFleetData";
+import { useNavigate } from "react-router-dom";
 
 const Index = () => {
   const { isAdmin } = useAuth();
   const { vehicles, metrics, loading, error, connectionStatus, refetch } = useFleetData();
+  const navigate = useNavigate();
 
   // Calculate vehicles with position data vs total registered
   const vehiclesWithData = vehicles.length;
@@ -35,13 +36,6 @@ const Index = () => {
       icon: MapPin,
     },
     {
-      title: "Assigned Drivers",
-      value: metrics.assignedDrivers,
-      change: loading ? "Loading..." : `${metrics.totalVehicles - metrics.assignedDrivers} unassigned`,
-      changeType: "neutral" as const,
-      icon: Users,
-    },
-    {
       title: "Low Battery",
       value: metrics.lowBatteryCount,
       change: loading ? "Loading..." : metrics.lowBatteryCount > 0 ? "Needs attention" : "All healthy",
@@ -49,6 +43,10 @@ const Index = () => {
       icon: BatteryWarning,
     },
   ];
+
+  const handleRefreshGPS = () => {
+    refetch();
+  };
 
   return (
     <DashboardLayout connectionStatus={connectionStatus}>
@@ -72,42 +70,53 @@ const Index = () => {
         )}
 
         {/* Metrics Grid */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
           {displayMetrics.map((metric) => (
             <MetricCard key={metric.title} {...metric} />
           ))}
         </div>
 
-        {/* AI Fleet Insights */}
-        <FleetInsights />
-
-        {/* Fleet Map */}
-        <div className="space-y-4">
-          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
-            <MapPin className="h-5 w-5 text-primary" />
-            Live Fleet Map
-          </h2>
-          <FleetMap vehicles={vehicles} loading={loading} />
-        </div>
-
-        {/* Main Content Grid */}
-        <div className="grid gap-6 lg:grid-cols-3">
-          {/* Vehicles Table */}
-          <div className="lg:col-span-2 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-foreground">Vehicle Status</h2>
-              <a href="/vehicles" className="text-sm text-primary hover:underline">
-                View Full Fleet →
-              </a>
+        {/* Quick Actions */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Truck className="h-5 w-5 text-primary" />
+              Quick Actions
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-3">
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => navigate("/fleet")}
+              >
+                <Plus className="h-4 w-4" />
+                Add Vehicle
+              </Button>
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={handleRefreshGPS}
+                disabled={loading}
+              >
+                <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                Refresh GPS
+              </Button>
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => navigate("/fleet?tab=drivers")}
+              >
+                <UserPlus className="h-4 w-4" />
+                Add Driver
+              </Button>
             </div>
-            <VehicleTable vehicles={vehicles} loading={loading} onAssignmentChange={refetch} />
-          </div>
+          </CardContent>
+        </Card>
 
-          {/* Real Activity Feed */}
-          <div className="lg:col-span-1">
-            <RecentActivityFeed />
-          </div>
-        </div>
+        {/* Activity Feed */}
+        <RecentActivityFeed />
       </div>
     </DashboardLayout>
   );

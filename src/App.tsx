@@ -7,7 +7,8 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
-import Drivers from "./pages/Drivers";
+import Fleet from "./pages/Fleet";
+import LiveMap from "./pages/LiveMap";
 import Insights from "./pages/Insights";
 import Profile from "./pages/Profile";
 import AdminWallets from "./pages/AdminWallets";
@@ -33,10 +34,18 @@ const App = () => (
               }
             />
             <Route
-              path="/drivers"
+              path="/fleet"
               element={
                 <ProtectedRoute>
-                  <Drivers />
+                  <Fleet />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/map"
+              element={
+                <ProtectedRoute>
+                  <LiveMap />
                 </ProtectedRoute>
               }
             />
@@ -45,6 +54,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <Insights />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/settings"
+              element={
+                <ProtectedRoute>
+                  <Profile />
                 </ProtectedRoute>
               }
             />
