@@ -10,6 +10,7 @@ import Auth from "./pages/Auth";
 import Drivers from "./pages/Drivers";
 import Insights from "./pages/Insights";
 import Profile from "./pages/Profile";
+import AdminWallets from "./pages/AdminWallets";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -52,6 +53,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <Profile />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/wallets"
+              element={
+                <ProtectedRoute>
+                  <AdminWallets />
                 </ProtectedRoute>
               }
             />
