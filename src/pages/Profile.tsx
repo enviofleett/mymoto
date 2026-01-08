@@ -30,6 +30,7 @@ import { formatDistanceToNow, format } from "date-fns";
 import { VehicleCard } from "@/components/profile/VehicleCard";
 import { TripHistoryTable } from "@/components/profile/TripHistoryTable";
 import { AlarmReport } from "@/components/profile/AlarmReport";
+import { TripPlayback } from "@/components/profile/TripPlayback";
 
 interface UserProfile {
   id: string;
@@ -65,6 +66,7 @@ const Profile = () => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [assignedVehicles, setAssignedVehicles] = useState<AssignedVehicle[]>([]);
   const [loading, setLoading] = useState(true);
+  const [playbackVehicle, setPlaybackVehicle] = useState<{ deviceId: string; deviceName: string } | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -382,10 +384,23 @@ const Profile = () => {
                 </CardContent>
               </Card>
             ) : (
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {assignedVehicles.map((vehicle) => (
-                  <VehicleCard key={vehicle.device_id} vehicle={vehicle} />
-                ))}
+              <div className="space-y-4">
+                {playbackVehicle && (
+                  <TripPlayback
+                    deviceId={playbackVehicle.deviceId}
+                    deviceName={playbackVehicle.deviceName}
+                    onClose={() => setPlaybackVehicle(null)}
+                  />
+                )}
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {assignedVehicles.map((vehicle) => (
+                    <VehicleCard 
+                      key={vehicle.device_id} 
+                      vehicle={vehicle} 
+                      onPlayTrip={(deviceId, deviceName) => setPlaybackVehicle({ deviceId, deviceName })}
+                    />
+                  ))}
+                </div>
               </div>
             )}
           </TabsContent>
