@@ -14,6 +14,14 @@ import Profile from "./pages/Profile";
 import AdminWallets from "./pages/AdminWallets";
 import NotFound from "./pages/NotFound";
 
+// Owner PWA pages
+import OwnerChat from "./pages/owner/OwnerChat";
+import OwnerChatDetail from "./pages/owner/OwnerChatDetail";
+import OwnerVehicles from "./pages/owner/OwnerVehicles";
+import OwnerVehicleProfile from "./pages/owner/OwnerVehicleProfile";
+import OwnerWallet from "./pages/owner/OwnerWallet";
+import OwnerProfile from "./pages/owner/OwnerProfile";
+
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -25,63 +33,24 @@ const App = () => (
         <AuthProvider>
           <Routes>
             <Route path="/auth" element={<Auth />} />
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute>
-                  <Index />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/fleet"
-              element={
-                <ProtectedRoute>
-                  <Fleet />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/map"
-              element={
-                <ProtectedRoute>
-                  <LiveMap />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/insights"
-              element={
-                <ProtectedRoute>
-                  <Insights />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/settings"
-              element={
-                <ProtectedRoute>
-                  <Profile />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/profile"
-              element={
-                <ProtectedRoute>
-                  <Profile />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/admin/wallets"
-              element={
-                <ProtectedRoute>
-                  <AdminWallets />
-                </ProtectedRoute>
-              }
-            />
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+            
+            {/* Admin Dashboard Routes */}
+            <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+            <Route path="/fleet" element={<ProtectedRoute><Fleet /></ProtectedRoute>} />
+            <Route path="/map" element={<ProtectedRoute><LiveMap /></ProtectedRoute>} />
+            <Route path="/insights" element={<ProtectedRoute><Insights /></ProtectedRoute>} />
+            <Route path="/settings" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+            <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+            <Route path="/admin/wallets" element={<ProtectedRoute><AdminWallets /></ProtectedRoute>} />
+            
+            {/* Owner PWA Routes */}
+            <Route path="/owner" element={<ProtectedRoute><OwnerChat /></ProtectedRoute>} />
+            <Route path="/owner/chat/:deviceId" element={<ProtectedRoute><OwnerChatDetail /></ProtectedRoute>} />
+            <Route path="/owner/vehicles" element={<ProtectedRoute><OwnerVehicles /></ProtectedRoute>} />
+            <Route path="/owner/vehicle/:deviceId" element={<ProtectedRoute><OwnerVehicleProfile /></ProtectedRoute>} />
+            <Route path="/owner/wallet" element={<ProtectedRoute><OwnerWallet /></ProtectedRoute>} />
+            <Route path="/owner/profile" element={<ProtectedRoute><OwnerProfile /></ProtectedRoute>} />
+            
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>
