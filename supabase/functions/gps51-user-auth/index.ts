@@ -1,17 +1,14 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import blueimp_md5 from 'https://esm.sh/blueimp-md5@2.19.0';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// MD5 hash function using Web Crypto API
-async function md5(text: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(text);
-  const hashBuffer = await crypto.subtle.digest('MD5', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+// MD5 hash function using blueimp-md5 library
+function md5(text: string): string {
+  return blueimp_md5(text);
 }
 
 Deno.serve(async (req) => {
@@ -43,7 +40,7 @@ Deno.serve(async (req) => {
     }
 
     // Step 1: Hash password with MD5
-    const passwordHash = await md5(password);
+    const passwordHash = md5(password);
     console.log(`[gps51-user-auth] Password hashed`);
 
     // Step 2: Verify credentials with GPS51 API
