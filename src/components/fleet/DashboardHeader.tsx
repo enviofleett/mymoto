@@ -46,10 +46,31 @@ export function DashboardHeader({ connectionStatus = 'connecting' }: DashboardHe
       <div className="flex items-center gap-3">
         <Tooltip>
           <TooltipTrigger asChild>
-            <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-secondary">
-              <StatusIcon className={`h-4 w-4 ${config.className}`} />
-              <span className="text-xs text-muted-foreground hidden sm:inline">
-                {connectionStatus === 'connected' ? 'Live' : connectionStatus === 'connecting' ? 'Connecting' : 'Offline'}
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-colors ${
+              connectionStatus === 'connected' 
+                ? 'bg-status-active/10 border-status-active/20' 
+                : connectionStatus === 'connecting'
+                ? 'bg-muted border-border'
+                : 'bg-status-inactive/10 border-status-inactive/20'
+            }`}>
+              {connectionStatus === 'connected' ? (
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-status-active opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-status-active"></span>
+                </span>
+              ) : connectionStatus === 'connecting' ? (
+                <StatusIcon className="h-3 w-3 text-muted-foreground animate-spin" />
+              ) : (
+                <span className="h-2 w-2 rounded-full bg-status-inactive"></span>
+              )}
+              <span className={`text-xs font-medium hidden sm:inline ${
+                connectionStatus === 'connected' 
+                  ? 'text-status-active' 
+                  : connectionStatus === 'connecting'
+                  ? 'text-muted-foreground'
+                  : 'text-status-inactive'
+              }`}>
+                {connectionStatus === 'connected' ? 'Live Stream' : connectionStatus === 'connecting' ? 'Connecting...' : 'Reconnecting...'}
               </span>
             </div>
           </TooltipTrigger>
