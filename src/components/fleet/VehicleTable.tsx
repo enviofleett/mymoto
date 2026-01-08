@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FleetVehicle } from "@/hooks/useFleetData";
+import { usePrefetchVehicleDetails } from "@/hooks/useVehicleDetails";
 import { UserPlus, BatteryLow, BatteryMedium, BatteryFull, Power, AlertTriangle, Gauge, Search, Filter, Eye, Truck, Plus } from "lucide-react";
 import { AssignDriverDialog } from "./AssignDriverDialog";
 import { VehicleDetailsModal } from "./VehicleDetailsModal";
@@ -25,6 +26,16 @@ export function VehicleTable({ vehicles, loading, onAssignmentChange }: VehicleT
   const [selectedVehicle, setSelectedVehicle] = useState<FleetVehicle | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+
+  const { prefetchPositionHistory, prefetchDrivers } = usePrefetchVehicleDetails();
+
+  // Prefetch on row hover - data loads in background before click
+  const handleRowHover = useCallback((vehicle: FleetVehicle) => {
+    prefetchPositionHistory(vehicle.id);
+    if (!vehicle.driver) {
+      prefetchDrivers();
+    }
+  }, [prefetchPositionHistory, prefetchDrivers]);
 
   const handleAssignClick = (vehicle: FleetVehicle, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -247,6 +258,7 @@ export function VehicleTable({ vehicles, loading, onAssignmentChange }: VehicleT
                 key={v.id} 
                 className="bg-card border-border cursor-pointer hover:bg-muted/50 transition-colors"
                 onClick={() => handleRowClick(v)}
+                onMouseEnter={() => handleRowHover(v)}
               >
                 <CardContent className="p-4">
                   <div className="flex justify-between items-start">
@@ -304,6 +316,7 @@ export function VehicleTable({ vehicles, loading, onAssignmentChange }: VehicleT
                     key={v.id} 
                     className="cursor-pointer hover:bg-muted/50"
                     onClick={() => handleRowClick(v)}
+                    onMouseEnter={() => handleRowHover(v)}
                   >
                     <TableCell>
                       <div>
