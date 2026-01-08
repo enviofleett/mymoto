@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Button } from "@/components/ui/button";
 import { 
   Truck, 
   MapPin, 
@@ -12,7 +13,8 @@ import {
   Navigation,
   AlertTriangle,
   Wifi,
-  WifiOff
+  WifiOff,
+  Route
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -39,9 +41,10 @@ interface AssignedVehicle {
 
 interface VehicleCardProps {
   vehicle: AssignedVehicle;
+  onPlayTrip?: (deviceId: string, deviceName: string) => void;
 }
 
-export function VehicleCard({ vehicle }: VehicleCardProps) {
+export function VehicleCard({ vehicle, onPlayTrip }: VehicleCardProps) {
   const pos = vehicle.position;
   const isOnline = pos?.is_online ?? false;
   const isMoving = pos?.speed && pos.speed > 0;
@@ -180,6 +183,19 @@ export function VehicleCard({ vehicle }: VehicleCardProps) {
             <User className="h-3 w-3" />
             <span>Owner: {vehicle.gps_owner}</span>
           </div>
+        )}
+
+        {/* Trip Playback Button */}
+        {onPlayTrip && (
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="w-full mt-2"
+            onClick={() => onPlayTrip(vehicle.device_id, vehicle.vehicle_alias || vehicle.device_name)}
+          >
+            <Route className="h-4 w-4 mr-2" />
+            View Trip Playback
+          </Button>
         )}
       </CardContent>
     </Card>
