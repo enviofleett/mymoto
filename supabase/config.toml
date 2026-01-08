@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.paystack]
 verify_jwt = false
+
+[functions.gps51-user-auth]
+verify_jwt = false
