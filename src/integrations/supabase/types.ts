@@ -267,6 +267,36 @@ export type Database = {
         }
         Relationships: []
       }
+      vehicle_llm_settings: {
+        Row: {
+          created_at: string | null
+          device_id: string
+          language_preference: string | null
+          llm_enabled: boolean | null
+          nickname: string | null
+          personality_mode: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          device_id: string
+          language_preference?: string | null
+          llm_enabled?: boolean | null
+          nickname?: string | null
+          personality_mode?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          device_id?: string
+          language_preference?: string | null
+          llm_enabled?: boolean | null
+          nickname?: string | null
+          personality_mode?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       vehicle_positions: {
         Row: {
           altitude: number | null

@@ -11,10 +11,11 @@ import { FleetVehicle } from "@/hooks/useFleetData";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { VehicleChat } from "./VehicleChat";
+import { VehiclePersonaSettings } from "./VehiclePersonaSettings";
 import { 
   MapPin, Gauge, Battery, Power, User, Phone, 
   Calendar, AlertTriangle, Navigation, Car, UserPlus, UserMinus,
-  History, Clock, Building2, MessageSquare
+  History, Clock, Building2, MessageSquare, Settings2
 } from "lucide-react";
 
 interface Driver {
@@ -196,7 +197,7 @@ export function VehicleDetailsModal({
         </DialogHeader>
 
         <Tabs defaultValue="details" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="details">Details</TabsTrigger>
             <TabsTrigger value="history">
               <History className="h-4 w-4 mr-1" />
@@ -205,6 +206,10 @@ export function VehicleDetailsModal({
             <TabsTrigger value="chat">
               <MessageSquare className="h-4 w-4 mr-1" />
               AI Chat
+            </TabsTrigger>
+            <TabsTrigger value="persona">
+              <Settings2 className="h-4 w-4 mr-1" />
+              Persona
             </TabsTrigger>
           </TabsList>
 
@@ -428,6 +433,10 @@ export function VehicleDetailsModal({
 
           <TabsContent value="chat" className="mt-4">
             <VehicleChat deviceId={vehicle.id} vehicleName={vehicle.name} />
+          </TabsContent>
+
+          <TabsContent value="persona" className="mt-4">
+            <VehiclePersonaSettings deviceId={vehicle.id} vehicleName={vehicle.name} />
           </TabsContent>
         </Tabs>
       </DialogContent>

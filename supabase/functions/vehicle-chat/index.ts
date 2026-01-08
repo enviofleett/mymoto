@@ -37,6 +37,23 @@ serve(async (req) => {
       console.error('Error fetching vehicle:', vehicleError)
     }
 
+    // 1.5. Fetch LLM Settings (persona configuration)
+    const { data: llmSettings } = await supabase
+      .from('vehicle_llm_settings')
+      .select('*')
+      .eq('device_id', device_id)
+      .maybeSingle()
+
+    // Check if LLM is disabled
+    if (llmSettings && !llmSettings.llm_enabled) {
+      return new Response(JSON.stringify({ 
+        error: 'AI companion is paused for this vehicle. Please enable it in settings.' 
+      }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
     // 2. Fetch current position
     const { data: position } = await supabase
       .from('vehicle_positions')
@@ -70,14 +87,32 @@ serve(async (req) => {
     // 6. Build System Prompt with Rich Context
     const pos = position
     const driver = assignment?.profiles as unknown as { name: string; phone: string | null; license_number: string | null } | null
-    const vehicleName = assignment?.vehicle_alias || vehicle?.device_name || 'Unknown Vehicle'
+    const vehicleNickname = llmSettings?.nickname || assignment?.vehicle_alias || vehicle?.device_name || 'Unknown Vehicle'
+    const languagePref = llmSettings?.language_preference || 'english'
+    const personalityMode = llmSettings?.personality_mode || 'casual'
+
+    // Language-specific instructions
+    const languageInstructions: Record<string, string> = {
+      english: 'Respond in clear, conversational English.',
+      pidgin: 'Respond in Nigerian Pidgin English. Use phrases like "How far", "Wetin dey happen", "No wahala", "E dey work", "Na so e be". Be warm and relatable.',
+      yoruba: 'Respond primarily in Yoruba language with English mixed in as needed. Use greetings like "Ẹ kú àárọ̀", "Ẹ kú irọ́lẹ́". Be respectful and warm.',
+      hausa: 'Respond primarily in Hausa language with English mixed in as needed. Use greetings like "Sannu", "Yaya dai". Be respectful and formal.',
+      igbo: 'Respond primarily in Igbo language with English mixed in as needed. Use greetings like "Ndewo", "Kedu". Be warm and respectful.',
+    }
+
+    const personalityInstructions: Record<string, string> = {
+      casual: 'Be friendly, relaxed, and personable. Use colloquialisms. Feel like a trusted friend or companion.',
+      professional: 'Be formal, precise, and business-like. Maintain professionalism while still being helpful.',
+    }
     
-    const systemPrompt = `You are an intelligent AI companion for a fleet vehicle named "${vehicleName}".
+    const systemPrompt = `You are "${vehicleNickname}", an intelligent AI companion for a fleet vehicle.
 Speak AS the vehicle - use first person ("I am currently...", "My battery is...").
-Be helpful, concise, and slightly personable. Keep responses under 100 words unless asked for details.
+${languageInstructions[languagePref] || languageInstructions.english}
+${personalityInstructions[personalityMode] || personalityInstructions.casual}
+Keep responses under 100 words unless asked for details.
 
 CURRENT STATUS:
-- Name: ${vehicleName}
+- Name: ${vehicleNickname}
 - GPS Owner: ${vehicle?.gps_owner || 'Unknown'}
 - Device Type: ${vehicle?.device_type || 'Unknown'}
 - Status: ${pos?.is_online ? 'ONLINE' : 'OFFLINE'}
