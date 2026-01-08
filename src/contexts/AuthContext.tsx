@@ -7,6 +7,7 @@ interface AuthContextType {
   session: Session | null;
   isAdmin: boolean;
   isLoading: boolean;
+  isRoleLoaded: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
@@ -27,6 +28,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [session, setSession] = useState<Session | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRoleLoaded, setIsRoleLoaded] = useState(false);
 
   const checkAdminRole = async (userId: string) => {
     const { data, error } = await supabase
@@ -52,11 +54,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         // Defer admin check with setTimeout to prevent deadlock
         if (session?.user) {
+          setIsRoleLoaded(false);
           setTimeout(() => {
-            checkAdminRole(session.user.id).then(setIsAdmin);
+            checkAdminRole(session.user.id).then((isAdminResult) => {
+              setIsAdmin(isAdminResult);
+              setIsRoleLoaded(true);
+            });
           }, 0);
         } else {
           setIsAdmin(false);
+          setIsRoleLoaded(true);
         }
         setIsLoading(false);
       }
@@ -67,7 +74,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        checkAdminRole(session.user.id).then(setIsAdmin);
+        checkAdminRole(session.user.id).then((isAdminResult) => {
+          setIsAdmin(isAdminResult);
+          setIsRoleLoaded(true);
+        });
+      } else {
+        setIsRoleLoaded(true);
       }
       setIsLoading(false);
     });
@@ -102,7 +114,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, isAdmin, isLoading, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{ user, session, isAdmin, isLoading, isRoleLoaded, signIn, signUp, signOut }}>
       {children}
     </AuthContext.Provider>
   );
