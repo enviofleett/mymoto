@@ -49,35 +49,37 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
   const profileId = profile?.id;
   if (!profileId) return [];
 
-  // Fetch assignments with vehicle data
+  // Fetch assignments for this profile
   const { data: assignments, error } = await supabase
     .from("vehicle_assignments")
     .select(`
       device_id,
-      vehicle_alias,
-      vehicles (
-        device_name,
-        device_type
-      ),
-      vehicle_positions (
-        latitude,
-        longitude,
-        speed,
-        battery_percent,
-        ignition_on,
-        is_online,
-        is_overspeeding,
-        gps_time,
-        total_mileage
-      )
+      vehicle_alias
     `)
     .eq("profile_id", profileId);
 
   if (error) throw error;
-  if (!assignments) return [];
+  if (!assignments || assignments.length === 0) return [];
+
+  const deviceIds = assignments.map(a => a.device_id);
+
+  // Fetch vehicle info
+  const { data: vehicles } = await supabase
+    .from("vehicles")
+    .select("device_id, device_name, device_type")
+    .in("device_id", deviceIds);
+
+  // Fetch positions
+  const { data: positions } = await supabase
+    .from("vehicle_positions")
+    .select("device_id, latitude, longitude, speed, battery_percent, ignition_on, is_online, is_overspeeding, gps_time, total_mileage")
+    .in("device_id", deviceIds);
+
+  // Create maps for easy lookup
+  const vehicleMap = new Map(vehicles?.map(v => [v.device_id, v]) || []);
+  const positionMap = new Map(positions?.map(p => [p.device_id, p]) || []);
 
   // Fetch last chat messages for each device
-  const deviceIds = assignments.map(a => a.device_id);
   const { data: chatHistory } = await supabase
     .from("vehicle_chat_history")
     .select("device_id, content, created_at, role")
@@ -105,8 +107,9 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
   // Map LLM settings
   const settingsByDevice = new Map(llmSettings?.map(s => [s.device_id, s]) || []);
 
-  return assignments.map((a: any) => {
-    const pos = a.vehicle_positions;
+  return assignments.map((a) => {
+    const vehicle = vehicleMap.get(a.device_id);
+    const pos = positionMap.get(a.device_id);
     const chat = chatByDevice.get(a.device_id);
     const settings = settingsByDevice.get(a.device_id);
     
@@ -115,10 +118,10 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
 
     return {
       deviceId: a.device_id,
-      name: settings?.nickname || a.vehicle_alias || a.vehicles?.device_name || a.device_id,
+      name: settings?.nickname || a.vehicle_alias || vehicle?.device_name || a.device_id,
       alias: a.vehicle_alias,
-      deviceType: a.vehicles?.device_type,
-      status: !isOnline ? "offline" : isCharging ? "charging" : "online",
+      deviceType: vehicle?.device_type || null,
+      status: !isOnline ? "offline" : isCharging ? "charging" : "online" as const,
       battery: pos?.battery_percent ?? null,
       speed: pos?.speed ?? 0,
       latitude: pos?.latitude ?? null,
