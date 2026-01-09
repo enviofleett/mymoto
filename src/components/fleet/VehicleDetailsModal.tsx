@@ -17,6 +17,8 @@ import { RecentActivityFeed } from "./RecentActivityFeed";
 import { VehicleTrips } from "./VehicleTrips";
 import { VehicleMileageChart } from "./VehicleMileageChart";
 import { ProactiveNotifications } from "./ProactiveNotifications";
+import { LearnedLocations } from "./LearnedLocations";
+import { VehicleHealthDashboard } from "./VehicleHealthDashboard";
 import { 
   MapPin, Gauge, Battery, Power, User, Phone, 
   Calendar, AlertTriangle, Navigation, Car, UserPlus, UserMinus,
@@ -151,9 +153,11 @@ export function VehicleDetailsModal({
         </DialogHeader>
 
         <Tabs defaultValue="overview" className="w-full">
-          <TabsList className="grid w-full grid-cols-7 text-xs">
+          <TabsList className="grid w-full grid-cols-9 text-xs">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="chat">AI Chat</TabsTrigger>
+            <TabsTrigger value="health">Health</TabsTrigger>
+            <TabsTrigger value="locations">Locations</TabsTrigger>
             <TabsTrigger value="trips">Trips</TabsTrigger>
             <TabsTrigger value="alarms">Alarms</TabsTrigger>
             <TabsTrigger value="mileage">Mileage</TabsTrigger>
@@ -378,6 +382,18 @@ export function VehicleDetailsModal({
 
           <TabsContent value="chat" className="mt-4">
             <VehicleChat deviceId={vehicle.id} vehicleName={vehicle.name} />
+          </TabsContent>
+
+          <TabsContent value="health" className="mt-4">
+            <ScrollArea className="h-[400px] pr-4">
+              <VehicleHealthDashboard deviceId={vehicle.id} />
+            </ScrollArea>
+          </TabsContent>
+
+          <TabsContent value="locations" className="mt-4">
+            <ScrollArea className="h-[400px] pr-4">
+              <LearnedLocations deviceId={vehicle.id} />
+            </ScrollArea>
           </TabsContent>
 
           <TabsContent value="trips" className="mt-4">

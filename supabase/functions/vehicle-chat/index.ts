@@ -170,31 +170,60 @@ serve(async (req) => {
     const tokenEstimate = estimateTokenCount(conversationContext)
     console.log(`Conversation context loaded: ${conversationContext.total_message_count} total messages, ${conversationContext.recent_messages.length} recent, ~${tokenEstimate} tokens estimated`)
 
-    // 6. Reverse Geocode Current Position
+    // 6. Reverse Geocode Current Position and check for learned location
     let currentLocationName = 'Unknown location'
+    let learnedLocationContext = null
     const lat = position?.latitude
     const lon = position?.longitude
-    
-    if (MAPBOX_ACCESS_TOKEN && lat && lon) {
-      try {
-        const geocodeUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lon},${lat}.json?access_token=${MAPBOX_ACCESS_TOKEN}&types=address,poi,place`
-        const geocodeResponse = await fetch(geocodeUrl)
-        
-        if (geocodeResponse.ok) {
-          const geocodeData = await geocodeResponse.json()
-          if (geocodeData.features && geocodeData.features.length > 0) {
-            currentLocationName = geocodeData.features[0].place_name
-          } else {
-            currentLocationName = `${lat.toFixed(5)}, ${lon.toFixed(5)}`
-          }
+
+    if (lat && lon) {
+      // Check for learned location first
+      const { data: locationCtx } = await supabase.rpc('get_current_location_context', {
+        p_device_id: device_id,
+        p_latitude: lat,
+        p_longitude: lon
+      })
+
+      if (locationCtx && locationCtx.length > 0 && locationCtx[0].at_learned_location) {
+        learnedLocationContext = locationCtx[0]
+        const label = learnedLocationContext.custom_label || learnedLocationContext.location_name
+        if (label) {
+          currentLocationName = `${label} (${learnedLocationContext.location_type})`
         }
-      } catch (geocodeError) {
-        console.error('Geocoding error:', geocodeError)
+      }
+
+      // Fallback to geocoding if no learned location
+      if (!learnedLocationContext && MAPBOX_ACCESS_TOKEN) {
+        try {
+          const geocodeUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lon},${lat}.json?access_token=${MAPBOX_ACCESS_TOKEN}&types=address,poi,place`
+          const geocodeResponse = await fetch(geocodeUrl)
+
+          if (geocodeResponse.ok) {
+            const geocodeData = await geocodeResponse.json()
+            if (geocodeData.features && geocodeData.features.length > 0) {
+              currentLocationName = geocodeData.features[0].place_name
+            } else {
+              currentLocationName = `${lat.toFixed(5)}, ${lon.toFixed(5)}`
+            }
+          }
+        } catch (geocodeError) {
+          console.error('Geocoding error:', geocodeError)
+          currentLocationName = `${lat.toFixed(5)}, ${lon.toFixed(5)}`
+        }
+      } else if (!learnedLocationContext) {
         currentLocationName = `${lat.toFixed(5)}, ${lon.toFixed(5)}`
       }
-    } else if (lat && lon) {
-      currentLocationName = `${lat.toFixed(5)}, ${lon.toFixed(5)}`
     }
+
+    // 6.5. Fetch health metrics and maintenance recommendations
+    const { data: healthMetrics } = await supabase.rpc('get_vehicle_health', {
+      p_device_id: device_id
+    })
+
+    const { data: maintenanceRecs } = await supabase.rpc('get_maintenance_recommendations', {
+      p_device_id: device_id,
+      p_status: 'active'
+    })
 
     // 7. Build System Prompt with Rich Context
     const pos = position
@@ -259,6 +288,7 @@ CURRENT STATUS:
 - Speed: ${pos?.speed || 0} km/h ${pos?.is_overspeeding ? '(OVERSPEEDING!)' : ''}
 - Battery: ${pos?.battery_percent ?? 'Unknown'}%
 - Current Location: ${currentLocationName}
+${learnedLocationContext ? `  * This is a learned location! You've visited "${learnedLocationContext.custom_label || learnedLocationContext.location_name}" ${learnedLocationContext.visit_count} times (${learnedLocationContext.last_visit_days_ago} days since last visit). Typical stay: ${learnedLocationContext.typical_duration_minutes} minutes.` : ''}
 - GPS Coordinates: ${lat?.toFixed(5) || 'N/A'}, ${lon?.toFixed(5) || 'N/A'}
 - Google Maps: ${googleMapsLink || 'N/A'}
 - Total Mileage: ${pos?.total_mileage ? (pos.total_mileage / 1000).toFixed(1) + ' km' : 'Unknown'}
@@ -270,10 +300,24 @@ ASSIGNED DRIVER:
 - License: ${driver?.license_number || 'N/A'}
 
 RECENT ACTIVITY (last ${history?.length || 0} position updates):
-${history?.slice(0, 5).map((h, i) => 
+${history?.slice(0, 5).map((h, i) =>
   `  ${i + 1}. Speed: ${h.speed}km/h, Battery: ${h.battery_percent}%, Ignition: ${h.ignition_on ? 'ON' : 'OFF'}, Time: ${h.gps_time}`
 ).join('\n') || 'No recent history'}
 
+${healthMetrics && healthMetrics.length > 0 ? `VEHICLE HEALTH:
+- Overall Health Score: ${healthMetrics[0].overall_health_score}/100 (${healthMetrics[0].trend})
+- Battery Health: ${healthMetrics[0].battery_health_score}/100
+- Driving Behavior: ${healthMetrics[0].driving_behavior_score}/100
+- Connectivity: ${healthMetrics[0].connectivity_score}/100
+${healthMetrics[0].overall_health_score < 70 ? '⚠️ WARNING: Health score is below optimal levels' : ''}
+` : ''}
+${maintenanceRecs && maintenanceRecs.length > 0 ? `ACTIVE MAINTENANCE RECOMMENDATIONS (${maintenanceRecs.length}):
+${maintenanceRecs.slice(0, 3).map((rec, i) =>
+  `  ${i + 1}. [${rec.priority.toUpperCase()}] ${rec.title} - ${rec.description || rec.predicted_issue}`
+).join('\n')}
+${maintenanceRecs.length > 3 ? `  ... and ${maintenanceRecs.length - 3} more recommendations` : ''}
+⚠️ IMPORTANT: Proactively mention these maintenance issues when relevant to the conversation.
+` : ''}
 RESPONSE RULES:
 1. ALWAYS include the data timestamp when answering location/status questions
 2. When discussing location, you MUST include a special LOCATION tag for rich rendering:
