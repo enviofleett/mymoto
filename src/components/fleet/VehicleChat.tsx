@@ -16,49 +16,35 @@ interface ChatMessage {
 
 // Parse markdown links and render them as clickable buttons
 function ChatMessageContent({ content, isUser }: { content: string; isUser: boolean }) {
-  // Match markdown links: [text](url)
-  const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
-  const googleMapsRegex = /https:\/\/www\.google\.com\/maps\?q=[\d.-]+,[\d.-]+/g;
-  
-  // Check if content contains Google Maps links
-  const hasMapLink = googleMapsRegex.test(content);
-  
-  // Split content by markdown links
+  // Split content by markdown links: [text](url)
   const parts: (string | { text: string; url: string })[] = [];
+  const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
   let lastIndex = 0;
   let match;
   
-  // Reset regex state
-  linkRegex.lastIndex = 0;
-  
   while ((match = linkRegex.exec(content)) !== null) {
-    // Add text before the link
     if (match.index > lastIndex) {
       parts.push(content.slice(lastIndex, match.index));
     }
-    // Add the link
     parts.push({ text: match[1], url: match[2] });
     lastIndex = match.index + match[0].length;
   }
   
-  // Add remaining text
   if (lastIndex < content.length) {
     parts.push(content.slice(lastIndex));
   }
   
-  // If no links found, just return the text
   if (parts.length === 0) {
     return <p className="text-sm whitespace-pre-wrap">{content}</p>;
   }
   
   return (
-    <div className="text-sm space-y-2">
+    <div className="text-sm">
       {parts.map((part, index) => {
         if (typeof part === 'string') {
           return <span key={index} className="whitespace-pre-wrap">{part}</span>;
         }
         
-        // Check if it's a Google Maps link
         const isMapLink = part.url.includes('google.com/maps');
         
         return (
@@ -67,17 +53,18 @@ function ChatMessageContent({ content, isUser }: { content: string; isUser: bool
             href={part.url}
             target="_blank"
             rel="noopener noreferrer"
-            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-              isUser 
-                ? 'bg-primary-foreground/20 hover:bg-primary-foreground/30 text-primary-foreground' 
-                : isMapLink
-                  ? 'bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20'
+            onClick={(e) => e.stopPropagation()}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 my-1 rounded-full text-xs font-medium transition-all cursor-pointer no-underline hover:scale-105 active:scale-95 ${
+              isMapLink
+                ? 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/30 shadow-sm'
+                : isUser 
+                  ? 'bg-primary-foreground/20 hover:bg-primary-foreground/30 text-primary-foreground' 
                   : 'bg-muted-foreground/10 hover:bg-muted-foreground/20 text-foreground'
             }`}
           >
-            {isMapLink && <MapPin className="h-3 w-3" />}
-            {part.text}
-            <ExternalLink className="h-3 w-3 opacity-70" />
+            {isMapLink && <MapPin className="h-3.5 w-3.5" />}
+            <span>{part.text}</span>
+            <ExternalLink className="h-3 w-3 opacity-60" />
           </a>
         );
       })}
