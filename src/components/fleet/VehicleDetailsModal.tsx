@@ -16,6 +16,7 @@ import { VehiclePersonaSettings } from "./VehiclePersonaSettings";
 import { RecentActivityFeed } from "./RecentActivityFeed";
 import { VehicleTrips } from "./VehicleTrips";
 import { VehicleMileageChart } from "./VehicleMileageChart";
+import { ProactiveNotifications } from "./ProactiveNotifications";
 import { 
   MapPin, Gauge, Battery, Power, User, Phone, 
   Calendar, AlertTriangle, Navigation, Car, UserPlus, UserMinus,
@@ -384,7 +385,9 @@ export function VehicleDetailsModal({
           </TabsContent>
 
           <TabsContent value="alarms" className="mt-4">
-            <RecentActivityFeed deviceId={vehicle.id} limit={15} showCard={false} />
+            <ScrollArea className="h-[400px] pr-4">
+              <ProactiveNotifications deviceId={vehicle.id} limit={20} />
+            </ScrollArea>
           </TabsContent>
 
           <TabsContent value="mileage" className="mt-4">

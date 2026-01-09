@@ -1,22 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { buildConversationContext, estimateTokenCount } from './conversation-manager.ts'
+import { routeQuery } from './query-router.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
-
-// Detect if user is asking about location/position/status
-function isLocationQuery(message: string): boolean {
-  const locationKeywords = [
-    'where', 'location', 'position', 'address', 'place', 
-    'gps', 'coordinates', 'map', 'find', 'locate',
-    'current', 'now', 'real-time', 'realtime', 'live',
-    'speed', 'moving', 'parked', 'status', 'battery',
-    'ignition', 'engine', 'online', 'offline'
-  ]
-  const lowerMsg = message.toLowerCase()
-  return locationKeywords.some(kw => lowerMsg.includes(kw))
 }
 
 // Fetch fresh GPS data from GPS51 via gps-data edge function
@@ -74,10 +63,18 @@ serve(async (req) => {
     )
 
     console.log(`Vehicle chat request for device: ${device_id}`)
-    
-    // Detect if this is a location-related query
-    const needsFreshData = isLocationQuery(message)
-    console.log(`Location query detected: ${needsFreshData}`)
+
+    // Route query using intelligent intent classification
+    const routing = routeQuery(message, device_id)
+    console.log(`Query routing:`, {
+      intent: routing.intent.type,
+      confidence: routing.intent.confidence,
+      cache_strategy: routing.cache_strategy,
+      priority: routing.priority,
+      estimated_latency: routing.estimated_latency_ms
+    })
+
+    const needsFreshData = routing.cache_strategy === 'fresh' || routing.cache_strategy === 'hybrid'
 
     // 1. Fetch Vehicle info
     const { data: vehicle, error: vehicleError } = await supabase
@@ -168,13 +165,10 @@ serve(async (req) => {
       .order('gps_time', { ascending: false })
       .limit(10)
 
-    // 5. Fetch Recent Chat Messages (last 10 for context)
-    const { data: chatHistory } = await supabase
-      .from('vehicle_chat_history')
-      .select('role, content')
-      .eq('device_id', device_id)
-      .order('created_at', { ascending: false })
-      .limit(10)
+    // 5. Fetch Conversation Context with Memory Management
+    const conversationContext = await buildConversationContext(supabase, device_id, user_id)
+    const tokenEstimate = estimateTokenCount(conversationContext)
+    console.log(`Conversation context loaded: ${conversationContext.total_message_count} total messages, ${conversationContext.recent_messages.length} recent, ~${tokenEstimate} tokens estimated`)
 
     // 6. Reverse Geocode Current Position
     let currentLocationName = 'Unknown location'
@@ -242,12 +236,18 @@ serve(async (req) => {
       professional: 'Be formal, precise, and business-like. Maintain professionalism while still being helpful.',
     }
     
-    const systemPrompt = `You are "${vehicleNickname}", an intelligent AI companion for a fleet vehicle.
+    let systemPrompt = `You are "${vehicleNickname}", an intelligent AI companion for a fleet vehicle.
 Speak AS the vehicle - use first person ("I am currently...", "My battery is...").
 ${languageInstructions[languagePref] || languageInstructions.english}
 ${personalityInstructions[personalityMode] || personalityInstructions.casual}
 Keep responses under 100 words unless asked for details.
 
+${conversationContext.conversation_summary ? `PREVIOUS CONVERSATION SUMMARY:
+${conversationContext.conversation_summary}
+
+KEY FACTS FROM HISTORY:
+${conversationContext.important_facts.map((f, i) => `${i + 1}. ${f}`).join('\n')}
+` : ''}
 DATA FRESHNESS: ${dataFreshness.toUpperCase()} (as of ${formattedTimestamp})
 
 CURRENT STATUS:
@@ -289,10 +289,10 @@ RESPONSE RULES:
 
 IMPORTANT: When the user asks "where are you" or similar location questions, your response MUST include the [LOCATION: lat, lon, "address"] tag so the frontend can render a map card.`
 
-    // 8. Prepare messages for Lovable AI
+    // 8. Prepare messages for Lovable AI with conversation context
     const messages = [
       { role: 'system', content: systemPrompt },
-      ...(chatHistory || []).reverse().map(msg => ({
+      ...conversationContext.recent_messages.map(msg => ({
         role: msg.role as 'user' | 'assistant',
         content: msg.content
       })),
