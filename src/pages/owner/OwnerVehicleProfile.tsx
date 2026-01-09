@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -21,10 +21,12 @@ import {
   Route,
   Bell,
   Info,
-  Check,
   RefreshCw,
+  ExternalLink,
+  AlertTriangle,
+  Zap,
 } from "lucide-react";
-import { format, subDays, startOfDay, endOfDay } from "date-fns";
+import { format, subDays, startOfDay, endOfDay, differenceInMinutes, isSameDay, parseISO } from "date-fns";
 import { cn } from "@/lib/utils";
 import {
   AreaChart,
@@ -39,62 +41,345 @@ import {
 
 const avatarColors = ["from-blue-500 to-purple-500"];
 
-// Fetch position history for mileage calculations
-async function fetchVehicleStats(deviceId: string) {
-  const sevenDaysAgo = subDays(new Date(), 7);
+// Haversine formula to calculate distance between two GPS points
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // Earth's radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+interface PositionRecord {
+  gps_time: string | null;
+  speed: number | null;
+  latitude: number | null;
+  longitude: number | null;
+  ignition_on: boolean | null;
+  battery_percent: number | null;
+}
+
+interface Trip {
+  startTime: Date;
+  endTime: Date;
+  distance: number;
+  startLat: number;
+  startLon: number;
+  endLat: number;
+  endLon: number;
+}
+
+interface DayStats {
+  day: string;
+  date: Date;
+  distance: number;
+  trips: number;
+}
+
+interface Alert {
+  id: string;
+  type: 'overspeed' | 'low_battery' | 'ignition_on' | 'ignition_off';
+  message: string;
+  detail: string;
+  time: Date;
+  severity: 'warning' | 'info';
+}
+
+// Fetch position history for mileage and trip calculations
+async function fetchVehicleHistory(deviceId: string) {
+  const thirtyDaysAgo = subDays(new Date(), 30);
   
   const { data: history, error } = await supabase
     .from("position_history")
-    .select("gps_time, speed, latitude, longitude")
+    .select("gps_time, speed, latitude, longitude, ignition_on, battery_percent")
     .eq("device_id", deviceId)
-    .gte("gps_time", sevenDaysAgo.toISOString())
+    .gte("gps_time", thirtyDaysAgo.toISOString())
     .order("gps_time", { ascending: true });
 
   if (error) throw error;
-  return history || [];
+  return (history || []) as PositionRecord[];
+}
+
+// Process history data to extract trips and daily stats
+function processHistoryData(history: PositionRecord[]) {
+  if (!history || history.length === 0) {
+    return {
+      trips: [] as Trip[],
+      dailyStats: [] as DayStats[],
+      alerts: [] as Alert[],
+      totalDistance: 0,
+    };
+  }
+
+  const trips: Trip[] = [];
+  const alerts: Alert[] = [];
+  let currentTrip: { start: PositionRecord; points: PositionRecord[] } | null = null;
+  let totalDistance = 0;
+  
+  // Daily aggregation
+  const dailyMap = new Map<string, { distance: number; trips: Set<string> }>();
+  
+  // Initialize last 7 days
+  for (let i = 6; i >= 0; i--) {
+    const date = subDays(new Date(), i);
+    const key = format(date, 'yyyy-MM-dd');
+    dailyMap.set(key, { distance: 0, trips: new Set() });
+  }
+
+  for (let i = 0; i < history.length; i++) {
+    const point = history[i];
+    const prevPoint = i > 0 ? history[i - 1] : null;
+    
+    if (!point.gps_time || point.latitude === null || point.longitude === null) continue;
+    
+    const pointDate = parseISO(point.gps_time);
+    const dayKey = format(pointDate, 'yyyy-MM-dd');
+    
+    // Calculate distance from previous point
+    if (prevPoint && prevPoint.latitude !== null && prevPoint.longitude !== null) {
+      const dist = calculateDistance(
+        prevPoint.latitude, prevPoint.longitude,
+        point.latitude, point.longitude
+      );
+      
+      // Filter out GPS jumps (unrealistic distances > 50km in short time)
+      if (dist < 50) {
+        totalDistance += dist;
+        
+        // Add to daily stats
+        if (dailyMap.has(dayKey)) {
+          dailyMap.get(dayKey)!.distance += dist;
+        }
+      }
+    }
+    
+    // Detect trips based on ignition changes or speed patterns
+    const isMoving = (point.speed ?? 0) > 2;
+    const wasMoving = prevPoint && (prevPoint.speed ?? 0) > 2;
+    
+    // Start new trip
+    if (isMoving && !wasMoving && !currentTrip) {
+      currentTrip = { start: point, points: [point] };
+    }
+    
+    // Continue trip
+    if (currentTrip && isMoving) {
+      currentTrip.points.push(point);
+    }
+    
+    // End trip (stopped for a while)
+    if (currentTrip && !isMoving && wasMoving) {
+      const lastPoint = currentTrip.points[currentTrip.points.length - 1];
+      if (lastPoint && currentTrip.points.length >= 3) {
+        // Calculate trip distance
+        let tripDistance = 0;
+        for (let j = 1; j < currentTrip.points.length; j++) {
+          const p1 = currentTrip.points[j - 1];
+          const p2 = currentTrip.points[j];
+          if (p1.latitude && p1.longitude && p2.latitude && p2.longitude) {
+            tripDistance += calculateDistance(p1.latitude, p1.longitude, p2.latitude, p2.longitude);
+          }
+        }
+        
+        // Only count meaningful trips (> 0.5km)
+        if (tripDistance > 0.5) {
+          const trip: Trip = {
+            startTime: parseISO(currentTrip.start.gps_time!),
+            endTime: parseISO(lastPoint.gps_time!),
+            distance: tripDistance,
+            startLat: currentTrip.start.latitude!,
+            startLon: currentTrip.start.longitude!,
+            endLat: lastPoint.latitude!,
+            endLon: lastPoint.longitude!,
+          };
+          trips.push(trip);
+          
+          // Track trips per day
+          const tripDayKey = format(trip.startTime, 'yyyy-MM-dd');
+          if (dailyMap.has(tripDayKey)) {
+            dailyMap.get(tripDayKey)!.trips.add(`${trip.startTime.getTime()}`);
+          }
+        }
+      }
+      currentTrip = null;
+    }
+    
+    // Detect alerts
+    if (point.speed !== null && point.speed > 120) {
+      alerts.push({
+        id: `overspeed-${point.gps_time}`,
+        type: 'overspeed',
+        message: 'Overspeeding Detected',
+        detail: `Speed: ${point.speed.toFixed(0)} km/h`,
+        time: pointDate,
+        severity: 'warning',
+      });
+    }
+    
+    if (point.battery_percent !== null && point.battery_percent < 20 && point.battery_percent > 0) {
+      // Only add one low battery alert per hour
+      const existingLowBattery = alerts.find(a => 
+        a.type === 'low_battery' && 
+        Math.abs(a.time.getTime() - pointDate.getTime()) < 3600000
+      );
+      if (!existingLowBattery) {
+        alerts.push({
+          id: `low_battery-${point.gps_time}`,
+          type: 'low_battery',
+          message: 'Low Battery Warning',
+          detail: `Battery: ${point.battery_percent}%`,
+          time: pointDate,
+          severity: 'warning',
+        });
+      }
+    }
+    
+    // Ignition alerts
+    if (prevPoint && point.ignition_on !== prevPoint.ignition_on && point.ignition_on !== null) {
+      alerts.push({
+        id: `ignition-${point.gps_time}`,
+        type: point.ignition_on ? 'ignition_on' : 'ignition_off',
+        message: point.ignition_on ? 'Engine Started' : 'Engine Stopped',
+        detail: `At ${format(pointDate, 'HH:mm')}`,
+        time: pointDate,
+        severity: 'info',
+      });
+    }
+  }
+
+  // Convert daily map to array
+  const dailyStats: DayStats[] = [];
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  
+  for (let i = 6; i >= 0; i--) {
+    const date = subDays(new Date(), i);
+    const key = format(date, 'yyyy-MM-dd');
+    const stats = dailyMap.get(key);
+    dailyStats.push({
+      day: dayNames[date.getDay()],
+      date,
+      distance: stats?.distance ?? 0,
+      trips: stats?.trips.size ?? 0,
+    });
+  }
+
+  // Sort alerts by time (most recent first) and limit
+  alerts.sort((a, b) => b.time.getTime() - a.time.getTime());
+  const recentAlerts = alerts.slice(0, 10);
+
+  return {
+    trips: trips.slice(-20), // Last 20 trips
+    dailyStats,
+    alerts: recentAlerts,
+    totalDistance,
+  };
 }
 
 export default function OwnerVehicleProfile() {
   const { deviceId } = useParams<{ deviceId: string }>();
   const navigate = useNavigate();
-  const { data: vehicles, isLoading: vehiclesLoading } = useOwnerVehicles();
-  const [activeSection, setActiveSection] = useState<"status" | "location" | "mileage" | "trips" | "alerts">("status");
+  const { data: vehicles, isLoading: vehiclesLoading, refetch: refetchVehicles } = useOwnerVehicles();
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const vehicle = vehicles?.find((v) => v.deviceId === deviceId);
 
-  const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: ["vehicle-stats", deviceId],
-    queryFn: () => fetchVehicleStats(deviceId!),
+  const { data: history, isLoading: historyLoading, refetch: refetchHistory } = useQuery({
+    queryKey: ["vehicle-history", deviceId],
+    queryFn: () => fetchVehicleHistory(deviceId!),
     enabled: !!deviceId,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 2 * 60 * 1000, // 2 minutes
   });
 
-  const isLoading = vehiclesLoading || statsLoading;
+  const isLoading = vehiclesLoading || historyLoading;
 
-  // Generate mock data for charts (in production, calculate from position_history)
-  const weeklyMileageData = [
-    { day: "Sun", value: 15 },
-    { day: "Mon", value: 25 },
-    { day: "Tue", value: 45 },
-    { day: "Wed", value: 35 },
-    { day: "Thu", value: 40 },
-    { day: "Fri", value: 10 },
-    { day: "Sat", value: 30 },
-  ];
+  // Process history data
+  const processedData = useMemo(() => {
+    if (!history) return null;
+    return processHistoryData(history);
+  }, [history]);
 
-  const tripActivityData = [
-    { day: "Sun", trips: 1 },
-    { day: "Mon", trips: 1 },
-    { day: "Tue", trips: 3 },
-    { day: "Wed", trips: 2 },
-    { day: "Thu", trips: 2 },
-    { day: "Fri", trips: 2 },
-    { day: "Sat", trips: 3 },
-  ];
+  // Calculate mileage stats
+  const mileageStats = useMemo(() => {
+    if (!processedData) {
+      return { today: 0, week: 0, month: 0, avgPerDay: 0 };
+    }
+    
+    const today = new Date();
+    const todayKey = format(today, 'yyyy-MM-dd');
+    
+    const todayStats = processedData.dailyStats.find(d => format(d.date, 'yyyy-MM-dd') === todayKey);
+    const weekTotal = processedData.dailyStats.reduce((sum, d) => sum + d.distance, 0);
+    const avgPerDay = weekTotal / 7;
+    
+    return {
+      today: todayStats?.distance ?? 0,
+      week: weekTotal,
+      month: processedData.totalDistance,
+      avgPerDay,
+    };
+  }, [processedData]);
 
-  const totalMileageToday = 30.5;
-  const totalMileageWeek = 86;
-  const totalMileageMonth = 86;
+  // Today's trips
+  const todaysTrips = useMemo(() => {
+    if (!processedData) return [];
+    const today = new Date();
+    return processedData.trips.filter(t => isSameDay(t.startTime, today));
+  }, [processedData]);
+
+  // Today's alerts
+  const todaysAlerts = useMemo(() => {
+    if (!processedData) return [];
+    const today = new Date();
+    return processedData.alerts.filter(a => isSameDay(a.time, today));
+  }, [processedData]);
+
+  // Trip stats
+  const tripStats = useMemo(() => {
+    if (!processedData) return { totalTrips: 0, avgTripsPerDay: 0, avgKmPerTrip: 0, peakTrips: 0 };
+    
+    const totalTrips = processedData.dailyStats.reduce((sum, d) => sum + d.trips, 0);
+    const avgTripsPerDay = totalTrips / 7;
+    const avgKmPerTrip = totalTrips > 0 ? mileageStats.week / totalTrips : 0;
+    const peakTrips = Math.max(...processedData.dailyStats.map(d => d.trips));
+    
+    return { totalTrips, avgTripsPerDay, avgKmPerTrip, peakTrips };
+  }, [processedData, mileageStats]);
+
+  // Handle refresh
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([refetchVehicles(), refetchHistory()]);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  // Get battery status label
+  const getBatteryStatus = (battery: number | null) => {
+    if (battery === null) return "Unknown";
+    if (battery >= 80) return "Optimal";
+    if (battery >= 50) return "Good";
+    if (battery >= 20) return "Low";
+    return "Critical";
+  };
+
+  const getBatteryColor = (battery: number | null) => {
+    if (battery === null) return "text-muted-foreground";
+    if (battery >= 80) return "text-green-500";
+    if (battery >= 50) return "text-yellow-500";
+    if (battery >= 20) return "text-orange-500";
+    return "text-red-500";
+  };
+
+  // Google Maps link
+  const getGoogleMapsLink = (lat: number, lon: number) => {
+    return `https://www.google.com/maps?q=${lat},${lon}`;
+  };
 
   if (isLoading) {
     return (
@@ -164,8 +449,13 @@ export default function OwnerVehicleProfile() {
             </div>
             <h1 className="text-2xl font-bold text-foreground">{vehicle.name}</h1>
             <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-              <span>✨</span> Enthusiastic & Adventurous
+              <span>✨</span> {vehicle.personality || "Enthusiastic & Adventurous"}
             </p>
+            {vehicle.lastUpdate && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Last updated: {format(vehicle.lastUpdate, "MMM d, HH:mm")}
+              </p>
+            )}
           </div>
 
           {/* Vehicle Status Section */}
@@ -182,10 +472,10 @@ export default function OwnerVehicleProfile() {
                     <Battery className="h-4 w-4 text-muted-foreground" />
                     <span className="text-sm text-muted-foreground">Battery</span>
                   </div>
-                  <div className="text-2xl font-bold text-green-500">
-                    {vehicle.battery ?? "--"}%
+                  <div className={cn("text-2xl font-bold", getBatteryColor(vehicle.battery))}>
+                    {vehicle.battery !== null ? `${vehicle.battery}%` : "--%"}
                   </div>
-                  <div className="text-xs text-muted-foreground">Optimal</div>
+                  <div className="text-xs text-muted-foreground">{getBatteryStatus(vehicle.battery)}</div>
                 </CardContent>
               </Card>
 
@@ -197,7 +487,9 @@ export default function OwnerVehicleProfile() {
                     <span className="text-sm text-muted-foreground">Mileage</span>
                   </div>
                   <div className="text-2xl font-bold text-foreground">
-                    {vehicle.totalMileage?.toLocaleString() ?? "--"} <span className="text-sm font-normal">km</span>
+                    {vehicle.totalMileage !== null 
+                      ? vehicle.totalMileage.toLocaleString(undefined, { maximumFractionDigits: 0 }) 
+                      : "--"} <span className="text-sm font-normal">km</span>
                   </div>
                   <div className="text-xs text-muted-foreground">Total</div>
                 </CardContent>
@@ -266,16 +558,24 @@ export default function OwnerVehicleProfile() {
                   </div>
                 </div>
                 {vehicle.latitude && vehicle.longitude && (
-                  <div className="absolute bottom-2 left-2 bg-background/80 backdrop-blur-sm rounded px-2 py-1 text-xs text-muted-foreground font-mono">
-                    {vehicle.latitude.toFixed(4)}°N, {vehicle.longitude.toFixed(4)}°W
-                  </div>
+                  <a
+                    href={getGoogleMapsLink(vehicle.latitude, vehicle.longitude)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="absolute bottom-2 left-2 bg-background/80 backdrop-blur-sm rounded px-2 py-1 text-xs text-muted-foreground font-mono hover:bg-background/90 transition-colors flex items-center gap-1"
+                  >
+                    {vehicle.latitude.toFixed(4)}°, {vehicle.longitude.toFixed(4)}°
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
                 )}
                 <Button
                   size="icon"
                   variant="ghost"
                   className="absolute top-2 right-2 h-8 w-8 bg-background/50 backdrop-blur-sm"
+                  onClick={handleRefresh}
+                  disabled={isRefreshing}
                 >
-                  <RefreshCw className="h-4 w-4" />
+                  <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
                 </Button>
               </div>
               <CardContent className="p-4">
@@ -287,14 +587,24 @@ export default function OwnerVehicleProfile() {
                     <div>
                       <div className="font-medium text-foreground">Current Location</div>
                       <div className="text-sm text-muted-foreground">
-                        {vehicle.latitude && vehicle.longitude ? "GPS Active" : "No GPS Signal"}
+                        {vehicle.latitude && vehicle.longitude ? (
+                          <span>Speed: {vehicle.speed} km/h</span>
+                        ) : "No GPS Signal"}
                       </div>
                     </div>
                   </div>
-                  <Badge variant="outline" className="text-green-500 border-green-500/50">
-                    <Navigation className="h-3 w-3 mr-1" />
-                    LIVE
-                  </Badge>
+                  {vehicle.latitude && vehicle.longitude && (
+                    <a
+                      href={getGoogleMapsLink(vehicle.latitude, vehicle.longitude)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/30 shadow-sm transition-all hover:scale-105"
+                    >
+                      <Navigation className="h-3 w-3" />
+                      Open in Maps
+                      <ExternalLink className="h-3 w-3 opacity-60" />
+                    </a>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -316,24 +626,32 @@ export default function OwnerVehicleProfile() {
                 <div className="mb-4">
                   <div className="text-sm text-muted-foreground">Total Odometer</div>
                   <div className="text-3xl font-bold text-foreground">
-                    {vehicle.totalMileage?.toLocaleString() ?? "12,450"} <span className="text-base font-normal">km</span>
+                    {vehicle.totalMileage !== null 
+                      ? vehicle.totalMileage.toLocaleString(undefined, { maximumFractionDigits: 0 }) 
+                      : "--"} <span className="text-base font-normal">km</span>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-3 gap-2">
                   <div className="rounded-lg bg-purple-500/10 p-3 text-center">
                     <TrendingUp className="h-4 w-4 text-purple-500 mx-auto mb-1" />
-                    <div className="text-lg font-bold text-purple-500">{totalMileageToday}</div>
+                    <div className="text-lg font-bold text-purple-500">
+                      {mileageStats.today.toFixed(1)}
+                    </div>
                     <div className="text-xs text-muted-foreground">Today</div>
                   </div>
                   <div className="rounded-lg bg-muted p-3 text-center">
                     <Calendar className="h-4 w-4 text-muted-foreground mx-auto mb-1" />
-                    <div className="text-lg font-bold text-foreground">{totalMileageWeek}</div>
+                    <div className="text-lg font-bold text-foreground">
+                      {mileageStats.week.toFixed(1)}
+                    </div>
                     <div className="text-xs text-muted-foreground">This Week</div>
                   </div>
                   <div className="rounded-lg bg-primary/10 p-3 text-center">
                     <Calendar className="h-4 w-4 text-primary mx-auto mb-1" />
-                    <div className="text-lg font-bold text-primary">{totalMileageMonth}</div>
+                    <div className="text-lg font-bold text-primary">
+                      {mileageStats.month.toFixed(1)}
+                    </div>
                     <div className="text-xs text-muted-foreground">This Month</div>
                   </div>
                 </div>
@@ -352,14 +670,14 @@ export default function OwnerVehicleProfile() {
                     <div className="text-xs text-muted-foreground mt-0.5">Last 7 days</div>
                   </div>
                   <div className="text-right">
-                    <div className="text-lg font-bold text-primary">181 km</div>
-                    <div className="text-xs text-muted-foreground">Avg: 25.9/day</div>
+                    <div className="text-lg font-bold text-primary">{mileageStats.week.toFixed(1)} km</div>
+                    <div className="text-xs text-muted-foreground">Avg: {mileageStats.avgPerDay.toFixed(1)}/day</div>
                   </div>
                 </div>
 
                 <div className="h-40">
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={weeklyMileageData}>
+                    <AreaChart data={processedData?.dailyStats || []}>
                       <defs>
                         <linearGradient id="mileageGradient" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
@@ -379,10 +697,11 @@ export default function OwnerVehicleProfile() {
                           border: "1px solid hsl(var(--border))",
                           borderRadius: "8px",
                         }}
+                        formatter={(value: number) => [`${value.toFixed(1)} km`, 'Distance']}
                       />
                       <Area
                         type="monotone"
-                        dataKey="value"
+                        dataKey="distance"
                         stroke="hsl(var(--primary))"
                         strokeWidth={2}
                         fill="url(#mileageGradient)"
@@ -408,51 +727,49 @@ export default function OwnerVehicleProfile() {
                 </div>
 
                 <div className="space-y-3">
-                  {/* Sample trips */}
-                  <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-                    <MapPin className="h-4 w-4 text-primary shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">Home</span>
-                        <span className="text-muted-foreground">→</span>
-                        <span className="text-sm font-medium">Downtown Office</span>
-                        <MapPin className="h-3 w-3 text-destructive" />
+                  {todaysTrips.length > 0 ? (
+                    todaysTrips.slice(0, 5).map((trip, index) => (
+                      <div key={index} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+                        <MapPin className="h-4 w-4 text-primary shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">Trip {index + 1}</span>
+                            <a
+                              href={getGoogleMapsLink(trip.endLat, trip.endLon)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-500 hover:text-blue-600"
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            {format(trip.startTime, 'h:mm a')} - {format(trip.endTime, 'h:mm a')}
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="text-sm">{trip.distance.toFixed(1)} km</div>
+                          <div className="text-xs text-green-500">
+                            {differenceInMinutes(trip.endTime, trip.startTime)} min
+                          </div>
+                        </div>
                       </div>
-                      <div className="text-xs text-muted-foreground mt-0.5">
-                        8:30 AM - 9:15 AM
-                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-6 text-muted-foreground">
+                      <Route className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                      <p className="text-sm">No trips recorded today</p>
                     </div>
-                    <div className="text-right shrink-0">
-                      <div className="text-sm">12.5 km</div>
-                      <div className="text-xs text-green-500">45 min</div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-                    <MapPin className="h-4 w-4 text-primary shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">Downtown Office</span>
-                        <span className="text-muted-foreground">→</span>
-                        <span className="text-sm font-medium">Coffee Shop</span>
-                        <MapPin className="h-3 w-3 text-destructive" />
-                      </div>
-                      <div className="text-xs text-muted-foreground mt-0.5">
-                        12:00 PM - 12:20 PM
-                      </div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <div className="text-sm">3.2 km</div>
-                      <div className="text-xs text-green-500">20 min</div>
-                    </div>
-                  </div>
+                  )}
                 </div>
 
                 <div className="flex items-center justify-between mt-4 pt-3 border-t border-border">
                   <span className="text-sm text-muted-foreground">Total trips</span>
                   <div>
-                    <span className="font-medium">3 trips</span>
-                    <span className="text-primary ml-2">30.5 km</span>
+                    <span className="font-medium">{todaysTrips.length} trips</span>
+                    <span className="text-primary ml-2">
+                      {todaysTrips.reduce((sum, t) => sum + t.distance, 0).toFixed(1)} km
+                    </span>
                   </div>
                 </div>
               </CardContent>
@@ -470,14 +787,14 @@ export default function OwnerVehicleProfile() {
                     <div className="text-xs text-muted-foreground mt-0.5">Last 7 days</div>
                   </div>
                   <div className="text-right">
-                    <div className="text-lg font-bold text-purple-500">13 trips</div>
-                    <div className="text-xs text-muted-foreground">102 km total</div>
+                    <div className="text-lg font-bold text-purple-500">{tripStats.totalTrips} trips</div>
+                    <div className="text-xs text-muted-foreground">{mileageStats.week.toFixed(1)} km total</div>
                   </div>
                 </div>
 
                 <div className="h-40">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={tripActivityData}>
+                    <BarChart data={processedData?.dailyStats || []}>
                       <XAxis
                         dataKey="day"
                         axisLine={false}
@@ -491,6 +808,7 @@ export default function OwnerVehicleProfile() {
                           border: "1px solid hsl(var(--border))",
                           borderRadius: "8px",
                         }}
+                        formatter={(value: number) => [`${value} trips`, 'Trips']}
                       />
                       <Bar dataKey="trips" fill="hsl(270, 70%, 60%)" radius={[4, 4, 0, 0]} />
                     </BarChart>
@@ -499,15 +817,19 @@ export default function OwnerVehicleProfile() {
 
                 <div className="grid grid-cols-3 gap-2 mt-4 pt-3 border-t border-border">
                   <div className="text-center">
-                    <div className="text-lg font-bold text-foreground">1.9</div>
+                    <div className="text-lg font-bold text-foreground">
+                      {tripStats.avgTripsPerDay.toFixed(1)}
+                    </div>
                     <div className="text-xs text-muted-foreground">Avg trips/day</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-lg font-bold text-purple-500">3</div>
+                    <div className="text-lg font-bold text-purple-500">{tripStats.peakTrips}</div>
                     <div className="text-xs text-muted-foreground">Peak trips</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-lg font-bold text-primary">7.8</div>
+                    <div className="text-lg font-bold text-primary">
+                      {tripStats.avgKmPerTrip.toFixed(1)}
+                    </div>
                     <div className="text-xs text-muted-foreground">Avg km/trip</div>
                   </div>
                 </div>
@@ -529,56 +851,81 @@ export default function OwnerVehicleProfile() {
                 </div>
 
                 <div className="space-y-3">
-                  <div className="p-3 rounded-lg bg-blue-500/10">
-                    <div className="flex items-start gap-3">
-                      <Info className="h-4 w-4 text-blue-500 mt-0.5" />
-                      <div>
-                        <div className="font-medium text-foreground">Software Update Available</div>
-                        <div className="text-sm text-muted-foreground">Version 2024.12.1 is ready to install</div>
-                        <div className="text-xs text-muted-foreground mt-1">10:30 AM</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="p-3 rounded-lg bg-muted/50">
-                    <div className="flex items-start gap-3">
-                      <Info className="h-4 w-4 text-muted-foreground mt-0.5" />
-                      <div className="flex-1">
-                        <div className="font-medium text-foreground">Charging Complete</div>
-                        <div className="text-sm text-muted-foreground">Battery reached 100%</div>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-xs text-muted-foreground">3:15 PM</span>
-                          <Badge variant="outline" className="text-green-500 border-green-500/50 text-xs">
-                            <Check className="h-3 w-3 mr-1" />
-                            Resolved
-                          </Badge>
+                  {todaysAlerts.length > 0 ? (
+                    todaysAlerts.slice(0, 5).map((alert) => (
+                      <div
+                        key={alert.id}
+                        className={cn(
+                          "p-3 rounded-lg",
+                          alert.severity === 'warning' ? "bg-yellow-500/10" : "bg-muted/50"
+                        )}
+                      >
+                        <div className="flex items-start gap-3">
+                          {alert.type === 'overspeed' ? (
+                            <AlertTriangle className="h-4 w-4 text-yellow-500 mt-0.5" />
+                          ) : alert.type === 'low_battery' ? (
+                            <Battery className="h-4 w-4 text-orange-500 mt-0.5" />
+                          ) : alert.type === 'ignition_on' ? (
+                            <Zap className="h-4 w-4 text-green-500 mt-0.5" />
+                          ) : (
+                            <Info className="h-4 w-4 text-muted-foreground mt-0.5" />
+                          )}
+                          <div>
+                            <div className="font-medium text-foreground">{alert.message}</div>
+                            <div className="text-sm text-muted-foreground">{alert.detail}</div>
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {format(alert.time, 'h:mm a')}
+                            </div>
+                          </div>
                         </div>
                       </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-6 text-muted-foreground">
+                      <Bell className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                      <p className="text-sm">No alerts today</p>
                     </div>
-                  </div>
+                  )}
                 </div>
 
                 <div className="flex items-center justify-between mt-4 pt-3 border-t border-border">
                   <span className="text-sm text-muted-foreground">Total alerts</span>
                   <div>
-                    <span className="font-medium">2</span>
-                    <span className="text-green-500 ml-2">1 resolved</span>
+                    <span className="font-medium">{todaysAlerts.length}</span>
+                    <span className="text-yellow-500 ml-2">
+                      {todaysAlerts.filter(a => a.severity === 'warning').length} warnings
+                    </span>
                   </div>
                 </div>
               </CardContent>
             </Card>
 
-            {/* Current Mood */}
+            {/* Current Status */}
             <Card className="border-border bg-card/50">
               <CardContent className="p-4">
-                <div className="text-sm text-muted-foreground mb-2">Current Mood</div>
+                <div className="text-sm text-muted-foreground mb-2">Current Status</div>
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-yellow-500/20 flex items-center justify-center">
-                    <span className="text-2xl">😊</span>
+                  <div className={cn(
+                    "w-12 h-12 rounded-full flex items-center justify-center",
+                    vehicle.status === 'online' 
+                      ? "bg-green-500/20" 
+                      : vehicle.status === 'charging' 
+                      ? "bg-yellow-500/20" 
+                      : "bg-muted"
+                  )}>
+                    <span className="text-2xl">
+                      {vehicle.status === 'online' ? "🚗" : vehicle.status === 'charging' ? "⚡" : "💤"}
+                    </span>
                   </div>
                   <div>
-                    <div className="font-medium text-foreground">Happy</div>
-                    <div className="text-sm text-muted-foreground">Ready for anything!</div>
+                    <div className="font-medium text-foreground capitalize">{vehicle.status}</div>
+                    <div className="text-sm text-muted-foreground">
+                      {vehicle.status === 'online' 
+                        ? vehicle.speed > 0 ? `Moving at ${vehicle.speed} km/h` : "Stationary"
+                        : vehicle.status === 'charging' 
+                        ? "Charging in progress" 
+                        : "Vehicle is parked"}
+                    </div>
                   </div>
                 </div>
               </CardContent>
