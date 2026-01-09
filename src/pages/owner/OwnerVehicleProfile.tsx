@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useOwnerVehicles } from "@/hooks/useOwnerVehicles";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { PullToRefreshIndicator } from "@/components/ui/pull-to-refresh";
+import { useAddress } from "@/hooks/useAddress";
 import {
   ArrowLeft,
   Settings,
@@ -26,6 +27,7 @@ import {
   ExternalLink,
   AlertTriangle,
   Zap,
+  Loader2,
 } from "lucide-react";
 import { format, subDays, startOfDay, endOfDay, differenceInMinutes, isSameDay, parseISO } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -287,6 +289,12 @@ export default function OwnerVehicleProfile() {
   
 
   const vehicle = vehicles?.find((v) => v.deviceId === deviceId);
+
+  // Reverse geocoding for current location address
+  const { address: currentAddress, isLoading: addressLoading } = useAddress(
+    vehicle?.latitude,
+    vehicle?.longitude
+  );
 
   const { data: history, isLoading: historyLoading, refetch: refetchHistory } = useQuery({
     queryKey: ["vehicle-history", deviceId],
@@ -595,13 +603,29 @@ export default function OwnerVehicleProfile() {
                     <div className="p-2 rounded-full bg-primary/10">
                       <MapPin className="h-4 w-4 text-primary" />
                     </div>
-                    <div>
+                    <div className="flex-1 min-w-0">
                       <div className="font-medium text-foreground">Current Location</div>
-                      <div className="text-sm text-muted-foreground">
-                        {vehicle.latitude && vehicle.longitude ? (
-                          <span>Speed: {vehicle.speed} km/h</span>
-                        ) : "No GPS Signal"}
-                      </div>
+                      {vehicle.latitude && vehicle.longitude ? (
+                        <>
+                          <div className="text-sm text-muted-foreground truncate max-w-[200px]">
+                            {addressLoading ? (
+                              <span className="inline-flex items-center gap-1">
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                                Loading address...
+                              </span>
+                            ) : currentAddress ? (
+                              currentAddress
+                            ) : (
+                              `${vehicle.latitude.toFixed(4)}°, ${vehicle.longitude.toFixed(4)}°`
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            Speed: {vehicle.speed} km/h
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-sm text-muted-foreground">No GPS Signal</div>
+                      )}
                     </div>
                   </div>
                   {vehicle.latitude && vehicle.longitude && (
@@ -609,7 +633,7 @@ export default function OwnerVehicleProfile() {
                       href={getGoogleMapsLink(vehicle.latitude, vehicle.longitude)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/30 shadow-sm transition-all hover:scale-105"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/30 shadow-sm transition-all hover:scale-105 shrink-0"
                     >
                       <Navigation className="h-3 w-3" />
                       Open in Maps
