@@ -8,7 +8,8 @@ import {
   Brain, 
   Settings, 
   LogOut,
-  Wallet
+  Wallet,
+  Database
 } from "lucide-react";
 import { ConnectionStatus } from "@/hooks/useFleetData";
 
@@ -81,14 +82,24 @@ export function TopNavigation({ connectionStatus }: TopNavigationProps) {
             </NavLink>
           ))}
           {isAdmin && (
-            <NavLink
-              to="/admin/wallets"
-              className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground rounded-md transition-colors hover:text-foreground hover:bg-muted"
-              activeClassName="text-primary bg-primary/10"
-            >
-              <Wallet className="h-4 w-4" />
-              <span>Wallets</span>
-            </NavLink>
+            <>
+              <NavLink
+                to="/admin/wallets"
+                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground rounded-md transition-colors hover:text-foreground hover:bg-muted"
+                activeClassName="text-primary bg-primary/10"
+              >
+                <Wallet className="h-4 w-4" />
+                <span>Wallets</span>
+              </NavLink>
+              <NavLink
+                to="/admin/storage"
+                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground rounded-md transition-colors hover:text-foreground hover:bg-muted"
+                activeClassName="text-primary bg-primary/10"
+              >
+                <Database className="h-4 w-4" />
+                <span>Storage</span>
+              </NavLink>
+            </>
           )}
         </nav>
 
