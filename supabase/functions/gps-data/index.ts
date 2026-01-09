@@ -76,8 +76,13 @@ function isOnline(updateTime: number | null): boolean {
   return Date.now() - lastUpdate.getTime() < OFFLINE_THRESHOLD_MS
 }
 
-// Log API call
+// Log API call - ONLY log errors to reduce storage
 async function logApiCall(supabase: any, action: string, requestBody: any, responseStatus: number, responseBody: any, errorMessage: string | null, durationMs: number) {
+  // Only log errors (status !== 0) or explicit error messages
+  if (responseStatus === 0 && !errorMessage) {
+    return // Skip successful calls
+  }
+  
   try {
     await supabase.from('gps_api_logs').insert({
       action,
@@ -136,7 +141,19 @@ async function syncVehicles(supabase: any, devices: any[]) {
   }
 }
 
-// Sync positions from lastposition - batch insert
+// Haversine distance calculation (meters)
+function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000 // Earth radius in meters
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLon = (lon2 - lon1) * Math.PI / 180
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon/2) * Math.sin(dLon/2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+  return R * c
+}
+
+// Sync positions from lastposition - batch insert with SMART HISTORY
 async function syncPositions(supabase: any, records: any[]) {
   const now = new Date().toISOString()
   
@@ -164,7 +181,7 @@ async function syncPositions(supabase: any, records: any[]) {
     };
   })
 
-  // Batch upsert positions
+  // Batch upsert positions (always update current position)
   for (let i = 0; i < positions.length; i += BATCH_SIZE) {
     const batch = positions.slice(i, i + BATCH_SIZE)
     await supabase.from('vehicle_positions').upsert(batch, { 
@@ -173,19 +190,59 @@ async function syncPositions(supabase: any, records: any[]) {
     })
   }
 
-  // Batch insert history (only valid positions)
-  const historyRecords = positions
-    .filter(p => p.latitude && p.longitude)
-    .map(p => ({
-      device_id: p.device_id,
-      latitude: p.latitude,
-      longitude: p.longitude,
-      speed: p.speed,
-      heading: p.heading,
-      battery_percent: p.battery_percent,
-      ignition_on: p.ignition_on,
-      gps_time: p.gps_time
-    }))
+  // SMART HISTORY: Only record if position changed significantly (>50m) or 5 min elapsed
+  const validPositions = positions.filter(p => p.latitude && p.longitude)
+  if (validPositions.length === 0) return
+  
+  const deviceIds = validPositions.map(p => p.device_id)
+  
+  // Fetch most recent history record for each device
+  const { data: lastPositions } = await supabase
+    .from('position_history')
+    .select('device_id, latitude, longitude, recorded_at')
+    .in('device_id', deviceIds)
+    .order('recorded_at', { ascending: false })
+  
+  // Build lookup map of last position per device
+  const lastPosMap = new Map<string, any>()
+  if (lastPositions) {
+    for (const pos of lastPositions) {
+      if (!lastPosMap.has(pos.device_id)) {
+        lastPosMap.set(pos.device_id, pos)
+      }
+    }
+  }
+  
+  const DISTANCE_THRESHOLD_M = 50 // 50 meters
+  const TIME_THRESHOLD_MS = 5 * 60 * 1000 // 5 minutes
+  
+  const historyRecords = validPositions.filter(p => {
+    const last = lastPosMap.get(p.device_id)
+    if (!last) return true // First record for this device
+    
+    // Calculate distance from last recorded position
+    const distance = haversineDistance(
+      last.latitude, last.longitude,
+      p.latitude!, p.longitude!
+    )
+    
+    // Calculate time since last record
+    const timeDiff = Date.now() - new Date(last.recorded_at).getTime()
+    
+    // Record if moved >50m OR >5 minutes elapsed
+    return distance > DISTANCE_THRESHOLD_M || timeDiff > TIME_THRESHOLD_MS
+  }).map(p => ({
+    device_id: p.device_id,
+    latitude: p.latitude,
+    longitude: p.longitude,
+    speed: p.speed,
+    heading: p.heading,
+    battery_percent: p.battery_percent,
+    ignition_on: p.ignition_on,
+    gps_time: p.gps_time
+  }))
+
+  console.log(`Smart history: ${historyRecords.length}/${validPositions.length} positions recorded`)
 
   for (let i = 0; i < historyRecords.length; i += BATCH_SIZE) {
     const batch = historyRecords.slice(i, i + BATCH_SIZE)

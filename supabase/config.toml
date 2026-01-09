@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.gps51-user-auth]
 verify_jwt = false
+
+[functions.data-cleanup]
+verify_jwt = false
