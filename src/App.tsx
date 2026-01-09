@@ -12,6 +12,7 @@ import LiveMap from "./pages/LiveMap";
 import Insights from "./pages/Insights";
 import Profile from "./pages/Profile";
 import AdminWallets from "./pages/AdminWallets";
+import AdminStorage from "./pages/AdminStorage";
 import NotFound from "./pages/NotFound";
 import InstallApp from "./pages/InstallApp";
 
@@ -43,6 +44,7 @@ const App = () => (
             <Route path="/settings" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             <Route path="/admin/wallets" element={<ProtectedRoute><AdminWallets /></ProtectedRoute>} />
+            <Route path="/admin/storage" element={<ProtectedRoute><AdminStorage /></ProtectedRoute>} />
             
             {/* Owner PWA Routes */}
             <Route path="/owner" element={<ProtectedRoute><OwnerChat /></ProtectedRoute>} />
