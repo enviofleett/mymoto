@@ -19,6 +19,8 @@ import { VehicleMileageChart } from "./VehicleMileageChart";
 import { ProactiveNotifications } from "./ProactiveNotifications";
 import { LearnedLocations } from "./LearnedLocations";
 import { VehicleHealthDashboard } from "./VehicleHealthDashboard";
+import { CommandHistory } from "./CommandHistory";
+import { GeofenceManager } from "./GeofenceManager";
 import { 
   MapPin, Gauge, Battery, Power, User, Phone, 
   Calendar, AlertTriangle, Navigation, Car, UserPlus, UserMinus,
@@ -153,9 +155,11 @@ export function VehicleDetailsModal({
         </DialogHeader>
 
         <Tabs defaultValue="overview" className="w-full">
-          <TabsList className="grid w-full grid-cols-9 text-xs">
+          <TabsList className="grid w-full grid-cols-11 text-xs">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="chat">AI Chat</TabsTrigger>
+            <TabsTrigger value="commands">Commands</TabsTrigger>
+            <TabsTrigger value="geofences">Geofences</TabsTrigger>
             <TabsTrigger value="health">Health</TabsTrigger>
             <TabsTrigger value="locations">Locations</TabsTrigger>
             <TabsTrigger value="trips">Trips</TabsTrigger>
@@ -382,6 +386,18 @@ export function VehicleDetailsModal({
 
           <TabsContent value="chat" className="mt-4">
             <VehicleChat deviceId={vehicle.id} vehicleName={vehicle.name} />
+          </TabsContent>
+
+          <TabsContent value="commands" className="mt-4">
+            <ScrollArea className="h-[400px] pr-4">
+              <CommandHistory deviceId={vehicle.id} />
+            </ScrollArea>
+          </TabsContent>
+
+          <TabsContent value="geofences" className="mt-4">
+            <ScrollArea className="h-[400px] pr-4">
+              <GeofenceManager deviceId={vehicle.id} />
+            </ScrollArea>
           </TabsContent>
 
           <TabsContent value="health" className="mt-4">

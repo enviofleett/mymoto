@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { buildConversationContext, estimateTokenCount } from './conversation-manager.ts'
 import { routeQuery } from './query-router.ts'
+import { parseCommand, containsCommandKeywords, getCommandMetadata } from './command-parser.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -63,6 +64,40 @@ serve(async (req) => {
     )
 
     console.log(`Vehicle chat request for device: ${device_id}`)
+
+    // Check for vehicle commands first
+    let commandCreated = null
+    if (containsCommandKeywords(message)) {
+      const parsedCommand = parseCommand(message)
+
+      if (parsedCommand.isCommand && parsedCommand.commandType) {
+        console.log(`Command detected: ${parsedCommand.commandType} (confidence: ${parsedCommand.confidence})`)
+
+        try {
+          // Create the command in database
+          const { data: commandId, error: cmdError } = await supabase.rpc('create_vehicle_command', {
+            p_device_id: device_id,
+            p_command_type: parsedCommand.commandType,
+            p_command_text: message,
+            p_parameters: parsedCommand.parameters,
+            p_user_id: user_id,
+            p_priority: routing.priority === 'urgent' || routing.priority === 'high' ? 'high' : 'normal',
+            p_source: 'ai_chat'
+          })
+
+          if (!cmdError && commandId) {
+            commandCreated = {
+              id: commandId,
+              type: parsedCommand.commandType,
+              requires_confirmation: getCommandMetadata(parsedCommand.commandType).requiresConfirmation
+            }
+            console.log(`Command created: ${commandId}`)
+          }
+        } catch (cmdErr) {
+          console.error('Error creating command:', cmdErr)
+        }
+      }
+    }
 
     // Route query using intelligent intent classification
     const routing = routeQuery(message, device_id)
@@ -225,6 +260,11 @@ serve(async (req) => {
       p_status: 'active'
     })
 
+    // 6.6. Fetch geofence context
+    const { data: geofenceContext } = await supabase.rpc('get_vehicle_geofence_context', {
+      p_device_id: device_id
+    })
+
     // 7. Build System Prompt with Rich Context
     const pos = position
     const driver = assignment?.profiles as unknown as { name: string; phone: string | null; license_number: string | null } | null
@@ -318,6 +358,28 @@ ${maintenanceRecs.slice(0, 3).map((rec, i) =>
 ${maintenanceRecs.length > 3 ? `  ... and ${maintenanceRecs.length - 3} more recommendations` : ''}
 ⚠️ IMPORTANT: Proactively mention these maintenance issues when relevant to the conversation.
 ` : ''}
+${geofenceContext && geofenceContext.length > 0 && geofenceContext[0].is_inside_geofence ? `GEOFENCE STATUS:
+- Currently INSIDE geofence: "${geofenceContext[0].geofence_name}" (${geofenceContext[0].zone_type})
+- Entered ${geofenceContext[0].duration_minutes} minutes ago
+- Recent geofence events (24h): ${geofenceContext[0].recent_events_count}
+⚠️ IMPORTANT: Mention geofence context when discussing location (e.g., "I'm at your Home geofence").
+` : geofenceContext && geofenceContext.length > 0 && geofenceContext[0].recent_events_count > 0 ? `GEOFENCE STATUS:
+- Not currently inside any geofence
+- Recent geofence events (24h): ${geofenceContext[0].recent_events_count}
+` : ''}
+${commandCreated ? `COMMAND DETECTED:
+- Command Type: ${commandCreated.type}
+- Status: ${commandCreated.requires_confirmation ? 'Pending Approval (requires confirmation)' : 'Approved for Execution'}
+⚠️ IMPORTANT: Inform the user that their command has been ${commandCreated.requires_confirmation ? 'created and is waiting for approval' : 'created and will be executed'}.
+${commandCreated.requires_confirmation ? 'Explain that this command requires manual confirmation for safety reasons and they can approve it in the Commands tab.' : 'Explain that the command will be sent to the vehicle shortly.'}
+` : ''}
+COMMAND CAPABILITY:
+- You can understand and execute vehicle commands through natural language
+- Supported commands: lock, unlock, immobilize, restore, set speed limit, enable/disable geofence, request location/status
+- Some commands (immobilize, stop engine) require manual approval for safety
+- When a user issues a command, acknowledge it and explain the next steps
+- Examples: "Lock the doors" → Creates lock command, "Set speed limit to 80" → Creates speed limit command
+
 RESPONSE RULES:
 1. ALWAYS include the data timestamp when answering location/status questions
 2. When discussing location, you MUST include a special LOCATION tag for rich rendering:
