@@ -263,12 +263,13 @@ export function useFleetData() {
   const queryClient = useQueryClient();
 
   // Use TanStack Query for caching and background refetching
+  // Optimized: Extended cache times to reduce Edge Function calls
   const { data, isLoading, error, refetch, status } = useQuery({
     queryKey: ['fleet-data'],
     queryFn: fetchFleetData,
-    staleTime: 30 * 1000, // Data fresh for 30 seconds - no refetch on mount
-    gcTime: 5 * 60 * 1000, // Keep in cache for 5 minutes
-    refetchInterval: 60 * 1000, // Background poll every 60s as fallback
+    staleTime: 60 * 1000, // Data fresh for 60 seconds (doubled from 30s)
+    gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes (doubled from 5m)
+    refetchInterval: 2 * 60 * 1000, // Background poll every 2 min (doubled from 60s)
     refetchOnWindowFocus: false, // Don't refetch on tab focus
     retry: 2,
   });
