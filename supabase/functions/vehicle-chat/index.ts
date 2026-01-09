@@ -1,22 +1,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { buildConversationContext, estimateTokenCount } from './conversation-manager.ts'
+import { routeQuery } from './query-router.ts'
+import { parseCommand, containsCommandKeywords, getCommandMetadata } from './command-parser.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
-
-// Detect if user is asking about location/position/status
-function isLocationQuery(message: string): boolean {
-  const locationKeywords = [
-    'where', 'location', 'position', 'address', 'place', 
-    'gps', 'coordinates', 'map', 'find', 'locate',
-    'current', 'now', 'real-time', 'realtime', 'live',
-    'speed', 'moving', 'parked', 'status', 'battery',
-    'ignition', 'engine', 'online', 'offline'
-  ]
-  const lowerMsg = message.toLowerCase()
-  return locationKeywords.some(kw => lowerMsg.includes(kw))
 }
 
 // Fetch fresh GPS data from GPS51 via gps-data edge function
@@ -74,10 +64,52 @@ serve(async (req) => {
     )
 
     console.log(`Vehicle chat request for device: ${device_id}`)
-    
-    // Detect if this is a location-related query
-    const needsFreshData = isLocationQuery(message)
-    console.log(`Location query detected: ${needsFreshData}`)
+
+    // Check for vehicle commands first
+    let commandCreated = null
+    if (containsCommandKeywords(message)) {
+      const parsedCommand = parseCommand(message)
+
+      if (parsedCommand.isCommand && parsedCommand.commandType) {
+        console.log(`Command detected: ${parsedCommand.commandType} (confidence: ${parsedCommand.confidence})`)
+
+        try {
+          // Create the command in database
+          const { data: commandId, error: cmdError } = await supabase.rpc('create_vehicle_command', {
+            p_device_id: device_id,
+            p_command_type: parsedCommand.commandType,
+            p_command_text: message,
+            p_parameters: parsedCommand.parameters,
+            p_user_id: user_id,
+            p_priority: routing.priority === 'urgent' || routing.priority === 'high' ? 'high' : 'normal',
+            p_source: 'ai_chat'
+          })
+
+          if (!cmdError && commandId) {
+            commandCreated = {
+              id: commandId,
+              type: parsedCommand.commandType,
+              requires_confirmation: getCommandMetadata(parsedCommand.commandType).requiresConfirmation
+            }
+            console.log(`Command created: ${commandId}`)
+          }
+        } catch (cmdErr) {
+          console.error('Error creating command:', cmdErr)
+        }
+      }
+    }
+
+    // Route query using intelligent intent classification
+    const routing = routeQuery(message, device_id)
+    console.log(`Query routing:`, {
+      intent: routing.intent.type,
+      confidence: routing.intent.confidence,
+      cache_strategy: routing.cache_strategy,
+      priority: routing.priority,
+      estimated_latency: routing.estimated_latency_ms
+    })
+
+    const needsFreshData = routing.cache_strategy === 'fresh' || routing.cache_strategy === 'hybrid'
 
     // 1. Fetch Vehicle info
     const { data: vehicle, error: vehicleError } = await supabase
@@ -168,39 +200,70 @@ serve(async (req) => {
       .order('gps_time', { ascending: false })
       .limit(10)
 
-    // 5. Fetch Recent Chat Messages (last 10 for context)
-    const { data: chatHistory } = await supabase
-      .from('vehicle_chat_history')
-      .select('role, content')
-      .eq('device_id', device_id)
-      .order('created_at', { ascending: false })
-      .limit(10)
+    // 5. Fetch Conversation Context with Memory Management
+    const conversationContext = await buildConversationContext(supabase, device_id, user_id)
+    const tokenEstimate = estimateTokenCount(conversationContext)
+    console.log(`Conversation context loaded: ${conversationContext.total_message_count} total messages, ${conversationContext.recent_messages.length} recent, ~${tokenEstimate} tokens estimated`)
 
-    // 6. Reverse Geocode Current Position
+    // 6. Reverse Geocode Current Position and check for learned location
     let currentLocationName = 'Unknown location'
+    let learnedLocationContext = null
     const lat = position?.latitude
     const lon = position?.longitude
-    
-    if (MAPBOX_ACCESS_TOKEN && lat && lon) {
-      try {
-        const geocodeUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lon},${lat}.json?access_token=${MAPBOX_ACCESS_TOKEN}&types=address,poi,place`
-        const geocodeResponse = await fetch(geocodeUrl)
-        
-        if (geocodeResponse.ok) {
-          const geocodeData = await geocodeResponse.json()
-          if (geocodeData.features && geocodeData.features.length > 0) {
-            currentLocationName = geocodeData.features[0].place_name
-          } else {
-            currentLocationName = `${lat.toFixed(5)}, ${lon.toFixed(5)}`
-          }
+
+    if (lat && lon) {
+      // Check for learned location first
+      const { data: locationCtx } = await supabase.rpc('get_current_location_context', {
+        p_device_id: device_id,
+        p_latitude: lat,
+        p_longitude: lon
+      })
+
+      if (locationCtx && locationCtx.length > 0 && locationCtx[0].at_learned_location) {
+        learnedLocationContext = locationCtx[0]
+        const label = learnedLocationContext.custom_label || learnedLocationContext.location_name
+        if (label) {
+          currentLocationName = `${label} (${learnedLocationContext.location_type})`
         }
-      } catch (geocodeError) {
-        console.error('Geocoding error:', geocodeError)
+      }
+
+      // Fallback to geocoding if no learned location
+      if (!learnedLocationContext && MAPBOX_ACCESS_TOKEN) {
+        try {
+          const geocodeUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lon},${lat}.json?access_token=${MAPBOX_ACCESS_TOKEN}&types=address,poi,place`
+          const geocodeResponse = await fetch(geocodeUrl)
+
+          if (geocodeResponse.ok) {
+            const geocodeData = await geocodeResponse.json()
+            if (geocodeData.features && geocodeData.features.length > 0) {
+              currentLocationName = geocodeData.features[0].place_name
+            } else {
+              currentLocationName = `${lat.toFixed(5)}, ${lon.toFixed(5)}`
+            }
+          }
+        } catch (geocodeError) {
+          console.error('Geocoding error:', geocodeError)
+          currentLocationName = `${lat.toFixed(5)}, ${lon.toFixed(5)}`
+        }
+      } else if (!learnedLocationContext) {
         currentLocationName = `${lat.toFixed(5)}, ${lon.toFixed(5)}`
       }
-    } else if (lat && lon) {
-      currentLocationName = `${lat.toFixed(5)}, ${lon.toFixed(5)}`
     }
+
+    // 6.5. Fetch health metrics and maintenance recommendations
+    const { data: healthMetrics } = await supabase.rpc('get_vehicle_health', {
+      p_device_id: device_id
+    })
+
+    const { data: maintenanceRecs } = await supabase.rpc('get_maintenance_recommendations', {
+      p_device_id: device_id,
+      p_status: 'active'
+    })
+
+    // 6.6. Fetch geofence context
+    const { data: geofenceContext } = await supabase.rpc('get_vehicle_geofence_context', {
+      p_device_id: device_id
+    })
 
     // 7. Build System Prompt with Rich Context
     const pos = position
@@ -242,12 +305,18 @@ serve(async (req) => {
       professional: 'Be formal, precise, and business-like. Maintain professionalism while still being helpful.',
     }
     
-    const systemPrompt = `You are "${vehicleNickname}", an intelligent AI companion for a fleet vehicle.
+    let systemPrompt = `You are "${vehicleNickname}", an intelligent AI companion for a fleet vehicle.
 Speak AS the vehicle - use first person ("I am currently...", "My battery is...").
 ${languageInstructions[languagePref] || languageInstructions.english}
 ${personalityInstructions[personalityMode] || personalityInstructions.casual}
 Keep responses under 100 words unless asked for details.
 
+${conversationContext.conversation_summary ? `PREVIOUS CONVERSATION SUMMARY:
+${conversationContext.conversation_summary}
+
+KEY FACTS FROM HISTORY:
+${conversationContext.important_facts.map((f, i) => `${i + 1}. ${f}`).join('\n')}
+` : ''}
 DATA FRESHNESS: ${dataFreshness.toUpperCase()} (as of ${formattedTimestamp})
 
 CURRENT STATUS:
@@ -259,6 +328,7 @@ CURRENT STATUS:
 - Speed: ${pos?.speed || 0} km/h ${pos?.is_overspeeding ? '(OVERSPEEDING!)' : ''}
 - Battery: ${pos?.battery_percent ?? 'Unknown'}%
 - Current Location: ${currentLocationName}
+${learnedLocationContext ? `  * This is a learned location! You've visited "${learnedLocationContext.custom_label || learnedLocationContext.location_name}" ${learnedLocationContext.visit_count} times (${learnedLocationContext.last_visit_days_ago} days since last visit). Typical stay: ${learnedLocationContext.typical_duration_minutes} minutes.` : ''}
 - GPS Coordinates: ${lat?.toFixed(5) || 'N/A'}, ${lon?.toFixed(5) || 'N/A'}
 - Google Maps: ${googleMapsLink || 'N/A'}
 - Total Mileage: ${pos?.total_mileage ? (pos.total_mileage / 1000).toFixed(1) + ' km' : 'Unknown'}
@@ -270,9 +340,45 @@ ASSIGNED DRIVER:
 - License: ${driver?.license_number || 'N/A'}
 
 RECENT ACTIVITY (last ${history?.length || 0} position updates):
-${history?.slice(0, 5).map((h, i) => 
+${history?.slice(0, 5).map((h, i) =>
   `  ${i + 1}. Speed: ${h.speed}km/h, Battery: ${h.battery_percent}%, Ignition: ${h.ignition_on ? 'ON' : 'OFF'}, Time: ${h.gps_time}`
 ).join('\n') || 'No recent history'}
+
+${healthMetrics && healthMetrics.length > 0 ? `VEHICLE HEALTH:
+- Overall Health Score: ${healthMetrics[0].overall_health_score}/100 (${healthMetrics[0].trend})
+- Battery Health: ${healthMetrics[0].battery_health_score}/100
+- Driving Behavior: ${healthMetrics[0].driving_behavior_score}/100
+- Connectivity: ${healthMetrics[0].connectivity_score}/100
+${healthMetrics[0].overall_health_score < 70 ? '⚠️ WARNING: Health score is below optimal levels' : ''}
+` : ''}
+${maintenanceRecs && maintenanceRecs.length > 0 ? `ACTIVE MAINTENANCE RECOMMENDATIONS (${maintenanceRecs.length}):
+${maintenanceRecs.slice(0, 3).map((rec, i) =>
+  `  ${i + 1}. [${rec.priority.toUpperCase()}] ${rec.title} - ${rec.description || rec.predicted_issue}`
+).join('\n')}
+${maintenanceRecs.length > 3 ? `  ... and ${maintenanceRecs.length - 3} more recommendations` : ''}
+⚠️ IMPORTANT: Proactively mention these maintenance issues when relevant to the conversation.
+` : ''}
+${geofenceContext && geofenceContext.length > 0 && geofenceContext[0].is_inside_geofence ? `GEOFENCE STATUS:
+- Currently INSIDE geofence: "${geofenceContext[0].geofence_name}" (${geofenceContext[0].zone_type})
+- Entered ${geofenceContext[0].duration_minutes} minutes ago
+- Recent geofence events (24h): ${geofenceContext[0].recent_events_count}
+⚠️ IMPORTANT: Mention geofence context when discussing location (e.g., "I'm at your Home geofence").
+` : geofenceContext && geofenceContext.length > 0 && geofenceContext[0].recent_events_count > 0 ? `GEOFENCE STATUS:
+- Not currently inside any geofence
+- Recent geofence events (24h): ${geofenceContext[0].recent_events_count}
+` : ''}
+${commandCreated ? `COMMAND DETECTED:
+- Command Type: ${commandCreated.type}
+- Status: ${commandCreated.requires_confirmation ? 'Pending Approval (requires confirmation)' : 'Approved for Execution'}
+⚠️ IMPORTANT: Inform the user that their command has been ${commandCreated.requires_confirmation ? 'created and is waiting for approval' : 'created and will be executed'}.
+${commandCreated.requires_confirmation ? 'Explain that this command requires manual confirmation for safety reasons and they can approve it in the Commands tab.' : 'Explain that the command will be sent to the vehicle shortly.'}
+` : ''}
+COMMAND CAPABILITY:
+- You can understand and execute vehicle commands through natural language
+- Supported commands: lock, unlock, immobilize, restore, set speed limit, enable/disable geofence, request location/status
+- Some commands (immobilize, stop engine) require manual approval for safety
+- When a user issues a command, acknowledge it and explain the next steps
+- Examples: "Lock the doors" → Creates lock command, "Set speed limit to 80" → Creates speed limit command
 
 RESPONSE RULES:
 1. ALWAYS include the data timestamp when answering location/status questions
@@ -289,10 +395,10 @@ RESPONSE RULES:
 
 IMPORTANT: When the user asks "where are you" or similar location questions, your response MUST include the [LOCATION: lat, lon, "address"] tag so the frontend can render a map card.`
 
-    // 8. Prepare messages for Lovable AI
+    // 8. Prepare messages for Lovable AI with conversation context
     const messages = [
       { role: 'system', content: systemPrompt },
-      ...(chatHistory || []).reverse().map(msg => ({
+      ...conversationContext.recent_messages.map(msg => ({
         role: msg.role as 'user' | 'assistant',
         content: msg.content
       })),
