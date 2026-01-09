@@ -1,13 +1,14 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
 import { useOwnerVehicles } from "@/hooks/useOwnerVehicles";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
+import { PullToRefreshIndicator } from "@/components/ui/pull-to-refresh";
 import {
   ArrowLeft,
   Settings,
@@ -283,7 +284,7 @@ export default function OwnerVehicleProfile() {
   const { deviceId } = useParams<{ deviceId: string }>();
   const navigate = useNavigate();
   const { data: vehicles, isLoading: vehiclesLoading, refetch: refetchVehicles } = useOwnerVehicles();
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  
 
   const vehicle = vehicles?.find((v) => v.deviceId === deviceId);
 
@@ -350,14 +351,15 @@ export default function OwnerVehicleProfile() {
   }, [processedData, mileageStats]);
 
   // Handle refresh
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    try {
-      await Promise.all([refetchVehicles(), refetchHistory()]);
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
+  const handleRefresh = useCallback(async () => {
+    await Promise.all([refetchVehicles(), refetchHistory()]);
+  }, [refetchVehicles, refetchHistory]);
+
+  // Pull-to-refresh hook
+  const { pullDistance, isRefreshing: isPullRefreshing, handlers } = usePullToRefresh({
+    onRefresh: handleRefresh,
+    threshold: 80,
+  });
 
   // Get battery status label
   const getBatteryStatus = (battery: number | null) => {
@@ -423,7 +425,16 @@ export default function OwnerVehicleProfile() {
         </div>
       </div>
 
-      <ScrollArea className="flex-1">
+      <div 
+        className="flex-1 overflow-y-auto overscroll-contain"
+        onTouchStart={handlers.onTouchStart}
+        onTouchMove={handlers.onTouchMove}
+        onTouchEnd={handlers.onTouchEnd}
+      >
+        <PullToRefreshIndicator 
+          pullDistance={pullDistance} 
+          isRefreshing={isPullRefreshing} 
+        />
         <div className="pb-8">
           {/* Vehicle Avatar */}
           <div className="flex flex-col items-center py-6">
@@ -573,9 +584,9 @@ export default function OwnerVehicleProfile() {
                   variant="ghost"
                   className="absolute top-2 right-2 h-8 w-8 bg-background/50 backdrop-blur-sm"
                   onClick={handleRefresh}
-                  disabled={isRefreshing}
+                  disabled={isPullRefreshing}
                 >
-                  <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+                  <RefreshCw className={cn("h-4 w-4", isPullRefreshing && "animate-spin")} />
                 </Button>
               </div>
               <CardContent className="p-4">
@@ -932,7 +943,7 @@ export default function OwnerVehicleProfile() {
             </Card>
           </div>
         </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 }
