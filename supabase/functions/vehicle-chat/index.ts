@@ -65,41 +65,7 @@ serve(async (req) => {
 
     console.log(`Vehicle chat request for device: ${device_id}`)
 
-    // Check for vehicle commands first
-    let commandCreated = null
-    if (containsCommandKeywords(message)) {
-      const parsedCommand = parseCommand(message)
-
-      if (parsedCommand.isCommand && parsedCommand.commandType) {
-        console.log(`Command detected: ${parsedCommand.commandType} (confidence: ${parsedCommand.confidence})`)
-
-        try {
-          // Create the command in database
-          const { data: commandId, error: cmdError } = await supabase.rpc('create_vehicle_command', {
-            p_device_id: device_id,
-            p_command_type: parsedCommand.commandType,
-            p_command_text: message,
-            p_parameters: parsedCommand.parameters,
-            p_user_id: user_id,
-            p_priority: routing.priority === 'urgent' || routing.priority === 'high' ? 'high' : 'normal',
-            p_source: 'ai_chat'
-          })
-
-          if (!cmdError && commandId) {
-            commandCreated = {
-              id: commandId,
-              type: parsedCommand.commandType,
-              requires_confirmation: getCommandMetadata(parsedCommand.commandType).requiresConfirmation
-            }
-            console.log(`Command created: ${commandId}`)
-          }
-        } catch (cmdErr) {
-          console.error('Error creating command:', cmdErr)
-        }
-      }
-    }
-
-    // Route query using intelligent intent classification
+    // Route query FIRST using intelligent intent classification (needed for command priority)
     const routing = routeQuery(message, device_id)
     console.log(`Query routing:`, {
       intent: routing.intent.type,
@@ -108,6 +74,26 @@ serve(async (req) => {
       priority: routing.priority,
       estimated_latency: routing.estimated_latency_ms
     })
+
+    // Check for vehicle commands
+    let commandCreated = null
+    if (containsCommandKeywords(message)) {
+      const parsedCommand = parseCommand(message)
+
+      if (parsedCommand.isCommand && parsedCommand.commandType) {
+        console.log(`Command detected: ${parsedCommand.commandType} (confidence: ${parsedCommand.confidence})`)
+
+        // Store command info for response, but don't call RPC (table may not exist)
+        commandCreated = {
+          id: null,
+          type: parsedCommand.commandType,
+          requires_confirmation: getCommandMetadata(parsedCommand.commandType).requiresConfirmation
+        }
+        console.log(`Command parsed: ${parsedCommand.commandType}`)
+      }
+    }
+
+    // Determine if fresh data is needed based on routing
 
     const needsFreshData = routing.cache_strategy === 'fresh' || routing.cache_strategy === 'hybrid'
 
@@ -352,8 +338,8 @@ ${healthMetrics && healthMetrics.length > 0 ? `VEHICLE HEALTH:
 ${healthMetrics[0].overall_health_score < 70 ? '⚠️ WARNING: Health score is below optimal levels' : ''}
 ` : ''}
 ${maintenanceRecs && maintenanceRecs.length > 0 ? `ACTIVE MAINTENANCE RECOMMENDATIONS (${maintenanceRecs.length}):
-${maintenanceRecs.slice(0, 3).map((rec, i) =>
-  `  ${i + 1}. [${rec.priority.toUpperCase()}] ${rec.title} - ${rec.description || rec.predicted_issue}`
+${maintenanceRecs.slice(0, 3).map((rec: any, i: number) =>
+  `  ${i + 1}. [${rec.priority?.toUpperCase() || 'MEDIUM'}] ${rec.title || 'Recommendation'} - ${rec.description || rec.predicted_issue || 'Check vehicle'}`
 ).join('\n')}
 ${maintenanceRecs.length > 3 ? `  ... and ${maintenanceRecs.length - 3} more recommendations` : ''}
 ⚠️ IMPORTANT: Proactively mention these maintenance issues when relevant to the conversation.

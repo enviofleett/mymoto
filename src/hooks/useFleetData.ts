@@ -266,11 +266,11 @@ export function useFleetData() {
   // Optimized: Extended cache times to reduce Edge Function calls
   const { data, isLoading, error, refetch, status } = useQuery({
     queryKey: ['fleet-data'],
-    queryFn: fetchFleetData,
-    staleTime: 60 * 1000, // Data fresh for 60 seconds (doubled from 30s)
-    gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes (doubled from 5m)
-    refetchInterval: 2 * 60 * 1000, // Background poll every 2 min (doubled from 60s)
-    refetchOnWindowFocus: false, // Don't refetch on tab focus
+    queryFn: () => fetchFleetData(true),
+    staleTime: 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    refetchInterval: 2 * 60 * 1000,
+    refetchOnWindowFocus: false,
     retry: 2,
   });
 
@@ -334,18 +334,19 @@ export function useFleetData() {
 
   // Derive connection status from query status
   const connectionStatus: ConnectionStatus = useMemo(() => {
-    if (status === 'pending') return 'connecting';
-    if (status === 'error') return 'disconnected';
+    if (isLoading) return 'connecting';
+    if (error) return 'disconnected';
     return 'connected';
-  }, [status]);
+  }, [isLoading, error]);
 
   // Force refresh function that bypasses cache
   const forceRefresh = async () => {
-    queryClient.setQueryData(['fleet-data'], undefined); // Clear cache
-    return await queryClient.fetchQuery({
+    queryClient.setQueryData(['fleet-data'], undefined);
+    const result = await queryClient.fetchQuery({
       queryKey: ['fleet-data'],
-      queryFn: () => fetchFleetData(false), // use_cache: false
+      queryFn: () => fetchFleetData(false),
     });
+    return result as { vehicles: FleetVehicle[]; metrics: FleetMetrics };
   };
 
   return {

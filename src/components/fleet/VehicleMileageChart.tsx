@@ -2,13 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { Loader2, TrendingUp, Navigation, Calendar } from "lucide-react";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, subDays } from "date-fns";
 
 interface DailyMileage {
   date: string;
   distance_km: number;
   trip_count: number;
-  total_duration_minutes: number;
 }
 
 interface VehicleMileageChartProps {
@@ -20,14 +19,60 @@ export function VehicleMileageChart({ deviceId, days = 7 }: VehicleMileageChartP
   const { data: mileageData, isLoading } = useQuery({
     queryKey: ['vehicle-mileage', deviceId, days],
     queryFn: async () => {
+      // Fetch position history for last N days
+      const startDate = subDays(new Date(), days).toISOString();
+      
       const { data, error } = await supabase
-        .rpc('get_daily_mileage', {
-          p_device_id: deviceId,
-          p_days: days
-        });
+        .from('position_history')
+        .select('gps_time, speed, latitude, longitude')
+        .eq('device_id', deviceId)
+        .gte('gps_time', startDate)
+        .order('gps_time', { ascending: true });
 
       if (error) throw error;
-      return (data || []) as DailyMileage[];
+      
+      // Group by day and calculate distance
+      const dailyStats = new Map<string, { distance: number; trips: number }>();
+      let prevLat: number | null = null;
+      let prevLon: number | null = null;
+      
+      (data || []).forEach((pos: any) => {
+        if (!pos.gps_time || !pos.latitude || !pos.longitude) return;
+        
+        const day = format(new Date(pos.gps_time), 'yyyy-MM-dd');
+        
+        if (!dailyStats.has(day)) {
+          dailyStats.set(day, { distance: 0, trips: 0 });
+        }
+        
+        const stats = dailyStats.get(day)!;
+        
+        // Calculate distance using Haversine formula
+        if (prevLat !== null && prevLon !== null && pos.speed > 0) {
+          const R = 6371; // km
+          const dLat = (pos.latitude - prevLat) * Math.PI / 180;
+          const dLon = (pos.longitude - prevLon) * Math.PI / 180;
+          const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                    Math.cos(prevLat * Math.PI / 180) * Math.cos(pos.latitude * Math.PI / 180) *
+                    Math.sin(dLon/2) * Math.sin(dLon/2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+          const d = R * c;
+          
+          if (d < 10) { // Filter out GPS jumps > 10km
+            stats.distance += d;
+          }
+        }
+        
+        prevLat = pos.latitude;
+        prevLon = pos.longitude;
+      });
+
+      // Convert to array
+      return Array.from(dailyStats.entries()).map(([date, stats]) => ({
+        date,
+        distance_km: Math.round(stats.distance * 10) / 10,
+        trip_count: Math.max(1, Math.floor(stats.distance / 10)) // Estimate trips
+      }));
     },
     enabled: !!deviceId,
     refetchInterval: 300000 // Refresh every 5 minutes
@@ -54,20 +99,20 @@ export function VehicleMileageChart({ deviceId, days = 7 }: VehicleMileageChartP
     );
   }
 
-  // Prepare chart data (reverse to show oldest to newest left to right)
-  const chartData = [...mileageData].reverse().map(item => ({
+  // Prepare chart data
+  const chartData = mileageData.map(item => ({
     date: item.date,
     dateLabel: format(parseISO(item.date), 'MMM d'),
     dayLabel: format(parseISO(item.date), 'EEE'),
-    distance: Number(item.distance_km),
-    trips: Number(item.trip_count)
+    distance: item.distance_km,
+    trips: item.trip_count
   }));
 
   // Calculate summary statistics
-  const totalDistance = mileageData.reduce((sum, item) => sum + Number(item.distance_km), 0);
-  const totalTrips = mileageData.reduce((sum, item) => sum + Number(item.trip_count), 0);
+  const totalDistance = mileageData.reduce((sum, item) => sum + item.distance_km, 0);
+  const totalTrips = mileageData.reduce((sum, item) => sum + item.trip_count, 0);
   const avgDistance = totalDistance / days;
-  const maxDistance = Math.max(...mileageData.map(item => Number(item.distance_km)));
+  const maxDistance = Math.max(...mileageData.map(item => item.distance_km));
 
   // Custom tooltip
   const CustomTooltip = ({ active, payload }: any) => {

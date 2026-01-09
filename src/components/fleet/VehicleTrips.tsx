@@ -27,17 +27,83 @@ export function VehicleTrips({ deviceId }: VehicleTripsProps) {
   const { data: trips, isLoading } = useQuery({
     queryKey: ['vehicle-trips', deviceId],
     queryFn: async () => {
+      // Fetch position history to calculate trips
       const { data, error } = await supabase
-        .rpc('get_recent_trips', {
-          p_device_id: deviceId,
-          p_limit: 20
-        });
+        .from('position_history')
+        .select('id, gps_time, latitude, longitude, speed, ignition_on')
+        .eq('device_id', deviceId)
+        .order('gps_time', { ascending: false })
+        .limit(500);
 
       if (error) throw error;
-      return (data || []) as Trip[];
+      
+      // Group positions into trips based on ignition
+      const tripsList: Trip[] = [];
+      let currentTrip: any = null;
+      let tripDistance = 0;
+      let tripSpeeds: number[] = [];
+      let prevPos: any = null;
+      
+      const positions = (data || []).reverse(); // Oldest first
+      
+      positions.forEach((pos: any) => {
+        if (pos.ignition_on && !currentTrip) {
+          // Start new trip
+          currentTrip = {
+            start_time: pos.gps_time,
+            start_latitude: pos.latitude,
+            start_longitude: pos.longitude
+          };
+          tripDistance = 0;
+          tripSpeeds = [];
+        }
+        
+        if (currentTrip && pos.speed > 0 && prevPos) {
+          // Calculate distance
+          const R = 6371;
+          const dLat = (pos.latitude - prevPos.latitude) * Math.PI / 180;
+          const dLon = (pos.longitude - prevPos.longitude) * Math.PI / 180;
+          const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                    Math.cos(prevPos.latitude * Math.PI / 180) * Math.cos(pos.latitude * Math.PI / 180) *
+                    Math.sin(dLon/2) * Math.sin(dLon/2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+          const d = R * c;
+          
+          if (d < 5) {
+            tripDistance += d;
+            tripSpeeds.push(pos.speed);
+          }
+        }
+        
+        if (!pos.ignition_on && currentTrip && tripDistance > 0.5) {
+          // End trip
+          const durationMs = new Date(pos.gps_time).getTime() - new Date(currentTrip.start_time).getTime();
+          const durationMinutes = durationMs / 60000;
+          
+          tripsList.push({
+            id: `trip-${tripsList.length}`,
+            start_time: currentTrip.start_time,
+            end_time: pos.gps_time,
+            start_latitude: currentTrip.start_latitude,
+            start_longitude: currentTrip.start_longitude,
+            end_latitude: pos.latitude,
+            end_longitude: pos.longitude,
+            distance_km: Math.round(tripDistance * 10) / 10,
+            avg_speed_kmh: tripSpeeds.length > 0 ? Math.round(tripSpeeds.reduce((a, b) => a + b, 0) / tripSpeeds.length) : 0,
+            max_speed_kmh: tripSpeeds.length > 0 ? Math.max(...tripSpeeds) : 0,
+            duration_minutes: Math.round(durationMinutes)
+          });
+          
+          currentTrip = null;
+        }
+        
+        prevPos = pos;
+      });
+
+      return tripsList.reverse().slice(0, 20); // Latest first
     },
     enabled: !!deviceId,
-    refetchInterval: 60000 // Refresh every minute
+    refetchInterval: 60000
   });
 
   const formatDuration = (minutes: number | null) => {
@@ -133,7 +199,7 @@ export function VehicleTrips({ deviceId }: VehicleTripsProps) {
               <div className="space-y-1">
                 <p className="text-xs text-muted-foreground">Avg Speed</p>
                 <p className="text-sm font-semibold">
-                  {trip.avg_speed_kmh.toFixed(0)} km/h
+                  {trip.avg_speed_kmh} km/h
                 </p>
               </div>
             </div>
@@ -166,7 +232,7 @@ export function VehicleTrips({ deviceId }: VehicleTripsProps) {
             {trip.max_speed_kmh > 100 && (
               <div className="mt-2 flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-500">
                 <TrendingUp className="h-3 w-3" />
-                <span>Max speed: {trip.max_speed_kmh.toFixed(0)} km/h</span>
+                <span>Max speed: {trip.max_speed_kmh} km/h</span>
               </div>
             )}
           </div>
