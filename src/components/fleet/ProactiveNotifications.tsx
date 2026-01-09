@@ -6,28 +6,24 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   AlertCircle,
-  AlertTriangle,
   Info,
-  XCircle,
   Check,
   Clock,
   MapPin,
   Battery,
   Gauge,
-  Zap,
   Power,
   TrendingDown,
   TrendingUp,
   Radio,
-  AlertOctagon,
-  Loader2
+  Loader2,
+  Bell
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 interface ProactiveNotificationsProps {
   deviceId?: string;
   limit?: number;
-  showAcknowledged?: boolean;
 }
 
 interface ProactiveEvent {
@@ -38,12 +34,8 @@ interface ProactiveEvent {
   title: string;
   description: string | null;
   metadata: any;
-  latitude: number | null;
-  longitude: number | null;
-  location_name: string | null;
   created_at: string;
   acknowledged: boolean;
-  age_minutes: number;
 }
 
 // Event type to icon mapping
@@ -59,10 +51,7 @@ const EVENT_ICONS: Record<string, any> = {
   geofence_exit: MapPin,
   idle_too_long: Clock,
   offline: Radio,
-  online: Radio,
-  maintenance_due: AlertOctagon,
-  trip_completed: Check,
-  anomaly_detected: Zap
+  online: Radio
 };
 
 // Severity to color mapping
@@ -82,31 +71,29 @@ const SEVERITY_BADGE_COLORS: Record<string, string> = {
 
 export function ProactiveNotifications({
   deviceId,
-  limit = 10,
-  showAcknowledged = false
+  limit = 10
 }: ProactiveNotificationsProps) {
   const [events, setEvents] = useState<ProactiveEvent[]>([]);
   const [loading, setLoading] = useState(true);
-  const [acknowledging, setAcknowledging] = useState<string | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
     fetchEvents();
 
-    // Subscribe to new events
+    // Subscribe to position changes for real-time alerts
     const channel = supabase
-      .channel('proactive_events')
+      .channel('proactive_alerts')
       .on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: 'UPDATE',
           schema: 'public',
-          table: 'proactive_vehicle_events',
+          table: 'vehicle_positions',
           filter: deviceId ? `device_id=eq.${deviceId}` : undefined
         },
         (payload) => {
-          console.log('New proactive event:', payload);
-          fetchEvents(); // Refresh the list
+          // Generate proactive events from position updates
+          generateProactiveEvents(payload.new as any);
         }
       )
       .subscribe();
@@ -114,60 +101,136 @@ export function ProactiveNotifications({
     return () => {
       channel.unsubscribe();
     };
-  }, [deviceId, showAcknowledged]);
+  }, [deviceId]);
 
   const fetchEvents = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.rpc('get_unacknowledged_events', {
-        p_device_id: deviceId || null,
-        p_limit: limit
+      // Fetch recent position data to generate alerts
+      const query = supabase
+        .from('vehicle_positions')
+        .select('*')
+        .order('gps_time', { ascending: false })
+        .limit(limit);
+
+      if (deviceId) {
+        query.eq('device_id', deviceId);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      // Generate events from position data
+      const generatedEvents: ProactiveEvent[] = [];
+      
+      (data || []).forEach((pos: any) => {
+        // Low battery alert
+        if (pos.battery_percent && pos.battery_percent > 0 && pos.battery_percent < 20) {
+          generatedEvents.push({
+            id: `battery-${pos.device_id}`,
+            device_id: pos.device_id,
+            event_type: pos.battery_percent < 10 ? 'critical_battery' : 'low_battery',
+            severity: pos.battery_percent < 10 ? 'critical' : 'warning',
+            title: `Low Battery Alert`,
+            description: `Battery at ${pos.battery_percent}%`,
+            metadata: { battery_percent: pos.battery_percent },
+            created_at: pos.gps_time || new Date().toISOString(),
+            acknowledged: false
+          });
+        }
+
+        // Overspeeding alert
+        if (pos.is_overspeeding && pos.speed > 0) {
+          generatedEvents.push({
+            id: `speed-${pos.device_id}`,
+            device_id: pos.device_id,
+            event_type: 'overspeeding',
+            severity: pos.speed > 120 ? 'error' : 'warning',
+            title: `Overspeeding Detected`,
+            description: `Vehicle traveling at ${pos.speed} km/h`,
+            metadata: { speed: pos.speed },
+            created_at: pos.gps_time || new Date().toISOString(),
+            acknowledged: false
+          });
+        }
+
+        // Offline alert
+        if (pos.is_online === false) {
+          generatedEvents.push({
+            id: `offline-${pos.device_id}`,
+            device_id: pos.device_id,
+            event_type: 'offline',
+            severity: 'warning',
+            title: `Vehicle Offline`,
+            description: `No GPS signal received`,
+            metadata: {},
+            created_at: pos.gps_time || new Date().toISOString(),
+            acknowledged: false
+          });
+        }
       });
 
-      if (error) throw error;
-      setEvents(data || []);
+      setEvents(generatedEvents);
     } catch (err) {
-      console.error('Error fetching proactive events:', err);
-      toast({
-        title: "Error",
-        description: "Failed to load notifications",
-        variant: "destructive"
-      });
+      console.error('Error fetching events:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAcknowledge = async (eventId: string) => {
-    setAcknowledging(eventId);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
-
-      const { data, error } = await supabase.rpc('acknowledge_event', {
-        p_event_id: eventId,
-        p_user_id: user.id
+  const generateProactiveEvents = (position: any) => {
+    const newEvents: ProactiveEvent[] = [];
+    
+    // Low battery
+    if (position.battery_percent && position.battery_percent > 0 && position.battery_percent < 20) {
+      newEvents.push({
+        id: `battery-${position.device_id}-${Date.now()}`,
+        device_id: position.device_id,
+        event_type: position.battery_percent < 10 ? 'critical_battery' : 'low_battery',
+        severity: position.battery_percent < 10 ? 'critical' : 'warning',
+        title: `Low Battery Alert`,
+        description: `Battery at ${position.battery_percent}%`,
+        metadata: { battery_percent: position.battery_percent },
+        created_at: new Date().toISOString(),
+        acknowledged: false
       });
-
-      if (error) throw error;
-
-      toast({
-        title: "Acknowledged",
-        description: "Event marked as acknowledged"
-      });
-
-      // Remove from list or refresh
-      setEvents(prev => prev.filter(e => e.id !== eventId));
-    } catch (err) {
-      console.error('Error acknowledging event:', err);
-      toast({
-        title: "Error",
-        description: "Failed to acknowledge event",
-        variant: "destructive"
-      });
-    } finally {
-      setAcknowledging(null);
     }
+
+    // Overspeeding
+    if (position.is_overspeeding && position.speed > 0) {
+      newEvents.push({
+        id: `speed-${position.device_id}-${Date.now()}`,
+        device_id: position.device_id,
+        event_type: 'overspeeding',
+        severity: position.speed > 120 ? 'error' : 'warning',
+        title: `Overspeeding Detected`,
+        description: `Vehicle traveling at ${position.speed} km/h`,
+        metadata: { speed: position.speed },
+        created_at: new Date().toISOString(),
+        acknowledged: false
+      });
+    }
+
+    if (newEvents.length > 0) {
+      setEvents(prev => [...newEvents, ...prev].slice(0, limit));
+      
+      // Show toast for critical events
+      newEvents.filter(e => e.severity === 'critical' || e.severity === 'error').forEach(event => {
+        toast({
+          title: event.title,
+          description: event.description || '',
+          variant: "destructive"
+        });
+      });
+    }
+  };
+
+  const handleAcknowledge = (eventId: string) => {
+    setEvents(prev => prev.filter(e => e.id !== eventId));
+    toast({
+      title: "Acknowledged",
+      description: "Alert dismissed"
+    });
   };
 
   if (loading) {
@@ -182,9 +245,9 @@ export function ProactiveNotifications({
   if (events.length === 0) {
     return (
       <div className="text-center py-12 text-muted-foreground">
-        <Info className="h-12 w-12 mx-auto mb-3 opacity-40" />
-        <p className="text-sm">No notifications</p>
-        <p className="text-xs mt-1">All clear - no recent events to report</p>
+        <Bell className="h-12 w-12 mx-auto mb-3 opacity-40" />
+        <p className="text-sm">No alerts</p>
+        <p className="text-xs mt-1">All systems operating normally</p>
       </div>
     );
   }
@@ -228,59 +291,16 @@ export function ProactiveNotifications({
                     <Clock className="h-3 w-3" />
                     {timeAgo}
                   </span>
-
-                  {event.location_name && (
-                    <span className="flex items-center gap-1 truncate">
-                      <MapPin className="h-3 w-3 shrink-0" />
-                      <span className="truncate">{event.location_name}</span>
-                    </span>
-                  )}
                 </div>
-
-                {/* Metadata display (optional) */}
-                {event.metadata && Object.keys(event.metadata).length > 0 && (
-                  <div className="flex gap-2 mb-2 flex-wrap">
-                    {event.metadata.battery_percent !== undefined && (
-                      <Badge variant="secondary" className="text-xs">
-                        Battery: {event.metadata.battery_percent}%
-                      </Badge>
-                    )}
-                    {event.metadata.speed !== undefined && (
-                      <Badge variant="secondary" className="text-xs">
-                        Speed: {event.metadata.speed} km/h
-                      </Badge>
-                    )}
-                    {event.metadata.duration_minutes !== undefined && (
-                      <Badge variant="secondary" className="text-xs">
-                        Duration: {event.metadata.duration_minutes} min
-                      </Badge>
-                    )}
-                    {event.metadata.distance_km !== undefined && (
-                      <Badge variant="secondary" className="text-xs">
-                        Distance: {event.metadata.distance_km.toFixed(1)} km
-                      </Badge>
-                    )}
-                  </div>
-                )}
 
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => handleAcknowledge(event.id)}
-                  disabled={acknowledging === event.id}
                   className="h-7 text-xs"
                 >
-                  {acknowledging === event.id ? (
-                    <>
-                      <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                      Acknowledging...
-                    </>
-                  ) : (
-                    <>
-                      <Check className="h-3 w-3 mr-1" />
-                      Acknowledge
-                    </>
-                  )}
+                  <Check className="h-3 w-3 mr-1" />
+                  Acknowledge
                 </Button>
               </div>
             </div>
