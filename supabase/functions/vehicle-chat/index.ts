@@ -62,7 +62,7 @@ serve(async (req) => {
   }
 
   try {
-    const { device_id, message, user_id } = await req.json()
+    const { device_id, message, user_id, client_timestamp, live_telemetry } = await req.json()
     
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY')
     const MAPBOX_ACCESS_TOKEN = Deno.env.get('MAPBOX_ACCESS_TOKEN')
@@ -211,14 +211,22 @@ serve(async (req) => {
 
     // Generate Google Maps link (reuse lat/lon from geocoding)
     const googleMapsLink = lat && lon ? `https://www.google.com/maps?q=${lat},${lon}` : null
-    
+
+    // Use client_timestamp if provided, otherwise use server time
+    const displayTimestamp = client_timestamp || dataTimestamp
+
     // Format data timestamp for display
-    const formattedTimestamp = dataTimestamp 
-      ? new Date(dataTimestamp).toLocaleString('en-US', { 
-          dateStyle: 'medium', 
-          timeStyle: 'short' 
+    const formattedTimestamp = displayTimestamp
+      ? new Date(displayTimestamp).toLocaleString('en-US', {
+          dateStyle: 'medium',
+          timeStyle: 'short'
         })
       : 'Unknown'
+
+    // If live_telemetry provided, use it to override position data
+    if (live_telemetry) {
+      console.log('Using live telemetry from client:', live_telemetry)
+    }
 
     // Language-specific instructions
     const languageInstructions: Record<string, string> = {
@@ -268,12 +276,18 @@ ${history?.slice(0, 5).map((h, i) =>
 
 RESPONSE RULES:
 1. ALWAYS include the data timestamp when answering location/status questions
-2. When user asks about location, ALWAYS include the Google Maps link: ${googleMapsLink || 'unavailable'}
-3. Format location responses like: "I am at [Address]. 📍 [Open in Maps](${googleMapsLink}) (Updated: ${formattedTimestamp})"
-4. If battery is below 20%, proactively warn about low battery
-5. If overspeeding, mention it as a safety concern
-6. If offline, explain you may have limited recent data
-7. Be proactive about potential issues (low battery, overspeeding, offline status)`
+2. When discussing location, you MUST include a special LOCATION tag for rich rendering:
+   Format: [LOCATION: ${lat || 'N/A'}, ${lon || 'N/A'}, "${currentLocationName}"]
+   Example: "I am currently at [LOCATION: 6.5244, 3.3792, "Victoria Island, Lagos"]"
+3. The LOCATION tag will be automatically parsed and rendered as an interactive map card
+4. ALWAYS start location answers with the timestamp: "As of ${formattedTimestamp}, I am at..."
+5. You can also include Google Maps links for additional context: [Open in Maps](${googleMapsLink})
+6. If battery is below 20%, proactively warn about low battery
+7. If overspeeding, mention it as a safety concern
+8. If offline, explain you may have limited recent data
+9. Be proactive about potential issues (low battery, overspeeding, offline status)
+
+IMPORTANT: When the user asks "where are you" or similar location questions, your response MUST include the [LOCATION: lat, lon, "address"] tag so the frontend can render a map card.`
 
     // 8. Prepare messages for Lovable AI
     const messages = [
