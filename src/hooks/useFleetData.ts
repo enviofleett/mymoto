@@ -54,14 +54,14 @@ function getOfflineDuration(updateTime: Date): string {
 }
 
 // Fetch function for fleet data
-async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: FleetMetrics }> {
+async function fetchFleetData(useCache: boolean = true): Promise<{ vehicles: FleetVehicle[]; metrics: FleetMetrics }> {
   // Fetch GPS data, assignments, and vehicle metadata in parallel
   const [gpsListResult, gpsPositionResult, assignmentsResult, vehiclesResult] = await Promise.all([
     supabase.functions.invoke('gps-data', {
-      body: { action: 'querymonitorlist' }
+      body: { action: 'querymonitorlist', use_cache: useCache }
     }),
     supabase.functions.invoke('gps-data', {
-      body: { action: 'lastposition', body_payload: { deviceids: [] } }
+      body: { action: 'lastposition', body_payload: { deviceids: [] }, use_cache: useCache }
     }),
     supabase.from('vehicle_assignments')
       .select(`
@@ -339,8 +339,17 @@ export function useFleetData() {
     return 'connected';
   }, [status]);
 
-  return { 
-    vehicles: data?.vehicles || [], 
+  // Force refresh function that bypasses cache
+  const forceRefresh = async () => {
+    queryClient.setQueryData(['fleet-data'], undefined); // Clear cache
+    return await queryClient.fetchQuery({
+      queryKey: ['fleet-data'],
+      queryFn: () => fetchFleetData(false), // use_cache: false
+    });
+  };
+
+  return {
+    vehicles: data?.vehicles || [],
     metrics: data?.metrics || {
       totalVehicles: 0,
       movingNow: 0,
@@ -349,10 +358,11 @@ export function useFleetData() {
       onlineCount: 0,
       lowBatteryCount: 0,
       overspeedingCount: 0,
-    }, 
-    loading: isLoading, 
-    error: error?.message || null, 
+    },
+    loading: isLoading,
+    error: error?.message || null,
     connectionStatus,
-    refetch: () => refetch()
+    refetch: () => refetch(),
+    forceRefresh
   };
 }

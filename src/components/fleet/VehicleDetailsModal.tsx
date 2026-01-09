@@ -13,6 +13,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { VehicleChat } from "./VehicleChat";
 import { VehiclePersonaSettings } from "./VehiclePersonaSettings";
+import { RecentActivityFeed } from "./RecentActivityFeed";
+import { VehicleTrips } from "./VehicleTrips";
+import { VehicleMileageChart } from "./VehicleMileageChart";
 import { 
   MapPin, Gauge, Battery, Power, User, Phone, 
   Calendar, AlertTriangle, Navigation, Car, UserPlus, UserMinus,
@@ -146,24 +149,18 @@ export function VehicleDetailsModal({
           )}
         </DialogHeader>
 
-        <Tabs defaultValue="details" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="details">Details</TabsTrigger>
-            <TabsTrigger value="history">
-              <History className="h-4 w-4 mr-1" />
-              History
-            </TabsTrigger>
-            <TabsTrigger value="chat">
-              <MessageSquare className="h-4 w-4 mr-1" />
-              AI Chat
-            </TabsTrigger>
-            <TabsTrigger value="persona">
-              <Settings2 className="h-4 w-4 mr-1" />
-              Persona
-            </TabsTrigger>
+        <Tabs defaultValue="overview" className="w-full">
+          <TabsList className="grid w-full grid-cols-7 text-xs">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="chat">AI Chat</TabsTrigger>
+            <TabsTrigger value="trips">Trips</TabsTrigger>
+            <TabsTrigger value="alarms">Alarms</TabsTrigger>
+            <TabsTrigger value="mileage">Mileage</TabsTrigger>
+            <TabsTrigger value="history">History</TabsTrigger>
+            <TabsTrigger value="persona">Persona</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="details" className="space-y-6 mt-4">
+          <TabsContent value="overview" className="space-y-6 mt-4">
             {/* Status Overview */}
             <div className="flex items-center justify-between p-4 rounded-lg bg-muted/50">
               <div className="flex items-center gap-3">
@@ -380,6 +377,18 @@ export function VehicleDetailsModal({
 
           <TabsContent value="chat" className="mt-4">
             <VehicleChat deviceId={vehicle.id} vehicleName={vehicle.name} />
+          </TabsContent>
+
+          <TabsContent value="trips" className="mt-4">
+            <VehicleTrips deviceId={vehicle.id} />
+          </TabsContent>
+
+          <TabsContent value="alarms" className="mt-4">
+            <RecentActivityFeed deviceId={vehicle.id} limit={15} showCard={false} />
+          </TabsContent>
+
+          <TabsContent value="mileage" className="mt-4">
+            <VehicleMileageChart deviceId={vehicle.id} />
           </TabsContent>
 
           <TabsContent value="persona" className="mt-4">
