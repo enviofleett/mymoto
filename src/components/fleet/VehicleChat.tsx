@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
-import { Send, Bot, User, Loader2, Car } from "lucide-react";
+import { Send, Bot, User, Loader2, Car, MapPin, ExternalLink } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 
@@ -12,6 +12,77 @@ interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   created_at: string;
+}
+
+// Parse markdown links and render them as clickable buttons
+function ChatMessageContent({ content, isUser }: { content: string; isUser: boolean }) {
+  // Match markdown links: [text](url)
+  const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+  const googleMapsRegex = /https:\/\/www\.google\.com\/maps\?q=[\d.-]+,[\d.-]+/g;
+  
+  // Check if content contains Google Maps links
+  const hasMapLink = googleMapsRegex.test(content);
+  
+  // Split content by markdown links
+  const parts: (string | { text: string; url: string })[] = [];
+  let lastIndex = 0;
+  let match;
+  
+  // Reset regex state
+  linkRegex.lastIndex = 0;
+  
+  while ((match = linkRegex.exec(content)) !== null) {
+    // Add text before the link
+    if (match.index > lastIndex) {
+      parts.push(content.slice(lastIndex, match.index));
+    }
+    // Add the link
+    parts.push({ text: match[1], url: match[2] });
+    lastIndex = match.index + match[0].length;
+  }
+  
+  // Add remaining text
+  if (lastIndex < content.length) {
+    parts.push(content.slice(lastIndex));
+  }
+  
+  // If no links found, just return the text
+  if (parts.length === 0) {
+    return <p className="text-sm whitespace-pre-wrap">{content}</p>;
+  }
+  
+  return (
+    <div className="text-sm space-y-2">
+      {parts.map((part, index) => {
+        if (typeof part === 'string') {
+          return <span key={index} className="whitespace-pre-wrap">{part}</span>;
+        }
+        
+        // Check if it's a Google Maps link
+        const isMapLink = part.url.includes('google.com/maps');
+        
+        return (
+          <a
+            key={index}
+            href={part.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+              isUser 
+                ? 'bg-primary-foreground/20 hover:bg-primary-foreground/30 text-primary-foreground' 
+                : isMapLink
+                  ? 'bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20'
+                  : 'bg-muted-foreground/10 hover:bg-muted-foreground/20 text-foreground'
+            }`}
+          >
+            {isMapLink && <MapPin className="h-3 w-3" />}
+            {part.text}
+            <ExternalLink className="h-3 w-3 opacity-70" />
+          </a>
+        );
+      })}
+    </div>
+  );
 }
 
 interface VehicleChatProps {
@@ -187,7 +258,7 @@ export function VehicleChat({ deviceId, vehicleName }: VehicleChatProps) {
                     : 'bg-muted'
                 }`}
               >
-                <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                <ChatMessageContent content={msg.content} isUser={msg.role === 'user'} />
               </div>
               {msg.role === 'user' && (
                 <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center shrink-0">
@@ -204,7 +275,7 @@ export function VehicleChat({ deviceId, vehicleName }: VehicleChatProps) {
                 <Bot className="h-4 w-4 text-primary" />
               </div>
               <div className="rounded-lg px-4 py-2 max-w-[80%] bg-muted">
-                <p className="text-sm whitespace-pre-wrap">{streamingContent}</p>
+                <ChatMessageContent content={streamingContent} isUser={false} />
               </div>
             </div>
           )}
