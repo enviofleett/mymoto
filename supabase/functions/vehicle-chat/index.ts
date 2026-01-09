@@ -6,6 +6,56 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Detect if user is asking about location/position/status
+function isLocationQuery(message: string): boolean {
+  const locationKeywords = [
+    'where', 'location', 'position', 'address', 'place', 
+    'gps', 'coordinates', 'map', 'find', 'locate',
+    'current', 'now', 'real-time', 'realtime', 'live',
+    'speed', 'moving', 'parked', 'status', 'battery',
+    'ignition', 'engine', 'online', 'offline'
+  ]
+  const lowerMsg = message.toLowerCase()
+  return locationKeywords.some(kw => lowerMsg.includes(kw))
+}
+
+// Fetch fresh GPS data from GPS51 via gps-data edge function
+async function fetchFreshGpsData(supabase: any, deviceId: string): Promise<any> {
+  const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
+  const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  
+  try {
+    console.log(`Fetching fresh GPS data for device: ${deviceId}`)
+    
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/gps-data`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+      },
+      body: JSON.stringify({
+        action: 'lastposition',
+        body_payload: { deviceids: [deviceId] },
+        use_cache: false // Force fresh data
+      })
+    })
+    
+    if (!response.ok) {
+      console.error('GPS data fetch failed:', response.status)
+      return null
+    }
+    
+    const result = await response.json()
+    console.log('Fresh GPS data received:', result.data?.records?.length || 0, 'records')
+    
+    // Return the record for this device
+    return result.data?.records?.find((r: any) => r.deviceid === deviceId) || null
+  } catch (error) {
+    console.error('Error fetching fresh GPS data:', error)
+    return null
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
@@ -24,8 +74,12 @@ serve(async (req) => {
     )
 
     console.log(`Vehicle chat request for device: ${device_id}`)
+    
+    // Detect if this is a location-related query
+    const needsFreshData = isLocationQuery(message)
+    console.log(`Location query detected: ${needsFreshData}`)
 
-    // 1. Fetch Vehicle + Current Position
+    // 1. Fetch Vehicle info
     const { data: vehicle, error: vehicleError } = await supabase
       .from('vehicles')
       .select(`
@@ -55,12 +109,49 @@ serve(async (req) => {
       })
     }
 
-    // 2. Fetch current position
-    const { data: position } = await supabase
-      .from('vehicle_positions')
-      .select('*')
-      .eq('device_id', device_id)
-      .single()
+    // 2. Fetch position - FRESH if location query, otherwise cached
+    let position: any = null
+    let dataFreshness = 'cached'
+    let dataTimestamp = new Date().toISOString()
+    
+    if (needsFreshData) {
+      // Fetch fresh data from GPS51
+      const freshData = await fetchFreshGpsData(supabase, device_id)
+      if (freshData) {
+        dataFreshness = 'live'
+        dataTimestamp = freshData.updatetime ? new Date(freshData.updatetime).toISOString() : new Date().toISOString()
+        
+        // Map fresh GPS51 data to position format
+        position = {
+          device_id: freshData.deviceid,
+          latitude: freshData.callat,
+          longitude: freshData.callon,
+          speed: freshData.speed || 0,
+          heading: freshData.heading,
+          altitude: freshData.altitude,
+          battery_percent: freshData.voltagepercent > 0 ? freshData.voltagepercent : null,
+          ignition_on: freshData.strstatus?.toUpperCase().includes('ACC ON') || false,
+          is_online: freshData.updatetime ? (Date.now() - new Date(freshData.updatetime).getTime() < 600000) : false,
+          is_overspeeding: freshData.currentoverspeedstate === 1,
+          total_mileage: freshData.totaldistance,
+          status_text: freshData.strstatus,
+          gps_time: freshData.updatetime ? new Date(freshData.updatetime).toISOString() : null
+        }
+      }
+    }
+    
+    // Fallback to cached position if fresh fetch failed or not needed
+    if (!position) {
+      const { data: cachedPosition } = await supabase
+        .from('vehicle_positions')
+        .select('*')
+        .eq('device_id', device_id)
+        .single()
+      position = cachedPosition
+      if (position?.gps_time) {
+        dataTimestamp = position.gps_time
+      }
+    }
 
     // 3. Fetch Driver Info
     const { data: assignment } = await supabase
@@ -118,6 +209,17 @@ serve(async (req) => {
     const languagePref = llmSettings?.language_preference || 'english'
     const personalityMode = llmSettings?.personality_mode || 'casual'
 
+    // Generate Google Maps link (reuse lat/lon from geocoding)
+    const googleMapsLink = lat && lon ? `https://www.google.com/maps?q=${lat},${lon}` : null
+    
+    // Format data timestamp for display
+    const formattedTimestamp = dataTimestamp 
+      ? new Date(dataTimestamp).toLocaleString('en-US', { 
+          dateStyle: 'medium', 
+          timeStyle: 'short' 
+        })
+      : 'Unknown'
+
     // Language-specific instructions
     const languageInstructions: Record<string, string> = {
       english: 'Respond in clear, conversational English.',
@@ -138,6 +240,8 @@ ${languageInstructions[languagePref] || languageInstructions.english}
 ${personalityInstructions[personalityMode] || personalityInstructions.casual}
 Keep responses under 100 words unless asked for details.
 
+DATA FRESHNESS: ${dataFreshness.toUpperCase()} (as of ${formattedTimestamp})
+
 CURRENT STATUS:
 - Name: ${vehicleNickname}
 - GPS Owner: ${vehicle?.gps_owner || 'Unknown'}
@@ -147,10 +251,10 @@ CURRENT STATUS:
 - Speed: ${pos?.speed || 0} km/h ${pos?.is_overspeeding ? '(OVERSPEEDING!)' : ''}
 - Battery: ${pos?.battery_percent ?? 'Unknown'}%
 - Current Location: ${currentLocationName}
-- GPS Coordinates: ${pos?.latitude?.toFixed(5)}, ${pos?.longitude?.toFixed(5)}
+- GPS Coordinates: ${lat?.toFixed(5) || 'N/A'}, ${lon?.toFixed(5) || 'N/A'}
+- Google Maps: ${googleMapsLink || 'N/A'}
 - Total Mileage: ${pos?.total_mileage ? (pos.total_mileage / 1000).toFixed(1) + ' km' : 'Unknown'}
 - Status Text: ${pos?.status_text || 'N/A'}
-- Last GPS Update: ${pos?.gps_time || 'Unknown'}
 
 ASSIGNED DRIVER:
 - Name: ${driver?.name || 'No driver assigned'}
@@ -162,12 +266,14 @@ ${history?.slice(0, 5).map((h, i) =>
   `  ${i + 1}. Speed: ${h.speed}km/h, Battery: ${h.battery_percent}%, Ignition: ${h.ignition_on ? 'ON' : 'OFF'}, Time: ${h.gps_time}`
 ).join('\n') || 'No recent history'}
 
-BEHAVIOR GUIDELINES:
-- If battery is below 20%, proactively warn about low battery
-- If overspeeding, mention it as a safety concern
-- If offline, explain you may have limited recent data
-- For location questions, use the Current Location address when available
-- Be proactive about potential issues (low battery, overspeeding, offline status)`
+RESPONSE RULES:
+1. ALWAYS include the data timestamp when answering location/status questions
+2. When user asks about location, ALWAYS include the Google Maps link: ${googleMapsLink || 'unavailable'}
+3. Format location responses like: "I am at [Address]. 📍 [Open in Maps](${googleMapsLink}) (Updated: ${formattedTimestamp})"
+4. If battery is below 20%, proactively warn about low battery
+5. If overspeeding, mention it as a safety concern
+6. If offline, explain you may have limited recent data
+7. Be proactive about potential issues (low battery, overspeeding, offline status)`
 
     // 8. Prepare messages for Lovable AI
     const messages = [
