@@ -171,7 +171,7 @@ export default function OwnerVehicleProfile() {
 
   // Get battery status label
   const getBatteryStatus = (battery: number | null) => {
-    if (battery === null) return "Unknown";
+    if (battery === null) return "Not reported";
     if (battery >= 80) return "Optimal";
     if (battery >= 50) return "Good";
     if (battery >= 20) return "Low";

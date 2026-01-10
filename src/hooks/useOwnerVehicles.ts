@@ -69,7 +69,7 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
     .select("device_id, device_name, device_type")
     .in("device_id", deviceIds);
 
-  // Fetch positions
+  // Fetch positions - note: total_mileage is stored in meters
   const { data: positions } = await supabase
     .from("vehicle_positions")
     .select("device_id, latitude, longitude, speed, battery_percent, ignition_on, is_online, is_overspeeding, gps_time, total_mileage")
@@ -129,7 +129,8 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
       ignition: pos?.ignition_on ?? null,
       isOverspeeding: pos?.is_overspeeding ?? false,
       lastUpdate: pos?.gps_time ? new Date(pos.gps_time) : null,
-      totalMileage: pos?.total_mileage ?? null,
+      // Convert total_mileage from meters to kilometers
+      totalMileage: pos?.total_mileage != null ? Math.round(pos.total_mileage / 1000) : null,
       lastMessage: chat?.content?.slice(0, 80) || null,
       lastMessageTime: chat?.time || null,
       unreadCount: chat?.unread || 0,
