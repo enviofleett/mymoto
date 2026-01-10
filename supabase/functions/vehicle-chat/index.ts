@@ -77,19 +77,83 @@ serve(async (req) => {
 
     // Check for vehicle commands
     let commandCreated = null
+    let commandExecutionResult = null
     if (containsCommandKeywords(message)) {
       const parsedCommand = parseCommand(message)
 
       if (parsedCommand.isCommand && parsedCommand.commandType) {
         console.log(`Command detected: ${parsedCommand.commandType} (confidence: ${parsedCommand.confidence})`)
 
-        // Store command info for response, but don't call RPC (table may not exist)
+        const commandMetadata = getCommandMetadata(parsedCommand.commandType)
         commandCreated = {
           id: null,
           type: parsedCommand.commandType,
-          requires_confirmation: getCommandMetadata(parsedCommand.commandType).requiresConfirmation
+          requires_confirmation: commandMetadata.requiresConfirmation,
+          parameters: parsedCommand.parameters
         }
-        console.log(`Command parsed: ${parsedCommand.commandType}`)
+
+        // Auto-execute commands that don't require confirmation
+        if (!commandMetadata.requiresConfirmation) {
+          console.log(`Auto-executing command: ${parsedCommand.commandType}`)
+          
+          try {
+            const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
+            const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+            
+            const executeResponse = await fetch(`${SUPABASE_URL}/functions/v1/execute-vehicle-command`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+              },
+              body: JSON.stringify({
+                device_id,
+                command_type: parsedCommand.commandType,
+                payload: parsedCommand.parameters,
+                user_id,
+                skip_confirmation: true
+              })
+            })
+
+            if (executeResponse.ok) {
+              commandExecutionResult = await executeResponse.json()
+              commandCreated.id = commandExecutionResult.command_id
+              console.log(`Command executed successfully:`, commandExecutionResult)
+            } else {
+              const errorText = await executeResponse.text()
+              console.error(`Command execution failed:`, errorText)
+              commandExecutionResult = { success: false, message: errorText }
+            }
+          } catch (error) {
+            console.error(`Error executing command:`, error)
+            commandExecutionResult = { success: false, message: error instanceof Error ? error.message : 'Unknown error' }
+          }
+        } else {
+          // Log the command as pending for confirmation
+          console.log(`Command requires confirmation: ${parsedCommand.commandType}`)
+          
+          try {
+            const { data: pendingCommand, error } = await supabase
+              .from('vehicle_command_logs')
+              .insert({
+                device_id,
+                user_id,
+                command_type: parsedCommand.commandType,
+                payload: parsedCommand.parameters,
+                requires_confirmation: true,
+                status: 'pending'
+              })
+              .select()
+              .single()
+
+            if (!error && pendingCommand) {
+              commandCreated.id = pendingCommand.id
+              console.log(`Pending command logged: ${pendingCommand.id}`)
+            }
+          } catch (error) {
+            console.error(`Error logging pending command:`, error)
+          }
+        }
       }
     }
 
@@ -353,11 +417,19 @@ ${geofenceContext && geofenceContext.length > 0 && geofenceContext[0].is_inside_
 - Not currently inside any geofence
 - Recent geofence events (24h): ${geofenceContext[0].recent_events_count}
 ` : ''}
-${commandCreated ? `COMMAND DETECTED:
+${commandCreated ? `COMMAND DETECTED AND PROCESSED:
 - Command Type: ${commandCreated.type}
-- Status: ${commandCreated.requires_confirmation ? 'Pending Approval (requires confirmation)' : 'Approved for Execution'}
-⚠️ IMPORTANT: Inform the user that their command has been ${commandCreated.requires_confirmation ? 'created and is waiting for approval' : 'created and will be executed'}.
-${commandCreated.requires_confirmation ? 'Explain that this command requires manual confirmation for safety reasons and they can approve it in the Commands tab.' : 'Explain that the command will be sent to the vehicle shortly.'}
+- Command ID: ${commandCreated.id || 'pending'}
+- Parameters: ${JSON.stringify(commandCreated.parameters || {})}
+- Status: ${commandExecutionResult ? (commandExecutionResult.success ? 'EXECUTED SUCCESSFULLY ✓' : 'EXECUTION FAILED ✗') : (commandCreated.requires_confirmation ? 'PENDING APPROVAL (requires confirmation)' : 'PROCESSING')}
+${commandExecutionResult ? `- Result: ${commandExecutionResult.message || JSON.stringify(commandExecutionResult.data || {})}` : ''}
+⚠️ IMPORTANT: ${commandExecutionResult?.success 
+  ? `Confirm to the user that their "${commandCreated.type}" command was executed successfully. Mention what was done.`
+  : commandExecutionResult 
+    ? `Apologize and explain the command failed: ${commandExecutionResult.message}`
+    : commandCreated.requires_confirmation 
+      ? 'Explain that this command requires manual confirmation for safety reasons. They can approve it in the Commands panel or ask you to confirm it.'
+      : 'The command is being processed.'}
 ` : ''}
 COMMAND CAPABILITY:
 - You can understand and execute vehicle commands through natural language

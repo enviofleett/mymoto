@@ -339,6 +339,54 @@ export type Database = {
         }
         Relationships: []
       }
+      vehicle_command_logs: {
+        Row: {
+          command_type: string
+          confirmed_at: string | null
+          confirmed_by: string | null
+          created_at: string | null
+          device_id: string
+          error_message: string | null
+          executed_at: string | null
+          id: string
+          payload: Json | null
+          requires_confirmation: boolean | null
+          result: Json | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          command_type: string
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          created_at?: string | null
+          device_id: string
+          error_message?: string | null
+          executed_at?: string | null
+          id?: string
+          payload?: Json | null
+          requires_confirmation?: boolean | null
+          result?: Json | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          command_type?: string
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          created_at?: string | null
+          device_id?: string
+          error_message?: string | null
+          executed_at?: string | null
+          id?: string
+          payload?: Json | null
+          requires_confirmation?: boolean | null
+          result?: Json | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       vehicle_llm_settings: {
         Row: {
           created_at: string | null
@@ -386,6 +434,7 @@ export type Database = {
           is_overspeeding: boolean | null
           latitude: number | null
           longitude: number | null
+          previous_battery_percent: number | null
           speed: number | null
           status_text: string | null
           total_mileage: number | null
@@ -403,6 +452,7 @@ export type Database = {
           is_overspeeding?: boolean | null
           latitude?: number | null
           longitude?: number | null
+          previous_battery_percent?: number | null
           speed?: number | null
           status_text?: string | null
           total_mileage?: number | null
@@ -420,6 +470,7 @@ export type Database = {
           is_overspeeding?: boolean | null
           latitude?: number | null
           longitude?: number | null
+          previous_battery_percent?: number | null
           speed?: number | null
           status_text?: string | null
           total_mileage?: number | null
@@ -543,7 +594,51 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_current_location_context: {
+        Args: { p_device_id: string; p_latitude: number; p_longitude: number }
+        Returns: {
+          at_learned_location: boolean
+          custom_label: string
+          last_visit_days_ago: number
+          location_name: string
+          location_type: string
+          typical_duration_minutes: number
+          visit_count: number
+        }[]
+      }
       get_fleet_stats: { Args: never; Returns: Json }
+      get_maintenance_recommendations: {
+        Args: { p_device_id: string; p_status?: string }
+        Returns: {
+          created_at: string
+          description: string
+          id: string
+          predicted_issue: string
+          priority: string
+          status: string
+          title: string
+        }[]
+      }
+      get_vehicle_geofence_context: {
+        Args: { p_device_id: string }
+        Returns: {
+          duration_minutes: number
+          geofence_name: string
+          is_inside_geofence: boolean
+          recent_events_count: number
+          zone_type: string
+        }[]
+      }
+      get_vehicle_health: {
+        Args: { p_device_id: string }
+        Returns: {
+          battery_health_score: number
+          connectivity_score: number
+          driving_behavior_score: number
+          overall_health_score: number
+          trend: string
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
