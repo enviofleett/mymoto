@@ -195,32 +195,75 @@ function generateFallbackSummary(harshEvents: HarshEvent[], driverScore: number)
   }
 }
 
-// Generate embedding for the summary text
-async function generateEmbedding(text: string): Promise<number[] | null> {
-  try {
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/embeddings', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'text-embedding-3-small',
-        input: text,
-      }),
-    });
-    
-    if (!response.ok) {
-      console.error('[Trip Analyzer] Embedding failed:', await response.text());
-      return null;
-    }
-    
-    const data = await response.json();
-    return data.data?.[0]?.embedding || null;
-  } catch (error) {
-    console.error('[Trip Analyzer] Error generating embedding:', error);
-    return null;
+// Generate a semantic hash-based embedding for the summary text
+// Since the AI gateway doesn't support embedding models, we create a deterministic
+// semantic vector based on key driving metrics extracted from the text
+function generateSemanticEmbedding(
+  summary: string,
+  driverScore: number,
+  harshEvents: HarshEvent[],
+  avgSpeed: number,
+  maxSpeed: number
+): number[] {
+  // Create a 1536-dimension vector (matching OpenAI's text-embedding-3-small)
+  const embedding = new Array(1536).fill(0);
+  
+  // Encode driver score (first 100 dimensions)
+  const scoreNormalized = driverScore / 100;
+  for (let i = 0; i < 100; i++) {
+    embedding[i] = scoreNormalized * Math.sin(i * 0.1);
   }
+  
+  // Encode harsh event counts (dimensions 100-200)
+  const brakingCount = harshEvents.filter(e => e.type === 'harsh_braking').length;
+  const accelCount = harshEvents.filter(e => e.type === 'harsh_acceleration').length;
+  const corneringCount = harshEvents.filter(e => e.type === 'harsh_cornering').length;
+  const maxEvents = Math.max(brakingCount, accelCount, corneringCount, 1);
+  
+  for (let i = 100; i < 133; i++) {
+    embedding[i] = (brakingCount / maxEvents) * Math.cos((i - 100) * 0.2);
+  }
+  for (let i = 133; i < 166; i++) {
+    embedding[i] = (accelCount / maxEvents) * Math.cos((i - 133) * 0.2);
+  }
+  for (let i = 166; i < 200; i++) {
+    embedding[i] = (corneringCount / maxEvents) * Math.cos((i - 166) * 0.2);
+  }
+  
+  // Encode speed metrics (dimensions 200-300)
+  const speedNormalized = Math.min(avgSpeed / 120, 1); // Normalize to 120 km/h
+  const maxSpeedNormalized = Math.min(maxSpeed / 150, 1); // Normalize to 150 km/h
+  
+  for (let i = 200; i < 250; i++) {
+    embedding[i] = speedNormalized * Math.sin((i - 200) * 0.15);
+  }
+  for (let i = 250; i < 300; i++) {
+    embedding[i] = maxSpeedNormalized * Math.sin((i - 250) * 0.15);
+  }
+  
+  // Encode text features using simple hash (dimensions 300-1536)
+  const words = summary.toLowerCase().split(/\s+/);
+  const keyTerms = ['safe', 'excellent', 'good', 'harsh', 'braking', 'acceleration', 
+                    'cornering', 'improve', 'smooth', 'aggressive', 'careful', 'fast',
+                    'slow', 'moderate', 'consistent', 'erratic'];
+  
+  for (let i = 0; i < keyTerms.length; i++) {
+    const termPresent = words.some(w => w.includes(keyTerms[i])) ? 1 : 0;
+    const startIdx = 300 + i * 77;
+    for (let j = 0; j < 77 && startIdx + j < 1536; j++) {
+      embedding[startIdx + j] = termPresent * Math.sin(j * 0.3) * 0.5;
+    }
+  }
+  
+  // Normalize the vector
+  const magnitude = Math.sqrt(embedding.reduce((sum, val) => sum + val * val, 0));
+  if (magnitude > 0) {
+    for (let i = 0; i < embedding.length; i++) {
+      embedding[i] = embedding[i] / magnitude;
+    }
+  }
+  
+  return embedding;
 }
 
 serve(async (req) => {
@@ -322,7 +365,13 @@ serve(async (req) => {
         );
         
         // Generate embedding for semantic search
-        const embedding = await generateEmbedding(summaryText);
+        const embedding = generateSemanticEmbedding(
+          summaryText,
+          driverScore,
+          harshEvents,
+          avgSpeed,
+          maxSpeed
+        );
         
         // Prepare harsh events summary
         const harshEventsSummary = {
