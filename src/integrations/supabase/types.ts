@@ -184,6 +184,48 @@ export type Database = {
           },
         ]
       }
+      proactive_vehicle_events: {
+        Row: {
+          acknowledged: boolean | null
+          acknowledged_at: string | null
+          acknowledged_by: string | null
+          created_at: string
+          device_id: string
+          event_type: string
+          id: string
+          message: string
+          metadata: Json | null
+          severity: string
+          title: string
+        }
+        Insert: {
+          acknowledged?: boolean | null
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          created_at?: string
+          device_id: string
+          event_type: string
+          id?: string
+          message: string
+          metadata?: Json | null
+          severity?: string
+          title: string
+        }
+        Update: {
+          acknowledged?: boolean | null
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          created_at?: string
+          device_id?: string
+          event_type?: string
+          id?: string
+          message?: string
+          metadata?: Json | null
+          severity?: string
+          title?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string | null
