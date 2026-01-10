@@ -10,6 +10,7 @@ export interface OwnerVehicle {
   status: "online" | "offline" | "charging";
   battery: number | null;
   speed: number;
+  heading: number | null;
   latitude: number | null;
   longitude: number | null;
   ignition: boolean | null;
@@ -72,7 +73,7 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
   // Fetch positions - note: total_mileage is stored in meters
   const { data: positions } = await supabase
     .from("vehicle_positions")
-    .select("device_id, latitude, longitude, speed, battery_percent, ignition_on, is_online, is_overspeeding, gps_time, total_mileage")
+    .select("device_id, latitude, longitude, speed, heading, battery_percent, ignition_on, is_online, is_overspeeding, gps_time, total_mileage")
     .in("device_id", deviceIds);
 
   // Create maps for easy lookup
@@ -126,6 +127,7 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
       speed: pos?.speed ?? 0,
       latitude: pos?.latitude ?? null,
       longitude: pos?.longitude ?? null,
+      heading: pos?.heading ?? null,
       ignition: pos?.ignition_on ?? null,
       isOverspeeding: pos?.is_overspeeding ?? false,
       lastUpdate: pos?.gps_time ? new Date(pos.gps_time) : null,

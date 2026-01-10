@@ -2,23 +2,33 @@ import { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { cn } from '@/lib/utils';
+import { Card } from '@/components/ui/card';
+import { MapPin, Navigation, ExternalLink } from 'lucide-react';
 
 interface VehicleLocationMapProps {
   latitude: number;
   longitude: number;
+  heading?: number | null;
+  speed?: number | null;
   address?: string | null;
   vehicleName?: string;
   isOnline?: boolean;
   className?: string;
+  showAddressCard?: boolean;
+  mapHeight?: string;
 }
 
 export function VehicleLocationMap({
   latitude,
   longitude,
+  heading = 0,
+  speed = 0,
   address,
   vehicleName,
   isOnline = true,
   className,
+  showAddressCard = true,
+  mapHeight = 'h-64',
 }: VehicleLocationMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -38,17 +48,19 @@ export function VehicleLocationMap({
 
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/streets-v12',
+      style: 'mapbox://styles/mapbox/dark-v11',
       center: [longitude, latitude],
-      zoom: 15,
+      zoom: 16,
+      pitch: 45,
+      bearing: heading || 0,
       attributionControl: false,
       interactive: true,
     });
 
-    // Add minimal navigation control
+    // Add navigation control
     map.current.addControl(
-      new mapboxgl.NavigationControl({ showCompass: false }),
-      'top-left'
+      new mapboxgl.NavigationControl({ showCompass: true, visualizePitch: true }),
+      'top-right'
     );
 
     map.current.on('load', () => {
@@ -61,115 +73,192 @@ export function VehicleLocationMap({
     };
   }, []);
 
-  // Update marker when coordinates change
+  // Update marker when coordinates or heading change
   useEffect(() => {
     if (!map.current || !mapLoaded) return;
 
     // Remove existing marker
     marker.current?.remove();
 
-    // Create custom marker element with pulsing animation
+    // Create custom car marker element with rotation based on heading
     const el = document.createElement('div');
-    el.className = 'vehicle-marker';
+    el.className = 'vehicle-car-marker';
+    
+    // Rotate based on heading
+    const rotation = heading || 0;
+    
     el.innerHTML = `
-      <div class="marker-container">
-        <div class="marker-pulse ${isOnline ? 'online' : 'offline'}"></div>
-        <div class="marker-dot ${isOnline ? 'online' : 'offline'}"></div>
+      <div class="car-marker-container" style="transform: rotate(${rotation}deg)">
+        <div class="car-pulse ${isOnline ? 'online' : 'offline'}"></div>
+        <div class="car-icon ${isOnline ? 'online' : 'offline'}">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
+            <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/>
+          </svg>
+        </div>
+        ${(speed || 0) > 0 ? `<div class="speed-badge">${Math.round(speed || 0)}</div>` : ''}
       </div>
     `;
 
-    // Add popup with address if available
-    const popupContent = address 
-      ? `<div class="text-xs font-medium">${vehicleName || 'Vehicle'}</div><div class="text-xs text-muted-foreground mt-1">${address}</div>`
-      : `<div class="text-xs font-medium">${vehicleName || 'Vehicle'}</div>`;
-
-    const popup = new mapboxgl.Popup({ offset: 25, closeButton: false })
-      .setHTML(popupContent);
-
-    marker.current = new mapboxgl.Marker({ element: el })
+    marker.current = new mapboxgl.Marker({ element: el, anchor: 'center' })
       .setLngLat([longitude, latitude])
-      .setPopup(popup)
       .addTo(map.current);
-
-    // Show popup by default if address is available
-    if (address) {
-      marker.current.togglePopup();
-    }
 
     // Pan to new location smoothly
     map.current.flyTo({
       center: [longitude, latitude],
       duration: 1000,
+      essential: true,
     });
-  }, [latitude, longitude, address, vehicleName, isOnline, mapLoaded]);
+  }, [latitude, longitude, heading, speed, isOnline, mapLoaded]);
+
+  const googleMapsLink = `https://www.google.com/maps?q=${latitude},${longitude}`;
 
   return (
-    <>
+    <div className={cn("relative", className)}>
       <style>{`
-        .vehicle-marker {
+        .vehicle-car-marker {
           cursor: pointer;
         }
-        .marker-container {
+        .car-marker-container {
           position: relative;
-          width: 24px;
-          height: 24px;
+          width: 48px;
+          height: 48px;
           display: flex;
           align-items: center;
           justify-content: center;
+          transition: transform 0.5s ease-out;
         }
-        .marker-pulse {
+        .car-pulse {
           position: absolute;
+          width: 60px;
+          height: 60px;
+          border-radius: 50%;
+          animation: carPulse 2s infinite;
+        }
+        .car-pulse.online {
+          background: radial-gradient(circle, rgba(34, 197, 94, 0.4) 0%, rgba(34, 197, 94, 0) 70%);
+        }
+        .car-pulse.offline {
+          background: radial-gradient(circle, rgba(239, 68, 68, 0.4) 0%, rgba(239, 68, 68, 0) 70%);
+        }
+        .car-icon {
           width: 40px;
           height: 40px;
           border-radius: 50%;
-          animation: pulse 2s infinite;
-        }
-        .marker-pulse.online {
-          background: rgba(34, 197, 94, 0.3);
-        }
-        .marker-pulse.offline {
-          background: rgba(239, 68, 68, 0.3);
-        }
-        .marker-dot {
-          width: 16px;
-          height: 16px;
-          border-radius: 50%;
-          border: 3px solid white;
-          box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.4);
           z-index: 1;
         }
-        .marker-dot.online {
-          background: #22c55e;
+        .car-icon.online {
+          background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+          color: white;
         }
-        .marker-dot.offline {
-          background: #ef4444;
+        .car-icon.offline {
+          background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+          color: white;
         }
-        @keyframes pulse {
+        .speed-badge {
+          position: absolute;
+          top: -8px;
+          right: -8px;
+          background: hsl(var(--primary));
+          color: hsl(var(--primary-foreground));
+          font-size: 10px;
+          font-weight: 700;
+          padding: 2px 5px;
+          border-radius: 8px;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+          z-index: 2;
+        }
+        .speed-badge::after {
+          content: ' km/h';
+          font-size: 7px;
+          font-weight: 400;
+        }
+        @keyframes carPulse {
           0% {
-            transform: scale(0.5);
+            transform: scale(0.8);
             opacity: 1;
           }
           100% {
-            transform: scale(1.5);
+            transform: scale(1.6);
             opacity: 0;
           }
         }
         .mapboxgl-popup-content {
           background: hsl(var(--card));
           color: hsl(var(--foreground));
-          border-radius: 8px;
-          padding: 8px 12px;
-          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+          border-radius: 12px;
+          padding: 12px 16px;
+          box-shadow: 0 8px 24px rgba(0,0,0,0.25);
           border: 1px solid hsl(var(--border));
         }
         .mapboxgl-popup-tip {
           border-top-color: hsl(var(--card));
         }
+        .mapboxgl-ctrl-group {
+          background: hsl(var(--card)) !important;
+          border: 1px solid hsl(var(--border)) !important;
+        }
+        .mapboxgl-ctrl-group button {
+          background: transparent !important;
+        }
+        .mapboxgl-ctrl-group button + button {
+          border-top: 1px solid hsl(var(--border)) !important;
+        }
+        .mapboxgl-ctrl-icon {
+          filter: invert(1);
+        }
       `}</style>
+      
       <div 
         ref={mapContainer} 
-        className={cn("w-full h-full", className)}
+        className={cn("w-full rounded-xl overflow-hidden", mapHeight)}
       />
-    </>
+      
+      {/* Floating Address Card */}
+      {showAddressCard && (
+        <Card className="absolute bottom-3 left-3 right-3 bg-card/95 backdrop-blur-md border-border/50 shadow-lg z-10">
+          <div className="p-3">
+            <div className="flex items-start gap-3">
+              <div className={cn(
+                "p-2 rounded-lg shrink-0",
+                isOnline ? "bg-green-500/10" : "bg-red-500/10"
+              )}>
+                <Navigation className={cn(
+                  "h-4 w-4",
+                  isOnline ? "text-green-500" : "text-red-500"
+                )} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    {vehicleName || 'Vehicle'} • {isOnline ? 'Live' : 'Last Known'}
+                  </span>
+                  {(speed || 0) > 0 && (
+                    <span className="text-xs font-bold text-primary">
+                      {Math.round(speed || 0)} km/h
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm font-medium text-foreground truncate">
+                  {address || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`}
+                </p>
+              </div>
+              <a
+                href={googleMapsLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-2 rounded-lg bg-primary/10 hover:bg-primary/20 transition-colors shrink-0"
+              >
+                <ExternalLink className="h-4 w-4 text-primary" />
+              </a>
+            </div>
+          </div>
+        </Card>
+      )}
+    </div>
   );
 }
