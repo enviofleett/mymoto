@@ -2,11 +2,234 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { buildConversationContext, estimateTokenCount } from './conversation-manager.ts'
 import { routeQuery } from './query-router.ts'
-import { parseCommand, containsCommandKeywords, getCommandMetadata } from './command-parser.ts'
+import { parseCommand, containsCommandKeywords, getCommandMetadata, GeofenceAlertParams } from './command-parser.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+// Geocode a location name to coordinates using Mapbox
+async function geocodeLocation(locationName: string, mapboxToken: string): Promise<{ lat: number; lon: number; name: string } | null> {
+  try {
+    console.log(`Geocoding location: ${locationName}`)
+    const encodedLocation = encodeURIComponent(locationName + ', Nigeria')
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodedLocation}.json?access_token=${mapboxToken}&limit=1&country=NG`
+    
+    const response = await fetch(url)
+    if (!response.ok) {
+      console.error('Geocoding failed:', response.status)
+      return null
+    }
+    
+    const data = await response.json()
+    if (data.features && data.features.length > 0) {
+      const feature = data.features[0]
+      return {
+        lat: feature.center[1],
+        lon: feature.center[0],
+        name: feature.place_name || locationName
+      }
+    }
+    
+    return null
+  } catch (error) {
+    console.error('Geocoding error:', error)
+    return null
+  }
+}
+
+// Create a geofence monitor
+async function createGeofenceMonitor(
+  supabase: any,
+  deviceId: string,
+  userId: string,
+  locationName: string,
+  geofenceParams: GeofenceAlertParams,
+  mapboxToken: string
+): Promise<{ success: boolean; monitorId?: string; locationName?: string; message: string }> {
+  try {
+    console.log(`Creating geofence monitor for ${locationName}`)
+    
+    // First check if location exists in our database
+    const { data: existingLocation } = await supabase
+      .from('geofence_locations')
+      .select('*')
+      .ilike('name', `%${locationName}%`)
+      .limit(1)
+      .maybeSingle()
+    
+    let locationId = null
+    let lat: number | null = null
+    let lon: number | null = null
+    let radius = 500
+    let finalLocationName = locationName
+    
+    if (existingLocation) {
+      console.log(`Found existing location: ${existingLocation.name}`)
+      locationId = existingLocation.id
+      finalLocationName = existingLocation.name
+      radius = existingLocation.radius_meters
+    } else {
+      // Need to geocode
+      const geocoded = await geocodeLocation(locationName, mapboxToken)
+      if (!geocoded) {
+        return {
+          success: false,
+          message: `I couldn't find "${locationName}" on the map. Try being more specific, like "Garki, Abuja" or "Victoria Island, Lagos".`
+        }
+      }
+      
+      lat = geocoded.lat
+      lon = geocoded.lon
+      finalLocationName = geocoded.name
+      console.log(`Geocoded to: ${lat}, ${lon}`)
+    }
+    
+    // Create the monitor
+    const monitorData: any = {
+      device_id: deviceId,
+      trigger_on: geofenceParams.trigger_on || 'enter',
+      one_time: geofenceParams.one_time || false,
+      is_active: true,
+      created_by: userId
+    }
+    
+    if (locationId) {
+      monitorData.location_id = locationId
+    } else {
+      monitorData.location_name = finalLocationName
+      monitorData.latitude = lat
+      monitorData.longitude = lon
+      monitorData.radius_meters = radius
+    }
+    
+    // Add time conditions
+    if (geofenceParams.active_from) {
+      monitorData.active_from = geofenceParams.active_from
+    }
+    if (geofenceParams.active_until) {
+      monitorData.active_until = geofenceParams.active_until
+    }
+    if (geofenceParams.active_days) {
+      monitorData.active_days = geofenceParams.active_days
+    }
+    if (geofenceParams.expires_at) {
+      monitorData.expires_at = geofenceParams.expires_at
+    }
+    
+    const { data: monitor, error } = await supabase
+      .from('geofence_monitors')
+      .insert(monitorData)
+      .select()
+      .single()
+    
+    if (error) {
+      console.error('Failed to create monitor:', error)
+      return {
+        success: false,
+        message: `I couldn't create the alert: ${error.message}`
+      }
+    }
+    
+    console.log(`Created geofence monitor: ${monitor.id}`)
+    
+    // Build confirmation message
+    let confirmMsg = `I've set up an alert for when this vehicle ${geofenceParams.trigger_on === 'exit' ? 'leaves' : geofenceParams.trigger_on === 'both' ? 'arrives at or leaves' : 'arrives at'} ${finalLocationName}.`
+    
+    if (geofenceParams.active_from && geofenceParams.active_until) {
+      confirmMsg += ` This alert is active between ${geofenceParams.active_from} and ${geofenceParams.active_until}.`
+    }
+    if (geofenceParams.active_days && geofenceParams.active_days.length < 7) {
+      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+      const days = geofenceParams.active_days.map(d => dayNames[d]).join(', ')
+      confirmMsg += ` Only on ${days}.`
+    }
+    if (geofenceParams.one_time) {
+      confirmMsg += ` This is a one-time alert and will deactivate after triggering.`
+    }
+    
+    return {
+      success: true,
+      monitorId: monitor.id,
+      locationName: finalLocationName,
+      message: confirmMsg
+    }
+  } catch (error) {
+    console.error('Error creating geofence monitor:', error)
+    return {
+      success: false,
+      message: `Something went wrong creating the alert: ${error instanceof Error ? error.message : 'Unknown error'}`
+    }
+  }
+}
+
+// List active geofence monitors for a device
+async function listGeofenceMonitors(supabase: any, deviceId: string): Promise<{ monitors: any[]; message: string }> {
+  const { data: monitors, error } = await supabase
+    .from('geofence_monitors')
+    .select(`
+      id,
+      location_name,
+      trigger_on,
+      one_time,
+      active_from,
+      active_until,
+      active_days,
+      expires_at,
+      trigger_count,
+      geofence_locations (name)
+    `)
+    .eq('device_id', deviceId)
+    .eq('is_active', true)
+    .order('created_at', { ascending: false })
+  
+  if (error || !monitors || monitors.length === 0) {
+    return { monitors: [], message: 'No active location alerts for this vehicle.' }
+  }
+  
+  const alertList = monitors.map((m: any, i: number) => {
+    const name = m.geofence_locations?.name || m.location_name
+    const triggerText = m.trigger_on === 'exit' ? 'leaves' : m.trigger_on === 'both' ? 'arrives/leaves' : 'arrives at'
+    return `${i + 1}. Alert when ${triggerText} **${name}** (triggered ${m.trigger_count || 0} times)`
+  }).join('\n')
+  
+  return {
+    monitors,
+    message: `You have ${monitors.length} active location alert${monitors.length > 1 ? 's' : ''} for this vehicle:\n${alertList}`
+  }
+}
+
+// Cancel a geofence monitor
+async function cancelGeofenceMonitor(supabase: any, deviceId: string, locationName: string | null): Promise<{ success: boolean; message: string }> {
+  let query = supabase
+    .from('geofence_monitors')
+    .update({ is_active: false })
+    .eq('device_id', deviceId)
+    .eq('is_active', true)
+  
+  if (locationName) {
+    // Try to match by location name
+    query = query.or(`location_name.ilike.%${locationName}%,geofence_locations.name.ilike.%${locationName}%`)
+  }
+  
+  const { data, error, count } = await query.select()
+  
+  if (error) {
+    return { success: false, message: `Failed to cancel alert: ${error.message}` }
+  }
+  
+  if (!data || data.length === 0) {
+    return { success: false, message: locationName 
+      ? `No active alert found for "${locationName}".`
+      : 'No active alerts to cancel.' 
+    }
+  }
+  
+  return {
+    success: true,
+    message: `Cancelled ${data.length} location alert${data.length > 1 ? 's' : ''}.`
+  }
 }
 
 // Fetch fresh GPS data from GPS51 via gps-data edge function
@@ -75,83 +298,166 @@ serve(async (req) => {
       estimated_latency: routing.estimated_latency_ms
     })
 
+
     // Check for vehicle commands
     let commandCreated = null
     let commandExecutionResult = null
+    let geofenceResult = null
+    
     if (containsCommandKeywords(message)) {
       const parsedCommand = parseCommand(message)
 
       if (parsedCommand.isCommand && parsedCommand.commandType) {
         console.log(`Command detected: ${parsedCommand.commandType} (confidence: ${parsedCommand.confidence})`)
 
-        const commandMetadata = getCommandMetadata(parsedCommand.commandType)
-        commandCreated = {
-          id: null,
-          type: parsedCommand.commandType,
-          requires_confirmation: commandMetadata.requiresConfirmation,
-          parameters: parsedCommand.parameters
-        }
-
-        // Auto-execute commands that don't require confirmation
-        if (!commandMetadata.requiresConfirmation) {
-          console.log(`Auto-executing command: ${parsedCommand.commandType}`)
+        // HANDLE GEOFENCE COMMANDS SPECIALLY
+        if (parsedCommand.commandType === 'create_geofence_alert') {
+          console.log('Processing geofence alert creation...')
           
-          try {
-            const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
-            const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-            
-            const executeResponse = await fetch(`${SUPABASE_URL}/functions/v1/execute-vehicle-command`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
-              },
-              body: JSON.stringify({
-                device_id,
-                command_type: parsedCommand.commandType,
-                payload: parsedCommand.parameters,
-                user_id,
-                skip_confirmation: true
-              })
-            })
-
-            if (executeResponse.ok) {
-              commandExecutionResult = await executeResponse.json()
-              commandCreated.id = commandExecutionResult.command_id
-              console.log(`Command executed successfully:`, commandExecutionResult)
-            } else {
-              const errorText = await executeResponse.text()
-              console.error(`Command execution failed:`, errorText)
-              commandExecutionResult = { success: false, message: errorText }
+          const locationName = parsedCommand.parameters?.location_name || parsedCommand.geofenceParams?.location_name
+          
+          if (!locationName) {
+            geofenceResult = {
+              success: false,
+              message: "I'd like to set up a location alert for you, but I didn't catch where. Could you tell me the location name? For example: 'Notify me when I arrive at Garki'"
             }
-          } catch (error) {
-            console.error(`Error executing command:`, error)
-            commandExecutionResult = { success: false, message: error instanceof Error ? error.message : 'Unknown error' }
+          } else if (!MAPBOX_ACCESS_TOKEN) {
+            geofenceResult = {
+              success: false,
+              message: "I can't set up location alerts right now because the mapping service isn't configured."
+            }
+          } else {
+            geofenceResult = await createGeofenceMonitor(
+              supabase,
+              device_id,
+              user_id,
+              locationName,
+              parsedCommand.geofenceParams || { trigger_on: 'enter' },
+              MAPBOX_ACCESS_TOKEN
+            )
           }
-        } else {
-          // Log the command as pending for confirmation
-          console.log(`Command requires confirmation: ${parsedCommand.commandType}`)
           
-          try {
-            const { data: pendingCommand, error } = await supabase
-              .from('vehicle_command_logs')
-              .insert({
-                device_id,
-                user_id,
-                command_type: parsedCommand.commandType,
-                payload: parsedCommand.parameters,
-                requires_confirmation: true,
-                status: 'pending'
-              })
-              .select()
-              .single()
+          commandCreated = {
+            id: geofenceResult?.monitorId || null,
+            type: 'create_geofence_alert',
+            requires_confirmation: false,
+            parameters: { location_name: locationName }
+          }
+          commandExecutionResult = {
+            success: geofenceResult?.success || false,
+            message: geofenceResult?.message || 'Unknown error'
+          }
+          
+        } else if (parsedCommand.commandType === 'list_geofence_alerts') {
+          console.log('Listing geofence alerts...')
+          
+          const result = await listGeofenceMonitors(supabase, device_id)
+          
+          commandCreated = {
+            id: null,
+            type: 'list_geofence_alerts',
+            requires_confirmation: false,
+            parameters: {}
+          }
+          commandExecutionResult = {
+            success: true,
+            message: result.message,
+            data: { monitors: result.monitors }
+          }
+          geofenceResult = { success: true, message: result.message }
+          
+        } else if (parsedCommand.commandType === 'cancel_geofence_alert') {
+          console.log('Cancelling geofence alert...')
+          
+          const result = await cancelGeofenceMonitor(
+            supabase,
+            device_id,
+            parsedCommand.parameters?.location_name
+          )
+          
+          commandCreated = {
+            id: null,
+            type: 'cancel_geofence_alert',
+            requires_confirmation: false,
+            parameters: parsedCommand.parameters
+          }
+          commandExecutionResult = {
+            success: result.success,
+            message: result.message
+          }
+          geofenceResult = result
+          
+        } else {
+          // HANDLE OTHER COMMANDS (existing logic)
+          const commandMetadata = getCommandMetadata(parsedCommand.commandType)
+          commandCreated = {
+            id: null,
+            type: parsedCommand.commandType,
+            requires_confirmation: commandMetadata.requiresConfirmation,
+            parameters: parsedCommand.parameters
+          }
 
-            if (!error && pendingCommand) {
-              commandCreated.id = pendingCommand.id
-              console.log(`Pending command logged: ${pendingCommand.id}`)
+          // Auto-execute commands that don't require confirmation
+          if (!commandMetadata.requiresConfirmation) {
+            console.log(`Auto-executing command: ${parsedCommand.commandType}`)
+            
+            try {
+              const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
+              const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+              
+              const executeResponse = await fetch(`${SUPABASE_URL}/functions/v1/execute-vehicle-command`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+                },
+                body: JSON.stringify({
+                  device_id,
+                  command_type: parsedCommand.commandType,
+                  payload: parsedCommand.parameters,
+                  user_id,
+                  skip_confirmation: true
+                })
+              })
+
+              if (executeResponse.ok) {
+                commandExecutionResult = await executeResponse.json()
+                commandCreated.id = commandExecutionResult.command_id
+                console.log(`Command executed successfully:`, commandExecutionResult)
+              } else {
+                const errorText = await executeResponse.text()
+                console.error(`Command execution failed:`, errorText)
+                commandExecutionResult = { success: false, message: errorText }
+              }
+            } catch (error) {
+              console.error(`Error executing command:`, error)
+              commandExecutionResult = { success: false, message: error instanceof Error ? error.message : 'Unknown error' }
             }
-          } catch (error) {
-            console.error(`Error logging pending command:`, error)
+          } else {
+            // Log the command as pending for confirmation
+            console.log(`Command requires confirmation: ${parsedCommand.commandType}`)
+            
+            try {
+              const { data: pendingCommand, error } = await supabase
+                .from('vehicle_command_logs')
+                .insert({
+                  device_id,
+                  user_id,
+                  command_type: parsedCommand.commandType,
+                  payload: parsedCommand.parameters,
+                  requires_confirmation: true,
+                  status: 'pending'
+                })
+                .select()
+                .single()
+
+              if (!error && pendingCommand) {
+                commandCreated.id = pendingCommand.id
+                console.log(`Pending command logged: ${pendingCommand.id}`)
+              }
+            } catch (error) {
+              console.error(`Error logging pending command:`, error)
+            }
           }
         }
       }
@@ -437,6 +743,22 @@ COMMAND CAPABILITY:
 - Some commands (immobilize, stop engine) require manual approval for safety
 - When a user issues a command, acknowledge it and explain the next steps
 - Examples: "Lock the doors" → Creates lock command, "Set speed limit to 80" → Creates speed limit command
+
+LOCATION ALERT CAPABILITY:
+- You can set up location-based alerts (geofence monitors) when users ask things like:
+  * "Notify me when the vehicle gets to Garki"
+  * "Alert me when it leaves Victoria Island"
+  * "Let me know when arrives at Wuse between 8am and 5pm"
+- Time-based conditions are supported: "during work hours", "on weekdays", "between 9am and 6pm"
+- One-time alerts: "just notify me once when it arrives"
+- You can also list and cancel existing alerts
+${geofenceResult ? `
+GEOFENCE ALERT ACTION RESULT:
+- Action: ${commandCreated?.type || 'create_geofence_alert'}
+- Success: ${geofenceResult.success ? 'YES ✓' : 'NO ✗'}
+- Message: ${geofenceResult.message}
+⚠️ IMPORTANT: Communicate this result to the user in your response. ${geofenceResult.success ? 'Confirm the alert was set up and explain when they will be notified.' : 'Explain what went wrong and suggest how they can fix it.'}
+` : ''}
 
 RESPONSE RULES:
 1. ALWAYS include the data timestamp when answering location/status questions
