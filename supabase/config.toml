@@ -26,3 +26,6 @@ verify_jwt = false
 
 [functions.send-alert-email]
 verify_jwt = false
+
+[functions.execute-vehicle-command]
+verify_jwt = false

@@ -73,10 +73,6 @@ const SEVERITY_BADGE_COLORS: Record<string, string> = {
   critical: 'bg-red-500'
 };
 
-// Track recently created events to prevent duplicates (by device_id + event_type)
-const recentEventKeys = new Map<string, number>();
-const DUPLICATE_THRESHOLD_MS = 60000; // 1 minute
-
 export function ProactiveNotifications({
   deviceId,
   limit = 20,
@@ -119,43 +115,7 @@ export function ProactiveNotifications({
     }
   }, [deviceId, limit, showHistory]);
 
-  // Persist a new event to the database
-  const persistEvent = useCallback(async (event: Omit<ProactiveEvent, 'id' | 'acknowledged' | 'acknowledged_at'>) => {
-    // Check for duplicate events
-    const eventKey = `${event.device_id}-${event.event_type}`;
-    const lastCreated = recentEventKeys.get(eventKey);
-    const now = Date.now();
-    
-    if (lastCreated && now - lastCreated < DUPLICATE_THRESHOLD_MS) {
-      return null; // Skip duplicate
-    }
-    
-    recentEventKeys.set(eventKey, now);
-
-    try {
-      const { data, error } = await supabase
-        .from('proactive_vehicle_events')
-        .insert({
-          device_id: event.device_id,
-          event_type: event.event_type,
-          severity: event.severity,
-          title: event.title,
-          message: event.message,
-          metadata: event.metadata as Json,
-          acknowledged: false
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
-    } catch (err) {
-      console.error('Error persisting event:', err);
-      return null;
-    }
-  }, []);
-
-  // Send email notification for critical/error events
+  // Send email notification for critical/error events (triggered by new events from DB)
   const sendEmailNotification = useCallback(async (event: {
     id: string;
     device_id: string;
@@ -195,93 +155,6 @@ export function ProactiveNotifications({
     }
   }, []);
 
-  // Generate and persist proactive events from position updates
-  const generateProactiveEvents = useCallback(async (position: {
-    device_id: string;
-    battery_percent?: number;
-    is_overspeeding?: boolean;
-    speed?: number;
-    is_online?: boolean;
-    gps_time?: string;
-  }) => {
-    const newEvents: Omit<ProactiveEvent, 'id' | 'acknowledged' | 'acknowledged_at'>[] = [];
-    
-    // Low battery
-    if (position.battery_percent && position.battery_percent > 0 && position.battery_percent < 20) {
-      const isCritical = position.battery_percent < 10;
-      newEvents.push({
-        device_id: position.device_id,
-        event_type: isCritical ? 'critical_battery' : 'low_battery',
-        severity: isCritical ? 'critical' : 'warning',
-        title: isCritical ? 'Critical Battery Alert' : 'Low Battery Alert',
-        message: `Battery at ${position.battery_percent}%`,
-        metadata: { battery_percent: position.battery_percent },
-        created_at: new Date().toISOString()
-      });
-    }
-
-    // Overspeeding
-    if (position.is_overspeeding && position.speed && position.speed > 0) {
-      const isHighSpeed = position.speed > 120;
-      newEvents.push({
-        device_id: position.device_id,
-        event_type: 'overspeeding',
-        severity: isHighSpeed ? 'error' : 'warning',
-        title: 'Overspeeding Detected',
-        message: `Vehicle traveling at ${Math.round(position.speed)} km/h`,
-        metadata: { speed: position.speed },
-        created_at: new Date().toISOString()
-      });
-    }
-
-    // Offline alert
-    if (position.is_online === false) {
-      newEvents.push({
-        device_id: position.device_id,
-        event_type: 'offline',
-        severity: 'warning',
-        title: 'Vehicle Offline',
-        message: 'No GPS signal received',
-        metadata: { last_seen: position.gps_time },
-        created_at: new Date().toISOString()
-      });
-    }
-
-    // Persist and add new events
-    for (const event of newEvents) {
-      const persisted = await persistEvent(event);
-      if (persisted) {
-        const mappedEvent: ProactiveEvent = {
-          ...persisted,
-          severity: persisted.severity as ProactiveEvent['severity'],
-          metadata: persisted.metadata as Record<string, unknown>
-        };
-        
-        setEvents(prev => [mappedEvent, ...prev].slice(0, limit));
-        
-        // Show toast for critical/error events
-        if (event.severity === 'critical' || event.severity === 'error') {
-          toast({
-            title: event.title,
-            description: event.message,
-            variant: "destructive"
-          });
-          
-          // Send email notification
-          sendEmailNotification({
-            id: persisted.id,
-            device_id: event.device_id,
-            event_type: event.event_type,
-            severity: event.severity,
-            title: event.title,
-            message: event.message,
-            metadata: event.metadata
-          });
-        }
-      }
-    }
-  }, [limit, persistEvent, toast, sendEmailNotification]);
-
   // Acknowledge an event
   const handleAcknowledge = useCallback(async (eventId: string) => {
     try {
@@ -318,33 +191,10 @@ export function ProactiveNotifications({
   useEffect(() => {
     fetchEvents();
 
-    // Subscribe to real-time position changes
-    const positionsChannel = supabase
-      .channel('proactive_positions')
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'vehicle_positions',
-          filter: deviceId ? `device_id=eq.${deviceId}` : undefined
-        },
-        (payload) => {
-          generateProactiveEvents(payload.new as {
-            device_id: string;
-            battery_percent?: number;
-            is_overspeeding?: boolean;
-            speed?: number;
-            is_online?: boolean;
-            gps_time?: string;
-          });
-        }
-      )
-      .subscribe();
-
-    // Subscribe to new events from database (for multi-user sync)
+    // Subscribe ONLY to new events from database (alerts are now generated by DB triggers)
+    // This makes alerts work even when the browser is closed!
     const eventsChannel = supabase
-      .channel('proactive_events')
+      .channel('proactive_events_realtime')
       .on(
         'postgres_changes',
         {
@@ -355,24 +205,48 @@ export function ProactiveNotifications({
         },
         (payload) => {
           const newEvent = payload.new as ProactiveEvent;
+          console.log('[ProactiveNotifications] New event from DB trigger:', newEvent);
+          
           setEvents(prev => {
             // Avoid duplicates
             if (prev.some(e => e.id === newEvent.id)) return prev;
-            return [{
+            
+            const mappedEvent: ProactiveEvent = {
               ...newEvent,
               severity: newEvent.severity as ProactiveEvent['severity'],
               metadata: newEvent.metadata as Record<string, unknown>
-            }, ...prev].slice(0, limit);
+            };
+            
+            // Show toast for critical/error events
+            if (mappedEvent.severity === 'critical' || mappedEvent.severity === 'error') {
+              toast({
+                title: mappedEvent.title,
+                description: mappedEvent.message,
+                variant: "destructive"
+              });
+              
+              // Trigger email notification for critical events
+              sendEmailNotification({
+                id: mappedEvent.id,
+                device_id: mappedEvent.device_id,
+                event_type: mappedEvent.event_type,
+                severity: mappedEvent.severity,
+                title: mappedEvent.title,
+                message: mappedEvent.message,
+                metadata: mappedEvent.metadata
+              });
+            }
+            
+            return [mappedEvent, ...prev].slice(0, limit);
           });
         }
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(positionsChannel);
       supabase.removeChannel(eventsChannel);
     };
-  }, [deviceId, fetchEvents, generateProactiveEvents, limit]);
+  }, [deviceId, fetchEvents, limit, toast, sendEmailNotification]);
 
   if (loading) {
     return (
