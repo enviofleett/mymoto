@@ -56,11 +56,32 @@ export interface DailyMileage {
 
 // ============ Fetch Functions ============
 
-async function fetchVehicleTrips(deviceId: string, limit: number = 20): Promise<VehicleTrip[]> {
-  const { data, error } = await supabase
+export interface TripDateRange {
+  from?: Date;
+  to?: Date;
+}
+
+async function fetchVehicleTrips(
+  deviceId: string, 
+  limit: number = 50,
+  dateRange?: TripDateRange
+): Promise<VehicleTrip[]> {
+  let query = supabase
     .from("vehicle_trips")
     .select("*")
-    .eq("device_id", deviceId)
+    .eq("device_id", deviceId);
+
+  if (dateRange?.from) {
+    query = query.gte("start_time", dateRange.from.toISOString());
+  }
+  if (dateRange?.to) {
+    // Add a day to include the entire "to" date
+    const endDate = new Date(dateRange.to);
+    endDate.setDate(endDate.getDate() + 1);
+    query = query.lt("start_time", endDate.toISOString());
+  }
+
+  const { data, error } = await query
     .order("start_time", { ascending: false })
     .limit(limit);
 
@@ -139,10 +160,21 @@ async function executeVehicleCommand(payload: CommandPayload): Promise<{ success
 
 // ============ Hooks ============
 
-export function useVehicleTrips(deviceId: string | null, enabled: boolean = true) {
+export interface TripFilterOptions {
+  dateRange?: TripDateRange;
+  limit?: number;
+}
+
+export function useVehicleTrips(
+  deviceId: string | null, 
+  options: TripFilterOptions = {},
+  enabled: boolean = true
+) {
+  const { dateRange, limit = 50 } = options;
+  
   return useQuery({
-    queryKey: ["vehicle-trips", deviceId],
-    queryFn: () => fetchVehicleTrips(deviceId!),
+    queryKey: ["vehicle-trips", deviceId, dateRange?.from?.toISOString(), dateRange?.to?.toISOString(), limit],
+    queryFn: () => fetchVehicleTrips(deviceId!, limit, dateRange),
     enabled: enabled && !!deviceId,
     staleTime: 60 * 1000, // Fresh for 1 minute
     gcTime: 5 * 60 * 1000,

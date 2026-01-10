@@ -4,6 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,6 +34,7 @@ import {
   getPersonalityLabel,
   type VehicleTrip,
   type VehicleEvent,
+  type TripFilterOptions,
 } from "@/hooks/useVehicleProfile";
 import { TripPlaybackDialog } from "@/components/profile/TripPlaybackDialog";
 import {
@@ -49,8 +56,11 @@ import {
   Zap,
   Loader2,
   Play,
+  CalendarIcon,
+  X,
+  Filter,
 } from "lucide-react";
-import { format, parseISO, isSameDay, differenceInMinutes } from "date-fns";
+import { format, parseISO, isSameDay, differenceInMinutes, subDays } from "date-fns";
 import { cn } from "@/lib/utils";
 import {
   AreaChart,
@@ -62,6 +72,7 @@ import {
   BarChart,
   Bar,
 } from "recharts";
+import type { DateRange } from "react-day-picker";
 
 const avatarColors = ["from-blue-500 to-purple-500"];
 
@@ -77,9 +88,22 @@ export default function OwnerVehicleProfile() {
   const [selectedTrip, setSelectedTrip] = useState<VehicleTrip | null>(null);
   const [showTripPlayback, setShowTripPlayback] = useState(false);
   
+  // Trip date filter state
+  const [tripDateRange, setTripDateRange] = useState<DateRange | undefined>(undefined);
+  const [isDateFilterOpen, setIsDateFilterOpen] = useState(false);
+  
+  // Build trip filter options
+  const tripFilterOptions: TripFilterOptions = useMemo(() => ({
+    dateRange: tripDateRange?.from ? {
+      from: tripDateRange.from,
+      to: tripDateRange.to,
+    } : undefined,
+    limit: 50,
+  }), [tripDateRange]);
+  
   // Data fetching hooks
   const { data: vehicles, isLoading: vehiclesLoading, refetch: refetchVehicles } = useOwnerVehicles();
-  const { data: trips, isLoading: tripsLoading, refetch: refetchTrips } = useVehicleTrips(deviceId ?? null);
+  const { data: trips, isLoading: tripsLoading, refetch: refetchTrips } = useVehicleTrips(deviceId ?? null, tripFilterOptions);
   const { data: events, isLoading: eventsLoading, refetch: refetchEvents } = useVehicleEvents(deviceId ?? null);
   const { data: llmSettings } = useVehicleLLMSettings(deviceId ?? null);
   const { data: mileageStats, refetch: refetchMileage } = useMileageStats(deviceId ?? null);
@@ -657,10 +681,102 @@ export default function OwnerVehicleProfile() {
                     <Route className="h-5 w-5 text-primary" />
                     <span className="font-medium text-foreground">Trip History</span>
                   </div>
-                  <div className="flex items-center gap-1 text-muted-foreground text-sm">
-                    <Calendar className="h-4 w-4" />
-                    <span>Last 20 trips</span>
-                  </div>
+                  <Popover open={isDateFilterOpen} onOpenChange={setIsDateFilterOpen}>
+                    <PopoverTrigger asChild>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className={cn(
+                          "h-8 gap-1.5 text-xs",
+                          tripDateRange?.from && "border-primary text-primary"
+                        )}
+                      >
+                        <Filter className="h-3.5 w-3.5" />
+                        {tripDateRange?.from ? (
+                          tripDateRange.to ? (
+                            <>
+                              {format(tripDateRange.from, "MMM d")} - {format(tripDateRange.to, "MMM d")}
+                            </>
+                          ) : (
+                            format(tripDateRange.from, "MMM d, yyyy")
+                          )
+                        ) : (
+                          "Filter dates"
+                        )}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="end">
+                      <div className="p-3 border-b border-border">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">Select date range</span>
+                          {tripDateRange?.from && (
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="h-7 text-xs"
+                              onClick={() => {
+                                setTripDateRange(undefined);
+                                setIsDateFilterOpen(false);
+                              }}
+                            >
+                              <X className="h-3 w-3 mr-1" />
+                              Clear
+                            </Button>
+                          )}
+                        </div>
+                        <div className="flex gap-1.5 mt-2">
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="h-7 text-xs"
+                            onClick={() => {
+                              setTripDateRange({ from: new Date(), to: new Date() });
+                              setIsDateFilterOpen(false);
+                            }}
+                          >
+                            Today
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="h-7 text-xs"
+                            onClick={() => {
+                              setTripDateRange({ from: subDays(new Date(), 7), to: new Date() });
+                              setIsDateFilterOpen(false);
+                            }}
+                          >
+                            Last 7 days
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="h-7 text-xs"
+                            onClick={() => {
+                              setTripDateRange({ from: subDays(new Date(), 30), to: new Date() });
+                              setIsDateFilterOpen(false);
+                            }}
+                          >
+                            Last 30 days
+                          </Button>
+                        </div>
+                      </div>
+                      <CalendarComponent
+                        initialFocus
+                        mode="range"
+                        defaultMonth={tripDateRange?.from}
+                        selected={tripDateRange}
+                        onSelect={(range) => {
+                          setTripDateRange(range);
+                          if (range?.from && range?.to) {
+                            setIsDateFilterOpen(false);
+                          }
+                        }}
+                        numberOfMonths={1}
+                        disabled={(date) => date > new Date()}
+                        className={cn("p-3 pointer-events-auto")}
+                      />
+                    </PopoverContent>
+                  </Popover>
                 </div>
 
                 <div className="space-y-4 max-h-80 overflow-y-auto">
