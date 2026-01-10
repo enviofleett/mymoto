@@ -47,46 +47,203 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * c;
 }
 
-// Mock traffic API - returns estimated delay factor (1.0 = normal, 1.5 = 50% slower)
-async function getTrafficFactor(originLat: number, originLon: number, destLat: number, destLon: number): Promise<{ factor: number; condition: string }> {
-  // Mock implementation - in production, integrate with Google Maps, TomTom, or HERE API
+interface MapboxDirectionsResponse {
+  routes: Array<{
+    duration: number; // seconds without traffic
+    duration_typical: number; // seconds with typical traffic
+    distance: number; // meters
+    legs: Array<{
+      annotation?: {
+        congestion?: string[];
+        congestion_numeric?: number[];
+      };
+    }>;
+  }>;
+}
+
+interface TrafficResult {
+  factor: number;
+  condition: string;
+  durationMinutes: number;
+  durationTypicalMinutes: number;
+  distanceKm: number;
+  congestionLevel: string;
+}
+
+// Get real traffic data from Mapbox Directions API
+async function getTrafficData(
+  originLat: number, 
+  originLon: number, 
+  destLat: number, 
+  destLon: number
+): Promise<TrafficResult> {
+  const mapboxToken = Deno.env.get('MAPBOX_ACCESS_TOKEN');
+  
+  if (!mapboxToken) {
+    console.warn('[Predictive Briefing] MAPBOX_ACCESS_TOKEN not set, using fallback');
+    return getFallbackTraffic();
+  }
+  
+  try {
+    // Mapbox expects coordinates as longitude,latitude
+    const coordinates = `${originLon},${originLat};${destLon},${destLat}`;
+    const url = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${coordinates}?` + 
+      `access_token=${mapboxToken}&` +
+      `annotations=congestion,congestion_numeric&` +
+      `overview=full&` +
+      `geometries=geojson`;
+    
+    console.log(`[Predictive Briefing] Fetching Mapbox traffic data...`);
+    
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[Predictive Briefing] Mapbox API error: ${response.status} - ${errorText}`);
+      return getFallbackTraffic();
+    }
+    
+    const data: MapboxDirectionsResponse = await response.json();
+    
+    if (!data.routes || data.routes.length === 0) {
+      console.warn('[Predictive Briefing] No routes found from Mapbox');
+      return getFallbackTraffic();
+    }
+    
+    const route = data.routes[0];
+    const durationMinutes = route.duration / 60;
+    const durationTypicalMinutes = (route.duration_typical || route.duration) / 60;
+    const distanceKm = route.distance / 1000;
+    
+    // Calculate traffic factor (typical duration vs base duration)
+    const factor = durationTypicalMinutes / durationMinutes;
+    
+    // Analyze congestion from annotations
+    const congestionLevel = analyzeCongestion(route.legs[0]?.annotation?.congestion || []);
+    
+    // Determine condition description
+    let condition: string;
+    if (factor >= 1.5) {
+      condition = 'heavy traffic';
+    } else if (factor >= 1.25) {
+      condition = 'moderate traffic';
+    } else if (factor >= 1.1) {
+      condition = 'light traffic';
+    } else {
+      condition = 'clear roads';
+    }
+    
+    console.log(`[Predictive Briefing] Traffic result: ${condition} (factor: ${factor.toFixed(2)}, ETA: ${durationTypicalMinutes.toFixed(0)} min)`);
+    
+    return {
+      factor,
+      condition,
+      durationMinutes,
+      durationTypicalMinutes,
+      distanceKm,
+      congestionLevel
+    };
+    
+  } catch (error) {
+    console.error('[Predictive Briefing] Error fetching Mapbox data:', error);
+    return getFallbackTraffic();
+  }
+}
+
+// Analyze congestion array to get overall level
+function analyzeCongestion(congestion: string[]): string {
+  if (!congestion || congestion.length === 0) return 'unknown';
+  
+  const counts = {
+    low: 0,
+    moderate: 0,
+    heavy: 0,
+    severe: 0
+  };
+  
+  for (const level of congestion) {
+    if (level === 'low' || level === 'unknown') counts.low++;
+    else if (level === 'moderate') counts.moderate++;
+    else if (level === 'heavy') counts.heavy++;
+    else if (level === 'severe') counts.severe++;
+  }
+  
+  const total = congestion.length;
+  if (counts.severe / total > 0.2) return 'severe';
+  if (counts.heavy / total > 0.3) return 'heavy';
+  if (counts.moderate / total > 0.4) return 'moderate';
+  return 'low';
+}
+
+// Fallback when Mapbox is unavailable
+function getFallbackTraffic(): TrafficResult {
   const hour = new Date().getHours();
   
   // Rush hour simulation
   if ((hour >= 7 && hour <= 9) || (hour >= 16 && hour <= 19)) {
-    const randomFactor = 1.2 + Math.random() * 0.5; // 1.2 to 1.7
+    const randomFactor = 1.2 + Math.random() * 0.3;
     return { 
       factor: randomFactor, 
-      condition: randomFactor > 1.4 ? 'heavy traffic' : 'moderate traffic' 
+      condition: randomFactor > 1.35 ? 'moderate traffic (estimated)' : 'light traffic (estimated)',
+      durationMinutes: 0,
+      durationTypicalMinutes: 0,
+      distanceKm: 0,
+      congestionLevel: 'unknown'
     };
   }
   
-  return { factor: 1.0, condition: 'light traffic' };
+  return { 
+    factor: 1.0, 
+    condition: 'clear roads (estimated)',
+    durationMinutes: 0,
+    durationTypicalMinutes: 0,
+    distanceKm: 0,
+    congestionLevel: 'low'
+  };
 }
 
 // Generate a personalized morning briefing message
 function generateBriefingMessage(
   pattern: PredictedTrip,
   position: VehiclePosition,
-  traffic: { factor: number; condition: string },
+  traffic: TrafficResult,
   vehicleName: string
 ): string {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   
   const destination = pattern.destination_name || 'your usual destination';
-  const estimatedDuration = Math.round(pattern.avg_duration_minutes * traffic.factor);
-  const normalDuration = Math.round(pattern.avg_duration_minutes);
+  
+  // Use Mapbox ETA if available, otherwise fall back to pattern average
+  const hasRealTrafficData = traffic.durationTypicalMinutes > 0;
+  const estimatedDuration = hasRealTrafficData 
+    ? Math.round(traffic.durationTypicalMinutes)
+    : Math.round(pattern.avg_duration_minutes * traffic.factor);
+  const normalDuration = hasRealTrafficData
+    ? Math.round(traffic.durationMinutes)
+    : Math.round(pattern.avg_duration_minutes);
   
   let message = `${greeting}! 🚗\n\n`;
   message += `I noticed you usually head to **${destination}** around this time. `;
   
-  // Traffic info
-  if (traffic.factor > 1.2) {
-    const extraMinutes = estimatedDuration - normalDuration;
-    message += `There's ${traffic.condition} right now — expect about **${estimatedDuration} minutes** (${extraMinutes} min longer than usual). `;
+  // Traffic info with real-time data
+  if (hasRealTrafficData) {
+    if (traffic.factor > 1.2) {
+      const extraMinutes = estimatedDuration - normalDuration;
+      message += `There's **${traffic.condition}** right now — expect about **${estimatedDuration} minutes** (${extraMinutes} min longer than usual). `;
+    } else {
+      message += `Traffic looks good! Should take about **${estimatedDuration} minutes**. `;
+    }
+    
+    // Add congestion detail
+    if (traffic.congestionLevel === 'severe') {
+      message += `\n\n🚨 **Severe congestion** detected on your route. Consider leaving later or taking an alternate route.`;
+    } else if (traffic.congestionLevel === 'heavy') {
+      message += `\n\n⚠️ Heavy congestion on parts of your route.`;
+    }
   } else {
-    message += `Traffic looks good! Should take about **${estimatedDuration} minutes**. `;
+    // Fallback messaging
+    message += `Based on your usual travel time, expect about **${estimatedDuration} minutes** (${traffic.condition}). `;
   }
   
   // Battery check
@@ -98,8 +255,9 @@ function generateBriefingMessage(
     }
   }
   
-  // Distance info
-  message += `\n\n📍 Distance: ~${pattern.avg_distance_km.toFixed(1)} km`;
+  // Distance info - prefer real distance from Mapbox
+  const distance = hasRealTrafficData ? traffic.distanceKm : pattern.avg_distance_km;
+  message += `\n\n📍 Distance: ~${distance.toFixed(1)} km`;
   
   // Confidence note
   if (pattern.occurrence_count >= 10) {
@@ -197,8 +355,8 @@ serve(async (req) => {
         continue;
       }
       
-      // Get traffic conditions (mock for now)
-      const traffic = await getTrafficFactor(
+      // Get real traffic conditions from Mapbox
+      const traffic = await getTrafficData(
         prediction.origin_latitude,
         prediction.origin_longitude,
         prediction.destination_latitude,
