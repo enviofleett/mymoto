@@ -2,6 +2,7 @@ import { ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { MessageCircle, Car, Wallet, User } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { GlobalAlertListener } from "@/components/notifications/GlobalAlertListener";
 
 interface OwnerLayoutProps {
   children: ReactNode;
@@ -27,6 +28,9 @@ export function OwnerLayout({ children }: OwnerLayoutProps) {
 
   return (
     <div className="min-h-screen min-h-[100dvh] bg-background flex flex-col">
+      {/* Global Alert Listener - Real-time notifications */}
+      <GlobalAlertListener />
+      
       {/* Main Content - scrollable area above fixed nav */}
       <main className="flex-1 overflow-auto pb-[calc(4rem+env(safe-area-inset-bottom))]">
         {children}

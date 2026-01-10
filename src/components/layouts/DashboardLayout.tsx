@@ -2,6 +2,7 @@ import { ReactNode } from "react";
 import { TopNavigation } from "@/components/navigation/TopNavigation";
 import { BottomNavigation } from "@/components/navigation/BottomNavigation";
 import { DashboardFooter } from "@/components/fleet/DashboardFooter";
+import { GlobalAlertListener } from "@/components/notifications/GlobalAlertListener";
 import { ConnectionStatus } from "@/hooks/useFleetData";
 
 interface DashboardLayoutProps {
@@ -12,6 +13,8 @@ interface DashboardLayoutProps {
 export function DashboardLayout({ children, connectionStatus }: DashboardLayoutProps) {
   return (
     <div className="flex min-h-screen w-full flex-col bg-background">
+      {/* Global Alert Listener - Real-time notifications */}
+      <GlobalAlertListener />
       {/* Desktop Top Navigation */}
       <div className="hidden md:block">
         <TopNavigation connectionStatus={connectionStatus} />
