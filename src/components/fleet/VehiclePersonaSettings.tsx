@@ -152,6 +152,52 @@ export function VehiclePersonaSettings({ deviceId, vehicleName }: VehiclePersona
   const handleSave = async () => {
     setSaving(true);
     try {
+      // Step 1: Ensure vehicle exists in vehicles table
+      const { data: vehicleExists, error: vehicleCheckError } = await supabase
+        .from('vehicles')
+        .select('device_id')
+        .eq('device_id', deviceId)
+        .maybeSingle();
+
+      if (vehicleCheckError) {
+        console.error('Error checking vehicle existence:', vehicleCheckError);
+        throw vehicleCheckError;
+      }
+
+      if (!vehicleExists) {
+        // Create minimal vehicle entry to satisfy foreign key constraint
+        const { error: vehicleCreateError } = await supabase
+          .from('vehicles')
+          .upsert({
+            device_id: deviceId,
+            device_name: vehicleName,
+          }, { onConflict: 'device_id' });
+
+        if (vehicleCreateError) {
+          console.error('Failed to create vehicle entry:', vehicleCreateError);
+
+          // Check if it's an RLS policy error
+          if ('code' in vehicleCreateError && vehicleCreateError.code === '42501') {
+            toast({
+              title: "Permission Denied",
+              description: "You do not have permission to edit this vehicle.",
+              variant: "destructive"
+            });
+            setSaving(false);
+            return;
+          }
+
+          toast({
+            title: "Error",
+            description: "Vehicle not found in system. Please contact support.",
+            variant: "destructive"
+          });
+          setSaving(false);
+          return;
+        }
+      }
+
+      // Step 2: Save LLM settings
       const { error } = await supabase
         .from('vehicle_llm_settings')
         .upsert({
@@ -164,7 +210,19 @@ export function VehiclePersonaSettings({ deviceId, vehicleName }: VehiclePersona
           updated_at: new Date().toISOString(),
         }, { onConflict: 'device_id' });
 
-      if (error) throw error;
+      if (error) {
+        // Handle RLS policy errors specifically
+        if ('code' in error && error.code === '42501') {
+          toast({
+            title: "Permission Denied",
+            description: "You do not have permission to edit this vehicle's settings.",
+            variant: "destructive"
+          });
+          setSaving(false);
+          return;
+        }
+        throw error;
+      }
 
       toast({
         title: "Saved!",
