@@ -29,9 +29,11 @@ interface VehicleCommand {
   id: string;
   device_id: string;
   command_type: string;
-  command_text: string;
   status: string;
   created_at: string;
+  result?: Record<string, unknown>;
+  error_message?: string;
+  user_id?: string;
 }
 
 const COMMAND_ICONS: Record<string, any> = {
@@ -52,9 +54,11 @@ const COMMAND_ICONS: Record<string, any> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  pending: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-  completed: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  failed: 'bg-red-100 text-red-800 border-red-200'
+  pending: 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700',
+  executing: 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-700',
+  success: 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-700',
+  completed: 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-700',
+  failed: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700'
 };
 
 export function CommandHistory({ deviceId }: CommandHistoryProps) {
@@ -64,52 +68,48 @@ export function CommandHistory({ deviceId }: CommandHistoryProps) {
 
   useEffect(() => {
     fetchCommands();
+    
+    // Set up realtime subscription for command updates
+    const channel = supabase
+      .channel(`command_logs:${deviceId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'vehicle_command_logs',
+          filter: `device_id=eq.${deviceId}`
+        },
+        () => {
+          fetchCommands();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [deviceId]);
 
   const fetchCommands = async () => {
     setLoading(true);
     try {
-      // Fetch from vehicle_chat_history as command log placeholder
+      // Fetch from actual vehicle_command_logs table
       const { data, error } = await supabase
-        .from('vehicle_chat_history')
-        .select('id, device_id, content, role, created_at')
+        .from('vehicle_command_logs')
+        .select('id, device_id, command_type, status, created_at, result, error_message, user_id')
         .eq('device_id', deviceId)
-        .eq('role', 'user')
-        .ilike('content', '%lock%') // Filter for command-like messages
         .order('created_at', { ascending: false })
         .limit(20);
 
       if (error) throw error;
       
-      // Transform chat history to command format
-      const commandData: VehicleCommand[] = (data || []).map(item => ({
-        id: item.id,
-        device_id: item.device_id,
-        command_type: detectCommandType(item.content),
-        command_text: item.content,
-        status: 'completed',
-        created_at: item.created_at || new Date().toISOString()
-      }));
-      
-      setCommands(commandData);
+      setCommands((data as VehicleCommand[]) || []);
     } catch (err) {
       console.error('Error fetching commands:', err);
     } finally {
       setLoading(false);
     }
-  };
-
-  const detectCommandType = (text: string): string => {
-    const lower = text.toLowerCase();
-    if (lower.includes('lock')) return 'lock';
-    if (lower.includes('unlock')) return 'unlock';
-    if (lower.includes('immobilize') || lower.includes('stop engine')) return 'immobilize';
-    if (lower.includes('restore')) return 'restore';
-    if (lower.includes('speed limit')) return 'set_speed_limit';
-    if (lower.includes('geofence')) return 'enable_geofence';
-    if (lower.includes('location')) return 'request_location';
-    if (lower.includes('status')) return 'request_status';
-    return 'request_status';
   };
 
   if (loading) {
@@ -126,7 +126,7 @@ export function CommandHistory({ deviceId }: CommandHistoryProps) {
       <div className="text-center py-12 text-muted-foreground">
         <Shield className="h-12 w-12 mx-auto mb-3 opacity-40" />
         <p className="text-sm">No commands yet</p>
-        <p className="text-xs mt-1">Command history will appear here</p>
+        <p className="text-xs mt-1">Use the Lock/Unlock buttons or chat to send commands</p>
       </div>
     );
   }
@@ -137,6 +137,9 @@ export function CommandHistory({ deviceId }: CommandHistoryProps) {
         const Icon = COMMAND_ICONS[command.command_type] || Shield;
         const statusColor = STATUS_COLORS[command.status] || STATUS_COLORS.pending;
         const timeAgo = formatDistanceToNow(new Date(command.created_at), { addSuffix: true });
+        const isSuccess = command.status === 'success' || command.status === 'completed';
+        const isFailed = command.status === 'failed';
+        const isPending = command.status === 'pending' || command.status === 'executing';
 
         return (
           <Card
@@ -154,12 +157,16 @@ export function CommandHistory({ deviceId }: CommandHistoryProps) {
                     <h4 className="font-semibold text-sm leading-tight capitalize">
                       {command.command_type.replace(/_/g, ' ')}
                     </h4>
-                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                      {command.command_text}
-                    </p>
+                    {command.error_message && (
+                      <p className="text-xs text-red-500 mt-0.5">
+                        {command.error_message}
+                      </p>
+                    )}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
-                    <CheckCircle className="h-4 w-4 text-green-600" />
+                    {isSuccess && <CheckCircle className="h-4 w-4 text-green-600" />}
+                    {isFailed && <AlertOctagon className="h-4 w-4 text-red-600" />}
+                    {isPending && <Loader2 className="h-4 w-4 text-yellow-600 animate-spin" />}
                     <Badge variant="outline" className="text-xs capitalize">
                       {command.status}
                     </Badge>

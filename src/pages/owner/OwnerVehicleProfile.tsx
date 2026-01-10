@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +25,7 @@ import { useOwnerVehicles } from "@/hooks/useOwnerVehicles";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { PullToRefreshIndicator } from "@/components/ui/pull-to-refresh";
 import { useAddress } from "@/hooks/useAddress";
+import { useToast } from "@/hooks/use-toast";
 import {
   useVehicleTrips,
   useVehicleEvents,
@@ -64,6 +66,8 @@ import {
   X,
   Filter,
   Car,
+  Lock,
+  Unlock,
 } from "lucide-react";
 import { format, parseISO, isSameDay, differenceInMinutes, subDays } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -86,6 +90,10 @@ export default function OwnerVehicleProfile() {
   // Engine control confirmation state
   const [showEngineConfirm, setShowEngineConfirm] = useState(false);
   const [pendingEngineCommand, setPendingEngineCommand] = useState<"start_engine" | "stop_engine" | null>(null);
+  
+  // Door lock command state
+  const [pendingDoorCommand, setPendingDoorCommand] = useState<"lock" | "unlock" | null>(null);
+  const [isDoorCommandPending, setIsDoorCommandPending] = useState(false);
   
   // Trip playback state
   const [selectedTrip, setSelectedTrip] = useState<VehicleTrip | null>(null);
@@ -307,6 +315,66 @@ export default function OwnerVehicleProfile() {
     
     setShowEngineConfirm(false);
     setPendingEngineCommand(null);
+  };
+
+  // Get toast for door commands
+  const { toast } = useToast();
+
+  // Door lock handlers
+  const handleDoorLock = async () => {
+    if (!deviceId) return;
+    setIsDoorCommandPending(true);
+    setPendingDoorCommand("lock");
+    
+    try {
+      const { data, error } = await supabase.functions.invoke("execute-vehicle-command", {
+        body: { device_id: deviceId, command_type: "lock", skip_confirmation: true },
+      });
+      
+      if (error) throw error;
+      
+      toast({
+        title: "Doors Locked",
+        description: "Lock command sent to vehicle",
+      });
+    } catch (err) {
+      toast({
+        title: "Lock Failed",
+        description: err instanceof Error ? err.message : "Failed to lock doors",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDoorCommandPending(false);
+      setPendingDoorCommand(null);
+    }
+  };
+
+  const handleDoorUnlock = async () => {
+    if (!deviceId) return;
+    setIsDoorCommandPending(true);
+    setPendingDoorCommand("unlock");
+    
+    try {
+      const { data, error } = await supabase.functions.invoke("execute-vehicle-command", {
+        body: { device_id: deviceId, command_type: "unlock", skip_confirmation: true },
+      });
+      
+      if (error) throw error;
+      
+      toast({
+        title: "Doors Unlocked",
+        description: "Unlock command sent to vehicle",
+      });
+    } catch (err) {
+      toast({
+        title: "Unlock Failed",
+        description: err instanceof Error ? err.message : "Failed to unlock doors",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDoorCommandPending(false);
+      setPendingDoorCommand(null);
+    }
   };
 
   // Trip playback handler
@@ -536,6 +604,52 @@ export default function OwnerVehicleProfile() {
 
                 <p className="text-xs text-muted-foreground text-center mt-3">
                   Remote engine control requires verification. Make sure the vehicle is in a safe location.
+                </p>
+              </CardContent>
+            </Card>
+
+            {/* Door Lock Control */}
+            <Card className="border-border bg-card/50">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="p-2 rounded-full bg-blue-500/10">
+                    <Lock className="h-4 w-4 text-blue-500" />
+                  </div>
+                  <span className="font-medium text-foreground">Door Control</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <Button
+                    variant="outline"
+                    className="flex flex-col items-center py-4 h-auto border-green-500/30 hover:border-green-500/50 hover:bg-green-500/5"
+                    onClick={handleDoorLock}
+                    disabled={isDoorCommandPending}
+                  >
+                    {isDoorCommandPending && pendingDoorCommand === "lock" ? (
+                      <Loader2 className="h-5 w-5 mb-1 animate-spin text-green-500" />
+                    ) : (
+                      <Lock className="h-5 w-5 mb-1 text-green-500" />
+                    )}
+                    <span className="text-sm font-medium">Lock Doors</span>
+                  </Button>
+                  
+                  <Button
+                    variant="outline"
+                    className="flex flex-col items-center py-4 h-auto border-orange-500/30 hover:border-orange-500/50 hover:bg-orange-500/5"
+                    onClick={handleDoorUnlock}
+                    disabled={isDoorCommandPending}
+                  >
+                    {isDoorCommandPending && pendingDoorCommand === "unlock" ? (
+                      <Loader2 className="h-5 w-5 mb-1 animate-spin text-orange-500" />
+                    ) : (
+                      <Unlock className="h-5 w-5 mb-1 text-orange-500" />
+                    )}
+                    <span className="text-sm font-medium">Unlock Doors</span>
+                  </Button>
+                </div>
+
+                <p className="text-xs text-muted-foreground text-center mt-3">
+                  Remotely lock or unlock your vehicle doors
                 </p>
               </CardContent>
             </Card>
