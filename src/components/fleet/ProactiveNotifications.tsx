@@ -21,7 +21,8 @@ import {
   History
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { useNotifications, isAppInForeground } from "@/hooks/useNotifications";
+import { useNotifications } from "@/hooks/useNotifications";
+import { useNotificationPreferences, type AlertType, type SeverityLevel } from "@/hooks/useNotificationPreferences";
 import { NotificationPermissionBanner } from "@/components/notifications/NotificationPermissionBanner";
 
 interface ProactiveNotificationsProps {
@@ -83,6 +84,7 @@ export function ProactiveNotifications({
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
   const { showNotification, playAlertSound, permission } = useNotifications();
+  const { shouldPlaySound, shouldShowPush, preferences } = useNotificationPreferences();
 
   // Fetch historical events from database
   const fetchEvents = useCallback(async () => {
@@ -219,32 +221,21 @@ export function ProactiveNotifications({
               metadata: newEvent.metadata as Record<string, unknown>
             };
             
-            // Handle notifications for critical/error events
-            if (mappedEvent.severity === 'critical' || mappedEvent.severity === 'error') {
-              // Play alert sound
-              playAlertSound(mappedEvent.severity);
-              
-              // Show in-app toast
+            const alertType = mappedEvent.event_type as AlertType;
+            const severity = mappedEvent.severity as SeverityLevel;
+            
+            // Check user preferences for sound
+            if (shouldPlaySound(alertType, severity)) {
+              playAlertSound(severity, preferences.soundVolume);
+            }
+            
+            // Always show in-app toast for critical/error
+            if (severity === 'critical' || severity === 'error') {
               toast({
                 title: mappedEvent.title,
                 description: mappedEvent.message,
                 variant: "destructive"
               });
-              
-              // Show browser/PWA push notification (especially useful when app is in background)
-              if (permission === 'granted') {
-                showNotification({
-                  title: `🚨 ${mappedEvent.title}`,
-                  body: mappedEvent.message,
-                  tag: `alert-${mappedEvent.id}`,
-                  requireInteraction: mappedEvent.severity === 'critical',
-                  data: {
-                    eventId: mappedEvent.id,
-                    deviceId: mappedEvent.device_id,
-                    eventType: mappedEvent.event_type
-                  }
-                });
-              }
               
               // Trigger email notification for critical events
               sendEmailNotification({
@@ -256,13 +247,25 @@ export function ProactiveNotifications({
                 message: mappedEvent.message,
                 metadata: mappedEvent.metadata
               });
-            } else if (mappedEvent.severity === 'warning') {
-              // Play softer sound for warnings
-              playAlertSound('warning');
-              
+            } else if (severity === 'warning') {
               toast({
                 title: mappedEvent.title,
                 description: mappedEvent.message
+              });
+            }
+            
+            // Check user preferences for push notification
+            if (permission === 'granted' && shouldShowPush(alertType, severity)) {
+              showNotification({
+                title: severity === 'critical' ? `🚨 ${mappedEvent.title}` : mappedEvent.title,
+                body: mappedEvent.message,
+                tag: `alert-${mappedEvent.id}`,
+                requireInteraction: severity === 'critical',
+                data: {
+                  eventId: mappedEvent.id,
+                  deviceId: mappedEvent.device_id,
+                  eventType: mappedEvent.event_type
+                }
               });
             }
             
@@ -275,7 +278,7 @@ export function ProactiveNotifications({
     return () => {
       supabase.removeChannel(eventsChannel);
     };
-  }, [deviceId, fetchEvents, limit, toast, sendEmailNotification, showNotification, playAlertSound, permission]);
+  }, [deviceId, fetchEvents, limit, toast, sendEmailNotification, showNotification, playAlertSound, permission, shouldPlaySound, shouldShowPush, preferences.soundVolume]);
 
   if (loading) {
     return (

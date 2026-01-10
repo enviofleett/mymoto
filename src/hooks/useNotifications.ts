@@ -14,7 +14,7 @@ interface UseNotificationsReturn {
   isSupported: boolean;
   requestPermission: () => Promise<boolean>;
   showNotification: (options: PushNotificationOptions) => void;
-  playAlertSound: (severity: 'info' | 'warning' | 'error' | 'critical') => void;
+  playAlertSound: (severity: 'info' | 'warning' | 'error' | 'critical', volumeMultiplier?: number) => void;
 }
 
 // Audio context for generating notification sounds
@@ -137,9 +137,10 @@ export function useNotifications(): UseNotificationsReturn {
     }
   }, [isSupported, permission]);
 
-  const playAlertSound = useCallback((severity: 'info' | 'warning' | 'error' | 'critical') => {
+  const playAlertSound = useCallback((severity: 'info' | 'warning' | 'error' | 'critical', volumeMultiplier: number = 1) => {
     const pattern = SOUND_PATTERNS[severity] || SOUND_PATTERNS.info;
-    playBeep(pattern.frequency, pattern.duration, pattern.volume, pattern.pattern);
+    const adjustedVolume = pattern.volume * Math.max(0, Math.min(1, volumeMultiplier));
+    playBeep(pattern.frequency, pattern.duration, adjustedVolume, pattern.pattern);
   }, []);
 
   return {
