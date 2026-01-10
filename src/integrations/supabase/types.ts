@@ -485,6 +485,54 @@ export type Database = {
           },
         ]
       }
+      vehicle_trips: {
+        Row: {
+          avg_speed: number | null
+          created_at: string
+          device_id: string
+          distance_km: number
+          duration_seconds: number | null
+          end_latitude: number
+          end_longitude: number
+          end_time: string
+          id: string
+          max_speed: number | null
+          start_latitude: number
+          start_longitude: number
+          start_time: string
+        }
+        Insert: {
+          avg_speed?: number | null
+          created_at?: string
+          device_id: string
+          distance_km?: number
+          duration_seconds?: number | null
+          end_latitude: number
+          end_longitude: number
+          end_time: string
+          id?: string
+          max_speed?: number | null
+          start_latitude: number
+          start_longitude: number
+          start_time: string
+        }
+        Update: {
+          avg_speed?: number | null
+          created_at?: string
+          device_id?: string
+          distance_km?: number
+          duration_seconds?: number | null
+          end_latitude?: number
+          end_longitude?: number
+          end_time?: string
+          id?: string
+          max_speed?: number | null
+          start_latitude?: number
+          start_longitude?: number
+          start_time?: string
+        }
+        Relationships: []
+      }
       vehicles: {
         Row: {
           created_at: string | null
@@ -606,6 +654,7 @@ export type Database = {
           visit_count: number
         }[]
       }
+      get_daily_mileage: { Args: { p_device_id: string }; Returns: Json }
       get_fleet_stats: { Args: never; Returns: Json }
       get_maintenance_recommendations: {
         Args: { p_device_id: string; p_status?: string }
@@ -638,6 +687,10 @@ export type Database = {
           overall_health_score: number
           trend: string
         }[]
+      }
+      get_vehicle_mileage_stats: {
+        Args: { p_device_id: string }
+        Returns: Json
       }
       has_role: {
         Args: {
