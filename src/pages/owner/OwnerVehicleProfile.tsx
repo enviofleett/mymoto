@@ -35,6 +35,7 @@ import {
   type VehicleTrip,
   type VehicleEvent,
   type TripFilterOptions,
+  type EventFilterOptions,
 } from "@/hooks/useVehicleProfile";
 import { TripPlaybackDialog } from "@/components/profile/TripPlaybackDialog";
 import {
@@ -92,19 +93,30 @@ export default function OwnerVehicleProfile() {
   const [tripDateRange, setTripDateRange] = useState<DateRange | undefined>(undefined);
   const [isDateFilterOpen, setIsDateFilterOpen] = useState(false);
   
-  // Build trip filter options
+  // Build filter options for trips and events
   const tripFilterOptions: TripFilterOptions = useMemo(() => ({
     dateRange: tripDateRange?.from ? {
       from: tripDateRange.from,
       to: tripDateRange.to,
     } : undefined,
-    limit: 50,
+    limit: 100,
   }), [tripDateRange]);
+  
+  const eventFilterOptions: EventFilterOptions = useMemo(() => ({
+    dateRange: tripDateRange?.from ? {
+      from: tripDateRange.from,
+      to: tripDateRange.to,
+    } : undefined,
+    limit: 100,
+  }), [tripDateRange]);
+  
+  // Check if filter is active
+  const isFilterActive = !!tripDateRange?.from;
   
   // Data fetching hooks
   const { data: vehicles, isLoading: vehiclesLoading, refetch: refetchVehicles } = useOwnerVehicles();
   const { data: trips, isLoading: tripsLoading, refetch: refetchTrips } = useVehicleTrips(deviceId ?? null, tripFilterOptions);
-  const { data: events, isLoading: eventsLoading, refetch: refetchEvents } = useVehicleEvents(deviceId ?? null);
+  const { data: events, isLoading: eventsLoading, refetch: refetchEvents } = useVehicleEvents(deviceId ?? null, eventFilterOptions);
   const { data: llmSettings } = useVehicleLLMSettings(deviceId ?? null);
   const { data: mileageStats, refetch: refetchMileage } = useMileageStats(deviceId ?? null);
   const { data: dailyMileage, refetch: refetchDaily } = useDailyMileage(deviceId ?? null);
@@ -185,19 +197,78 @@ export default function OwnerVehicleProfile() {
     return groups.sort((a, b) => b.date.getTime() - a.date.getTime());
   }, [events]);
 
-  // Calculate trip stats from mileage data
-  const tripStats = useMemo(() => {
-    if (!mileageStats || !dailyMileage) {
-      return { totalTrips: 0, avgTripsPerDay: 0, avgKmPerTrip: 0, peakTrips: 0 };
+  // Calculate filtered mileage stats from trips data
+  const filteredMileageStats = useMemo(() => {
+    if (!trips || trips.length === 0) {
+      return { totalDistance: 0, totalTrips: 0, avgPerDay: 0 };
     }
     
-    const totalTrips = mileageStats.trips_week;
-    const avgTripsPerDay = totalTrips / 7;
-    const avgKmPerTrip = totalTrips > 0 ? mileageStats.week / totalTrips : 0;
-    const peakTrips = Math.max(...dailyMileage.map(d => d.trips), 0);
+    const totalDistance = trips.reduce((sum, t) => sum + t.distance_km, 0);
+    const totalTrips = trips.length;
+    
+    // Calculate days in range
+    let daysInRange = 1;
+    if (tripDateRange?.from && tripDateRange?.to) {
+      const diffTime = tripDateRange.to.getTime() - tripDateRange.from.getTime();
+      daysInRange = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1);
+    } else if (!tripDateRange?.from) {
+      daysInRange = 7; // Default to 7 days if no filter
+    }
+    
+    const avgPerDay = totalDistance / daysInRange;
+    
+    return { totalDistance, totalTrips, avgPerDay, daysInRange };
+  }, [trips, tripDateRange]);
+
+  // Generate daily mileage data from filtered trips for chart
+  const filteredDailyMileage = useMemo(() => {
+    if (!trips || trips.length === 0) return [];
+    
+    // Group trips by date
+    const dailyData: Record<string, { distance: number; trips: number }> = {};
+    
+    trips.forEach(trip => {
+      const dateKey = format(parseISO(trip.start_time), 'yyyy-MM-dd');
+      if (!dailyData[dateKey]) {
+        dailyData[dateKey] = { distance: 0, trips: 0 };
+      }
+      dailyData[dateKey].distance += trip.distance_km;
+      dailyData[dateKey].trips += 1;
+    });
+    
+    // Convert to array and sort by date
+    return Object.entries(dailyData)
+      .map(([date, data]) => ({
+        day: format(parseISO(date), 'EEE'),
+        date,
+        distance: data.distance,
+        trips: data.trips,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [trips]);
+
+  // Calculate trip stats from filtered data
+  const tripStats = useMemo(() => {
+    if (!isFilterActive) {
+      // Use original mileage stats when no filter
+      if (!mileageStats || !dailyMileage) {
+        return { totalTrips: 0, avgTripsPerDay: 0, avgKmPerTrip: 0, peakTrips: 0 };
+      }
+      const totalTrips = mileageStats.trips_week;
+      const avgTripsPerDay = totalTrips / 7;
+      const avgKmPerTrip = totalTrips > 0 ? mileageStats.week / totalTrips : 0;
+      const peakTrips = Math.max(...dailyMileage.map(d => d.trips), 0);
+      return { totalTrips, avgTripsPerDay, avgKmPerTrip, peakTrips };
+    }
+    
+    // Use filtered data
+    const totalTrips = filteredMileageStats.totalTrips;
+    const avgTripsPerDay = filteredMileageStats.daysInRange ? totalTrips / filteredMileageStats.daysInRange : 0;
+    const avgKmPerTrip = totalTrips > 0 ? filteredMileageStats.totalDistance / totalTrips : 0;
+    const peakTrips = Math.max(...filteredDailyMileage.map(d => d.trips), 0);
     
     return { totalTrips, avgTripsPerDay, avgKmPerTrip, peakTrips };
-  }, [mileageStats, dailyMileage]);
+  }, [isFilterActive, mileageStats, dailyMileage, filteredMileageStats, filteredDailyMileage]);
 
   // Handle refresh
   const handleRefresh = useCallback(async () => {
@@ -578,67 +649,104 @@ export default function OwnerVehicleProfile() {
                     <Gauge className="h-5 w-5 text-primary" />
                     <span className="font-medium text-foreground">Mileage Report</span>
                   </div>
-                  <div className="flex items-center gap-1 text-muted-foreground text-sm">
-                    <Calendar className="h-4 w-4" />
-                    Today
-                  </div>
+                  {isFilterActive ? (
+                    <Badge variant="outline" className="text-xs border-primary/50 text-primary">
+                      <Filter className="h-3 w-3 mr-1" />
+                      Filtered
+                    </Badge>
+                  ) : (
+                    <div className="flex items-center gap-1 text-muted-foreground text-sm">
+                      <Calendar className="h-4 w-4" />
+                      All time
+                    </div>
+                  )}
                 </div>
 
                 <div className="mb-4">
-                  <div className="text-sm text-muted-foreground">Total Odometer</div>
+                  <div className="text-sm text-muted-foreground">
+                    {isFilterActive ? "Period Distance" : "Total Odometer"}
+                  </div>
                   <div className="text-3xl font-bold text-foreground">
-                    {vehicle.totalMileage !== null 
-                      ? vehicle.totalMileage.toLocaleString(undefined, { maximumFractionDigits: 0 }) 
-                      : "--"} <span className="text-base font-normal">km</span>
+                    {isFilterActive 
+                      ? filteredMileageStats.totalDistance.toFixed(1)
+                      : vehicle.totalMileage !== null 
+                        ? vehicle.totalMileage.toLocaleString(undefined, { maximumFractionDigits: 0 }) 
+                        : "--"
+                    } <span className="text-base font-normal">km</span>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-3 gap-2">
                   <div className="rounded-lg bg-purple-500/10 p-3 text-center">
-                    <TrendingUp className="h-4 w-4 text-purple-500 mx-auto mb-1" />
+                    <Route className="h-4 w-4 text-purple-500 mx-auto mb-1" />
                     <div className="text-lg font-bold text-purple-500">
-                      {(mileageStats?.today ?? 0).toFixed(1)}
+                      {isFilterActive ? filteredMileageStats.totalTrips : (mileageStats?.trips_today ?? 0)}
                     </div>
-                    <div className="text-xs text-muted-foreground">Today</div>
+                    <div className="text-xs text-muted-foreground">
+                      {isFilterActive ? "Total Trips" : "Today"}
+                    </div>
                   </div>
                   <div className="rounded-lg bg-muted p-3 text-center">
-                    <Calendar className="h-4 w-4 text-muted-foreground mx-auto mb-1" />
+                    <TrendingUp className="h-4 w-4 text-muted-foreground mx-auto mb-1" />
                     <div className="text-lg font-bold text-foreground">
-                      {(mileageStats?.week ?? 0).toFixed(1)}
+                      {isFilterActive 
+                        ? filteredMileageStats.avgPerDay.toFixed(1)
+                        : ((mileageStats?.week ?? 0) / 7).toFixed(1)
+                      }
                     </div>
-                    <div className="text-xs text-muted-foreground">This Week</div>
+                    <div className="text-xs text-muted-foreground">Avg km/day</div>
                   </div>
                   <div className="rounded-lg bg-primary/10 p-3 text-center">
                     <Calendar className="h-4 w-4 text-primary mx-auto mb-1" />
                     <div className="text-lg font-bold text-primary">
-                      {(mileageStats?.month ?? 0).toFixed(1)}
+                      {isFilterActive 
+                        ? (filteredMileageStats.daysInRange || 1)
+                        : (mileageStats?.week ?? 0).toFixed(1)
+                      }
                     </div>
-                    <div className="text-xs text-muted-foreground">This Month</div>
+                    <div className="text-xs text-muted-foreground">
+                      {isFilterActive ? "Days" : "This Week"}
+                    </div>
                   </div>
                 </div>
               </CardContent>
             </Card>
 
-            {/* Weekly Mileage Chart */}
+            {/* Mileage Chart */}
             <Card className="border-border bg-card/50">
               <CardContent className="p-4">
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <div className="flex items-center gap-2">
                       <TrendingUp className="h-5 w-5 text-primary" />
-                      <span className="font-medium text-foreground">Weekly Mileage Trend</span>
+                      <span className="font-medium text-foreground">Mileage Trend</span>
                     </div>
-                    <div className="text-xs text-muted-foreground mt-0.5">Last 7 days</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {isFilterActive 
+                        ? `${filteredDailyMileage.length} day${filteredDailyMileage.length !== 1 ? 's' : ''} selected`
+                        : "Last 7 days"
+                      }
+                    </div>
                   </div>
                   <div className="text-right">
-                    <div className="text-lg font-bold text-primary">{(mileageStats?.week ?? 0).toFixed(1)} km</div>
-                    <div className="text-xs text-muted-foreground">Avg: {((mileageStats?.week ?? 0) / 7).toFixed(1)}/day</div>
+                    <div className="text-lg font-bold text-primary">
+                      {isFilterActive 
+                        ? filteredMileageStats.totalDistance.toFixed(1)
+                        : (mileageStats?.week ?? 0).toFixed(1)
+                      } km
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Avg: {isFilterActive 
+                        ? filteredMileageStats.avgPerDay.toFixed(1)
+                        : ((mileageStats?.week ?? 0) / 7).toFixed(1)
+                      }/day
+                    </div>
                   </div>
                 </div>
 
                 <div className="h-40">
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={dailyMileage || []}>
+                    <AreaChart data={isFilterActive ? filteredDailyMileage : (dailyMileage || [])}>
                       <defs>
                         <linearGradient id="mileageGradient" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
@@ -859,17 +967,27 @@ export default function OwnerVehicleProfile() {
                       <Route className="h-5 w-5 text-primary" />
                       <span className="font-medium text-foreground">Trip Activity</span>
                     </div>
-                    <div className="text-xs text-muted-foreground mt-0.5">Last 7 days</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {isFilterActive 
+                        ? `${filteredDailyMileage.length} day${filteredDailyMileage.length !== 1 ? 's' : ''} selected`
+                        : "Last 7 days"
+                      }
+                    </div>
                   </div>
                   <div className="text-right">
                     <div className="text-lg font-bold text-purple-500">{tripStats.totalTrips} trips</div>
-                    <div className="text-xs text-muted-foreground">{(mileageStats?.week ?? 0).toFixed(1)} km total</div>
+                    <div className="text-xs text-muted-foreground">
+                      {isFilterActive 
+                        ? filteredMileageStats.totalDistance.toFixed(1)
+                        : (mileageStats?.week ?? 0).toFixed(1)
+                      } km total
+                    </div>
                   </div>
                 </div>
 
                 <div className="h-40">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={dailyMileage || []}>
+                    <BarChart data={isFilterActive ? filteredDailyMileage : (dailyMileage || [])}>
                       <XAxis
                         dataKey="day"
                         axisLine={false}
@@ -919,10 +1037,17 @@ export default function OwnerVehicleProfile() {
                     <Bell className="h-5 w-5 text-yellow-500" />
                     <span className="font-medium text-foreground">Alarms & Alerts</span>
                   </div>
-                  <div className="flex items-center gap-1 text-muted-foreground text-sm">
-                    <Calendar className="h-4 w-4" />
-                    <span>Recent</span>
-                  </div>
+                  {isFilterActive ? (
+                    <Badge variant="outline" className="text-xs border-primary/50 text-primary">
+                      <Filter className="h-3 w-3 mr-1" />
+                      Filtered
+                    </Badge>
+                  ) : (
+                    <div className="flex items-center gap-1 text-muted-foreground text-sm">
+                      <Calendar className="h-4 w-4" />
+                      <span>Recent</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-4 max-h-80 overflow-y-auto">

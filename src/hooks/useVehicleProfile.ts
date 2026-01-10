@@ -89,11 +89,26 @@ async function fetchVehicleTrips(
   return (data || []) as VehicleTrip[];
 }
 
-async function fetchVehicleEvents(deviceId: string, limit: number = 20): Promise<VehicleEvent[]> {
-  const { data, error } = await supabase
+async function fetchVehicleEvents(
+  deviceId: string, 
+  limit: number = 50,
+  dateRange?: TripDateRange
+): Promise<VehicleEvent[]> {
+  let query = supabase
     .from("proactive_vehicle_events")
     .select("*")
-    .eq("device_id", deviceId)
+    .eq("device_id", deviceId);
+
+  if (dateRange?.from) {
+    query = query.gte("created_at", dateRange.from.toISOString());
+  }
+  if (dateRange?.to) {
+    const endDate = new Date(dateRange.to);
+    endDate.setDate(endDate.getDate() + 1);
+    query = query.lt("created_at", endDate.toISOString());
+  }
+
+  const { data, error } = await query
     .order("created_at", { ascending: false })
     .limit(limit);
 
@@ -181,10 +196,21 @@ export function useVehicleTrips(
   });
 }
 
-export function useVehicleEvents(deviceId: string | null, enabled: boolean = true) {
+export interface EventFilterOptions {
+  dateRange?: TripDateRange;
+  limit?: number;
+}
+
+export function useVehicleEvents(
+  deviceId: string | null, 
+  options: EventFilterOptions = {},
+  enabled: boolean = true
+) {
+  const { dateRange, limit = 50 } = options;
+  
   return useQuery({
-    queryKey: ["vehicle-events", deviceId],
-    queryFn: () => fetchVehicleEvents(deviceId!),
+    queryKey: ["vehicle-events", deviceId, dateRange?.from?.toISOString(), dateRange?.to?.toISOString(), limit],
+    queryFn: () => fetchVehicleEvents(deviceId!, limit, dateRange),
     enabled: enabled && !!deviceId,
     staleTime: 30 * 1000, // Fresh for 30 seconds
     gcTime: 5 * 60 * 1000,
