@@ -3,7 +3,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import type { Json } from "@/integrations/supabase/types";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -22,6 +21,8 @@ import {
   History
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { useNotifications, isAppInForeground } from "@/hooks/useNotifications";
+import { NotificationPermissionBanner } from "@/components/notifications/NotificationPermissionBanner";
 
 interface ProactiveNotificationsProps {
   deviceId?: string;
@@ -81,6 +82,7 @@ export function ProactiveNotifications({
   const [events, setEvents] = useState<ProactiveEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
+  const { showNotification, playAlertSound, permission } = useNotifications();
 
   // Fetch historical events from database
   const fetchEvents = useCallback(async () => {
@@ -217,13 +219,32 @@ export function ProactiveNotifications({
               metadata: newEvent.metadata as Record<string, unknown>
             };
             
-            // Show toast for critical/error events
+            // Handle notifications for critical/error events
             if (mappedEvent.severity === 'critical' || mappedEvent.severity === 'error') {
+              // Play alert sound
+              playAlertSound(mappedEvent.severity);
+              
+              // Show in-app toast
               toast({
                 title: mappedEvent.title,
                 description: mappedEvent.message,
                 variant: "destructive"
               });
+              
+              // Show browser/PWA push notification (especially useful when app is in background)
+              if (permission === 'granted') {
+                showNotification({
+                  title: `🚨 ${mappedEvent.title}`,
+                  body: mappedEvent.message,
+                  tag: `alert-${mappedEvent.id}`,
+                  requireInteraction: mappedEvent.severity === 'critical',
+                  data: {
+                    eventId: mappedEvent.id,
+                    deviceId: mappedEvent.device_id,
+                    eventType: mappedEvent.event_type
+                  }
+                });
+              }
               
               // Trigger email notification for critical events
               sendEmailNotification({
@@ -234,6 +255,14 @@ export function ProactiveNotifications({
                 title: mappedEvent.title,
                 message: mappedEvent.message,
                 metadata: mappedEvent.metadata
+              });
+            } else if (mappedEvent.severity === 'warning') {
+              // Play softer sound for warnings
+              playAlertSound('warning');
+              
+              toast({
+                title: mappedEvent.title,
+                description: mappedEvent.message
               });
             }
             
@@ -246,7 +275,7 @@ export function ProactiveNotifications({
     return () => {
       supabase.removeChannel(eventsChannel);
     };
-  }, [deviceId, fetchEvents, limit, toast, sendEmailNotification]);
+  }, [deviceId, fetchEvents, limit, toast, sendEmailNotification, showNotification, playAlertSound, permission]);
 
   if (loading) {
     return (
@@ -271,6 +300,8 @@ export function ProactiveNotifications({
 
   return (
     <div className="space-y-3">
+      <NotificationPermissionBanner />
+      
       {showHistory && unacknowledgedCount > 0 && (
         <div className="flex items-center justify-between px-1">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
