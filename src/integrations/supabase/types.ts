@@ -71,6 +71,45 @@ export type Database = {
         }
         Relationships: []
       }
+      conversation_summaries: {
+        Row: {
+          created_at: string
+          device_id: string
+          embedding: string | null
+          id: string
+          key_facts: Json | null
+          messages_summarized: number
+          period_end: string
+          period_start: string
+          summary_text: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_id: string
+          embedding?: string | null
+          id?: string
+          key_facts?: Json | null
+          messages_summarized?: number
+          period_end: string
+          period_start: string
+          summary_text: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_id?: string
+          embedding?: string | null
+          id?: string
+          key_facts?: Json | null
+          messages_summarized?: number
+          period_end?: string
+          period_start?: string
+          summary_text?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       fleet_insights_history: {
         Row: {
           alerts_count: number
@@ -422,14 +461,63 @@ export type Database = {
         }
         Relationships: []
       }
+      trip_analytics: {
+        Row: {
+          analyzed_at: string
+          created_at: string
+          device_id: string
+          driver_score: number | null
+          embedding: string | null
+          harsh_events: Json | null
+          id: string
+          summary_text: string | null
+          trip_id: string | null
+          weather_data: Json | null
+        }
+        Insert: {
+          analyzed_at?: string
+          created_at?: string
+          device_id: string
+          driver_score?: number | null
+          embedding?: string | null
+          harsh_events?: Json | null
+          id?: string
+          summary_text?: string | null
+          trip_id?: string | null
+          weather_data?: Json | null
+        }
+        Update: {
+          analyzed_at?: string
+          created_at?: string
+          device_id?: string
+          driver_score?: number | null
+          embedding?: string | null
+          harsh_events?: Json | null
+          id?: string
+          summary_text?: string | null
+          trip_id?: string | null
+          weather_data?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trip_analytics_trip_id_fkey"
+            columns: ["trip_id"]
+            isOneToOne: false
+            referencedRelation: "vehicle_trips"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       trip_patterns: {
         Row: {
+          avg_battery_consumption: number | null
           avg_distance_km: number | null
           avg_duration_minutes: number | null
           confidence_score: number | null
           created_at: string
           day_of_week: number
           destination_latitude: number
+          destination_location_id: string | null
           destination_longitude: number
           destination_name: string | null
           device_id: string
@@ -437,18 +525,22 @@ export type Database = {
           last_occurrence: string | null
           occurrence_count: number
           origin_latitude: number
+          origin_location_id: string | null
           origin_longitude: number
           origin_name: string | null
+          time_slot: string | null
           typical_start_hour: number
           updated_at: string
         }
         Insert: {
+          avg_battery_consumption?: number | null
           avg_distance_km?: number | null
           avg_duration_minutes?: number | null
           confidence_score?: number | null
           created_at?: string
           day_of_week: number
           destination_latitude: number
+          destination_location_id?: string | null
           destination_longitude: number
           destination_name?: string | null
           device_id: string
@@ -456,18 +548,22 @@ export type Database = {
           last_occurrence?: string | null
           occurrence_count?: number
           origin_latitude: number
+          origin_location_id?: string | null
           origin_longitude: number
           origin_name?: string | null
+          time_slot?: string | null
           typical_start_hour: number
           updated_at?: string
         }
         Update: {
+          avg_battery_consumption?: number | null
           avg_distance_km?: number | null
           avg_duration_minutes?: number | null
           confidence_score?: number | null
           created_at?: string
           day_of_week?: number
           destination_latitude?: number
+          destination_location_id?: string | null
           destination_longitude?: number
           destination_name?: string | null
           device_id?: string
@@ -475,8 +571,10 @@ export type Database = {
           last_occurrence?: string | null
           occurrence_count?: number
           origin_latitude?: number
+          origin_location_id?: string | null
           origin_longitude?: number
           origin_name?: string | null
+          time_slot?: string | null
           typical_start_hour?: number
           updated_at?: string
         }
@@ -540,7 +638,9 @@ export type Database = {
           content: string
           created_at: string | null
           device_id: string
+          embedding: string | null
           id: string
+          metadata: Json | null
           role: string
           user_id: string
         }
@@ -548,7 +648,9 @@ export type Database = {
           content: string
           created_at?: string | null
           device_id: string
+          embedding?: string | null
           id?: string
+          metadata?: Json | null
           role: string
           user_id: string
         }
@@ -556,7 +658,9 @@ export type Database = {
           content?: string
           created_at?: string | null
           device_id?: string
+          embedding?: string | null
           id?: string
+          metadata?: Json | null
           role?: string
           user_id?: string
         }
@@ -900,6 +1004,16 @@ export type Database = {
         Returns: Json
       }
       get_fleet_stats: { Args: never; Returns: Json }
+      get_latest_driver_score: {
+        Args: { p_device_id: string }
+        Returns: {
+          driver_score: number
+          harsh_acceleration_count: number
+          harsh_braking_count: number
+          recent_trend: string
+          trips_analyzed: number
+        }[]
+      }
       get_maintenance_recommendations: {
         Args: { p_device_id: string; p_status?: string }
         Returns: {
@@ -970,6 +1084,42 @@ export type Database = {
           p_lon: number
         }
         Returns: boolean
+      }
+      match_chat_memories: {
+        Args: {
+          match_count?: number
+          match_threshold?: number
+          p_device_id?: string
+          p_user_id?: string
+          query_embedding: string
+        }
+        Returns: {
+          content: string
+          created_at: string
+          device_id: string
+          id: string
+          role: string
+          similarity: number
+        }[]
+      }
+      match_driving_records: {
+        Args: {
+          match_count?: number
+          match_threshold?: number
+          p_device_id?: string
+          query_embedding: string
+        }
+        Returns: {
+          analyzed_at: string
+          device_id: string
+          driver_score: number
+          harsh_events: Json
+          id: string
+          similarity: number
+          summary_text: string
+          trip_id: string
+          weather_data: Json
+        }[]
       }
     }
     Enums: {

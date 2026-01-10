@@ -37,6 +37,8 @@ import {
   type TripFilterOptions,
   type EventFilterOptions,
 } from "@/hooks/useVehicleProfile";
+import { useRecentTripAnalytics, getScoreColor } from "@/hooks/useTripAnalytics";
+import { DriverScoreCard } from "@/components/fleet/DriverScoreCard";
 import { TripPlaybackDialog } from "@/components/profile/TripPlaybackDialog";
 import { VehicleLocationMap } from "@/components/fleet/VehicleLocationMap";
 import {
@@ -477,6 +479,11 @@ export default function OwnerVehicleProfile() {
                 </CardContent>
               </Card>
             </div>
+
+            {/* Driver Score Card */}
+            {deviceId && (
+              <DriverScoreCard deviceId={deviceId} compact />
+            )}
 
             {/* Engine Control */}
             <Card className="border-border bg-card/50">
