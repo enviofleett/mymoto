@@ -38,6 +38,7 @@ import {
   type EventFilterOptions,
 } from "@/hooks/useVehicleProfile";
 import { TripPlaybackDialog } from "@/components/profile/TripPlaybackDialog";
+import { VehicleLocationMap } from "@/components/fleet/VehicleLocationMap";
 import {
   ArrowLeft,
   Settings,
@@ -538,28 +539,16 @@ export default function OwnerVehicleProfile() {
 
             {/* Location */}
             <Card className="border-border bg-card/50 overflow-hidden">
-              <div className="h-40 bg-muted relative">
+              <div className="h-48 bg-muted relative">
                 {vehicle.latitude && vehicle.longitude ? (
-                  <>
-                    <img
-                      src={`https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/${vehicle.longitude},${vehicle.latitude},14,0/400x160@2x?access_token=${import.meta.env.VITE_MAPBOX_ACCESS_TOKEN}`}
-                      alt="Vehicle location map"
-                      className="absolute inset-0 w-full h-full object-cover"
-                      loading="lazy"
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none';
-                      }}
-                    />
-                    {/* Beaming vehicle marker */}
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
-                      {/* Outer pulsing ring */}
-                      <div className="absolute inset-0 -m-4 w-12 h-12 rounded-full bg-primary/30 animate-ping" />
-                      {/* Middle ring */}
-                      <div className="absolute inset-0 -m-2 w-8 h-8 rounded-full bg-primary/40 animate-pulse" />
-                      {/* Inner solid dot */}
-                      <div className="w-4 h-4 rounded-full bg-primary border-2 border-white shadow-lg" />
-                    </div>
-                  </>
+                  <VehicleLocationMap
+                    latitude={vehicle.latitude}
+                    longitude={vehicle.longitude}
+                    address={currentAddress}
+                    vehicleName={vehicle.name}
+                    isOnline={vehicle.status === 'online'}
+                    className="rounded-t-lg"
+                  />
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-muted to-muted/50">
                     <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
@@ -582,7 +571,7 @@ export default function OwnerVehicleProfile() {
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="absolute top-2 right-2 h-8 w-8 bg-background/50 backdrop-blur-sm z-20"
+                  className="absolute top-2 right-12 h-8 w-8 bg-background/50 backdrop-blur-sm z-20"
                   onClick={handleRefresh}
                   disabled={isPullRefreshing}
                 >
