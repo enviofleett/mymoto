@@ -621,6 +621,11 @@ serve(async (req) => {
       p_device_id: device_id
     })
 
+    // 6.7. Fetch driving habits context (predictive intelligence)
+    const { data: drivingHabits } = await supabase.rpc('get_driving_habits_context', {
+      p_device_id: device_id
+    })
+
     // 7. Build System Prompt with Rich Context
     const pos = position
     const driver = assignment?.profiles as unknown as { name: string; phone: string | null; license_number: string | null } | null
@@ -759,6 +764,20 @@ GEOFENCE ALERT ACTION RESULT:
 - Message: ${geofenceResult.message}
 ⚠️ IMPORTANT: Communicate this result to the user in your response. ${geofenceResult.success ? 'Confirm the alert was set up and explain when they will be notified.' : 'Explain what went wrong and suggest how they can fix it.'}
 ` : ''}
+${drivingHabits && drivingHabits.total_patterns > 0 ? `KNOWN DRIVING HABITS (Predictive Intelligence):
+- Patterns Learned: ${drivingHabits.total_patterns}
+${drivingHabits.predicted_trip ? `- PREDICTED TRIP (${drivingHabits.current_day} around ${drivingHabits.current_hour}:00):
+  * Likely destination: ${drivingHabits.predicted_trip.destination_name || 'Unknown'}
+  * Typical duration: ~${drivingHabits.predicted_trip.typical_duration_minutes || '?'} minutes
+  * Typical distance: ~${drivingHabits.predicted_trip.typical_distance_km || '?'} km
+  * Confidence: ${Math.round((drivingHabits.predicted_trip.confidence || 0) * 100)}% (based on ${drivingHabits.predicted_trip.occurrences || 0} trips)
+  ⚠️ Use this when user asks about traffic, ETA, or "how's the commute?" - you can infer their likely destination!` : '- No trip predicted for current time slot'}
+${drivingHabits.frequent_destinations && drivingHabits.frequent_destinations.length > 0 ? `- FREQUENT DESTINATIONS:
+${drivingHabits.frequent_destinations.map((d: any, i: number) => 
+  `  ${i + 1}. ${d.name} - ${d.visits} trips (typically on ${d.typical_day} around ${d.typical_hour}:00)`
+).join('\n')}` : ''}
+⚠️ IMPORTANT: When user asks "how's traffic?" or "what's my ETA?", use the predicted destination if they don't specify one.
+` : ''}
 
 RESPONSE RULES:
 1. ALWAYS include the data timestamp when answering location/status questions
@@ -772,6 +791,7 @@ RESPONSE RULES:
 7. If overspeeding, mention it as a safety concern
 8. If offline, explain you may have limited recent data
 9. Be proactive about potential issues (low battery, overspeeding, offline status)
+10. When user asks about traffic or ETA without specifying destination, use the predicted trip from driving habits
 
 IMPORTANT: When the user asks "where are you" or similar location questions, your response MUST include the [LOCATION: lat, lon, "address"] tag so the frontend can render a map card.`
 

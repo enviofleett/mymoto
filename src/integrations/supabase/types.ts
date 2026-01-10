@@ -422,6 +422,66 @@ export type Database = {
         }
         Relationships: []
       }
+      trip_patterns: {
+        Row: {
+          avg_distance_km: number | null
+          avg_duration_minutes: number | null
+          confidence_score: number | null
+          created_at: string
+          day_of_week: number
+          destination_latitude: number
+          destination_longitude: number
+          destination_name: string | null
+          device_id: string
+          id: string
+          last_occurrence: string | null
+          occurrence_count: number
+          origin_latitude: number
+          origin_longitude: number
+          origin_name: string | null
+          typical_start_hour: number
+          updated_at: string
+        }
+        Insert: {
+          avg_distance_km?: number | null
+          avg_duration_minutes?: number | null
+          confidence_score?: number | null
+          created_at?: string
+          day_of_week: number
+          destination_latitude: number
+          destination_longitude: number
+          destination_name?: string | null
+          device_id: string
+          id?: string
+          last_occurrence?: string | null
+          occurrence_count?: number
+          origin_latitude: number
+          origin_longitude: number
+          origin_name?: string | null
+          typical_start_hour: number
+          updated_at?: string
+        }
+        Update: {
+          avg_distance_km?: number | null
+          avg_duration_minutes?: number | null
+          confidence_score?: number | null
+          created_at?: string
+          day_of_week?: number
+          destination_latitude?: number
+          destination_longitude?: number
+          destination_name?: string | null
+          device_id?: string
+          id?: string
+          last_occurrence?: string | null
+          occurrence_count?: number
+          origin_latitude?: number
+          origin_longitude?: number
+          origin_name?: string | null
+          typical_start_hour?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -805,6 +865,13 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      analyze_trip_patterns: {
+        Args: never
+        Returns: {
+          patterns_created: number
+          patterns_updated: number
+        }[]
+      }
       find_or_create_location: {
         Args: {
           p_latitude?: number
@@ -828,6 +895,10 @@ export type Database = {
         }[]
       }
       get_daily_mileage: { Args: { p_device_id: string }; Returns: Json }
+      get_driving_habits_context: {
+        Args: { p_device_id: string }
+        Returns: Json
+      }
       get_fleet_stats: { Args: never; Returns: Json }
       get_maintenance_recommendations: {
         Args: { p_device_id: string; p_status?: string }
@@ -839,6 +910,24 @@ export type Database = {
           priority: string
           status: string
           title: string
+        }[]
+      }
+      get_predicted_trips: {
+        Args: { p_device_id?: string }
+        Returns: {
+          avg_distance_km: number
+          avg_duration_minutes: number
+          confidence_score: number
+          destination_latitude: number
+          destination_longitude: number
+          destination_name: string
+          device_id: string
+          occurrence_count: number
+          origin_latitude: number
+          origin_longitude: number
+          origin_name: string
+          pattern_id: string
+          typical_start_hour: number
         }[]
       }
       get_vehicle_geofence_context: {
