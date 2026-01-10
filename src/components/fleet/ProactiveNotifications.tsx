@@ -1,12 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import type { Json } from "@/integrations/supabase/types";
 import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   AlertCircle,
-  Info,
   Check,
   Clock,
   MapPin,
@@ -17,13 +18,15 @@ import {
   TrendingUp,
   Radio,
   Loader2,
-  Bell
+  Bell,
+  History
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 interface ProactiveNotificationsProps {
   deviceId?: string;
   limit?: number;
+  showHistory?: boolean;
 }
 
 interface ProactiveEvent {
@@ -32,14 +35,15 @@ interface ProactiveEvent {
   event_type: string;
   severity: 'info' | 'warning' | 'error' | 'critical';
   title: string;
-  description: string | null;
-  metadata: any;
+  message: string;
+  metadata: Record<string, unknown>;
   created_at: string;
   acknowledged: boolean;
+  acknowledged_at?: string;
 }
 
 // Event type to icon mapping
-const EVENT_ICONS: Record<string, any> = {
+const EVENT_ICONS: Record<string, React.ElementType> = {
   low_battery: Battery,
   critical_battery: Battery,
   overspeeding: Gauge,
@@ -56,10 +60,10 @@ const EVENT_ICONS: Record<string, any> = {
 
 // Severity to color mapping
 const SEVERITY_COLORS: Record<string, string> = {
-  info: 'bg-blue-100 text-blue-800 border-blue-200',
-  warning: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-  error: 'bg-orange-100 text-orange-800 border-orange-200',
-  critical: 'bg-red-100 text-red-800 border-red-200'
+  info: 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800',
+  warning: 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-800',
+  error: 'bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-900/30 dark:text-orange-300 dark:border-orange-800',
+  critical: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800'
 };
 
 const SEVERITY_BADGE_COLORS: Record<string, string> = {
@@ -69,20 +73,203 @@ const SEVERITY_BADGE_COLORS: Record<string, string> = {
   critical: 'bg-red-500'
 };
 
+// Track recently created events to prevent duplicates (by device_id + event_type)
+const recentEventKeys = new Map<string, number>();
+const DUPLICATE_THRESHOLD_MS = 60000; // 1 minute
+
 export function ProactiveNotifications({
   deviceId,
-  limit = 10
+  limit = 20,
+  showHistory = true
 }: ProactiveNotificationsProps) {
   const [events, setEvents] = useState<ProactiveEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
+  // Fetch historical events from database
+  const fetchEvents = useCallback(async () => {
+    setLoading(true);
+    try {
+      let query = supabase
+        .from('proactive_vehicle_events')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (deviceId) {
+        query = query.eq('device_id', deviceId);
+      }
+
+      if (!showHistory) {
+        query = query.eq('acknowledged', false);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      setEvents((data || []).map(e => ({
+        ...e,
+        severity: e.severity as ProactiveEvent['severity'],
+        metadata: e.metadata as Record<string, unknown>
+      })));
+    } catch (err) {
+      console.error('Error fetching events:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [deviceId, limit, showHistory]);
+
+  // Persist a new event to the database
+  const persistEvent = useCallback(async (event: Omit<ProactiveEvent, 'id' | 'acknowledged' | 'acknowledged_at'>) => {
+    // Check for duplicate events
+    const eventKey = `${event.device_id}-${event.event_type}`;
+    const lastCreated = recentEventKeys.get(eventKey);
+    const now = Date.now();
+    
+    if (lastCreated && now - lastCreated < DUPLICATE_THRESHOLD_MS) {
+      return null; // Skip duplicate
+    }
+    
+    recentEventKeys.set(eventKey, now);
+
+    try {
+      const { data, error } = await supabase
+        .from('proactive_vehicle_events')
+        .insert({
+          device_id: event.device_id,
+          event_type: event.event_type,
+          severity: event.severity,
+          title: event.title,
+          message: event.message,
+          metadata: event.metadata as Json,
+          acknowledged: false
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    } catch (err) {
+      console.error('Error persisting event:', err);
+      return null;
+    }
+  }, []);
+
+  // Generate and persist proactive events from position updates
+  const generateProactiveEvents = useCallback(async (position: {
+    device_id: string;
+    battery_percent?: number;
+    is_overspeeding?: boolean;
+    speed?: number;
+    is_online?: boolean;
+    gps_time?: string;
+  }) => {
+    const newEvents: Omit<ProactiveEvent, 'id' | 'acknowledged' | 'acknowledged_at'>[] = [];
+    
+    // Low battery
+    if (position.battery_percent && position.battery_percent > 0 && position.battery_percent < 20) {
+      const isCritical = position.battery_percent < 10;
+      newEvents.push({
+        device_id: position.device_id,
+        event_type: isCritical ? 'critical_battery' : 'low_battery',
+        severity: isCritical ? 'critical' : 'warning',
+        title: isCritical ? 'Critical Battery Alert' : 'Low Battery Alert',
+        message: `Battery at ${position.battery_percent}%`,
+        metadata: { battery_percent: position.battery_percent },
+        created_at: new Date().toISOString()
+      });
+    }
+
+    // Overspeeding
+    if (position.is_overspeeding && position.speed && position.speed > 0) {
+      const isHighSpeed = position.speed > 120;
+      newEvents.push({
+        device_id: position.device_id,
+        event_type: 'overspeeding',
+        severity: isHighSpeed ? 'error' : 'warning',
+        title: 'Overspeeding Detected',
+        message: `Vehicle traveling at ${Math.round(position.speed)} km/h`,
+        metadata: { speed: position.speed },
+        created_at: new Date().toISOString()
+      });
+    }
+
+    // Offline alert
+    if (position.is_online === false) {
+      newEvents.push({
+        device_id: position.device_id,
+        event_type: 'offline',
+        severity: 'warning',
+        title: 'Vehicle Offline',
+        message: 'No GPS signal received',
+        metadata: { last_seen: position.gps_time },
+        created_at: new Date().toISOString()
+      });
+    }
+
+    // Persist and add new events
+    for (const event of newEvents) {
+      const persisted = await persistEvent(event);
+      if (persisted) {
+        const mappedEvent: ProactiveEvent = {
+          ...persisted,
+          severity: persisted.severity as ProactiveEvent['severity'],
+          metadata: persisted.metadata as Record<string, unknown>
+        };
+        
+        setEvents(prev => [mappedEvent, ...prev].slice(0, limit));
+        
+        // Show toast for critical/error events
+        if (event.severity === 'critical' || event.severity === 'error') {
+          toast({
+            title: event.title,
+            description: event.message,
+            variant: "destructive"
+          });
+        }
+      }
+    }
+  }, [limit, persistEvent, toast]);
+
+  // Acknowledge an event
+  const handleAcknowledge = useCallback(async (eventId: string) => {
+    try {
+      const { error } = await supabase
+        .from('proactive_vehicle_events')
+        .update({
+          acknowledged: true,
+          acknowledged_at: new Date().toISOString()
+        })
+        .eq('id', eventId);
+
+      if (error) throw error;
+
+      setEvents(prev => 
+        showHistory 
+          ? prev.map(e => e.id === eventId ? { ...e, acknowledged: true, acknowledged_at: new Date().toISOString() } : e)
+          : prev.filter(e => e.id !== eventId)
+      );
+      
+      toast({
+        title: "Acknowledged",
+        description: "Alert has been acknowledged"
+      });
+    } catch (err) {
+      console.error('Error acknowledging event:', err);
+      toast({
+        title: "Error",
+        description: "Failed to acknowledge alert",
+        variant: "destructive"
+      });
+    }
+  }, [showHistory, toast]);
+
   useEffect(() => {
     fetchEvents();
 
-    // Subscribe to position changes for real-time alerts
-    const channel = supabase
-      .channel('proactive_alerts')
+    // Subscribe to real-time position changes
+    const positionsChannel = supabase
+      .channel('proactive_positions')
       .on(
         'postgres_changes',
         {
@@ -92,146 +279,49 @@ export function ProactiveNotifications({
           filter: deviceId ? `device_id=eq.${deviceId}` : undefined
         },
         (payload) => {
-          // Generate proactive events from position updates
-          generateProactiveEvents(payload.new as any);
+          generateProactiveEvents(payload.new as {
+            device_id: string;
+            battery_percent?: number;
+            is_overspeeding?: boolean;
+            speed?: number;
+            is_online?: boolean;
+            gps_time?: string;
+          });
+        }
+      )
+      .subscribe();
+
+    // Subscribe to new events from database (for multi-user sync)
+    const eventsChannel = supabase
+      .channel('proactive_events')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'proactive_vehicle_events',
+          filter: deviceId ? `device_id=eq.${deviceId}` : undefined
+        },
+        (payload) => {
+          const newEvent = payload.new as ProactiveEvent;
+          setEvents(prev => {
+            // Avoid duplicates
+            if (prev.some(e => e.id === newEvent.id)) return prev;
+            return [{
+              ...newEvent,
+              severity: newEvent.severity as ProactiveEvent['severity'],
+              metadata: newEvent.metadata as Record<string, unknown>
+            }, ...prev].slice(0, limit);
+          });
         }
       )
       .subscribe();
 
     return () => {
-      channel.unsubscribe();
+      supabase.removeChannel(positionsChannel);
+      supabase.removeChannel(eventsChannel);
     };
-  }, [deviceId]);
-
-  const fetchEvents = async () => {
-    setLoading(true);
-    try {
-      // Fetch recent position data to generate alerts
-      const query = supabase
-        .from('vehicle_positions')
-        .select('*')
-        .order('gps_time', { ascending: false })
-        .limit(limit);
-
-      if (deviceId) {
-        query.eq('device_id', deviceId);
-      }
-
-      const { data, error } = await query;
-      if (error) throw error;
-
-      // Generate events from position data
-      const generatedEvents: ProactiveEvent[] = [];
-      
-      (data || []).forEach((pos: any) => {
-        // Low battery alert
-        if (pos.battery_percent && pos.battery_percent > 0 && pos.battery_percent < 20) {
-          generatedEvents.push({
-            id: `battery-${pos.device_id}`,
-            device_id: pos.device_id,
-            event_type: pos.battery_percent < 10 ? 'critical_battery' : 'low_battery',
-            severity: pos.battery_percent < 10 ? 'critical' : 'warning',
-            title: `Low Battery Alert`,
-            description: `Battery at ${pos.battery_percent}%`,
-            metadata: { battery_percent: pos.battery_percent },
-            created_at: pos.gps_time || new Date().toISOString(),
-            acknowledged: false
-          });
-        }
-
-        // Overspeeding alert
-        if (pos.is_overspeeding && pos.speed > 0) {
-          generatedEvents.push({
-            id: `speed-${pos.device_id}`,
-            device_id: pos.device_id,
-            event_type: 'overspeeding',
-            severity: pos.speed > 120 ? 'error' : 'warning',
-            title: `Overspeeding Detected`,
-            description: `Vehicle traveling at ${pos.speed} km/h`,
-            metadata: { speed: pos.speed },
-            created_at: pos.gps_time || new Date().toISOString(),
-            acknowledged: false
-          });
-        }
-
-        // Offline alert
-        if (pos.is_online === false) {
-          generatedEvents.push({
-            id: `offline-${pos.device_id}`,
-            device_id: pos.device_id,
-            event_type: 'offline',
-            severity: 'warning',
-            title: `Vehicle Offline`,
-            description: `No GPS signal received`,
-            metadata: {},
-            created_at: pos.gps_time || new Date().toISOString(),
-            acknowledged: false
-          });
-        }
-      });
-
-      setEvents(generatedEvents);
-    } catch (err) {
-      console.error('Error fetching events:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const generateProactiveEvents = (position: any) => {
-    const newEvents: ProactiveEvent[] = [];
-    
-    // Low battery
-    if (position.battery_percent && position.battery_percent > 0 && position.battery_percent < 20) {
-      newEvents.push({
-        id: `battery-${position.device_id}-${Date.now()}`,
-        device_id: position.device_id,
-        event_type: position.battery_percent < 10 ? 'critical_battery' : 'low_battery',
-        severity: position.battery_percent < 10 ? 'critical' : 'warning',
-        title: `Low Battery Alert`,
-        description: `Battery at ${position.battery_percent}%`,
-        metadata: { battery_percent: position.battery_percent },
-        created_at: new Date().toISOString(),
-        acknowledged: false
-      });
-    }
-
-    // Overspeeding
-    if (position.is_overspeeding && position.speed > 0) {
-      newEvents.push({
-        id: `speed-${position.device_id}-${Date.now()}`,
-        device_id: position.device_id,
-        event_type: 'overspeeding',
-        severity: position.speed > 120 ? 'error' : 'warning',
-        title: `Overspeeding Detected`,
-        description: `Vehicle traveling at ${position.speed} km/h`,
-        metadata: { speed: position.speed },
-        created_at: new Date().toISOString(),
-        acknowledged: false
-      });
-    }
-
-    if (newEvents.length > 0) {
-      setEvents(prev => [...newEvents, ...prev].slice(0, limit));
-      
-      // Show toast for critical events
-      newEvents.filter(e => e.severity === 'critical' || e.severity === 'error').forEach(event => {
-        toast({
-          title: event.title,
-          description: event.description || '',
-          variant: "destructive"
-        });
-      });
-    }
-  };
-
-  const handleAcknowledge = (eventId: string) => {
-    setEvents(prev => prev.filter(e => e.id !== eventId));
-    toast({
-      title: "Acknowledged",
-      description: "Alert dismissed"
-    });
-  };
+  }, [deviceId, fetchEvents, generateProactiveEvents, limit]);
 
   if (loading) {
     return (
@@ -252,61 +342,87 @@ export function ProactiveNotifications({
     );
   }
 
+  const unacknowledgedCount = events.filter(e => !e.acknowledged).length;
+
   return (
     <div className="space-y-3">
-      {events.map((event) => {
-        const Icon = EVENT_ICONS[event.event_type] || AlertCircle;
-        const severityColor = SEVERITY_COLORS[event.severity] || SEVERITY_COLORS.info;
-        const badgeColor = SEVERITY_BADGE_COLORS[event.severity] || SEVERITY_BADGE_COLORS.info;
-        const timeAgo = formatDistanceToNow(new Date(event.created_at), { addSuffix: true });
+      {showHistory && unacknowledgedCount > 0 && (
+        <div className="flex items-center justify-between px-1">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <History className="h-4 w-4" />
+            <span>{unacknowledgedCount} unacknowledged</span>
+          </div>
+        </div>
+      )}
+      
+      <ScrollArea className="h-[400px]">
+        <div className="space-y-3 pr-4">
+          {events.map((event) => {
+            const Icon = EVENT_ICONS[event.event_type] || AlertCircle;
+            const severityColor = SEVERITY_COLORS[event.severity] || SEVERITY_COLORS.info;
+            const badgeColor = SEVERITY_BADGE_COLORS[event.severity] || SEVERITY_BADGE_COLORS.info;
+            const timeAgo = formatDistanceToNow(new Date(event.created_at), { addSuffix: true });
 
-        return (
-          <Card
-            key={event.id}
-            className={`p-4 border-l-4 ${severityColor}`}
-          >
-            <div className="flex items-start gap-3">
-              <div className={`p-2 rounded-full ${badgeColor} bg-opacity-10`}>
-                <Icon className={`h-5 w-5 ${badgeColor.replace('bg-', 'text-')}`} />
-              </div>
+            return (
+              <Card
+                key={event.id}
+                className={`p-4 border-l-4 ${severityColor} ${event.acknowledged ? 'opacity-60' : ''}`}
+              >
+                <div className="flex items-start gap-3">
+                  <div className={`p-2 rounded-full ${badgeColor} bg-opacity-10`}>
+                    <Icon className={`h-5 w-5 ${badgeColor.replace('bg-', 'text-')}`} />
+                  </div>
 
-              <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between gap-2 mb-1">
-                  <h4 className="font-semibold text-sm leading-tight">
-                    {event.title}
-                  </h4>
-                  <Badge variant="outline" className={`${badgeColor} text-white text-xs shrink-0`}>
-                    {event.severity.toUpperCase()}
-                  </Badge>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2 mb-1">
+                      <h4 className="font-semibold text-sm leading-tight">
+                        {event.title}
+                      </h4>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {event.acknowledged && (
+                          <Badge variant="outline" className="text-xs bg-muted">
+                            <Check className="h-3 w-3 mr-1" />
+                            Acknowledged
+                          </Badge>
+                        )}
+                        <Badge variant="outline" className={`${badgeColor} text-white text-xs`}>
+                          {event.severity.toUpperCase()}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    {event.message && (
+                      <p className="text-sm text-muted-foreground mb-2">
+                        {event.message}
+                      </p>
+                    )}
+
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground mb-2">
+                      <span className="flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        {timeAgo}
+                      </span>
+                      <span className="font-mono">{event.device_id}</span>
+                    </div>
+
+                    {!event.acknowledged && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleAcknowledge(event.id)}
+                        className="h-7 text-xs"
+                      >
+                        <Check className="h-3 w-3 mr-1" />
+                        Acknowledge
+                      </Button>
+                    )}
+                  </div>
                 </div>
-
-                {event.description && (
-                  <p className="text-sm text-muted-foreground mb-2">
-                    {event.description}
-                  </p>
-                )}
-
-                <div className="flex items-center gap-3 text-xs text-muted-foreground mb-2">
-                  <span className="flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
-                    {timeAgo}
-                  </span>
-                </div>
-
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleAcknowledge(event.id)}
-                  className="h-7 text-xs"
-                >
-                  <Check className="h-3 w-3 mr-1" />
-                  Acknowledge
-                </Button>
-              </div>
-            </div>
-          </Card>
-        );
-      })}
+              </Card>
+            );
+          })}
+        </div>
+      </ScrollArea>
     </div>
   );
 }
