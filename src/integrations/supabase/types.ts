@@ -969,7 +969,21 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      vehicle_daily_stats: {
+        Row: {
+          avg_distance_km: number | null
+          avg_speed: number | null
+          device_id: string | null
+          first_trip_start: string | null
+          last_trip_end: string | null
+          peak_speed: number | null
+          stat_date: string | null
+          total_distance_km: number | null
+          total_duration_seconds: number | null
+          trip_count: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       analyze_trip_patterns: {

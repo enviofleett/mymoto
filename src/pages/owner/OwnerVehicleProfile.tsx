@@ -33,11 +33,14 @@ import {
   useMileageStats,
   useDailyMileage,
   useVehicleCommand,
+  useVehicleDailyStats,
+  deriveMileageFromStats,
   getPersonalityLabel,
   type VehicleTrip,
   type VehicleEvent,
   type TripFilterOptions,
   type EventFilterOptions,
+  type VehicleDailyStats,
 } from "@/hooks/useVehicleProfile";
 import { useRecentTripAnalytics, getScoreColor } from "@/hooks/useTripAnalytics";
 import { DriverScoreCard } from "@/components/fleet/DriverScoreCard";
@@ -131,6 +134,12 @@ export default function OwnerVehicleProfile() {
   const { data: mileageStats, refetch: refetchMileage } = useMileageStats(deviceId ?? null);
   const { data: dailyMileage, refetch: refetchDaily } = useDailyMileage(deviceId ?? null);
   
+  // New: Fetch pre-calculated daily stats from database view
+  const filterDays = tripDateRange?.from && tripDateRange?.to 
+    ? Math.ceil((tripDateRange.to.getTime() - tripDateRange.from.getTime()) / (1000 * 60 * 60 * 24)) + 1
+    : 30;
+  const { data: dailyStats, refetch: refetchDailyStats } = useVehicleDailyStats(deviceId ?? null, filterDays);
+  
   // Command mutation
   const { mutate: executeCommand, isPending: isCommandPending } = useVehicleCommand();
 
@@ -207,78 +216,62 @@ export default function OwnerVehicleProfile() {
     return groups.sort((a, b) => b.date.getTime() - a.date.getTime());
   }, [events]);
 
-  // Calculate filtered mileage stats from trips data
-  const filteredMileageStats = useMemo(() => {
-    if (!trips || trips.length === 0) {
-      return { totalDistance: 0, totalTrips: 0, avgPerDay: 0 };
+  // Use pre-calculated stats from database view (replaces client-side math)
+  const derivedStats = useMemo(() => {
+    if (!dailyStats || dailyStats.length === 0) {
+      return deriveMileageFromStats([]);
     }
     
-    const totalDistance = trips.reduce((sum, t) => sum + t.distance_km, 0);
-    const totalTrips = trips.length;
-    
-    // Calculate days in range
-    let daysInRange = 1;
-    if (tripDateRange?.from && tripDateRange?.to) {
-      const diffTime = tripDateRange.to.getTime() - tripDateRange.from.getTime();
-      daysInRange = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1);
-    } else if (!tripDateRange?.from) {
-      daysInRange = 7; // Default to 7 days if no filter
+    // Filter by date range if active
+    if (tripDateRange?.from) {
+      const fromDate = tripDateRange.from.toISOString().split('T')[0];
+      const toDate = tripDateRange.to?.toISOString().split('T')[0] || fromDate;
+      
+      const filtered = dailyStats.filter(s => {
+        const date = s.stat_date;
+        return date >= fromDate && date <= toDate;
+      });
+      
+      return deriveMileageFromStats(filtered);
     }
     
-    const avgPerDay = totalDistance / daysInRange;
-    
-    return { totalDistance, totalTrips, avgPerDay, daysInRange };
-  }, [trips, tripDateRange]);
+    return deriveMileageFromStats(dailyStats);
+  }, [dailyStats, tripDateRange]);
 
-  // Generate daily mileage data from filtered trips for chart
-  const filteredDailyMileage = useMemo(() => {
-    if (!trips || trips.length === 0) return [];
+  // Convert daily stats to chart data format
+  const chartData = useMemo(() => {
+    if (!dailyStats || dailyStats.length === 0) return [];
     
-    // Group trips by date
-    const dailyData: Record<string, { distance: number; trips: number }> = {};
+    // Filter and sort by date
+    let filtered = dailyStats;
+    if (tripDateRange?.from) {
+      const fromDate = tripDateRange.from.toISOString().split('T')[0];
+      const toDate = tripDateRange.to?.toISOString().split('T')[0] || fromDate;
+      filtered = dailyStats.filter(s => s.stat_date >= fromDate && s.stat_date <= toDate);
+    }
     
-    trips.forEach(trip => {
-      const dateKey = format(parseISO(trip.start_time), 'yyyy-MM-dd');
-      if (!dailyData[dateKey]) {
-        dailyData[dateKey] = { distance: 0, trips: 0 };
-      }
-      dailyData[dateKey].distance += trip.distance_km;
-      dailyData[dateKey].trips += 1;
-    });
-    
-    // Convert to array and sort by date
-    return Object.entries(dailyData)
-      .map(([date, data]) => ({
-        day: format(parseISO(date), 'EEE'),
-        date,
-        distance: data.distance,
-        trips: data.trips,
+    return filtered
+      .map(stat => ({
+        day: format(parseISO(stat.stat_date), 'EEE'),
+        date: stat.stat_date,
+        distance: Number(stat.total_distance_km),
+        trips: stat.trip_count,
       }))
       .sort((a, b) => a.date.localeCompare(b.date));
-  }, [trips]);
+  }, [dailyStats, tripDateRange]);
 
-  // Calculate trip stats from filtered data
+  // Trip stats derived from pre-calculated data
   const tripStats = useMemo(() => {
-    if (!isFilterActive) {
-      // Use original mileage stats when no filter
-      if (!mileageStats || !dailyMileage) {
-        return { totalTrips: 0, avgTripsPerDay: 0, avgKmPerTrip: 0, peakTrips: 0 };
-      }
-      const totalTrips = mileageStats.trips_week;
-      const avgTripsPerDay = totalTrips / 7;
-      const avgKmPerTrip = totalTrips > 0 ? mileageStats.week / totalTrips : 0;
-      const peakTrips = Math.max(...dailyMileage.map(d => d.trips), 0);
-      return { totalTrips, avgTripsPerDay, avgKmPerTrip, peakTrips };
-    }
+    const { totalTrips, avgPerDay, avgKmPerTrip, peakSpeed, daysWithData } = derivedStats;
+    const peakTrips = chartData.length > 0 ? Math.max(...chartData.map(d => d.trips)) : 0;
     
-    // Use filtered data
-    const totalTrips = filteredMileageStats.totalTrips;
-    const avgTripsPerDay = filteredMileageStats.daysInRange ? totalTrips / filteredMileageStats.daysInRange : 0;
-    const avgKmPerTrip = totalTrips > 0 ? filteredMileageStats.totalDistance / totalTrips : 0;
-    const peakTrips = Math.max(...filteredDailyMileage.map(d => d.trips), 0);
-    
-    return { totalTrips, avgTripsPerDay, avgKmPerTrip, peakTrips };
-  }, [isFilterActive, mileageStats, dailyMileage, filteredMileageStats, filteredDailyMileage]);
+    return {
+      totalTrips,
+      avgTripsPerDay: daysWithData > 0 ? totalTrips / daysWithData : 0,
+      avgKmPerTrip,
+      peakTrips,
+    };
+  }, [derivedStats, chartData]);
 
   // Handle refresh
   const handleRefresh = useCallback(async () => {
@@ -288,8 +281,9 @@ export default function OwnerVehicleProfile() {
       refetchEvents(),
       refetchMileage(),
       refetchDaily(),
+      refetchDailyStats(),
     ]);
-  }, [refetchVehicles, refetchTrips, refetchEvents, refetchMileage, refetchDaily]);
+  }, [refetchVehicles, refetchTrips, refetchEvents, refetchMileage, refetchDaily, refetchDailyStats]);
 
   // Pull-to-refresh hook
   const { pullDistance, isRefreshing: isPullRefreshing, handlers } = usePullToRefresh({
@@ -774,7 +768,7 @@ export default function OwnerVehicleProfile() {
                   </div>
                   <div className="text-3xl font-bold text-foreground">
                     {isFilterActive 
-                      ? filteredMileageStats.totalDistance.toFixed(1)
+                      ? derivedStats.totalDistance.toFixed(1)
                       : vehicle.totalMileage !== null 
                         ? vehicle.totalMileage.toLocaleString(undefined, { maximumFractionDigits: 0 }) 
                         : "--"
@@ -786,7 +780,7 @@ export default function OwnerVehicleProfile() {
                   <div className="rounded-lg bg-purple-500/10 p-3 text-center">
                     <Route className="h-4 w-4 text-purple-500 mx-auto mb-1" />
                     <div className="text-lg font-bold text-purple-500">
-                      {isFilterActive ? filteredMileageStats.totalTrips : (mileageStats?.trips_today ?? 0)}
+                      {isFilterActive ? derivedStats.totalTrips : (mileageStats?.trips_today ?? 0)}
                     </div>
                     <div className="text-xs text-muted-foreground">
                       {isFilterActive ? "Total Trips" : "Today"}
@@ -796,7 +790,7 @@ export default function OwnerVehicleProfile() {
                     <TrendingUp className="h-4 w-4 text-muted-foreground mx-auto mb-1" />
                     <div className="text-lg font-bold text-foreground">
                       {isFilterActive 
-                        ? filteredMileageStats.avgPerDay.toFixed(1)
+                        ? derivedStats.avgPerDay.toFixed(1)
                         : ((mileageStats?.week ?? 0) / 7).toFixed(1)
                       }
                     </div>
@@ -806,7 +800,7 @@ export default function OwnerVehicleProfile() {
                     <Calendar className="h-4 w-4 text-primary mx-auto mb-1" />
                     <div className="text-lg font-bold text-primary">
                       {isFilterActive 
-                        ? (filteredMileageStats.daysInRange || 1)
+                        ? (derivedStats.daysWithData || 1)
                         : (mileageStats?.week ?? 0).toFixed(1)
                       }
                     </div>
@@ -829,7 +823,7 @@ export default function OwnerVehicleProfile() {
                     </div>
                     <div className="text-xs text-muted-foreground mt-0.5">
                       {isFilterActive 
-                        ? `${filteredDailyMileage.length} day${filteredDailyMileage.length !== 1 ? 's' : ''} selected`
+                        ? `${chartData.length} day${chartData.length !== 1 ? 's' : ''} selected`
                         : "Last 7 days"
                       }
                     </div>
@@ -837,13 +831,13 @@ export default function OwnerVehicleProfile() {
                   <div className="text-right">
                     <div className="text-lg font-bold text-primary">
                       {isFilterActive 
-                        ? filteredMileageStats.totalDistance.toFixed(1)
+                        ? derivedStats.totalDistance.toFixed(1)
                         : (mileageStats?.week ?? 0).toFixed(1)
                       } km
                     </div>
                     <div className="text-xs text-muted-foreground">
                       Avg: {isFilterActive 
-                        ? filteredMileageStats.avgPerDay.toFixed(1)
+                        ? derivedStats.avgPerDay.toFixed(1)
                         : ((mileageStats?.week ?? 0) / 7).toFixed(1)
                       }/day
                     </div>
@@ -852,7 +846,7 @@ export default function OwnerVehicleProfile() {
 
                 <div className="h-40">
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={isFilterActive ? filteredDailyMileage : (dailyMileage || [])}>
+                    <AreaChart data={isFilterActive ? chartData : (dailyMileage || [])}>
                       <defs>
                         <linearGradient id="mileageGradient" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
@@ -1075,7 +1069,7 @@ export default function OwnerVehicleProfile() {
                     </div>
                     <div className="text-xs text-muted-foreground mt-0.5">
                       {isFilterActive 
-                        ? `${filteredDailyMileage.length} day${filteredDailyMileage.length !== 1 ? 's' : ''} selected`
+                        ? `${chartData.length} day${chartData.length !== 1 ? 's' : ''} selected`
                         : "Last 7 days"
                       }
                     </div>
@@ -1084,7 +1078,7 @@ export default function OwnerVehicleProfile() {
                     <div className="text-lg font-bold text-purple-500">{tripStats.totalTrips} trips</div>
                     <div className="text-xs text-muted-foreground">
                       {isFilterActive 
-                        ? filteredMileageStats.totalDistance.toFixed(1)
+                        ? derivedStats.totalDistance.toFixed(1)
                         : (mileageStats?.week ?? 0).toFixed(1)
                       } km total
                     </div>
@@ -1093,7 +1087,7 @@ export default function OwnerVehicleProfile() {
 
                 <div className="h-40">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={isFilterActive ? filteredDailyMileage : (dailyMileage || [])}>
+                    <BarChart data={isFilterActive ? chartData : (dailyMileage || [])}>
                       <XAxis
                         dataKey="day"
                         axisLine={false}

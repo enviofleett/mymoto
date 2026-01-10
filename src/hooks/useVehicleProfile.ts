@@ -54,6 +54,20 @@ export interface DailyMileage {
   trips: number;
 }
 
+// New: Pre-calculated daily stats from database view
+export interface VehicleDailyStats {
+  device_id: string;
+  stat_date: string;
+  trip_count: number;
+  total_distance_km: number;
+  avg_distance_km: number;
+  peak_speed: number | null;
+  avg_speed: number | null;
+  total_duration_seconds: number;
+  first_trip_start: string;
+  last_trip_end: string;
+}
+
 // ============ Fetch Functions ============
 
 export interface TripDateRange {
@@ -153,6 +167,41 @@ async function fetchDailyMileage(deviceId: string): Promise<DailyMileage[]> {
   return (data || []) as unknown as DailyMileage[];
 }
 
+// New: Fetch from vehicle_daily_stats view - pre-calculated server-side
+async function fetchVehicleDailyStats(
+  deviceId: string,
+  days: number = 30
+): Promise<VehicleDailyStats[]> {
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - days);
+  
+  // Use raw SQL query to avoid type issues with views
+  const { data, error } = await supabase
+    .rpc('get_vehicle_daily_stats' as any, {
+      p_device_id: deviceId,
+      p_days: days
+    });
+
+  if (error) {
+    // Fallback to direct view query if RPC doesn't exist
+    const { data: viewData, error: viewError } = await supabase
+      .from("vehicle_daily_stats")
+      .select("*")
+      .eq("device_id", deviceId)
+      .gte("stat_date", startDate.toISOString().split('T')[0])
+      .order("stat_date", { ascending: false }) as { data: unknown; error: unknown };
+
+    if (viewError) {
+      console.error("Error fetching vehicle daily stats:", viewError);
+      return [];
+    }
+    
+    return (viewData || []) as VehicleDailyStats[];
+  }
+  
+  return (data || []) as unknown as VehicleDailyStats[];
+}
+
 // ============ Command Execution ============
 
 interface CommandPayload {
@@ -247,6 +296,51 @@ export function useDailyMileage(deviceId: string | null, enabled: boolean = true
   });
 }
 
+// New: Hook to fetch pre-calculated daily stats from database view
+export function useVehicleDailyStats(
+  deviceId: string | null, 
+  days: number = 30, 
+  enabled: boolean = true
+) {
+  return useQuery({
+    queryKey: ["vehicle-daily-stats", deviceId, days],
+    queryFn: () => fetchVehicleDailyStats(deviceId!, days),
+    enabled: enabled && !!deviceId,
+    staleTime: 5 * 60 * 1000, // Fresh for 5 minutes (server-calculated)
+    gcTime: 10 * 60 * 1000,
+  });
+}
+
+// Derived stats from VehicleDailyStats
+export interface DerivedMileageData {
+  totalDistance: number;
+  totalTrips: number;
+  avgPerDay: number;
+  peakSpeed: number;
+  avgKmPerTrip: number;
+  daysWithData: number;
+}
+
+export function deriveMileageFromStats(stats: VehicleDailyStats[]): DerivedMileageData {
+  if (!stats || stats.length === 0) {
+    return { totalDistance: 0, totalTrips: 0, avgPerDay: 0, peakSpeed: 0, avgKmPerTrip: 0, daysWithData: 0 };
+  }
+  
+  const totalDistance = stats.reduce((sum, s) => sum + Number(s.total_distance_km), 0);
+  const totalTrips = stats.reduce((sum, s) => sum + s.trip_count, 0);
+  const peakSpeed = Math.max(...stats.map(s => s.peak_speed || 0));
+  const daysWithData = stats.length;
+  
+  return {
+    totalDistance,
+    totalTrips,
+    avgPerDay: daysWithData > 0 ? totalDistance / daysWithData : 0,
+    peakSpeed,
+    avgKmPerTrip: totalTrips > 0 ? totalDistance / totalTrips : 0,
+    daysWithData,
+  };
+}
+
 export function useVehicleCommand() {
   const queryClient = useQueryClient();
 
@@ -300,6 +394,13 @@ export function usePrefetchVehicleProfile() {
     queryClient.prefetchQuery({
       queryKey: ["vehicle-llm-settings", deviceId],
       queryFn: () => fetchVehicleLLMSettings(deviceId),
+      staleTime: 5 * 60 * 1000,
+    });
+    
+    // Prefetch vehicle daily stats from view
+    queryClient.prefetchQuery({
+      queryKey: ["vehicle-daily-stats", deviceId, 30],
+      queryFn: () => fetchVehicleDailyStats(deviceId, 30),
       staleTime: 5 * 60 * 1000,
     });
   };
