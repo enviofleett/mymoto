@@ -626,6 +626,62 @@ serve(async (req) => {
       p_device_id: device_id
     })
 
+    // 6.8. Fetch RAG context - relevant past memories based on user's message
+    let ragContext: { memories: string[]; tripAnalytics: string[] } = { memories: [], tripAnalytics: [] }
+    
+    try {
+      // Generate embedding for user's message to find relevant past context
+      const embeddingResponse = await fetch('https://ai.gateway.lovable.dev/v1/embeddings', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'text-embedding-3-small',
+          input: message,
+        }),
+      })
+      
+      if (embeddingResponse.ok) {
+        const embeddingData = await embeddingResponse.json()
+        const queryEmbedding = embeddingData.data?.[0]?.embedding
+        
+        if (queryEmbedding) {
+          // Search for relevant trip analytics
+          const { data: relevantTrips } = await supabase.rpc('match_driving_records', {
+            query_embedding: `[${queryEmbedding.join(',')}]`,
+            p_device_id: device_id,
+            match_threshold: 0.6,
+            match_count: 3
+          })
+          
+          if (relevantTrips && relevantTrips.length > 0) {
+            ragContext.tripAnalytics = relevantTrips.map((t: any) => 
+              `[${new Date(t.analyzed_at).toLocaleDateString()}] Score: ${t.driver_score}/100 - ${t.summary_text || 'No summary'}`
+            )
+          }
+          
+          // Search for relevant past conversations
+          const { data: relevantChats } = await supabase.rpc('match_chat_memories', {
+            query_embedding: `[${queryEmbedding.join(',')}]`,
+            p_device_id: device_id,
+            match_threshold: 0.65,
+            match_count: 3
+          })
+          
+          if (relevantChats && relevantChats.length > 0) {
+            ragContext.memories = relevantChats.map((c: any) => 
+              `[${new Date(c.created_at).toLocaleDateString()}] ${c.role}: ${c.content.substring(0, 200)}...`
+            )
+          }
+        }
+      }
+    } catch (ragError) {
+      console.error('RAG context fetch error:', ragError)
+      // Continue without RAG context
+    }
+
     // 7. Build System Prompt with Rich Context
     const pos = position
     const driver = assignment?.profiles as unknown as { name: string; phone: string | null; license_number: string | null } | null
@@ -778,7 +834,13 @@ ${drivingHabits.frequent_destinations.map((d: any, i: number) =>
 ).join('\n')}` : ''}
 ⚠️ IMPORTANT: When user asks "how's traffic?" or "what's my ETA?", use the predicted destination if they don't specify one.
 ` : ''}
-
+${ragContext.tripAnalytics.length > 0 || ragContext.memories.length > 0 ? `RELEVANT PAST MEMORIES (RAG Context):
+${ragContext.tripAnalytics.length > 0 ? `DRIVING HISTORY MATCHING THIS QUERY:
+${ragContext.tripAnalytics.map((t, i) => `  ${i + 1}. ${t}`).join('\n')}
+` : ''}${ragContext.memories.length > 0 ? `PAST CONVERSATIONS MATCHING THIS QUERY:
+${ragContext.memories.map((m, i) => `  ${i + 1}. ${m}`).join('\n')}
+` : ''}⚠️ USE THIS CONTEXT: When answering questions about past behavior, driving patterns, or historical data, reference these relevant memories to provide accurate, data-backed responses.
+` : ''}
 RESPONSE RULES:
 1. ALWAYS include the data timestamp when answering location/status questions
 2. When discussing location, you MUST include a special LOCATION tag for rich rendering:
