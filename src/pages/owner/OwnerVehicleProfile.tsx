@@ -395,11 +395,20 @@ export default function OwnerVehicleProfile() {
             {/* Location */}
             <Card className="border-border bg-card/50 overflow-hidden">
               <div className="h-40 bg-gradient-to-br from-muted to-muted/50 relative">
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
-                    <span className="text-2xl">🚗</span>
+                {vehicle.latitude && vehicle.longitude ? (
+                  <img
+                    src={`https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/pin-s+ef4444(${vehicle.longitude},${vehicle.latitude})/${vehicle.longitude},${vehicle.latitude},14,0/400x160@2x?access_token=${import.meta.env.VITE_MAPBOX_ACCESS_TOKEN}`}
+                    alt="Vehicle location map"
+                    className="absolute inset-0 w-full h-full object-cover"
+                    loading="lazy"
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
+                      <MapPin className="h-6 w-6 text-primary" />
+                    </div>
                   </div>
-                </div>
+                )}
                 {vehicle.latitude && vehicle.longitude && (
                   <a
                     href={getGoogleMapsLink(vehicle.latitude, vehicle.longitude)}
