@@ -626,56 +626,94 @@ serve(async (req) => {
       p_device_id: device_id
     })
 
-    // 6.8. Fetch RAG context - relevant past memories based on user's message
-    let ragContext: { memories: string[]; tripAnalytics: string[] } = { memories: [], tripAnalytics: [] }
+    // 6.8. Fetch RAG context - relevant past memories and trip analytics
+    let ragContext: { 
+      memories: string[]; 
+      tripAnalytics: string[];
+      recentDrivingStats: {
+        avgScore: number | null;
+        totalTrips: number;
+        totalHarshBraking: number;
+        totalHarshAcceleration: number;
+        totalHarshCornering: number;
+        recentScores: { score: number; date: string }[];
+      } | null;
+    } = { memories: [], tripAnalytics: [], recentDrivingStats: null }
     
     try {
-      // Generate embedding for user's message to find relevant past context
-      const embeddingResponse = await fetch('https://ai.gateway.lovable.dev/v1/embeddings', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'text-embedding-3-small',
-          input: message,
-        }),
-      })
+      // Fetch recent trip analytics with harsh event details (last 30 days)
+      const thirtyDaysAgo = new Date()
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
       
-      if (embeddingResponse.ok) {
-        const embeddingData = await embeddingResponse.json()
-        const queryEmbedding = embeddingData.data?.[0]?.embedding
+      const { data: recentAnalytics } = await supabase
+        .from('trip_analytics')
+        .select('driver_score, harsh_events, summary_text, analyzed_at')
+        .eq('device_id', device_id)
+        .gte('analyzed_at', thirtyDaysAgo.toISOString())
+        .order('analyzed_at', { ascending: false })
+        .limit(20)
+      
+      if (recentAnalytics && recentAnalytics.length > 0) {
+        // Calculate aggregate stats
+        let totalBraking = 0
+        let totalAcceleration = 0
+        let totalCornering = 0
+        let totalScore = 0
+        const recentScores: { score: number; date: string }[] = []
         
-        if (queryEmbedding) {
-          // Search for relevant trip analytics
-          const { data: relevantTrips } = await supabase.rpc('match_driving_records', {
-            query_embedding: `[${queryEmbedding.join(',')}]`,
-            p_device_id: device_id,
-            match_threshold: 0.6,
-            match_count: 3
-          })
-          
-          if (relevantTrips && relevantTrips.length > 0) {
-            ragContext.tripAnalytics = relevantTrips.map((t: any) => 
-              `[${new Date(t.analyzed_at).toLocaleDateString()}] Score: ${t.driver_score}/100 - ${t.summary_text || 'No summary'}`
-            )
+        for (const trip of recentAnalytics) {
+          if (trip.driver_score) {
+            totalScore += trip.driver_score
+            recentScores.push({
+              score: trip.driver_score,
+              date: new Date(trip.analyzed_at).toLocaleDateString()
+            })
           }
           
-          // Search for relevant past conversations
-          const { data: relevantChats } = await supabase.rpc('match_chat_memories', {
-            query_embedding: `[${queryEmbedding.join(',')}]`,
-            p_device_id: device_id,
-            match_threshold: 0.65,
-            match_count: 3
-          })
-          
-          if (relevantChats && relevantChats.length > 0) {
-            ragContext.memories = relevantChats.map((c: any) => 
-              `[${new Date(c.created_at).toLocaleDateString()}] ${c.role}: ${c.content.substring(0, 200)}...`
-            )
+          if (trip.harsh_events) {
+            const events = trip.harsh_events as Record<string, any>
+            totalBraking += events.harsh_braking || 0
+            totalAcceleration += events.harsh_acceleration || 0
+            totalCornering += events.harsh_cornering || 0
           }
         }
+        
+        ragContext.recentDrivingStats = {
+          avgScore: recentAnalytics.length > 0 ? Math.round(totalScore / recentAnalytics.length) : null,
+          totalTrips: recentAnalytics.length,
+          totalHarshBraking: totalBraking,
+          totalHarshAcceleration: totalAcceleration,
+          totalHarshCornering: totalCornering,
+          recentScores: recentScores.slice(0, 5)
+        }
+        
+        // Build detailed trip analytics strings
+        ragContext.tripAnalytics = recentAnalytics.slice(0, 5).map((t: any) => {
+          const events = t.harsh_events as Record<string, any> || {}
+          const eventDetails = [
+            events.harsh_braking ? `${events.harsh_braking} harsh braking` : null,
+            events.harsh_acceleration ? `${events.harsh_acceleration} harsh acceleration` : null,
+            events.harsh_cornering ? `${events.harsh_cornering} harsh cornering` : null
+          ].filter(Boolean).join(', ')
+          
+          return `[${new Date(t.analyzed_at).toLocaleDateString()}] Score: ${t.driver_score}/100${eventDetails ? ` (${eventDetails})` : ''} - ${t.summary_text?.substring(0, 150) || 'No summary'}`
+        })
+      }
+      
+      // Search for relevant past conversations using simple text matching
+      // (Skip embedding-based search since the gateway doesn't support embeddings)
+      const { data: relevantChats } = await supabase
+        .from('vehicle_chat_history')
+        .select('role, content, created_at')
+        .eq('device_id', device_id)
+        .or(`content.ilike.%driving%,content.ilike.%brake%,content.ilike.%score%,content.ilike.%trip%`)
+        .order('created_at', { ascending: false })
+        .limit(5)
+      
+      if (relevantChats && relevantChats.length > 0) {
+        ragContext.memories = relevantChats.map((c: any) => 
+          `[${new Date(c.created_at).toLocaleDateString()}] ${c.role}: ${c.content.substring(0, 150)}...`
+        )
       }
     } catch (ragError) {
       console.error('RAG context fetch error:', ragError)
@@ -834,12 +872,21 @@ ${drivingHabits.frequent_destinations.map((d: any, i: number) =>
 ).join('\n')}` : ''}
 ⚠️ IMPORTANT: When user asks "how's traffic?" or "what's my ETA?", use the predicted destination if they don't specify one.
 ` : ''}
-${ragContext.tripAnalytics.length > 0 || ragContext.memories.length > 0 ? `RELEVANT PAST MEMORIES (RAG Context):
-${ragContext.tripAnalytics.length > 0 ? `DRIVING HISTORY MATCHING THIS QUERY:
+${ragContext.recentDrivingStats ? `DRIVING PERFORMANCE SUMMARY (Last 30 Days):
+- Average Driver Score: ${ragContext.recentDrivingStats.avgScore}/100
+- Total Trips Analyzed: ${ragContext.recentDrivingStats.totalTrips}
+- HARSH EVENTS BREAKDOWN:
+  * Harsh Braking: ${ragContext.recentDrivingStats.totalHarshBraking} incidents ${ragContext.recentDrivingStats.totalHarshBraking > 10 ? '⚠️ HIGH - Consider gentler braking' : ragContext.recentDrivingStats.totalHarshBraking > 5 ? '(moderate)' : '✓ Good'}
+  * Harsh Acceleration: ${ragContext.recentDrivingStats.totalHarshAcceleration} incidents ${ragContext.recentDrivingStats.totalHarshAcceleration > 10 ? '⚠️ HIGH - Consider smoother starts' : ragContext.recentDrivingStats.totalHarshAcceleration > 5 ? '(moderate)' : '✓ Good'}
+  * Harsh Cornering: ${ragContext.recentDrivingStats.totalHarshCornering} incidents ${ragContext.recentDrivingStats.totalHarshCornering > 10 ? '⚠️ HIGH - Slow down before turns' : ragContext.recentDrivingStats.totalHarshCornering > 5 ? '(moderate)' : '✓ Good'}
+- Recent Scores: ${ragContext.recentDrivingStats.recentScores.map(s => `${s.score}`).join(', ')}
+⚠️ USE THIS DATA: When answering questions like "Do I brake too hard?", "How's my driving?", reference these specific statistics!
+` : ''}
+${ragContext.tripAnalytics.length > 0 ? `RECENT TRIP DETAILS (with harsh event counts):
 ${ragContext.tripAnalytics.map((t, i) => `  ${i + 1}. ${t}`).join('\n')}
-` : ''}${ragContext.memories.length > 0 ? `PAST CONVERSATIONS MATCHING THIS QUERY:
+` : ''}
+${ragContext.memories.length > 0 ? `PAST CONVERSATIONS ABOUT DRIVING:
 ${ragContext.memories.map((m, i) => `  ${i + 1}. ${m}`).join('\n')}
-` : ''}⚠️ USE THIS CONTEXT: When answering questions about past behavior, driving patterns, or historical data, reference these relevant memories to provide accurate, data-backed responses.
 ` : ''}
 RESPONSE RULES:
 1. ALWAYS include the data timestamp when answering location/status questions
