@@ -455,20 +455,25 @@ export default function OwnerVehicleProfile() {
                       <div className="font-medium text-foreground">Current Location</div>
                       {vehicle.latitude && vehicle.longitude ? (
                         <>
-                          <div className="text-sm text-muted-foreground truncate max-w-[200px]">
+                          <div className="text-sm text-muted-foreground truncate max-w-[220px]">
                             {addressLoading ? (
-                              <span className="inline-flex items-center gap-1">
+                              <span className="inline-flex items-center gap-1.5">
                                 <Loader2 className="h-3 w-3 animate-spin" />
-                                Loading address...
+                                <span>Fetching address...</span>
                               </span>
                             ) : currentAddress ? (
-                              currentAddress
+                              <span title={currentAddress}>{currentAddress}</span>
                             ) : (
-                              `${vehicle.latitude.toFixed(4)}°, ${vehicle.longitude.toFixed(4)}°`
+                              <span className="text-muted-foreground/70">Address unavailable</span>
                             )}
                           </div>
-                          <div className="text-xs text-muted-foreground mt-0.5">
-                            Speed: {vehicle.speed} km/h
+                          <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2">
+                            <span>Speed: {vehicle.speed} km/h</span>
+                            {vehicle.lastUpdate && (
+                              <span className="text-muted-foreground/60">
+                                • {format(vehicle.lastUpdate, "HH:mm")}
+                              </span>
+                            )}
                           </div>
                         </>
                       ) : (
