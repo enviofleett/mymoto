@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { buildConversationContext, estimateTokenCount } from './conversation-manager.ts'
 import { routeQuery } from './query-router.ts'
 import { parseCommand, containsCommandKeywords, getCommandMetadata, GeofenceAlertParams } from './command-parser.ts'
+import { generateTextEmbedding, formatEmbeddingForPg } from '../_shared/embedding-generator.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -630,6 +631,7 @@ serve(async (req) => {
     let ragContext: { 
       memories: string[]; 
       tripAnalytics: string[];
+      semanticTripMatches: string[];
       recentDrivingStats: {
         avgScore: number | null;
         totalTrips: number;
@@ -638,7 +640,7 @@ serve(async (req) => {
         totalHarshCornering: number;
         recentScores: { score: number; date: string }[];
       } | null;
-    } = { memories: [], tripAnalytics: [], recentDrivingStats: null }
+    } = { memories: [], tripAnalytics: [], semanticTripMatches: [], recentDrivingStats: null }
     
     try {
       // Fetch recent trip analytics with harsh event details (last 30 days)
@@ -700,20 +702,50 @@ serve(async (req) => {
         })
       }
       
-      // Search for relevant past conversations using simple text matching
-      // (Skip embedding-based search since the gateway doesn't support embeddings)
-      const { data: relevantChats } = await supabase
-        .from('vehicle_chat_history')
-        .select('role, content, created_at')
-        .eq('device_id', device_id)
-        .or(`content.ilike.%driving%,content.ilike.%brake%,content.ilike.%score%,content.ilike.%trip%`)
-        .order('created_at', { ascending: false })
-        .limit(5)
+      // Generate embedding for the user query for semantic search
+      const queryEmbedding = generateTextEmbedding(message)
+      const embeddingStr = formatEmbeddingForPg(queryEmbedding)
       
-      if (relevantChats && relevantChats.length > 0) {
-        ragContext.memories = relevantChats.map((c: any) => 
-          `[${new Date(c.created_at).toLocaleDateString()}] ${c.role}: ${c.content.substring(0, 150)}...`
+      console.log('Performing semantic memory search...')
+      
+      // Search for relevant past conversations using vector similarity (RAG)
+      const { data: semanticMemories, error: memoryError } = await supabase
+        .rpc('match_chat_memories', {
+          query_embedding: embeddingStr,
+          p_device_id: device_id,
+          p_user_id: user_id || null,
+          match_threshold: 0.5,
+          match_count: 8
+        })
+      
+      if (memoryError) {
+        console.error('Semantic memory search error:', memoryError)
+      } else if (semanticMemories && semanticMemories.length > 0) {
+        console.log(`Found ${semanticMemories.length} semantically relevant memories`)
+        ragContext.memories = semanticMemories.map((m: any) => 
+          `[${new Date(m.created_at).toLocaleDateString()}] (similarity: ${(m.similarity * 100).toFixed(0)}%) ${m.role}: ${m.content.substring(0, 200)}...`
         )
+      }
+      
+      // Also search trip analytics for driving-related queries
+      if (message.toLowerCase().match(/driv|trip|score|brak|speed|behavio|perform|month|week|history/)) {
+        const { data: semanticTrips, error: tripError } = await supabase
+          .rpc('match_driving_records', {
+            query_embedding: embeddingStr,
+            p_device_id: device_id,
+            match_threshold: 0.4,
+            match_count: 5
+          })
+        
+        if (tripError) {
+          console.error('Semantic trip search error:', tripError)
+        } else if (semanticTrips && semanticTrips.length > 0) {
+          console.log(`Found ${semanticTrips.length} semantically relevant trip records`)
+          ragContext.semanticTripMatches = semanticTrips.map((t: any) => {
+            const events = t.harsh_events as Record<string, any> || {}
+            return `[${new Date(t.analyzed_at).toLocaleDateString()}] (similarity: ${(t.similarity * 100).toFixed(0)}%) Score: ${t.driver_score}/100, Braking: ${events.harsh_braking || 0}, Accel: ${events.harsh_acceleration || 0} - ${t.summary_text?.substring(0, 150) || 'No summary'}`
+          })
+        }
       }
     } catch (ragError) {
       console.error('RAG context fetch error:', ragError)
@@ -890,7 +922,10 @@ ${ragContext.recentDrivingStats ? `DRIVING PERFORMANCE SUMMARY (Last 30 Days):
 ${ragContext.tripAnalytics.length > 0 ? `RECENT TRIP DETAILS (with harsh event counts):
 ${ragContext.tripAnalytics.map((t, i) => `  ${i + 1}. ${t}`).join('\n')}
 ` : ''}
-${ragContext.memories.length > 0 ? `PAST CONVERSATIONS ABOUT DRIVING:
+${ragContext.semanticTripMatches.length > 0 ? `SEMANTICALLY RELEVANT TRIP RECORDS (from vector search):
+${ragContext.semanticTripMatches.map((t, i) => `  ${i + 1}. ${t}`).join('\n')}
+` : ''}
+${ragContext.memories.length > 0 ? `RELEVANT PAST CONVERSATIONS (from semantic memory search):
 ${ragContext.memories.map((m, i) => `  ${i + 1}. ${m}`).join('\n')}
 ` : ''}
 RESPONSE RULES:
@@ -985,15 +1020,34 @@ IMPORTANT: When the user asks "where are you" or similar location questions, you
             }
           }
           
-          // 10. Save conversation to database
-          console.log('Saving conversation to database...')
+          // 10. Save conversation to database with embeddings for RAG
+          console.log('Saving conversation with embeddings...')
+          
+          // Generate embeddings for both messages
+          const userEmbedding = generateTextEmbedding(message)
+          const assistantEmbedding = generateTextEmbedding(fullResponse)
+          
           const { error: insertError } = await supabase.from('vehicle_chat_history').insert([
-            { device_id, user_id, role: 'user', content: message },
-            { device_id, user_id, role: 'assistant', content: fullResponse }
+            { 
+              device_id, 
+              user_id, 
+              role: 'user', 
+              content: message,
+              embedding: formatEmbeddingForPg(userEmbedding)
+            },
+            { 
+              device_id, 
+              user_id, 
+              role: 'assistant', 
+              content: fullResponse,
+              embedding: formatEmbeddingForPg(assistantEmbedding)
+            }
           ])
           
           if (insertError) {
             console.error('Error saving chat history:', insertError)
+          } else {
+            console.log('Chat history saved with embeddings for future RAG retrieval')
           }
           
           controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'))

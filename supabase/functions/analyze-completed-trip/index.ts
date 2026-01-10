@@ -1,6 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { generateDrivingEmbedding, formatEmbeddingForPg } from '../_shared/embedding-generator.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -194,77 +195,7 @@ function generateFallbackSummary(harshEvents: HarshEvent[], driverScore: number)
     return `Driving needs improvement with ${totalEvents} harsh events detected. Score: ${driverScore}/100.`;
   }
 }
-
-// Generate a semantic hash-based embedding for the summary text
-// Since the AI gateway doesn't support embedding models, we create a deterministic
-// semantic vector based on key driving metrics extracted from the text
-function generateSemanticEmbedding(
-  summary: string,
-  driverScore: number,
-  harshEvents: HarshEvent[],
-  avgSpeed: number,
-  maxSpeed: number
-): number[] {
-  // Create a 1536-dimension vector (matching OpenAI's text-embedding-3-small)
-  const embedding = new Array(1536).fill(0);
-  
-  // Encode driver score (first 100 dimensions)
-  const scoreNormalized = driverScore / 100;
-  for (let i = 0; i < 100; i++) {
-    embedding[i] = scoreNormalized * Math.sin(i * 0.1);
-  }
-  
-  // Encode harsh event counts (dimensions 100-200)
-  const brakingCount = harshEvents.filter(e => e.type === 'harsh_braking').length;
-  const accelCount = harshEvents.filter(e => e.type === 'harsh_acceleration').length;
-  const corneringCount = harshEvents.filter(e => e.type === 'harsh_cornering').length;
-  const maxEvents = Math.max(brakingCount, accelCount, corneringCount, 1);
-  
-  for (let i = 100; i < 133; i++) {
-    embedding[i] = (brakingCount / maxEvents) * Math.cos((i - 100) * 0.2);
-  }
-  for (let i = 133; i < 166; i++) {
-    embedding[i] = (accelCount / maxEvents) * Math.cos((i - 133) * 0.2);
-  }
-  for (let i = 166; i < 200; i++) {
-    embedding[i] = (corneringCount / maxEvents) * Math.cos((i - 166) * 0.2);
-  }
-  
-  // Encode speed metrics (dimensions 200-300)
-  const speedNormalized = Math.min(avgSpeed / 120, 1); // Normalize to 120 km/h
-  const maxSpeedNormalized = Math.min(maxSpeed / 150, 1); // Normalize to 150 km/h
-  
-  for (let i = 200; i < 250; i++) {
-    embedding[i] = speedNormalized * Math.sin((i - 200) * 0.15);
-  }
-  for (let i = 250; i < 300; i++) {
-    embedding[i] = maxSpeedNormalized * Math.sin((i - 250) * 0.15);
-  }
-  
-  // Encode text features using simple hash (dimensions 300-1536)
-  const words = summary.toLowerCase().split(/\s+/);
-  const keyTerms = ['safe', 'excellent', 'good', 'harsh', 'braking', 'acceleration', 
-                    'cornering', 'improve', 'smooth', 'aggressive', 'careful', 'fast',
-                    'slow', 'moderate', 'consistent', 'erratic'];
-  
-  for (let i = 0; i < keyTerms.length; i++) {
-    const termPresent = words.some(w => w.includes(keyTerms[i])) ? 1 : 0;
-    const startIdx = 300 + i * 77;
-    for (let j = 0; j < 77 && startIdx + j < 1536; j++) {
-      embedding[startIdx + j] = termPresent * Math.sin(j * 0.3) * 0.5;
-    }
-  }
-  
-  // Normalize the vector
-  const magnitude = Math.sqrt(embedding.reduce((sum, val) => sum + val * val, 0));
-  if (magnitude > 0) {
-    for (let i = 0; i < embedding.length; i++) {
-      embedding[i] = embedding[i] / magnitude;
-    }
-  }
-  
-  return embedding;
-}
+// Note: generateSemanticEmbedding moved to shared embedding-generator.ts
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -364,11 +295,17 @@ serve(async (req) => {
           driverScore
         );
         
-        // Generate embedding for semantic search
-        const embedding = generateSemanticEmbedding(
+        // Generate embedding for semantic search using shared generator
+        const harshBrakingCount = harshEvents.filter(e => e.type === 'harsh_braking').length;
+        const harshAccelCount = harshEvents.filter(e => e.type === 'harsh_acceleration').length;
+        const harshCorneringCount = harshEvents.filter(e => e.type === 'harsh_cornering').length;
+        
+        const embedding = generateDrivingEmbedding(
           summaryText,
           driverScore,
-          harshEvents,
+          harshBrakingCount,
+          harshAccelCount,
+          harshCorneringCount,
           avgSpeed,
           maxSpeed
         );
@@ -392,7 +329,7 @@ serve(async (req) => {
             harsh_events: harshEventsSummary,
             summary_text: summaryText,
             weather_data: {}, // Can be enhanced with weather API
-            embedding: embedding ? `[${embedding.join(',')}]` : null,
+            embedding: formatEmbeddingForPg(embedding),
           });
         
         if (insertError) {
