@@ -68,13 +68,21 @@ Deno.serve(async (req) => {
 
         // Credit the wallet
         const newBalance = parseFloat(wallet.balance) + amountNgn;
-        await supabase
+        const { error: updateError } = await supabase
           .from("wallets")
           .update({ balance: newBalance })
           .eq("id", wallet.id);
 
+        if (updateError) {
+          console.error("Failed to update wallet balance:", updateError);
+          return new Response(
+            JSON.stringify({ received: false, error: "Failed to update wallet" }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
         // Record the transaction
-        await supabase.from("wallet_transactions").insert({
+        const { error: insertError } = await supabase.from("wallet_transactions").insert({
           wallet_id: wallet.id,
           amount: amountNgn,
           type: "credit",
@@ -82,6 +90,15 @@ Deno.serve(async (req) => {
           reference,
           metadata: { paystack_data: payload.data },
         });
+
+        if (insertError) {
+          console.error("Failed to insert transaction record:", insertError);
+          // Note: Wallet was already updated - this is a critical inconsistency
+          return new Response(
+            JSON.stringify({ received: false, error: "Failed to record transaction" }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
 
         // Re-enable LLM for user's vehicles if they were disabled
         const { data: profiles } = await supabase
@@ -96,10 +113,15 @@ Deno.serve(async (req) => {
             .in("profile_id", profiles.map((p) => p.id));
 
           if (assignments && assignments.length > 0) {
-            await supabase
+            const { error: llmUpdateError } = await supabase
               .from("vehicle_llm_settings")
               .update({ llm_enabled: true })
               .in("device_id", assignments.map((a) => a.device_id));
+
+            if (llmUpdateError) {
+              console.error("Failed to re-enable LLM settings:", llmUpdateError);
+              // Non-critical error - continue processing
+            }
           }
         }
 
@@ -229,12 +251,20 @@ Deno.serve(async (req) => {
 
       // Credit wallet
       const newBalance = parseFloat(wallet.balance) + amountNgn;
-      await supabase
+      const { error: updateError } = await supabase
         .from("wallets")
         .update({ balance: newBalance })
         .eq("id", wallet.id);
 
-      await supabase.from("wallet_transactions").insert({
+      if (updateError) {
+        console.error("Failed to update wallet balance:", updateError);
+        return new Response(
+          JSON.stringify({ success: false, error: "Failed to update wallet" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const { error: insertError } = await supabase.from("wallet_transactions").insert({
         wallet_id: wallet.id,
         amount: amountNgn,
         type: "credit",
@@ -242,6 +272,15 @@ Deno.serve(async (req) => {
         reference,
         metadata: { paystack_data: result.data },
       });
+
+      if (insertError) {
+        console.error("Failed to insert transaction record:", insertError);
+        // Note: Wallet was already updated - this is a critical inconsistency
+        return new Response(
+          JSON.stringify({ success: false, error: "Failed to record transaction" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
 
       return new Response(
         JSON.stringify({ success: true, amount: amountNgn, new_balance: newBalance }),
