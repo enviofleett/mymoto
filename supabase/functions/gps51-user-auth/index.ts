@@ -22,8 +22,8 @@ Deno.serve(async (req) => {
 
     if (!username || !password) {
       return new Response(
-        JSON.stringify({ error: 'Username and password are required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ success: false, error: 'Username and password are required' }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -80,8 +80,8 @@ Deno.serve(async (req) => {
         error_message: 'Failed to parse response'
       });
       return new Response(
-        JSON.stringify({ error: 'Unable to connect to GPS51. Please try again.' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ success: false, error: 'Unable to connect to GPS51. Please try again.' }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -97,8 +97,8 @@ Deno.serve(async (req) => {
     if (loginData.status !== 0) {
       console.log(`[gps51-user-auth] GPS51 login failed: status=${loginData.status}`);
       return new Response(
-        JSON.stringify({ error: 'Invalid GPS51 username or password' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ success: false, error: 'Invalid GPS51 username or password' }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -308,8 +308,8 @@ Deno.serve(async (req) => {
     console.error(`[gps51-user-auth] Error:`, error);
     const errorMessage = error instanceof Error ? error.message : 'Internal server error';
     return new Response(
-      JSON.stringify({ error: errorMessage }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      JSON.stringify({ success: false, error: errorMessage }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });
