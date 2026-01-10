@@ -10,7 +10,8 @@ import {
   LogOut,
   Wallet,
   Database,
-  Bell
+  Bell,
+  BellRing
 } from "lucide-react";
 import { ConnectionStatus } from "@/hooks/useFleetData";
 
@@ -23,6 +24,7 @@ const navItems = [
   { title: "Fleet", url: "/fleet", icon: Truck },
   { title: "Map", url: "/map", icon: Map },
   { title: "Insights", url: "/insights", icon: Brain },
+  { title: "Notifications", url: "/notifications", icon: BellRing },
   { title: "Settings", url: "/settings", icon: Settings },
 ];
 

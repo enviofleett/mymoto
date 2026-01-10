@@ -14,6 +14,7 @@ import Profile from "./pages/Profile";
 import AdminWallets from "./pages/AdminWallets";
 import AdminStorage from "./pages/AdminStorage";
 import AdminAlerts from "./pages/AdminAlerts";
+import NotificationSettings from "./pages/NotificationSettings";
 import NotFound from "./pages/NotFound";
 import InstallApp from "./pages/InstallApp";
 
@@ -44,6 +45,7 @@ const App = () => (
             <Route path="/insights" element={<ProtectedRoute><Insights /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+            <Route path="/notifications" element={<ProtectedRoute><NotificationSettings /></ProtectedRoute>} />
             <Route path="/admin/wallets" element={<ProtectedRoute><AdminWallets /></ProtectedRoute>} />
             <Route path="/admin/storage" element={<ProtectedRoute><AdminStorage /></ProtectedRoute>} />
             <Route path="/admin/alerts" element={<ProtectedRoute><AdminAlerts /></ProtectedRoute>} />
