@@ -171,7 +171,8 @@ export function classifyIntent(query: string): Intent {
       const matches = lowerQuery.match(pattern)
       if (matches) {
         intentData.score += definition.weight
-        intentData.keywords.push(...matches.filter(m => m.length > 2))
+        // Filter out undefined matches and short strings
+        intentData.keywords.push(...matches.filter(m => m && m.length > 2))
       }
     }
   }
