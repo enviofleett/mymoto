@@ -104,6 +104,169 @@ export type Database = {
         }
         Relationships: []
       }
+      geofence_events: {
+        Row: {
+          device_id: string
+          event_type: string
+          id: string
+          latitude: number
+          location_name: string
+          longitude: number
+          metadata: Json | null
+          monitor_id: string | null
+          triggered_at: string
+        }
+        Insert: {
+          device_id: string
+          event_type: string
+          id?: string
+          latitude: number
+          location_name: string
+          longitude: number
+          metadata?: Json | null
+          monitor_id?: string | null
+          triggered_at?: string
+        }
+        Update: {
+          device_id?: string
+          event_type?: string
+          id?: string
+          latitude?: number
+          location_name?: string
+          longitude?: number
+          metadata?: Json | null
+          monitor_id?: string | null
+          triggered_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "geofence_events_monitor_id_fkey"
+            columns: ["monitor_id"]
+            isOneToOne: false
+            referencedRelation: "geofence_monitors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      geofence_locations: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          is_system: boolean | null
+          latitude: number
+          longitude: number
+          name: string
+          radius_meters: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_system?: boolean | null
+          latitude: number
+          longitude: number
+          name: string
+          radius_meters?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_system?: boolean | null
+          latitude?: number
+          longitude?: number
+          name?: string
+          radius_meters?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      geofence_monitors: {
+        Row: {
+          active_days: number[] | null
+          active_from: string | null
+          active_until: string | null
+          created_at: string
+          created_by: string | null
+          device_id: string
+          expires_at: string | null
+          id: string
+          is_active: boolean | null
+          last_checked_at: string | null
+          last_triggered_at: string | null
+          latitude: number | null
+          location_id: string | null
+          location_name: string | null
+          longitude: number | null
+          one_time: boolean | null
+          radius_meters: number | null
+          trigger_count: number | null
+          trigger_on: string
+          updated_at: string
+          vehicle_inside: boolean | null
+        }
+        Insert: {
+          active_days?: number[] | null
+          active_from?: string | null
+          active_until?: string | null
+          created_at?: string
+          created_by?: string | null
+          device_id: string
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          last_checked_at?: string | null
+          last_triggered_at?: string | null
+          latitude?: number | null
+          location_id?: string | null
+          location_name?: string | null
+          longitude?: number | null
+          one_time?: boolean | null
+          radius_meters?: number | null
+          trigger_count?: number | null
+          trigger_on: string
+          updated_at?: string
+          vehicle_inside?: boolean | null
+        }
+        Update: {
+          active_days?: number[] | null
+          active_from?: string | null
+          active_until?: string | null
+          created_at?: string
+          created_by?: string | null
+          device_id?: string
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          last_checked_at?: string | null
+          last_triggered_at?: string | null
+          latitude?: number | null
+          location_id?: string | null
+          location_name?: string | null
+          longitude?: number | null
+          one_time?: boolean | null
+          radius_meters?: number | null
+          trigger_count?: number | null
+          trigger_on?: string
+          updated_at?: string
+          vehicle_inside?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "geofence_monitors_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "geofence_locations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       gps_api_logs: {
         Row: {
           action: string
@@ -642,6 +805,16 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      find_or_create_location: {
+        Args: {
+          p_latitude?: number
+          p_longitude?: number
+          p_name: string
+          p_radius?: number
+          p_user_id?: string
+        }
+        Returns: string
+      }
       get_current_location_context: {
         Args: { p_device_id: string; p_latitude: number; p_longitude: number }
         Returns: {
@@ -696,6 +869,16 @@ export type Database = {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
+        }
+        Returns: boolean
+      }
+      is_inside_geofence: {
+        Args: {
+          g_lat: number
+          g_lon: number
+          g_radius_meters: number
+          p_lat: number
+          p_lon: number
         }
         Returns: boolean
       }
