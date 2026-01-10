@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.data-cleanup]
 verify_jwt = false
+
+[functions.send-alert-email]
+verify_jwt = false

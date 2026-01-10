@@ -155,6 +155,46 @@ export function ProactiveNotifications({
     }
   }, []);
 
+  // Send email notification for critical/error events
+  const sendEmailNotification = useCallback(async (event: {
+    id: string;
+    device_id: string;
+    event_type: string;
+    severity: string;
+    title: string;
+    message: string;
+    metadata?: Record<string, unknown>;
+  }) => {
+    // Only send emails for critical and error severity events
+    if (event.severity !== 'critical' && event.severity !== 'error') {
+      return;
+    }
+
+    try {
+      console.log(`Sending email notification for ${event.severity} event: ${event.title}`);
+      
+      const { error } = await supabase.functions.invoke('send-alert-email', {
+        body: {
+          eventId: event.id,
+          deviceId: event.device_id,
+          eventType: event.event_type,
+          severity: event.severity,
+          title: event.title,
+          message: event.message,
+          metadata: event.metadata
+        }
+      });
+
+      if (error) {
+        console.error('Failed to send email notification:', error);
+      } else {
+        console.log('Email notification sent successfully');
+      }
+    } catch (err) {
+      console.error('Error invoking send-alert-email function:', err);
+    }
+  }, []);
+
   // Generate and persist proactive events from position updates
   const generateProactiveEvents = useCallback(async (position: {
     device_id: string;
@@ -226,10 +266,21 @@ export function ProactiveNotifications({
             description: event.message,
             variant: "destructive"
           });
+          
+          // Send email notification
+          sendEmailNotification({
+            id: persisted.id,
+            device_id: event.device_id,
+            event_type: event.event_type,
+            severity: event.severity,
+            title: event.title,
+            message: event.message,
+            metadata: event.metadata
+          });
         }
       }
     }
-  }, [limit, persistEvent, toast]);
+  }, [limit, persistEvent, toast, sendEmailNotification]);
 
   // Acknowledge an event
   const handleAcknowledge = useCallback(async (eventId: string) => {
