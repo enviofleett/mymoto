@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { OwnerLayout } from "@/components/layouts/OwnerLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/AuthContext";
@@ -11,7 +10,6 @@ import { useOwnerVehicles } from "@/hooks/useOwnerVehicles";
 import {
   LogOut,
   Mail,
-  Phone,
   Car,
   Settings,
   HelpCircle,
@@ -19,8 +17,8 @@ import {
   Bell,
   Shield,
   CreditCard,
+  User,
 } from "lucide-react";
-import { format } from "date-fns";
 
 export default function OwnerProfile() {
   const navigate = useNavigate();
@@ -46,92 +44,86 @@ export default function OwnerProfile() {
     <OwnerLayout>
       <div className="flex flex-col min-h-full">
         {/* Header */}
-        <div className="sticky top-0 z-10 bg-background px-4 py-4 safe-area-inset-top border-b border-border">
-          <h1 className="text-xl font-bold text-foreground">Profile</h1>
+        <div className="sticky top-0 z-10 bg-background pt-[env(safe-area-inset-top)] -mt-[env(safe-area-inset-top)] border-b border-border/50">
+          <div className="px-4 py-4">
+            <h1 className="text-lg font-semibold text-foreground">Profile</h1>
+          </div>
         </div>
 
         {/* Content */}
-        <div className="flex-1 p-4 space-y-4">
+        <div className="flex-1 p-4 space-y-3">
           {/* User Card */}
-          <Card className="border-border bg-card/50">
-            <CardContent className="p-6">
-              <div className="flex items-center gap-4">
-                <Avatar className="h-16 w-16 border-2 border-primary/20">
-                  <AvatarFallback className="bg-primary text-primary-foreground text-xl font-bold">
-                    {user?.email?.[0].toUpperCase() || "U"}
-                  </AvatarFallback>
-                </Avatar>
+          <Card className="border-border/50 bg-card">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center shrink-0">
+                  <User className="h-6 w-6 text-muted-foreground" />
+                </div>
                 <div className="flex-1 min-w-0">
-                  <h2 className="text-lg font-semibold text-foreground truncate">
+                  <h2 className="text-base font-medium text-foreground truncate">
                     {user?.email?.split("@")[0] || "User"}
                   </h2>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
-                    <Mail className="h-3.5 w-3.5" />
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
+                    <Mail className="h-3 w-3" />
                     <span className="truncate">{user?.email}</span>
                   </div>
                 </div>
-                <Button variant="ghost" size="icon">
-                  <ChevronRight className="h-5 w-5 text-muted-foreground" />
-                </Button>
+                <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
               </div>
             </CardContent>
           </Card>
 
           {/* Vehicles Summary */}
-          <Card className="border-border bg-card/50">
+          <Card className="border-border/50 bg-card">
             <CardContent className="p-4">
-              <div className="flex items-center justify-between">
+              <button 
+                className="w-full flex items-center justify-between"
+                onClick={() => navigate("/owner/vehicles")}
+              >
                 <div className="flex items-center gap-3">
-                  <div className="p-2.5 rounded-full bg-primary/10">
-                    <Car className="h-5 w-5 text-primary" />
+                  <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                    <Car className="h-4 w-4 text-muted-foreground" />
                   </div>
-                  <div>
-                    <div className="font-medium text-foreground">My Vehicles</div>
+                  <div className="text-left">
+                    <div className="text-sm font-medium text-foreground">My Vehicles</div>
                     {isLoading ? (
-                      <Skeleton className="h-4 w-20 mt-1" />
+                      <Skeleton className="h-3 w-16 mt-1" />
                     ) : (
-                      <div className="text-sm text-muted-foreground">
+                      <div className="text-xs text-muted-foreground">
                         {vehicles?.length || 0} connected
                       </div>
                     )}
                   </div>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => navigate("/owner/vehicles")}
-                >
-                  View all
-                  <ChevronRight className="h-4 w-4 ml-1" />
-                </Button>
-              </div>
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              </button>
 
               {/* Quick vehicle preview */}
               {!isLoading && vehicles && vehicles.length > 0 && (
-                <div className="mt-4 pt-4 border-t border-border space-y-3">
+                <div className="mt-3 pt-3 border-t border-border/50 space-y-2.5">
                   {vehicles.slice(0, 2).map((vehicle) => (
                     <div
                       key={vehicle.deviceId}
                       className="flex items-center gap-3"
                     >
-                      <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center">
-                        <Car className="h-4 w-4 text-muted-foreground" />
+                      <div className="w-8 h-8 rounded-full bg-muted/60 flex items-center justify-center">
+                        <Car className="h-3.5 w-3.5 text-muted-foreground" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium text-foreground text-sm truncate">
+                        <div className="text-sm text-foreground truncate">
                           {vehicle.name}
                         </div>
-                        <Badge
-                          variant="secondary"
-                          className={
-                            vehicle.status === "online"
-                              ? "bg-status-active/15 text-status-active text-[10px] px-1.5 py-0"
-                              : "bg-muted text-muted-foreground text-[10px] px-1.5 py-0"
-                          }
-                        >
-                          {vehicle.status}
-                        </Badge>
                       </div>
+                      <Badge
+                        variant="secondary"
+                        className={
+                          vehicle.status === "online"
+                            ? "bg-status-active/15 text-status-active text-[10px] px-1.5 py-0"
+                            : "bg-muted text-muted-foreground text-[10px] px-1.5 py-0"
+                        }
+                      >
+                        {vehicle.status}
+                      </Badge>
                     </div>
                   ))}
                 </div>
@@ -140,23 +132,23 @@ export default function OwnerProfile() {
           </Card>
 
           {/* Menu Items */}
-          <Card className="border-border bg-card/50">
+          <Card className="border-border/50 bg-card">
             <CardContent className="p-0">
               {menuItems.map((item, index) => (
                 <button
                   key={item.path}
                   onClick={() => navigate(item.path)}
-                  className={`w-full flex items-center gap-4 p-4 hover:bg-muted/50 transition-colors ${
-                    index < menuItems.length - 1 ? "border-b border-border" : ""
+                  className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/30 transition-colors ${
+                    index < menuItems.length - 1 ? "border-b border-border/50" : ""
                   }`}
                 >
-                  <div className="p-2 rounded-full bg-muted">
+                  <div className="w-9 h-9 rounded-full bg-muted/60 flex items-center justify-center">
                     <item.icon className="h-4 w-4 text-muted-foreground" />
                   </div>
-                  <span className="flex-1 text-left font-medium text-foreground">
+                  <span className="flex-1 text-left text-sm text-foreground">
                     {item.label}
                   </span>
-                  <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
                 </button>
               ))}
             </CardContent>
@@ -164,8 +156,8 @@ export default function OwnerProfile() {
 
           {/* Logout */}
           <Button
-            variant="outline"
-            className="w-full h-12 text-destructive border-destructive/30 hover:bg-destructive/10"
+            variant="ghost"
+            className="w-full h-11 text-destructive hover:bg-destructive/10 hover:text-destructive"
             onClick={handleLogout}
             disabled={loggingOut}
           >
@@ -174,7 +166,7 @@ export default function OwnerProfile() {
           </Button>
 
           {/* App version */}
-          <div className="text-center text-xs text-muted-foreground py-4">
+          <div className="text-center text-[11px] text-muted-foreground/60 pt-2 pb-4">
             MyMoto v1.0.0
           </div>
         </div>
