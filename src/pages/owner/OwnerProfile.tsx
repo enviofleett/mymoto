@@ -109,24 +109,24 @@ export default function OwnerProfile() {
               {/* Quick vehicle preview */}
               {!isLoading && vehicles && vehicles.length > 0 && (
                 <div className="mt-4 pt-4 border-t border-border space-y-3">
-                  {vehicles.slice(0, 2).map((vehicle, index) => (
+                  {vehicles.slice(0, 2).map((vehicle) => (
                     <div
                       key={vehicle.deviceId}
                       className="flex items-center gap-3"
                     >
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center">
-                        <span className="text-lg">🚗</span>
+                      <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center">
+                        <Car className="h-4 w-4 text-muted-foreground" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium text-foreground truncate">
+                        <div className="font-medium text-foreground text-sm truncate">
                           {vehicle.name}
                         </div>
                         <Badge
-                          variant="outline"
+                          variant="secondary"
                           className={
                             vehicle.status === "online"
-                              ? "text-green-500 border-green-500/50 text-xs"
-                              : "text-muted-foreground border-muted text-xs"
+                              ? "bg-status-active/15 text-status-active text-[10px] px-1.5 py-0"
+                              : "bg-muted text-muted-foreground text-[10px] px-1.5 py-0"
                           }
                         >
                           {vehicle.status}

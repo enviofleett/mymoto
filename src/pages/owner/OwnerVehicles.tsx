@@ -7,98 +7,92 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useOwnerVehicles, OwnerVehicle } from "@/hooks/useOwnerVehicles";
-import { Search, Plus, Car, Wifi, WifiOff, Moon, Pencil } from "lucide-react";
+import { Search, Plus, Car, Wifi, WifiOff, Battery, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-const avatarColors = [
-  "from-blue-500 to-purple-500",
-  "from-cyan-500 to-teal-500",
-  "from-orange-500 to-red-500",
-  "from-green-500 to-emerald-500",
-  "from-pink-500 to-rose-500",
-];
 
 function FleetStatusCard({ 
   icon: Icon, 
   count, 
   label, 
-  colorClass 
+  variant 
 }: { 
-  icon: any; 
+  icon: React.ElementType; 
   count: number; 
   label: string; 
-  colorClass: string;
+  variant: "success" | "danger" | "warning";
 }) {
+  const styles = {
+    success: "bg-status-active/10 text-status-active",
+    danger: "bg-status-inactive/10 text-status-inactive",
+    warning: "bg-status-maintenance/10 text-status-maintenance",
+  };
+  
   return (
-    <div className={cn("rounded-xl p-4 flex flex-col items-center justify-center min-h-[90px] transition-transform active:scale-95", colorClass)}>
-      <Icon className="h-5 w-5 mb-1.5 opacity-90" />
-      <span className="text-2xl font-bold tracking-tight">{count}</span>
-      <span className="text-[11px] font-medium opacity-80">{label}</span>
+    <div className={cn(
+      "rounded-lg p-3 flex flex-col items-center justify-center min-h-[80px] border border-border/50",
+      styles[variant]
+    )}>
+      <Icon className="h-4 w-4 mb-1" />
+      <span className="text-xl font-semibold">{count}</span>
+      <span className="text-[10px] font-medium uppercase tracking-wide opacity-80">{label}</span>
     </div>
   );
 }
 
-function VehicleCard({ vehicle, index, onClick }: { vehicle: OwnerVehicle; index: number; onClick: () => void }) {
-  const colorClass = avatarColors[index % avatarColors.length];
+function VehicleCard({ vehicle, onClick }: { vehicle: OwnerVehicle; onClick: () => void }) {
+  const getStatusColor = () => {
+    if (vehicle.status === "online") return "bg-status-active";
+    if (vehicle.status === "charging") return "bg-status-maintenance";
+    return "bg-muted-foreground";
+  };
 
   return (
-    <Card 
-      className="border-border/50 bg-card/60 hover:bg-card/80 transition-all active:scale-[0.98] cursor-pointer"
+    <button 
+      className="w-full text-left bg-card border border-border/50 rounded-xl p-4 hover:bg-muted/30 transition-colors active:scale-[0.99]"
       onClick={onClick}
     >
-      <CardContent className="p-4">
-        <div className="flex items-center gap-3">
-          {/* Avatar */}
-          <div className="relative shrink-0">
-            <div className={cn(
-              "w-12 h-12 rounded-full bg-gradient-to-br flex items-center justify-center shadow-lg",
-              colorClass
-            )}>
-              <span className="text-xl">🚗</span>
-            </div>
-            <div className={cn(
-              "absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-card",
-              vehicle.status === "online" ? "bg-green-500" :
-              vehicle.status === "charging" ? "bg-yellow-500" : "bg-muted-foreground"
-            )} />
+      <div className="flex items-center gap-3">
+        {/* Vehicle Icon */}
+        <div className="relative shrink-0">
+          <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
+            <Car className="h-5 w-5 text-muted-foreground" />
           </div>
-
-          {/* Info */}
-          <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-foreground text-[15px]">{vehicle.name}</h3>
-            <p className="text-sm text-muted-foreground truncate">
-              {vehicle.deviceType || vehicle.battery !== null ? `${vehicle.battery}%` : "Vehicle"}
-            </p>
-            <Badge 
-              variant="outline" 
-              className={cn(
-                "mt-1.5 text-[10px] uppercase font-semibold px-2 py-0",
-                vehicle.status === "online" 
-                  ? "border-green-500/40 text-green-400 bg-green-500/10" 
-                  : vehicle.status === "charging"
-                  ? "border-yellow-500/40 text-yellow-400 bg-yellow-500/10"
-                  : "border-muted-foreground/40 text-muted-foreground bg-muted/50"
-              )}
-            >
-              {vehicle.status}
-            </Badge>
-          </div>
-
-          {/* Edit button */}
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="shrink-0 h-9 w-9 rounded-full hover:bg-muted/50"
-            onClick={(e) => {
-              e.stopPropagation();
-              // Edit action placeholder
-            }}
-          >
-            <Pencil className="h-4 w-4 text-muted-foreground" />
-          </Button>
+          <div className={cn(
+            "absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-card",
+            getStatusColor()
+          )} />
         </div>
-      </CardContent>
-    </Card>
+
+        {/* Info */}
+        <div className="flex-1 min-w-0">
+          <h3 className="font-medium text-foreground text-sm leading-tight">{vehicle.name}</h3>
+          {vehicle.battery !== null && (
+            <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
+              <Battery className="h-3 w-3" />
+              <span>{vehicle.battery}%</span>
+            </div>
+          )}
+        </div>
+
+        {/* Status & Arrow */}
+        <div className="flex items-center gap-2 shrink-0">
+          <Badge 
+            variant="secondary" 
+            className={cn(
+              "text-[10px] uppercase font-medium px-2 py-0.5 rounded-md",
+              vehicle.status === "online" 
+                ? "bg-status-active/15 text-status-active" 
+                : vehicle.status === "charging"
+                ? "bg-status-maintenance/15 text-status-maintenance"
+                : "bg-muted text-muted-foreground"
+            )}
+          >
+            {vehicle.status}
+          </Badge>
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        </div>
+      </div>
+    </button>
   );
 }
 
@@ -155,9 +149,9 @@ export default function OwnerVehicles() {
                 <h2 className="font-medium text-foreground text-sm">Fleet Status</h2>
               </div>
               
-              {isLoading ? (
+          {isLoading ? (
                 <div className="grid grid-cols-3 gap-2">
-                  {[1, 2, 3].map(i => <Skeleton key={i} className="h-[90px] rounded-xl" />)}
+                  {[1, 2, 3].map(i => <Skeleton key={i} className="h-[80px] rounded-lg" />)}
                 </div>
               ) : (
                 <div className="grid grid-cols-3 gap-2">
@@ -165,19 +159,19 @@ export default function OwnerVehicles() {
                     icon={Wifi} 
                     count={onlineCount} 
                     label="Online" 
-                    colorClass="bg-green-500/15 text-green-400 border border-green-500/20"
+                    variant="success"
                   />
                   <FleetStatusCard 
                     icon={WifiOff} 
                     count={offlineCount} 
                     label="Offline" 
-                    colorClass="bg-red-500/15 text-red-400 border border-red-500/20"
+                    variant="danger"
                   />
                   <FleetStatusCard 
-                    icon={Moon} 
+                    icon={Battery} 
                     count={chargingCount} 
-                    label="Busy" 
-                    colorClass="bg-yellow-500/15 text-yellow-400 border border-yellow-500/20"
+                    label="Charging" 
+                    variant="warning"
                   />
                 </div>
               )}
@@ -186,36 +180,27 @@ export default function OwnerVehicles() {
 
           {/* Vehicle List */}
           {isLoading ? (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {[1, 2, 3].map(i => (
-                <Card key={i} className="border-border">
-                  <CardContent className="p-4">
-                    <div className="flex items-center gap-4">
-                      <Skeleton className="h-14 w-14 rounded-full" />
-                      <div className="flex-1 space-y-2">
-                        <Skeleton className="h-4 w-24" />
-                        <Skeleton className="h-3 w-32" />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                <Skeleton key={i} className="h-20 rounded-xl" />
               ))}
             </div>
           ) : filteredVehicles.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16">
-              <Car className="h-16 w-16 text-muted-foreground mb-4" />
-              <h3 className="font-semibold text-foreground mb-2">No vehicles</h3>
+              <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+                <Car className="h-7 w-7 text-muted-foreground" />
+              </div>
+              <h3 className="font-medium text-foreground mb-1">No vehicles</h3>
               <p className="text-sm text-muted-foreground text-center">
                 {searchQuery ? "No vehicles match your search" : "Add a vehicle to get started"}
               </p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {filteredVehicles.map((vehicle, index) => (
+            <div className="space-y-2">
+              {filteredVehicles.map((vehicle) => (
                 <VehicleCard
                   key={vehicle.deviceId}
                   vehicle={vehicle}
-                  index={index}
                   onClick={() => navigate(`/owner/vehicle/${vehicle.deviceId}`)}
                 />
               ))}

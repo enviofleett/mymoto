@@ -63,6 +63,7 @@ import {
   CalendarIcon,
   X,
   Filter,
+  Car,
 } from "lucide-react";
 import { format, parseISO, isSameDay, differenceInMinutes, subDays } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -77,8 +78,6 @@ import {
   Bar,
 } from "recharts";
 import type { DateRange } from "react-day-picker";
-
-const avatarColors = ["from-blue-500 to-purple-500"];
 
 export default function OwnerVehicleProfile() {
   const { deviceId } = useParams<{ deviceId: string }>();
@@ -409,35 +408,32 @@ export default function OwnerVehicleProfile() {
           isRefreshing={isPullRefreshing} 
         />
         <div className="pb-8">
-          {/* Vehicle Avatar */}
-          <div className="flex flex-col items-center py-6">
+          {/* Vehicle Header */}
+          <div className="flex flex-col items-center py-6 px-4">
             <div className="relative mb-4">
-              <div
-                className={cn(
-                  "w-32 h-32 rounded-full bg-gradient-to-br flex items-center justify-center",
-                  avatarColors[0]
-                )}
-              >
-                <span className="text-6xl">🚗</span>
+              <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center">
+                <Car className="h-9 w-9 text-muted-foreground" />
               </div>
               <div
                 className={cn(
-                  "absolute bottom-2 right-2 w-6 h-6 rounded-full border-4 border-background",
+                  "absolute bottom-1 right-1 w-5 h-5 rounded-full border-[3px] border-background",
                   vehicle.status === "online"
-                    ? "bg-green-500"
+                    ? "bg-status-active"
                     : vehicle.status === "charging"
-                    ? "bg-yellow-500"
+                    ? "bg-status-maintenance"
                     : "bg-muted-foreground"
                 )}
               />
             </div>
-            <h1 className="text-2xl font-bold text-foreground">{vehicle.name}</h1>
-            <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-              <span>✨</span> {getPersonalityLabel(llmSettings?.personality_mode)}
-            </p>
-            {vehicle.lastUpdate && (
+            <h1 className="text-xl font-semibold text-foreground">{vehicle.name}</h1>
+            {llmSettings?.personality_mode && (
               <p className="text-xs text-muted-foreground mt-1">
-                Last updated: {format(vehicle.lastUpdate, "MMM d, HH:mm")}
+                {getPersonalityLabel(llmSettings?.personality_mode)}
+              </p>
+            )}
+            {vehicle.lastUpdate && (
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Updated {format(vehicle.lastUpdate, "MMM d, HH:mm")}
               </p>
             )}
           </div>
