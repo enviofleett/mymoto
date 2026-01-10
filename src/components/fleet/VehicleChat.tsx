@@ -154,9 +154,12 @@ function ChatMessageContent({ content, isUser }: { content: string; isUser: bool
 interface VehicleChatProps {
   deviceId: string;
   vehicleName: string;
+  avatarUrl?: string | null;
+  nickname?: string | null;
 }
 
-export function VehicleChat({ deviceId, vehicleName }: VehicleChatProps) {
+export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: VehicleChatProps) {
+  const displayName = nickname || vehicleName;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -378,8 +381,12 @@ export function VehicleChat({ deviceId, vehicleName }: VehicleChatProps) {
             </div>
           ) : messages.length === 0 && !loading ? (
             <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-              <Car className="h-12 w-12 mb-3 text-primary/50" />
-              <p className="font-medium">Chat with {vehicleName}</p>
+              {avatarUrl ? (
+                <img src={avatarUrl} alt={displayName} className="h-12 w-12 rounded-full object-cover mb-3" />
+              ) : (
+                <Car className="h-12 w-12 mb-3 text-primary/50" />
+              )}
+              <p className="font-medium">Chat with {displayName}</p>
               <p className="text-sm text-center mt-1">
                 Ask about location, battery, speed, or trip history
               </p>
@@ -392,8 +399,12 @@ export function VehicleChat({ deviceId, vehicleName }: VehicleChatProps) {
               className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               {msg.role === 'assistant' && (
-                <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                  <Bot className="h-4 w-4 text-primary" />
+                <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0 overflow-hidden">
+                  {avatarUrl ? (
+                    <img src={avatarUrl} alt={displayName} className="h-full w-full object-cover" />
+                  ) : (
+                    <Bot className="h-4 w-4 text-primary" />
+                  )}
                 </div>
               )}
               <div
@@ -416,8 +427,12 @@ export function VehicleChat({ deviceId, vehicleName }: VehicleChatProps) {
           {/* Streaming response */}
           {streamingContent && (
             <div className="flex gap-3 justify-start">
-              <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                <Bot className="h-4 w-4 text-primary" />
+              <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0 overflow-hidden">
+                {avatarUrl ? (
+                  <img src={avatarUrl} alt={displayName} className="h-full w-full object-cover" />
+                ) : (
+                  <Bot className="h-4 w-4 text-primary" />
+                )}
               </div>
               <div className="rounded-lg px-4 py-2 max-w-[80%] bg-muted">
                 <ChatMessageContent content={streamingContent} isUser={false} />
@@ -446,7 +461,7 @@ export function VehicleChat({ deviceId, vehicleName }: VehicleChatProps) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
-          placeholder={`Ask ${vehicleName} something...`}
+          placeholder={`Ask ${displayName} something...`}
           disabled={loading}
           className="flex-1"
         />

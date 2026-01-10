@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -6,7 +6,8 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Sparkles, Languages, UserCircle, Save } from "lucide-react";
+import { Loader2, Sparkles, Languages, UserCircle, Save, Camera, Car } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 interface VehiclePersonaSettingsProps {
   deviceId: string;
@@ -19,6 +20,7 @@ interface LlmSettings {
   language_preference: string;
   personality_mode: string;
   llm_enabled: boolean;
+  avatar_url: string | null;
 }
 
 const LANGUAGES = [
@@ -27,11 +29,13 @@ const LANGUAGES = [
   { value: 'yoruba', label: 'Yoruba', sample: 'Ẹ kú àárọ̀! Mo jẹ́ ọkọ̀ rẹ̀.' },
   { value: 'hausa', label: 'Hausa', sample: 'Sannu! Ni ne mota ka mai magana.' },
   { value: 'igbo', label: 'Igbo', sample: 'Ndewo! Abụ m ụgbọala gị.' },
+  { value: 'french', label: 'French', sample: 'Bonjour! Je suis votre compagnon de véhicule.' },
 ];
 
 const PERSONALITIES = [
   { value: 'casual', label: 'Casual & Friendly', description: 'Relaxed, uses colloquialisms, feels like a friend' },
   { value: 'professional', label: 'Professional', description: 'Formal, precise, business-like communication' },
+  { value: 'funny', label: 'Funny', description: 'Witty, humorous, and entertaining' },
 ];
 
 export function VehiclePersonaSettings({ deviceId, vehicleName }: VehiclePersonaSettingsProps) {
@@ -42,6 +46,9 @@ export function VehiclePersonaSettings({ deviceId, vehicleName }: VehiclePersona
   const [language, setLanguage] = useState("english");
   const [personality, setPersonality] = useState("casual");
   const [llmEnabled, setLlmEnabled] = useState(true);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -65,12 +72,14 @@ export function VehiclePersonaSettings({ deviceId, vehicleName }: VehiclePersona
         setLanguage(data.language_preference);
         setPersonality(data.personality_mode);
         setLlmEnabled(data.llm_enabled);
+        setAvatarUrl(data.avatar_url);
       } else {
         // Defaults for new settings
         setNickname("");
         setLanguage("english");
         setPersonality("casual");
         setLlmEnabled(true);
+        setAvatarUrl(null);
       }
     } catch (err) {
       console.error('Error fetching LLM settings:', err);
@@ -81,6 +90,62 @@ export function VehiclePersonaSettings({ deviceId, vehicleName }: VehiclePersona
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type and size
+    if (!file.type.startsWith('image/')) {
+      toast({
+        title: "Invalid file",
+        description: "Please upload an image file",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast({
+        title: "File too large",
+        description: "Please upload an image under 2MB",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setUploadingAvatar(true);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${deviceId}-${Date.now()}.${fileExt}`;
+      const filePath = `vehicle-avatars/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath);
+
+      setAvatarUrl(urlData.publicUrl);
+      toast({
+        title: "Uploaded!",
+        description: "Avatar image uploaded successfully"
+      });
+    } catch (err) {
+      console.error('Error uploading avatar:', err);
+      toast({
+        title: "Upload failed",
+        description: "Failed to upload avatar image",
+        variant: "destructive"
+      });
+    } finally {
+      setUploadingAvatar(false);
     }
   };
 
@@ -95,6 +160,7 @@ export function VehiclePersonaSettings({ deviceId, vehicleName }: VehiclePersona
           language_preference: language,
           personality_mode: personality,
           llm_enabled: llmEnabled,
+          avatar_url: avatarUrl,
           updated_at: new Date().toISOString(),
         }, { onConflict: 'device_id' });
 
@@ -149,21 +215,65 @@ export function VehiclePersonaSettings({ deviceId, vehicleName }: VehiclePersona
         />
       </div>
 
-      {/* Nickname */}
-      <div className="space-y-2">
-        <Label className="flex items-center gap-2">
-          <UserCircle className="h-4 w-4 text-muted-foreground" />
-          Vehicle Nickname
+      {/* Vehicle Identity Section */}
+      <div className="space-y-4">
+        <Label className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
+          Vehicle Identity
         </Label>
-        <Input
-          placeholder={vehicleName}
-          value={nickname}
-          onChange={(e) => setNickname(e.target.value)}
-          disabled={!llmEnabled}
-        />
-        <p className="text-xs text-muted-foreground">
-          Give the vehicle a personality name (e.g., "Big Daddy", "Speed Queen")
-        </p>
+        
+        {/* Avatar Picker */}
+        <div className="flex items-center gap-4">
+          <div className="relative">
+            <Avatar className="h-16 w-16 border-2 border-border">
+              <AvatarImage src={avatarUrl || undefined} alt={nickname || vehicleName} />
+              <AvatarFallback className="bg-muted">
+                <Car className="h-6 w-6 text-muted-foreground" />
+              </AvatarFallback>
+            </Avatar>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!llmEnabled || uploadingAvatar}
+              className="absolute -bottom-1 -right-1 p-1.5 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {uploadingAvatar ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Camera className="h-3 w-3" />
+              )}
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleAvatarUpload}
+              className="hidden"
+            />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-medium">Vehicle Avatar</p>
+            <p className="text-xs text-muted-foreground">
+              Upload a photo to give your vehicle a unique identity
+            </p>
+          </div>
+        </div>
+
+        {/* Nickname */}
+        <div className="space-y-2">
+          <Label className="flex items-center gap-2">
+            <UserCircle className="h-4 w-4 text-muted-foreground" />
+            Nickname
+          </Label>
+          <Input
+            placeholder={vehicleName}
+            value={nickname}
+            onChange={(e) => setNickname(e.target.value)}
+            disabled={!llmEnabled}
+          />
+          <p className="text-xs text-muted-foreground">
+            Give the vehicle a personality name (e.g., "Big Daddy", "Speed Queen")
+          </p>
+        </div>
       </div>
 
       {/* Language Preference */}
