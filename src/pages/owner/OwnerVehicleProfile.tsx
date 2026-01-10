@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { VehiclePersonaSettings } from "@/components/fleet/VehiclePersonaSettings";
 import {
   Sheet,
@@ -155,6 +155,33 @@ export default function OwnerVehicleProfile() {
   const { mutate: executeCommand, isPending: isCommandPending } = useVehicleCommand();
 
   const vehicle = vehicles?.find((v) => v.deviceId === deviceId);
+
+  // Real-time subscription to vehicle_positions for instant updates
+  useEffect(() => {
+    if (!deviceId) return;
+
+    const channel = supabase
+      .channel(`vehicle-position-${deviceId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'vehicle_positions',
+          filter: `device_id=eq.${deviceId}`,
+        },
+        (payload) => {
+          console.log('Real-time position update:', payload);
+          // Silently refetch vehicle data when position changes
+          refetchVehicles();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [deviceId, refetchVehicles]);
 
   // Reverse geocoding for current location address
   const { address: currentAddress, isLoading: addressLoading } = useAddress(
@@ -659,98 +686,44 @@ export default function OwnerVehicleProfile() {
               </CardContent>
             </Card>
 
-            {/* Location */}
-            <Card className="border-border bg-card/50 overflow-hidden">
-              <div className="h-48 bg-muted relative">
-                {vehicle.latitude && vehicle.longitude ? (
-                  <VehicleLocationMap
-                    latitude={vehicle.latitude}
-                    longitude={vehicle.longitude}
-                    address={currentAddress}
-                    vehicleName={vehicle.name}
-                    isOnline={vehicle.status === 'online'}
-                    className="rounded-t-lg"
-                  />
-                ) : (
-                  <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-muted to-muted/50">
-                    <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
-                      <MapPin className="h-6 w-6 text-primary" />
-                    </div>
-                    <p className="absolute bottom-4 text-sm text-muted-foreground">No GPS Signal</p>
-                  </div>
-                )}
-                {vehicle.latitude && vehicle.longitude && (
-                  <a
-                    href={getGoogleMapsLink(vehicle.latitude, vehicle.longitude)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="absolute bottom-2 left-2 bg-background/80 backdrop-blur-sm rounded px-2 py-1 text-xs text-muted-foreground font-mono hover:bg-background/90 transition-colors flex items-center gap-1 z-20"
-                  >
-                    {vehicle.latitude.toFixed(4)}°, {vehicle.longitude.toFixed(4)}°
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                )}
+            {/* Interactive Map - Large Premium View */}
+            {vehicle.latitude && vehicle.longitude ? (
+              <div className="relative">
+                <VehicleLocationMap
+                  latitude={vehicle.latitude}
+                  longitude={vehicle.longitude}
+                  heading={vehicle.heading}
+                  speed={vehicle.speed}
+                  address={currentAddress}
+                  vehicleName={llmSettings?.nickname || vehicle.name}
+                  isOnline={vehicle.status === 'online'}
+                  showAddressCard={true}
+                  mapHeight="h-72"
+                  className="rounded-xl shadow-lg"
+                />
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="absolute top-2 right-12 h-8 w-8 bg-background/50 backdrop-blur-sm z-20"
+                  className="absolute top-3 left-3 h-9 w-9 bg-card/80 backdrop-blur-sm shadow-md z-20"
                   onClick={handleRefresh}
                   disabled={isPullRefreshing}
                 >
                   <RefreshCw className={cn("h-4 w-4", isPullRefreshing && "animate-spin")} />
                 </Button>
               </div>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-full bg-primary/10">
-                      <MapPin className="h-4 w-4 text-primary" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-foreground">Current Location</div>
-                      {vehicle.latitude && vehicle.longitude ? (
-                        <>
-                          <div className="text-sm text-muted-foreground truncate max-w-[220px]">
-                            {addressLoading ? (
-                              <span className="inline-flex items-center gap-1.5">
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                                <span>Fetching address...</span>
-                              </span>
-                            ) : currentAddress ? (
-                              <span title={currentAddress}>{currentAddress}</span>
-                            ) : (
-                              <span className="text-muted-foreground/70">Address unavailable</span>
-                            )}
-                          </div>
-                          <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2">
-                            <span>Speed: {vehicle.speed} km/h</span>
-                            {vehicle.lastUpdate && (
-                              <span className="text-muted-foreground/60">
-                                • {format(vehicle.lastUpdate, "HH:mm")}
-                              </span>
-                            )}
-                          </div>
-                        </>
-                      ) : (
-                        <div className="text-sm text-muted-foreground">No GPS Signal</div>
-                      )}
-                    </div>
+            ) : (
+              <Card className="border-border bg-card/50">
+                <CardContent className="p-8 text-center">
+                  <div className="w-16 h-16 mx-auto rounded-full bg-muted flex items-center justify-center mb-3">
+                    <MapPin className="h-8 w-8 text-muted-foreground" />
                   </div>
-                  {vehicle.latitude && vehicle.longitude && (
-                    <a
-                      href={getGoogleMapsLink(vehicle.latitude, vehicle.longitude)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/30 shadow-sm transition-all hover:scale-105 shrink-0"
-                    >
-                      <Navigation className="h-3 w-3" />
-                      Open in Maps
-                      <ExternalLink className="h-3 w-3 opacity-60" />
-                    </a>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+                  <p className="text-muted-foreground">No GPS Signal</p>
+                  <p className="text-xs text-muted-foreground/70 mt-1">
+                    Vehicle location is unavailable
+                  </p>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Mileage Stats */}
             <Card className="border-border bg-card/50">
