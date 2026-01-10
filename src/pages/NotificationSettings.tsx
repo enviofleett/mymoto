@@ -23,7 +23,8 @@ import {
   MapPin,
   Radio,
   Clock,
-  ChevronRight
+  ChevronRight,
+  Navigation
 } from "lucide-react";
 import { 
   useNotificationPreferences, 
@@ -90,7 +91,8 @@ const ALERT_TYPE_ICONS: Record<AlertType, React.ElementType> = {
   geofence_exit: MapPin,
   idle_too_long: Clock,
   offline: Radio,
-  online: Radio
+  online: Radio,
+  predictive_briefing: Navigation
 };
 
 const NotificationSettings = () => {

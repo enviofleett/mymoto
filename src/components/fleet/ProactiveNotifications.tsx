@@ -18,7 +18,9 @@ import {
   Radio,
   Loader2,
   Bell,
-  History
+  History,
+  Navigation,
+  Car
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useNotifications } from "@/hooks/useNotifications";
@@ -57,7 +59,8 @@ const EVENT_ICONS: Record<string, React.ElementType> = {
   geofence_exit: MapPin,
   idle_too_long: Clock,
   offline: Radio,
-  online: Radio
+  online: Radio,
+  predictive_briefing: Navigation
 };
 
 // Severity to color mapping

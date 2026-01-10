@@ -12,7 +12,8 @@ export type AlertType =
   | 'geofence_exit'
   | 'idle_too_long'
   | 'offline'
-  | 'online';
+  | 'online'
+  | 'predictive_briefing';
 
 export type SeverityLevel = 'info' | 'warning' | 'error' | 'critical';
 
@@ -220,7 +221,8 @@ export const ALERT_TYPE_LABELS: Record<AlertType, string> = {
   geofence_exit: 'Geofence Exit',
   idle_too_long: 'Extended Idle',
   offline: 'Vehicle Offline',
-  online: 'Vehicle Online'
+  online: 'Vehicle Online',
+  predictive_briefing: 'Trip Briefing'
 };
 
 // Alert type descriptions
@@ -236,5 +238,6 @@ export const ALERT_TYPE_DESCRIPTIONS: Record<AlertType, string> = {
   geofence_exit: 'Vehicle leaves a geofence zone',
   idle_too_long: 'Vehicle idle for extended period',
   offline: 'Vehicle loses GPS connection',
-  online: 'Vehicle reconnects after being offline'
+  online: 'Vehicle reconnects after being offline',
+  predictive_briefing: 'AI predicts an upcoming trip based on habits'
 };
