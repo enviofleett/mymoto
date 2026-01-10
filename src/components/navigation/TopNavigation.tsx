@@ -9,7 +9,8 @@ import {
   Settings, 
   LogOut,
   Wallet,
-  Database
+  Database,
+  Bell
 } from "lucide-react";
 import { ConnectionStatus } from "@/hooks/useFleetData";
 
@@ -98,6 +99,14 @@ export function TopNavigation({ connectionStatus }: TopNavigationProps) {
               >
                 <Database className="h-4 w-4" />
                 <span>Storage</span>
+              </NavLink>
+              <NavLink
+                to="/admin/alerts"
+                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground rounded-md transition-colors hover:text-foreground hover:bg-muted"
+                activeClassName="text-primary bg-primary/10"
+              >
+                <Bell className="h-4 w-4" />
+                <span>Alerts</span>
               </NavLink>
             </>
           )}
