@@ -1,4 +1,12 @@
 import { useState, useMemo, useCallback } from "react";
+import { VehiclePersonaSettings } from "@/components/fleet/VehiclePersonaSettings";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -105,6 +113,9 @@ export default function OwnerVehicleProfile() {
   // Trip date filter state
   const [tripDateRange, setTripDateRange] = useState<DateRange | undefined>(undefined);
   const [isDateFilterOpen, setIsDateFilterOpen] = useState(false);
+  
+  // Settings sheet state
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
   // Build filter options for trips and events
   const tripFilterOptions: TripFilterOptions = useMemo(() => ({
@@ -453,7 +464,7 @@ export default function OwnerVehicleProfile() {
           <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <Button variant="ghost" size="icon">
+          <Button variant="ghost" size="icon" onClick={() => setIsSettingsOpen(true)}>
             <Settings className="h-5 w-5" />
           </Button>
         </div>
@@ -1284,6 +1295,22 @@ export default function OwnerVehicleProfile() {
         startTime={selectedTrip?.start_time}
         endTime={selectedTrip?.end_time}
       />
+
+      {/* Persona Settings Sheet */}
+      <Sheet open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
+        <SheetContent side="bottom" className="h-[90vh] overflow-y-auto rounded-t-xl">
+          <SheetHeader className="mb-4">
+            <SheetTitle>AI Companion Settings</SheetTitle>
+            <SheetDescription>
+              Customize how your vehicle's AI companion talks and behaves
+            </SheetDescription>
+          </SheetHeader>
+          <VehiclePersonaSettings 
+            deviceId={deviceId || ""} 
+            vehicleName={vehicle.name} 
+          />
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
