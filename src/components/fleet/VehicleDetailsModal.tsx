@@ -43,6 +43,7 @@ export function VehicleDetailsModal({
   const [selectedDriverId, setSelectedDriverId] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [showAssignForm, setShowAssignForm] = useState(false);
+  const [llmSettings, setLlmSettings] = useState<{ nickname: string | null; avatar_url: string | null } | null>(null);
   const { toast } = useToast();
 
   // Use cached queries - data is often already prefetched from hover
@@ -54,6 +55,20 @@ export function VehicleDetailsModal({
   const { data: drivers = [] } = useAvailableDrivers(
     open && !vehicle?.driver
   );
+
+  // Fetch LLM settings for avatar and nickname
+  useEffect(() => {
+    if (open && vehicle?.id) {
+      supabase
+        .from('vehicle_llm_settings')
+        .select('nickname, avatar_url')
+        .eq('device_id', vehicle.id)
+        .maybeSingle()
+        .then(({ data }) => {
+          setLlmSettings(data);
+        });
+    }
+  }, [open, vehicle?.id]);
 
   useEffect(() => {
     setShowAssignForm(false);
@@ -385,7 +400,12 @@ export function VehicleDetailsModal({
           </TabsContent>
 
           <TabsContent value="chat" className="mt-4">
-            <VehicleChat deviceId={vehicle.id} vehicleName={vehicle.name} />
+            <VehicleChat 
+              deviceId={vehicle.id} 
+              vehicleName={vehicle.name}
+              avatarUrl={llmSettings?.avatar_url}
+              nickname={llmSettings?.nickname}
+            />
           </TabsContent>
 
           <TabsContent value="commands" className="mt-4">

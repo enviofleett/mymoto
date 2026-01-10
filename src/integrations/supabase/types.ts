@@ -716,6 +716,7 @@ export type Database = {
       }
       vehicle_llm_settings: {
         Row: {
+          avatar_url: string | null
           created_at: string | null
           device_id: string
           language_preference: string | null
@@ -726,6 +727,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          avatar_url?: string | null
           created_at?: string | null
           device_id: string
           language_preference?: string | null
@@ -736,6 +738,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          avatar_url?: string | null
           created_at?: string | null
           device_id?: string
           language_preference?: string | null
