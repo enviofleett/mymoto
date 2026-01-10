@@ -395,6 +395,44 @@ serve(async (req) => {
         console.error(`[Predictive Briefing] Error inserting briefing for ${prediction.device_id}:`, insertError);
       } else {
         console.log(`[Predictive Briefing] Sent briefing for ${prediction.device_id}`);
+        
+        // Create a proactive notification event for push notifications
+        const destination = prediction.destination_name || 'your destination';
+        const notificationTitle = traffic.condition.includes('heavy') || traffic.condition.includes('severe')
+          ? `⚠️ Traffic Alert for ${vehicleName}`
+          : `🚗 Trip Briefing for ${vehicleName}`;
+        
+        const notificationMessage = traffic.durationTypicalMinutes > 0
+          ? `Heading to ${destination}? ETA: ${Math.round(traffic.durationTypicalMinutes)} min (${traffic.condition})`
+          : `Ready to head to ${destination}? Typical drive: ${Math.round(prediction.avg_duration_minutes)} min`;
+        
+        const { error: eventError } = await supabase
+          .from('proactive_vehicle_events')
+          .insert({
+            device_id: prediction.device_id,
+            event_type: 'predictive_briefing',
+            severity: traffic.congestionLevel === 'severe' || traffic.congestionLevel === 'heavy' ? 'warning' : 'info',
+            title: notificationTitle,
+            message: notificationMessage,
+            metadata: {
+              destination_name: destination,
+              destination_lat: prediction.destination_latitude,
+              destination_lon: prediction.destination_longitude,
+              eta_minutes: traffic.durationTypicalMinutes > 0 ? Math.round(traffic.durationTypicalMinutes) : Math.round(prediction.avg_duration_minutes),
+              traffic_condition: traffic.condition,
+              congestion_level: traffic.congestionLevel,
+              distance_km: traffic.distanceKm > 0 ? traffic.distanceKm : prediction.avg_distance_km,
+              pattern_confidence: prediction.confidence_score,
+              pattern_occurrences: prediction.occurrence_count
+            }
+          });
+        
+        if (eventError) {
+          console.error(`[Predictive Briefing] Error creating notification event:`, eventError);
+        } else {
+          console.log(`[Predictive Briefing] Created push notification for ${prediction.device_id}`);
+        }
+        
         briefingsSent.push(prediction.device_id);
         processedDevices.add(prediction.device_id);
       }
