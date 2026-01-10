@@ -1,15 +1,35 @@
 import { useState, useMemo, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { supabase } from "@/integrations/supabase/client";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useOwnerVehicles } from "@/hooks/useOwnerVehicles";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { PullToRefreshIndicator } from "@/components/ui/pull-to-refresh";
 import { useAddress } from "@/hooks/useAddress";
+import {
+  useVehicleTrips,
+  useVehicleEvents,
+  useVehicleLLMSettings,
+  useMileageStats,
+  useDailyMileage,
+  useVehicleCommand,
+  getPersonalityLabel,
+  type VehicleTrip,
+  type VehicleEvent,
+} from "@/hooks/useVehicleProfile";
+import { TripPlaybackDialog } from "@/components/profile/TripPlaybackDialog";
 import {
   ArrowLeft,
   Settings,
@@ -28,8 +48,9 @@ import {
   AlertTriangle,
   Zap,
   Loader2,
+  Play,
 } from "lucide-react";
-import { format, subDays, startOfDay, endOfDay, differenceInMinutes, isSameDay, parseISO } from "date-fns";
+import { format, parseISO, isSameDay, differenceInMinutes } from "date-fns";
 import { cn } from "@/lib/utils";
 import {
   AreaChart,
@@ -44,249 +65,28 @@ import {
 
 const avatarColors = ["from-blue-500 to-purple-500"];
 
-// Haversine formula to calculate distance between two GPS points
-function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371; // Earth's radius in km
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = 
-    Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-    Math.sin(dLon/2) * Math.sin(dLon/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return R * c;
-}
-
-interface PositionRecord {
-  gps_time: string | null;
-  speed: number | null;
-  latitude: number | null;
-  longitude: number | null;
-  ignition_on: boolean | null;
-  battery_percent: number | null;
-}
-
-interface Trip {
-  startTime: Date;
-  endTime: Date;
-  distance: number;
-  startLat: number;
-  startLon: number;
-  endLat: number;
-  endLon: number;
-}
-
-interface DayStats {
-  day: string;
-  date: Date;
-  distance: number;
-  trips: number;
-}
-
-interface Alert {
-  id: string;
-  type: 'overspeed' | 'low_battery' | 'ignition_on' | 'ignition_off';
-  message: string;
-  detail: string;
-  time: Date;
-  severity: 'warning' | 'info';
-}
-
-// Fetch position history for mileage and trip calculations
-async function fetchVehicleHistory(deviceId: string) {
-  const thirtyDaysAgo = subDays(new Date(), 30);
-  
-  const { data: history, error } = await supabase
-    .from("position_history")
-    .select("gps_time, speed, latitude, longitude, ignition_on, battery_percent")
-    .eq("device_id", deviceId)
-    .gte("gps_time", thirtyDaysAgo.toISOString())
-    .order("gps_time", { ascending: true });
-
-  if (error) throw error;
-  return (history || []) as PositionRecord[];
-}
-
-// Process history data to extract trips and daily stats
-function processHistoryData(history: PositionRecord[]) {
-  if (!history || history.length === 0) {
-    return {
-      trips: [] as Trip[],
-      dailyStats: [] as DayStats[],
-      alerts: [] as Alert[],
-      totalDistance: 0,
-    };
-  }
-
-  const trips: Trip[] = [];
-  const alerts: Alert[] = [];
-  let currentTrip: { start: PositionRecord; points: PositionRecord[] } | null = null;
-  let totalDistance = 0;
-  
-  // Daily aggregation
-  const dailyMap = new Map<string, { distance: number; trips: Set<string> }>();
-  
-  // Initialize last 7 days
-  for (let i = 6; i >= 0; i--) {
-    const date = subDays(new Date(), i);
-    const key = format(date, 'yyyy-MM-dd');
-    dailyMap.set(key, { distance: 0, trips: new Set() });
-  }
-
-  for (let i = 0; i < history.length; i++) {
-    const point = history[i];
-    const prevPoint = i > 0 ? history[i - 1] : null;
-    
-    if (!point.gps_time || point.latitude === null || point.longitude === null) continue;
-    
-    const pointDate = parseISO(point.gps_time);
-    const dayKey = format(pointDate, 'yyyy-MM-dd');
-    
-    // Calculate distance from previous point
-    if (prevPoint && prevPoint.latitude !== null && prevPoint.longitude !== null) {
-      const dist = calculateDistance(
-        prevPoint.latitude, prevPoint.longitude,
-        point.latitude, point.longitude
-      );
-      
-      // Filter out GPS jumps (unrealistic distances > 50km in short time)
-      if (dist < 50) {
-        totalDistance += dist;
-        
-        // Add to daily stats
-        if (dailyMap.has(dayKey)) {
-          dailyMap.get(dayKey)!.distance += dist;
-        }
-      }
-    }
-    
-    // Detect trips based on ignition changes or speed patterns
-    const isMoving = (point.speed ?? 0) > 2;
-    const wasMoving = prevPoint && (prevPoint.speed ?? 0) > 2;
-    
-    // Start new trip
-    if (isMoving && !wasMoving && !currentTrip) {
-      currentTrip = { start: point, points: [point] };
-    }
-    
-    // Continue trip
-    if (currentTrip && isMoving) {
-      currentTrip.points.push(point);
-    }
-    
-    // End trip (stopped for a while)
-    if (currentTrip && !isMoving && wasMoving) {
-      const lastPoint = currentTrip.points[currentTrip.points.length - 1];
-      if (lastPoint && currentTrip.points.length >= 3) {
-        // Calculate trip distance
-        let tripDistance = 0;
-        for (let j = 1; j < currentTrip.points.length; j++) {
-          const p1 = currentTrip.points[j - 1];
-          const p2 = currentTrip.points[j];
-          if (p1.latitude && p1.longitude && p2.latitude && p2.longitude) {
-            tripDistance += calculateDistance(p1.latitude, p1.longitude, p2.latitude, p2.longitude);
-          }
-        }
-        
-        // Only count meaningful trips (> 0.5km)
-        if (tripDistance > 0.5) {
-          const trip: Trip = {
-            startTime: parseISO(currentTrip.start.gps_time!),
-            endTime: parseISO(lastPoint.gps_time!),
-            distance: tripDistance,
-            startLat: currentTrip.start.latitude!,
-            startLon: currentTrip.start.longitude!,
-            endLat: lastPoint.latitude!,
-            endLon: lastPoint.longitude!,
-          };
-          trips.push(trip);
-          
-          // Track trips per day
-          const tripDayKey = format(trip.startTime, 'yyyy-MM-dd');
-          if (dailyMap.has(tripDayKey)) {
-            dailyMap.get(tripDayKey)!.trips.add(`${trip.startTime.getTime()}`);
-          }
-        }
-      }
-      currentTrip = null;
-    }
-    
-    // Detect alerts
-    if (point.speed !== null && point.speed > 120) {
-      alerts.push({
-        id: `overspeed-${point.gps_time}`,
-        type: 'overspeed',
-        message: 'Overspeeding Detected',
-        detail: `Speed: ${point.speed.toFixed(0)} km/h`,
-        time: pointDate,
-        severity: 'warning',
-      });
-    }
-    
-    if (point.battery_percent !== null && point.battery_percent < 20 && point.battery_percent > 0) {
-      // Only add one low battery alert per hour
-      const existingLowBattery = alerts.find(a => 
-        a.type === 'low_battery' && 
-        Math.abs(a.time.getTime() - pointDate.getTime()) < 3600000
-      );
-      if (!existingLowBattery) {
-        alerts.push({
-          id: `low_battery-${point.gps_time}`,
-          type: 'low_battery',
-          message: 'Low Battery Warning',
-          detail: `Battery: ${point.battery_percent}%`,
-          time: pointDate,
-          severity: 'warning',
-        });
-      }
-    }
-    
-    // Ignition alerts
-    if (prevPoint && point.ignition_on !== prevPoint.ignition_on && point.ignition_on !== null) {
-      alerts.push({
-        id: `ignition-${point.gps_time}`,
-        type: point.ignition_on ? 'ignition_on' : 'ignition_off',
-        message: point.ignition_on ? 'Engine Started' : 'Engine Stopped',
-        detail: `At ${format(pointDate, 'HH:mm')}`,
-        time: pointDate,
-        severity: 'info',
-      });
-    }
-  }
-
-  // Convert daily map to array
-  const dailyStats: DayStats[] = [];
-  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  
-  for (let i = 6; i >= 0; i--) {
-    const date = subDays(new Date(), i);
-    const key = format(date, 'yyyy-MM-dd');
-    const stats = dailyMap.get(key);
-    dailyStats.push({
-      day: dayNames[date.getDay()],
-      date,
-      distance: stats?.distance ?? 0,
-      trips: stats?.trips.size ?? 0,
-    });
-  }
-
-  // Sort alerts by time (most recent first) and limit
-  alerts.sort((a, b) => b.time.getTime() - a.time.getTime());
-  const recentAlerts = alerts.slice(0, 10);
-
-  return {
-    trips: trips.slice(-20), // Last 20 trips
-    dailyStats,
-    alerts: recentAlerts,
-    totalDistance,
-  };
-}
-
 export default function OwnerVehicleProfile() {
   const { deviceId } = useParams<{ deviceId: string }>();
   const navigate = useNavigate();
-  const { data: vehicles, isLoading: vehiclesLoading, refetch: refetchVehicles } = useOwnerVehicles();
   
+  // Engine control confirmation state
+  const [showEngineConfirm, setShowEngineConfirm] = useState(false);
+  const [pendingEngineCommand, setPendingEngineCommand] = useState<"start_engine" | "stop_engine" | null>(null);
+  
+  // Trip playback state
+  const [selectedTrip, setSelectedTrip] = useState<VehicleTrip | null>(null);
+  const [showTripPlayback, setShowTripPlayback] = useState(false);
+  
+  // Data fetching hooks
+  const { data: vehicles, isLoading: vehiclesLoading, refetch: refetchVehicles } = useOwnerVehicles();
+  const { data: trips, isLoading: tripsLoading, refetch: refetchTrips } = useVehicleTrips(deviceId ?? null);
+  const { data: events, isLoading: eventsLoading, refetch: refetchEvents } = useVehicleEvents(deviceId ?? null);
+  const { data: llmSettings } = useVehicleLLMSettings(deviceId ?? null);
+  const { data: mileageStats, refetch: refetchMileage } = useMileageStats(deviceId ?? null);
+  const { data: dailyMileage, refetch: refetchDaily } = useDailyMileage(deviceId ?? null);
+  
+  // Command mutation
+  const { mutate: executeCommand, isPending: isCommandPending } = useVehicleCommand();
 
   const vehicle = vehicles?.find((v) => v.deviceId === deviceId);
 
@@ -296,78 +96,78 @@ export default function OwnerVehicleProfile() {
     vehicle?.longitude
   );
 
-  const { data: history, isLoading: historyLoading, refetch: refetchHistory } = useQuery({
-    queryKey: ["vehicle-history", deviceId],
-    queryFn: () => fetchVehicleHistory(deviceId!),
-    enabled: !!deviceId,
-    staleTime: 2 * 60 * 1000, // 2 minutes
-  });
+  const isLoading = vehiclesLoading;
 
-  const isLoading = vehiclesLoading || historyLoading;
+  // Filter today's trips
+  const todaysTrips = useMemo(() => {
+    if (!trips) return [];
+    const today = new Date();
+    return trips.filter(t => isSameDay(parseISO(t.start_time), today));
+  }, [trips]);
 
-  // Process history data
-  const processedData = useMemo(() => {
-    if (!history) return null;
-    return processHistoryData(history);
-  }, [history]);
+  // Filter today's events/alerts
+  const todaysAlerts = useMemo(() => {
+    if (!events) return [];
+    const today = new Date();
+    return events.filter(e => isSameDay(parseISO(e.created_at), today));
+  }, [events]);
 
-  // Calculate mileage stats
-  const mileageStats = useMemo(() => {
-    if (!processedData) {
-      return { today: 0, week: 0, month: 0, avgPerDay: 0 };
+  // Calculate trip stats from mileage data
+  const tripStats = useMemo(() => {
+    if (!mileageStats || !dailyMileage) {
+      return { totalTrips: 0, avgTripsPerDay: 0, avgKmPerTrip: 0, peakTrips: 0 };
     }
     
-    const today = new Date();
-    const todayKey = format(today, 'yyyy-MM-dd');
-    
-    const todayStats = processedData.dailyStats.find(d => format(d.date, 'yyyy-MM-dd') === todayKey);
-    const weekTotal = processedData.dailyStats.reduce((sum, d) => sum + d.distance, 0);
-    const avgPerDay = weekTotal / 7;
-    
-    return {
-      today: todayStats?.distance ?? 0,
-      week: weekTotal,
-      month: processedData.totalDistance,
-      avgPerDay,
-    };
-  }, [processedData]);
-
-  // Today's trips
-  const todaysTrips = useMemo(() => {
-    if (!processedData) return [];
-    const today = new Date();
-    return processedData.trips.filter(t => isSameDay(t.startTime, today));
-  }, [processedData]);
-
-  // Today's alerts
-  const todaysAlerts = useMemo(() => {
-    if (!processedData) return [];
-    const today = new Date();
-    return processedData.alerts.filter(a => isSameDay(a.time, today));
-  }, [processedData]);
-
-  // Trip stats
-  const tripStats = useMemo(() => {
-    if (!processedData) return { totalTrips: 0, avgTripsPerDay: 0, avgKmPerTrip: 0, peakTrips: 0 };
-    
-    const totalTrips = processedData.dailyStats.reduce((sum, d) => sum + d.trips, 0);
+    const totalTrips = mileageStats.trips_week;
     const avgTripsPerDay = totalTrips / 7;
     const avgKmPerTrip = totalTrips > 0 ? mileageStats.week / totalTrips : 0;
-    const peakTrips = Math.max(...processedData.dailyStats.map(d => d.trips));
+    const peakTrips = Math.max(...dailyMileage.map(d => d.trips), 0);
     
     return { totalTrips, avgTripsPerDay, avgKmPerTrip, peakTrips };
-  }, [processedData, mileageStats]);
+  }, [mileageStats, dailyMileage]);
 
   // Handle refresh
   const handleRefresh = useCallback(async () => {
-    await Promise.all([refetchVehicles(), refetchHistory()]);
-  }, [refetchVehicles, refetchHistory]);
+    await Promise.all([
+      refetchVehicles(), 
+      refetchTrips(), 
+      refetchEvents(),
+      refetchMileage(),
+      refetchDaily(),
+    ]);
+  }, [refetchVehicles, refetchTrips, refetchEvents, refetchMileage, refetchDaily]);
 
   // Pull-to-refresh hook
   const { pullDistance, isRefreshing: isPullRefreshing, handlers } = usePullToRefresh({
     onRefresh: handleRefresh,
     threshold: 80,
   });
+
+  // Engine control handler
+  const handleEngineToggle = () => {
+    const command = vehicle?.ignition ? "stop_engine" : "start_engine";
+    setPendingEngineCommand(command);
+    setShowEngineConfirm(true);
+  };
+
+  const confirmEngineCommand = () => {
+    if (!deviceId || !pendingEngineCommand) return;
+    
+    executeCommand({
+      device_id: deviceId,
+      command_type: pendingEngineCommand,
+      confirmed: true,
+    });
+    
+    setShowEngineConfirm(false);
+    setPendingEngineCommand(null);
+  };
+
+  // Trip playback handler
+  const handlePlayTrip = (trip: VehicleTrip) => {
+    setSelectedTrip(trip);
+    setShowTripPlayback(true);
+  };
 
   // Get battery status label
   const getBatteryStatus = (battery: number | null) => {
@@ -389,6 +189,24 @@ export default function OwnerVehicleProfile() {
   // Google Maps link
   const getGoogleMapsLink = (lat: number, lon: number) => {
     return `https://www.google.com/maps?q=${lat},${lon}`;
+  };
+
+  // Get event icon
+  const getEventIcon = (eventType: string) => {
+    switch (eventType) {
+      case "overspeed":
+        return <AlertTriangle className="h-4 w-4 text-yellow-500 mt-0.5" />;
+      case "low_battery":
+        return <Battery className="h-4 w-4 text-orange-500 mt-0.5" />;
+      case "ignition_on":
+        return <Zap className="h-4 w-4 text-green-500 mt-0.5" />;
+      case "ignition_off":
+        return <Power className="h-4 w-4 text-muted-foreground mt-0.5" />;
+      case "offline":
+        return <Info className="h-4 w-4 text-red-500 mt-0.5" />;
+      default:
+        return <Info className="h-4 w-4 text-muted-foreground mt-0.5" />;
+    }
   };
 
   if (isLoading) {
@@ -468,7 +286,7 @@ export default function OwnerVehicleProfile() {
             </div>
             <h1 className="text-2xl font-bold text-foreground">{vehicle.name}</h1>
             <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-              <span>✨</span> {vehicle.personality || "Enthusiastic & Adventurous"}
+              <span>✨</span> {getPersonalityLabel(llmSettings?.personality_mode)}
             </p>
             {vehicle.lastUpdate && (
               <p className="text-xs text-muted-foreground mt-1">
@@ -557,8 +375,14 @@ export default function OwnerVehicleProfile() {
                       : "bg-green-500/10 text-green-500 hover:bg-green-500/20"
                   )}
                   variant="ghost"
+                  onClick={handleEngineToggle}
+                  disabled={isCommandPending}
                 >
-                  <Power className="h-4 w-4 mr-2" />
+                  {isCommandPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Power className="h-4 w-4 mr-2" />
+                  )}
                   {vehicle.ignition ? "Stop Engine" : "Start Engine"}
                 </Button>
 
@@ -671,21 +495,21 @@ export default function OwnerVehicleProfile() {
                   <div className="rounded-lg bg-purple-500/10 p-3 text-center">
                     <TrendingUp className="h-4 w-4 text-purple-500 mx-auto mb-1" />
                     <div className="text-lg font-bold text-purple-500">
-                      {mileageStats.today.toFixed(1)}
+                      {(mileageStats?.today ?? 0).toFixed(1)}
                     </div>
                     <div className="text-xs text-muted-foreground">Today</div>
                   </div>
                   <div className="rounded-lg bg-muted p-3 text-center">
                     <Calendar className="h-4 w-4 text-muted-foreground mx-auto mb-1" />
                     <div className="text-lg font-bold text-foreground">
-                      {mileageStats.week.toFixed(1)}
+                      {(mileageStats?.week ?? 0).toFixed(1)}
                     </div>
                     <div className="text-xs text-muted-foreground">This Week</div>
                   </div>
                   <div className="rounded-lg bg-primary/10 p-3 text-center">
                     <Calendar className="h-4 w-4 text-primary mx-auto mb-1" />
                     <div className="text-lg font-bold text-primary">
-                      {mileageStats.month.toFixed(1)}
+                      {(mileageStats?.month ?? 0).toFixed(1)}
                     </div>
                     <div className="text-xs text-muted-foreground">This Month</div>
                   </div>
@@ -705,14 +529,14 @@ export default function OwnerVehicleProfile() {
                     <div className="text-xs text-muted-foreground mt-0.5">Last 7 days</div>
                   </div>
                   <div className="text-right">
-                    <div className="text-lg font-bold text-primary">{mileageStats.week.toFixed(1)} km</div>
-                    <div className="text-xs text-muted-foreground">Avg: {mileageStats.avgPerDay.toFixed(1)}/day</div>
+                    <div className="text-lg font-bold text-primary">{(mileageStats?.week ?? 0).toFixed(1)} km</div>
+                    <div className="text-xs text-muted-foreground">Avg: {((mileageStats?.week ?? 0) / 7).toFixed(1)}/day</div>
                   </div>
                 </div>
 
                 <div className="h-40">
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={processedData?.dailyStats || []}>
+                    <AreaChart data={dailyMileage || []}>
                       <defs>
                         <linearGradient id="mileageGradient" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
@@ -762,15 +586,20 @@ export default function OwnerVehicleProfile() {
                 </div>
 
                 <div className="space-y-3">
-                  {todaysTrips.length > 0 ? (
+                  {tripsLoading ? (
+                    <div className="space-y-2">
+                      <Skeleton className="h-16 w-full" />
+                      <Skeleton className="h-16 w-full" />
+                    </div>
+                  ) : todaysTrips.length > 0 ? (
                     todaysTrips.slice(0, 5).map((trip, index) => (
-                      <div key={index} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+                      <div key={trip.id} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
                         <MapPin className="h-4 w-4 text-primary shrink-0" />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-medium">Trip {index + 1}</span>
                             <a
-                              href={getGoogleMapsLink(trip.endLat, trip.endLon)}
+                              href={getGoogleMapsLink(trip.end_latitude, trip.end_longitude)}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-blue-500 hover:text-blue-600"
@@ -779,14 +608,24 @@ export default function OwnerVehicleProfile() {
                             </a>
                           </div>
                           <div className="text-xs text-muted-foreground mt-0.5">
-                            {format(trip.startTime, 'h:mm a')} - {format(trip.endTime, 'h:mm a')}
+                            {format(parseISO(trip.start_time), 'h:mm a')} - {format(parseISO(trip.end_time), 'h:mm a')}
                           </div>
                         </div>
-                        <div className="text-right shrink-0">
-                          <div className="text-sm">{trip.distance.toFixed(1)} km</div>
-                          <div className="text-xs text-green-500">
-                            {differenceInMinutes(trip.endTime, trip.startTime)} min
+                        <div className="text-right shrink-0 flex items-center gap-2">
+                          <div>
+                            <div className="text-sm">{trip.distance_km.toFixed(1)} km</div>
+                            <div className="text-xs text-green-500">
+                              {trip.duration_seconds ? Math.round(trip.duration_seconds / 60) : differenceInMinutes(parseISO(trip.end_time), parseISO(trip.start_time))} min
+                            </div>
                           </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => handlePlayTrip(trip)}
+                          >
+                            <Play className="h-4 w-4" />
+                          </Button>
                         </div>
                       </div>
                     ))
@@ -803,7 +642,7 @@ export default function OwnerVehicleProfile() {
                   <div>
                     <span className="font-medium">{todaysTrips.length} trips</span>
                     <span className="text-primary ml-2">
-                      {todaysTrips.reduce((sum, t) => sum + t.distance, 0).toFixed(1)} km
+                      {todaysTrips.reduce((sum, t) => sum + t.distance_km, 0).toFixed(1)} km
                     </span>
                   </div>
                 </div>
@@ -823,13 +662,13 @@ export default function OwnerVehicleProfile() {
                   </div>
                   <div className="text-right">
                     <div className="text-lg font-bold text-purple-500">{tripStats.totalTrips} trips</div>
-                    <div className="text-xs text-muted-foreground">{mileageStats.week.toFixed(1)} km total</div>
+                    <div className="text-xs text-muted-foreground">{(mileageStats?.week ?? 0).toFixed(1)} km total</div>
                   </div>
                 </div>
 
                 <div className="h-40">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={processedData?.dailyStats || []}>
+                    <BarChart data={dailyMileage || []}>
                       <XAxis
                         dataKey="day"
                         axisLine={false}
@@ -886,30 +725,29 @@ export default function OwnerVehicleProfile() {
                 </div>
 
                 <div className="space-y-3">
-                  {todaysAlerts.length > 0 ? (
-                    todaysAlerts.slice(0, 5).map((alert) => (
+                  {eventsLoading ? (
+                    <div className="space-y-2">
+                      <Skeleton className="h-16 w-full" />
+                      <Skeleton className="h-16 w-full" />
+                    </div>
+                  ) : todaysAlerts.length > 0 ? (
+                    todaysAlerts.slice(0, 5).map((event) => (
                       <div
-                        key={alert.id}
+                        key={event.id}
                         className={cn(
                           "p-3 rounded-lg",
-                          alert.severity === 'warning' ? "bg-yellow-500/10" : "bg-muted/50"
+                          event.severity === 'error' || event.severity === 'warning' 
+                            ? "bg-yellow-500/10" 
+                            : "bg-muted/50"
                         )}
                       >
                         <div className="flex items-start gap-3">
-                          {alert.type === 'overspeed' ? (
-                            <AlertTriangle className="h-4 w-4 text-yellow-500 mt-0.5" />
-                          ) : alert.type === 'low_battery' ? (
-                            <Battery className="h-4 w-4 text-orange-500 mt-0.5" />
-                          ) : alert.type === 'ignition_on' ? (
-                            <Zap className="h-4 w-4 text-green-500 mt-0.5" />
-                          ) : (
-                            <Info className="h-4 w-4 text-muted-foreground mt-0.5" />
-                          )}
+                          {getEventIcon(event.event_type)}
                           <div>
-                            <div className="font-medium text-foreground">{alert.message}</div>
-                            <div className="text-sm text-muted-foreground">{alert.detail}</div>
+                            <div className="font-medium text-foreground">{event.title}</div>
+                            <div className="text-sm text-muted-foreground">{event.message}</div>
                             <div className="text-xs text-muted-foreground mt-1">
-                              {format(alert.time, 'h:mm a')}
+                              {format(parseISO(event.created_at), 'h:mm a')}
                             </div>
                           </div>
                         </div>
@@ -928,7 +766,7 @@ export default function OwnerVehicleProfile() {
                   <div>
                     <span className="font-medium">{todaysAlerts.length}</span>
                     <span className="text-yellow-500 ml-2">
-                      {todaysAlerts.filter(a => a.severity === 'warning').length} warnings
+                      {todaysAlerts.filter(a => a.severity === 'warning' || a.severity === 'error').length} warnings
                     </span>
                   </div>
                 </div>
@@ -968,6 +806,51 @@ export default function OwnerVehicleProfile() {
           </div>
         </div>
       </div>
+
+      {/* Engine Control Confirmation Dialog */}
+      <AlertDialog open={showEngineConfirm} onOpenChange={setShowEngineConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingEngineCommand === "stop_engine" ? "Stop Engine?" : "Start Engine?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingEngineCommand === "stop_engine" 
+                ? "This will remotely stop the engine. Make sure the vehicle is in a safe location before proceeding."
+                : "This will remotely start the engine. Make sure the vehicle is in a safe location and all safety conditions are met."
+              }
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingEngineCommand(null)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmEngineCommand}
+              className={cn(
+                pendingEngineCommand === "stop_engine"
+                  ? "bg-red-500 hover:bg-red-600"
+                  : "bg-green-500 hover:bg-green-600"
+              )}
+            >
+              {isCommandPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : null}
+              Confirm
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Trip Playback Dialog */}
+      <TripPlaybackDialog
+        open={showTripPlayback}
+        onOpenChange={setShowTripPlayback}
+        deviceId={deviceId || ""}
+        deviceName={vehicle.name}
+        startTime={selectedTrip?.start_time}
+        endTime={selectedTrip?.end_time}
+      />
     </div>
   );
 }
