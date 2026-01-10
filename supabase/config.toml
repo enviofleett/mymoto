@@ -29,3 +29,6 @@ verify_jwt = false
 
 [functions.execute-vehicle-command]
 verify_jwt = false
+
+[functions.check-offline-vehicles]
+verify_jwt = false
