@@ -972,8 +972,8 @@ export type Database = {
       analyze_trip_patterns: {
         Args: never
         Returns: {
-          patterns_created: number
-          patterns_updated: number
+          devices_analyzed: number
+          patterns_found: number
         }[]
       }
       find_or_create_location: {
