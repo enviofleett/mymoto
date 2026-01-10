@@ -116,12 +116,17 @@ const Auth = () => {
         body: { username: gps51Username, password: gps51Password }
       });
 
+      // Handle edge function errors - check data.error first (returned from function body)
+      if (data?.error) {
+        throw new Error(data.error);
+      }
+
       if (fnError) {
         throw new Error(fnError.message || 'Failed to connect to GPS51');
       }
 
-      if (!data.success) {
-        throw new Error(data.error || 'GPS51 authentication failed');
+      if (!data?.success) {
+        throw new Error('GPS51 authentication failed. Please check your credentials.');
       }
 
       setSuccess(`Account synced! ${data.vehiclesSynced || 0} vehicles imported. Logging you in...`);
@@ -135,9 +140,10 @@ const Auth = () => {
       
       // Navigation will happen automatically via useEffect
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('GPS51 connect error:', err);
-      setError(err.message || 'Unable to connect to GPS51. Please try again.');
+      const message = err instanceof Error ? err.message : 'Unable to connect to GPS51. Please try again.';
+      setError(message);
     } finally {
       setIsSubmitting(false);
     }
