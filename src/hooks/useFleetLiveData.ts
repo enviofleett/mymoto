@@ -150,11 +150,13 @@ function calculateMetrics(vehicles: FleetVehicle[]): FleetMetrics {
 /**
  * Fetch fleet data directly from database.
  * NO Edge Function calls - fleet-scale safe.
+ * Uses separate queries for positions and assignments to avoid FK issues.
  */
 async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: FleetMetrics }> {
   console.log("[useFleetLiveData] Fetching from DB...");
 
-  const { data, error } = await supabase
+  // Fetch positions with vehicle info
+  const { data: positions, error: posError } = await supabase
     .from('vehicle_positions')
     .select(`
       device_id,
@@ -174,22 +176,44 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
         device_id,
         device_name,
         gps_owner
-      ),
-      vehicle_assignments (
-        device_id,
-        vehicle_alias,
-        profiles (
-          id,
-          name,
-          phone,
-          license_number
-        )
       )
     `);
 
-  if (error) throw new Error(`Fleet data fetch error: ${error.message}`);
+  if (posError) throw new Error(`Fleet data fetch error: ${posError.message}`);
 
-  const vehicles = (data || []).map(transformToFleetVehicle);
+  // Fetch assignments with profiles separately
+  const { data: assignments, error: assignError } = await supabase
+    .from('vehicle_assignments')
+    .select(`
+      device_id,
+      vehicle_alias,
+      profiles (
+        id,
+        name,
+        phone,
+        license_number
+      )
+    `);
+
+  if (assignError) {
+    console.warn('[useFleetLiveData] Could not fetch assignments:', assignError.message);
+  }
+
+  // Create a lookup map for assignments by device_id
+  const assignmentMap = new Map<string, any>();
+  (assignments || []).forEach(a => {
+    assignmentMap.set(a.device_id, a);
+  });
+
+  // Merge positions with their assignments
+  const mergedData = (positions || []).map(pos => ({
+    ...pos,
+    vehicle_assignments: assignmentMap.has(pos.device_id) 
+      ? [assignmentMap.get(pos.device_id)] 
+      : []
+  }));
+
+  const vehicles = mergedData.map(transformToFleetVehicle);
   const metrics = calculateMetrics(vehicles);
 
   console.log(`[useFleetLiveData] Fetched ${vehicles.length} vehicles`);
