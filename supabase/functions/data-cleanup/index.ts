@@ -10,6 +10,7 @@ const corsHeaders = {
 const API_LOGS_RETENTION_DAYS = 7
 const POSITION_HISTORY_RETENTION_DAYS = 30
 const CHAT_HISTORY_RETENTION_DAYS = 90
+const PROACTIVE_EVENTS_RETENTION_DAYS = 7
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -90,6 +91,23 @@ serve(async (req) => {
     } else {
       console.log(`Deleted insights older than ${POSITION_HISTORY_RETENTION_DAYS} days`)
       results.fleet_insights = { success: true }
+    }
+
+    // 5. Clean up old proactive vehicle events (> 7 days)
+    const eventsCutoff = new Date()
+    eventsCutoff.setDate(eventsCutoff.getDate() - PROACTIVE_EVENTS_RETENTION_DAYS)
+    
+    const { error: eventsError } = await supabase
+      .from('proactive_vehicle_events')
+      .delete()
+      .lt('created_at', eventsCutoff.toISOString())
+    
+    if (eventsError) {
+      console.error('Proactive events cleanup error:', eventsError)
+      results.proactive_events = { error: eventsError.message }
+    } else {
+      console.log(`Deleted proactive events older than ${PROACTIVE_EVENTS_RETENTION_DAYS} days`)
+      results.proactive_events = { success: true }
     }
 
     const duration = Date.now() - startTime
