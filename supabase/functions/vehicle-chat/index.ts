@@ -5,7 +5,7 @@ import { routeQuery } from './query-router.ts'
 import { parseCommand, containsCommandKeywords, getCommandMetadata, GeofenceAlertParams } from './command-parser.ts'
 import { generateTextEmbedding, formatEmbeddingForPg } from '../_shared/embedding-generator.ts'
 import { learnAndGetPreferences, buildPreferenceContext } from './preference-learner.ts'
-
+import { extractDateContext, isHistoricalMovementQuery, calculateDistanceFromHistory, DateContext } from './date-extractor.ts'
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -573,6 +573,91 @@ serve(async (req) => {
       .order('gps_time', { ascending: false })
       .limit(10)
 
+    // 4.5. Extract date context from user message for historical queries
+    const dateContext = extractDateContext(message, client_timestamp)
+    console.log('Date context extracted:', {
+      hasDateReference: dateContext.hasDateReference,
+      period: dateContext.period,
+      humanReadable: dateContext.humanReadable,
+      startDate: dateContext.startDate,
+      endDate: dateContext.endDate
+    })
+
+    // 4.6. Fetch date-specific trip and position history if user is asking about a specific time period
+    let dateSpecificTrips: any[] = []
+    let dateSpecificPositions: any[] = []
+    let dateSpecificStats: {
+      totalDistance: number
+      tripCount: number
+      movementDetected: boolean
+      earliestPosition: string | null
+      latestPosition: string | null
+      positionCount: number
+    } | null = null
+
+    if (dateContext.hasDateReference || isHistoricalMovementQuery(message)) {
+      console.log(`Fetching historical data for period: ${dateContext.humanReadable}`)
+      
+      // Fetch trips for the specific date range
+      const { data: trips, error: tripsError } = await supabase
+        .from('vehicle_trips')
+        .select('*')
+        .eq('device_id', device_id)
+        .gte('start_time', dateContext.startDate)
+        .lte('end_time', dateContext.endDate)
+        .order('start_time', { ascending: false })
+        .limit(20)
+      
+      if (tripsError) {
+        console.error('Error fetching date-specific trips:', tripsError)
+      } else {
+        dateSpecificTrips = trips || []
+        console.log(`Found ${dateSpecificTrips.length} trips for ${dateContext.humanReadable}`)
+      }
+      
+      // Fetch position history for the specific date range
+      const { data: positions, error: positionsError } = await supabase
+        .from('position_history')
+        .select('latitude, longitude, speed, gps_time, ignition_on')
+        .eq('device_id', device_id)
+        .gte('gps_time', dateContext.startDate)
+        .lte('gps_time', dateContext.endDate)
+        .order('gps_time', { ascending: true })
+        .limit(500)
+      
+      if (positionsError) {
+        console.error('Error fetching date-specific positions:', positionsError)
+      } else {
+        dateSpecificPositions = positions || []
+        console.log(`Found ${dateSpecificPositions.length} position records for ${dateContext.humanReadable}`)
+        
+        // Calculate movement statistics
+        if (dateSpecificPositions.length > 0) {
+          const calculatedDistance = calculateDistanceFromHistory(dateSpecificPositions)
+          const movingPositions = dateSpecificPositions.filter((p: any) => p.speed > 0)
+          
+          dateSpecificStats = {
+            totalDistance: calculatedDistance,
+            tripCount: dateSpecificTrips.length,
+            movementDetected: movingPositions.length > 0 || calculatedDistance > 0.5,
+            earliestPosition: dateSpecificPositions[0]?.gps_time || null,
+            latestPosition: dateSpecificPositions[dateSpecificPositions.length - 1]?.gps_time || null,
+            positionCount: dateSpecificPositions.length
+          }
+          
+          // Also sum up trip distances if we have trips
+          if (dateSpecificTrips.length > 0) {
+            const tripTotalDistance = dateSpecificTrips.reduce((sum: number, t: any) => sum + (t.distance_km || 0), 0)
+            if (tripTotalDistance > dateSpecificStats.totalDistance) {
+              dateSpecificStats.totalDistance = tripTotalDistance
+            }
+          }
+          
+          console.log('Date-specific stats:', dateSpecificStats)
+        }
+      }
+    }
+
     // 5. Fetch Conversation Context with Memory Management
     const conversationContext = await buildConversationContext(supabase, device_id, user_id)
     const tokenEstimate = estimateTokenCount(conversationContext)
@@ -986,6 +1071,22 @@ ${ragContext.recentDrivingStats ? `DRIVING PERFORMANCE SUMMARY (Last 30 Days):
   * Harsh Cornering: ${ragContext.recentDrivingStats.totalHarshCornering} incidents ${ragContext.recentDrivingStats.totalHarshCornering > 10 ? '⚠️ HIGH - Slow down before turns' : ragContext.recentDrivingStats.totalHarshCornering > 5 ? '(moderate)' : '✓ Good'}
 - Recent Scores: ${ragContext.recentDrivingStats.recentScores.map(s => `${s.score}`).join(', ')}
 ⚠️ USE THIS DATA: When answering questions like "Do I brake too hard?", "How's my driving?", reference these specific statistics!
+` : ''}
+${dateContext.hasDateReference ? `HISTORICAL DATA FOR "${dateContext.humanReadable.toUpperCase()}" (${dateContext.period}):
+${dateSpecificStats ? `- DATA AVAILABLE: ✓ YES
+- Position Records Found: ${dateSpecificStats.positionCount}
+- Trips Recorded: ${dateSpecificStats.tripCount}
+- Movement Detected: ${dateSpecificStats.movementDetected ? 'YES ✓' : 'NO'}
+- Total Distance: ${dateSpecificStats.totalDistance.toFixed(2)} km
+- Data Period: ${dateSpecificStats.earliestPosition ? new Date(dateSpecificStats.earliestPosition).toLocaleString() : 'N/A'} to ${dateSpecificStats.latestPosition ? new Date(dateSpecificStats.latestPosition).toLocaleString() : 'N/A'}
+${dateSpecificTrips.length > 0 ? `- TRIPS DETAIL:
+${dateSpecificTrips.slice(0, 5).map((t: any, i: number) => 
+  `  ${i + 1}. ${new Date(t.start_time).toLocaleTimeString()} - ${new Date(t.end_time).toLocaleTimeString()}: ${t.distance_km?.toFixed(1) || 0} km, max ${t.max_speed || 0} km/h`
+).join('\n')}` : ''}
+⚠️ CRITICAL: Use this HISTORICAL data to answer the user's question about ${dateContext.humanReadable}. The data shows ${dateSpecificStats.movementDetected ? `movement of ${dateSpecificStats.totalDistance.toFixed(1)} km` : 'NO movement recorded'} during this period.` : `- DATA AVAILABLE: ❌ NO RECORDS FOUND
+- The vehicle may not have been tracked during this period
+- Position history only goes back to when the vehicle was first connected
+⚠️ CRITICAL: Be HONEST with the user! Tell them: "I don't have position data for ${dateContext.humanReadable}. My records for this vehicle ${history && history.length > 0 ? `only go back to ${new Date(history[history.length - 1]?.gps_time || '').toLocaleDateString()}` : 'are limited'}. The GPS51 platform might have more complete data that hasn't been synced yet."`}
 ` : ''}
 ${ragContext.tripAnalytics.length > 0 ? `RECENT TRIP DETAILS (with harsh event counts):
 ${ragContext.tripAnalytics.map((t, i) => `  ${i + 1}. ${t}`).join('\n')}
