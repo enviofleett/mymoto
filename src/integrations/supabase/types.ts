@@ -841,6 +841,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "fk_vehicle_assignments_device"
+            columns: ["device_id"]
+            isOneToOne: true
+            referencedRelation: "vehicles"
+            referencedColumns: ["device_id"]
+          },
+          {
             foreignKeyName: "vehicle_assignments_profile_id_fkey"
             columns: ["profile_id"]
             isOneToOne: false
@@ -1028,6 +1035,13 @@ export type Database = {
           total_mileage?: number | null
         }
         Relationships: [
+          {
+            foreignKeyName: "fk_vehicle_positions_device"
+            columns: ["device_id"]
+            isOneToOne: true
+            referencedRelation: "vehicles"
+            referencedColumns: ["device_id"]
+          },
           {
             foreignKeyName: "vehicle_positions_device_id_fkey"
             columns: ["device_id"]

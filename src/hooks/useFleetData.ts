@@ -151,7 +151,7 @@ function calculateMetrics(vehicles: FleetVehicle[]): FleetMetrics {
 async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: FleetMetrics }> {
   console.log("[useFleetData] Fetching from DB (fleet-scale safe)...");
 
-  // Fetch positions with vehicle info
+  // Fetch positions with vehicle info - use FK hint to disambiguate multiple relationships
   const { data: positions, error: posError } = await supabase
     .from('vehicle_positions')
     .select(`
@@ -168,7 +168,7 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
       status_text,
       gps_time,
       cached_at,
-      vehicles!inner (
+      vehicles!fk_vehicle_positions_device_id (
         device_id,
         device_name,
         gps_owner
