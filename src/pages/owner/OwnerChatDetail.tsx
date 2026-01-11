@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,15 +10,19 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useOwnerVehicles } from "@/hooks/useOwnerVehicles";
 import { useVehicleLLMSettings } from "@/hooks/useVehicleProfile";
-import { ArrowLeft, Car, User, Send, Loader2 } from "lucide-react";
+import { useVehicleAlerts, formatAlertForChat } from "@/hooks/useVehicleAlerts";
+import { ArrowLeft, Car, User, Send, Loader2, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ChatMessageContent } from "@/components/chat/ChatMessageContent";
+import { format } from "date-fns";
 
 interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
   created_at: string;
+  isAlert?: boolean;
+  severity?: 'info' | 'warning' | 'error' | 'critical';
 }
 
 export default function OwnerChatDetail() {
@@ -36,6 +40,9 @@ export default function OwnerChatDetail() {
   const [historyLoading, setHistoryLoading] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Fetch vehicle alerts
+  const { data: vehicleAlerts } = useVehicleAlerts(deviceId ?? null, 20);
+
   const vehicle = vehicles?.find(v => v.deviceId === deviceId);
   const vehicleName = llmSettings?.nickname || vehicle?.name || "Vehicle";
   const plateNumber = vehicle?.plateNumber || vehicle?.name || "";
@@ -43,6 +50,30 @@ export default function OwnerChatDetail() {
   const avatarUrl = llmSettings?.avatar_url || vehicle?.avatarUrl;
   
   const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vehicle-chat`;
+
+  // Convert alerts to chat messages and merge with chat history
+  const allMessages = useMemo(() => {
+    const alertMessages: ChatMessage[] = (vehicleAlerts || []).map(alert => ({
+      id: `alert-${alert.id}`,
+      role: "assistant" as const,
+      content: formatAlertForChat(alert),
+      created_at: alert.created_at,
+      isAlert: true,
+      severity: alert.severity,
+    }));
+
+    // Merge and sort by date
+    const combined = [...messages, ...alertMessages];
+    combined.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    
+    // Remove duplicates (same id)
+    const seen = new Set<string>();
+    return combined.filter(msg => {
+      if (seen.has(msg.id)) return false;
+      seen.add(msg.id);
+      return true;
+    });
+  }, [messages, vehicleAlerts]);
 
   useEffect(() => {
     if (deviceId) {
@@ -216,7 +247,7 @@ export default function OwnerChatDetail() {
                 </div>
               ))}
             </div>
-          ) : messages.length === 0 && !loading ? (
+          ) : allMessages.length === 0 && !loading ? (
             <div className="flex flex-col items-center justify-center py-16">
               <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
                 <Car className="h-7 w-7 text-muted-foreground" />
@@ -228,47 +259,102 @@ export default function OwnerChatDetail() {
             </div>
           ) : null}
 
-          {messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={cn(
-                "flex gap-2",
-                msg.role === "user" ? "justify-end" : "justify-start"
-              )}
-            >
-              {msg.role === "assistant" && (
-                <Avatar className="w-7 h-7 shrink-0">
-                  <AvatarImage src={avatarUrl || undefined} alt={vehicleName} />
-                  <AvatarFallback className="bg-muted">
-                    <Car className="h-3.5 w-3.5 text-muted-foreground" />
-                  </AvatarFallback>
-                </Avatar>
-              )}
+          {allMessages.map((msg) => {
+            const isAlert = 'isAlert' in msg && msg.isAlert;
+            const severity = 'severity' in msg ? msg.severity : undefined;
+            
+            // Alert-specific styling
+            const getAlertBgClass = () => {
+              if (!isAlert) return "";
+              switch (severity) {
+                case 'critical': return "bg-destructive/10 border border-destructive/30";
+                case 'error': return "bg-destructive/10 border border-destructive/20";
+                case 'warning': return "bg-yellow-500/10 border border-yellow-500/30";
+                default: return "bg-blue-500/10 border border-blue-500/20";
+              }
+            };
+
+            return (
               <div
+                key={msg.id}
                 className={cn(
-                  "rounded-2xl px-3.5 py-2.5 max-w-[75%]",
-                  msg.role === "user"
-                    ? "bg-primary text-primary-foreground rounded-br-md"
-                    : "bg-muted text-foreground rounded-bl-md"
+                  "flex gap-2",
+                  msg.role === "user" ? "justify-end" : "justify-start"
                 )}
               >
-                <div className="text-sm whitespace-pre-wrap leading-relaxed">
-                  <ChatMessageContent content={msg.content} isUser={msg.role === "user"} />
+                {msg.role === "assistant" && (
+                  <Avatar className="w-7 h-7 shrink-0">
+                    {isAlert ? (
+                      <AvatarFallback className={cn(
+                        severity === 'critical' || severity === 'error' 
+                          ? "bg-destructive/20" 
+                          : severity === 'warning' 
+                            ? "bg-yellow-500/20" 
+                            : "bg-blue-500/20"
+                      )}>
+                        <AlertTriangle className={cn(
+                          "h-3.5 w-3.5",
+                          severity === 'critical' || severity === 'error' 
+                            ? "text-destructive" 
+                            : severity === 'warning' 
+                              ? "text-yellow-600" 
+                              : "text-blue-500"
+                        )} />
+                      </AvatarFallback>
+                    ) : (
+                      <>
+                        <AvatarImage src={avatarUrl || undefined} alt={vehicleName} />
+                        <AvatarFallback className="bg-muted">
+                          <Car className="h-3.5 w-3.5 text-muted-foreground" />
+                        </AvatarFallback>
+                      </>
+                    )}
+                  </Avatar>
+                )}
+                <div
+                  className={cn(
+                    "rounded-2xl px-3.5 py-2.5 max-w-[75%]",
+                    msg.role === "user"
+                      ? "bg-primary text-primary-foreground rounded-br-md"
+                      : isAlert 
+                        ? cn("rounded-bl-md", getAlertBgClass())
+                        : "bg-muted text-foreground rounded-bl-md"
+                  )}
+                >
+                  {isAlert && (
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <span className={cn(
+                        "text-[10px] font-semibold uppercase tracking-wide",
+                        severity === 'critical' || severity === 'error' 
+                          ? "text-destructive" 
+                          : severity === 'warning' 
+                            ? "text-yellow-600" 
+                            : "text-blue-500"
+                      )}>
+                        {severity === 'critical' ? '🚨 Critical Alert' : 
+                         severity === 'error' ? '⚠️ Alert' : 
+                         severity === 'warning' ? '⚡ Warning' : 'ℹ️ Info'}
+                      </span>
+                    </div>
+                  )}
+                  <div className="text-sm whitespace-pre-wrap leading-relaxed">
+                    <ChatMessageContent content={msg.content} isUser={msg.role === "user"} />
+                  </div>
+                  <p className={cn(
+                    "text-[10px] mt-1.5 text-right",
+                    msg.role === "user" ? "text-primary-foreground/70" : "text-muted-foreground"
+                  )}>
+                    {format(new Date(msg.created_at), "MMM d, HH:mm")}
+                  </p>
                 </div>
-                <p className={cn(
-                  "text-[10px] mt-1.5 text-right",
-                  msg.role === "user" ? "text-primary-foreground/70" : "text-muted-foreground"
-                )}>
-                  {new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                </p>
+                {msg.role === "user" && (
+                  <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                    <User className="h-3.5 w-3.5 text-primary" />
+                  </div>
+                )}
               </div>
-              {msg.role === "user" && (
-                <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
-                  <User className="h-3.5 w-3.5 text-primary" />
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
 
           {streamingContent && (
             <div className="flex gap-2 justify-start">
