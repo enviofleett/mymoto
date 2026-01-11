@@ -1221,6 +1221,49 @@ export default function OwnerVehicleProfile() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Debug Connectivity Card - RSH128EA only */}
+          {deviceId === '1361282381' && (
+            <Card className="border-dashed border-2 border-yellow-500/50 bg-yellow-500/5">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Info className="h-4 w-4 text-yellow-600" />
+                  <h4 className="font-semibold text-yellow-600 text-sm">Debug: RSH128EA Connectivity</h4>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <span className="text-muted-foreground">DB Connection:</span>
+                  <span className="font-medium">
+                    {vehicle ? '✅ Connected' : '❌ Failed'}
+                  </span>
+                  
+                  <span className="text-muted-foreground">Trips in DB:</span>
+                  <span className="font-medium">
+                    {tripsLoading ? '...' : trips?.length ?? 0}
+                  </span>
+                  
+                  <span className="text-muted-foreground">Last Position:</span>
+                  <span className="font-medium">
+                    {vehicle?.lastUpdate ? format(new Date(vehicle.lastUpdate), 'PPp') : 'N/A'}
+                  </span>
+                  
+                  <span className="text-muted-foreground">Total Mileage:</span>
+                  <span className="font-medium">
+                    {vehicle?.totalMileage ? `${vehicle.totalMileage.toLocaleString()} km` : 'N/A'}
+                  </span>
+                  
+                  <span className="text-muted-foreground">Events Count:</span>
+                  <span className="font-medium">
+                    {eventsLoading ? '...' : events?.length ?? 0}
+                  </span>
+                  
+                  <span className="text-muted-foreground">Data Source:</span>
+                  <span className="font-medium text-green-600">
+                    ✅ Pre-calculated (vehicle_daily_stats)
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
 
