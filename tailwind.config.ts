@@ -13,9 +13,6 @@ export default {
       },
     },
     extend: {
-      fontFamily: {
-        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
-      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -65,54 +62,33 @@ export default {
           maintenance: "hsl(var(--status-maintenance))",
           inactive: "hsl(var(--status-inactive))",
         },
-        // Glass effect colors for direct use
-        glass: {
-          bg: "rgba(24, 24, 27, 0.6)",
-          border: "rgba(255, 255, 255, 0.08)",
-          "border-light": "rgba(255, 255, 255, 0.12)",
-        },
       },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
-        xl: "calc(var(--radius) + 4px)",
-        "2xl": "calc(var(--radius) + 8px)",
-      },
-      boxShadow: {
-        'glass': '0 8px 32px rgba(0, 0, 0, 0.4)',
-        'glass-elevated': '0 16px 48px rgba(0, 0, 0, 0.5)',
-        'accent-glow': '0 0 20px rgba(56, 189, 248, 0.3)',
-        'accent-glow-strong': '0 0 30px rgba(56, 189, 248, 0.5)',
-        'inner-glow': 'inset 0 1px 0 rgba(255, 255, 255, 0.1)',
-      },
-      backdropBlur: {
-        'glass': '16px',
-        'glass-heavy': '20px',
       },
       keyframes: {
         "accordion-down": {
-          from: { height: "0" },
-          to: { height: "var(--radix-accordion-content-height)" },
+          from: {
+            height: "0",
+          },
+          to: {
+            height: "var(--radix-accordion-content-height)",
+          },
         },
         "accordion-up": {
-          from: { height: "var(--radix-accordion-content-height)" },
-          to: { height: "0" },
-        },
-        "glow-pulse": {
-          "0%, 100%": { boxShadow: "0 0 20px rgba(56, 189, 248, 0.2)" },
-          "50%": { boxShadow: "0 0 30px rgba(56, 189, 248, 0.4)" },
-        },
-        "shimmer": {
-          "0%": { backgroundPosition: "-200% 0" },
-          "100%": { backgroundPosition: "200% 0" },
+          from: {
+            height: "var(--radix-accordion-content-height)",
+          },
+          to: {
+            height: "0",
+          },
         },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
-        "glow-pulse": "glow-pulse 2s ease-in-out infinite",
-        "shimmer": "shimmer 2s linear infinite",
       },
     },
   },
