@@ -159,15 +159,20 @@ async function syncPositions(supabase: any, records: any[]) {
   
   const positions = records.map(record => {
     // Battery: 0 means "no data" for hardwired devices, treat as null
-    // Only store battery if it's a positive value (real reading)
     const rawBattery = record.voltagepercent;
     const battery = (rawBattery && rawBattery > 0) ? rawBattery : null;
+    
+    // FLEET-SCALE: Determine sync priority based on vehicle movement
+    // Moving vehicles (>2 km/h) get high priority for more frequent syncs
+    const speed = record.speed || 0;
+    const isMoving = speed > 2;
+    const syncPriority = isMoving ? 'high' : 'normal';
     
     return {
       device_id: record.deviceid,
       latitude: record.callat && record.callat !== 0 ? record.callat : null,
       longitude: record.callon && record.callon !== 0 ? record.callon : null,
-      speed: record.speed || 0,
+      speed,
       heading: record.heading,
       altitude: record.altitude,
       battery_percent: battery,
@@ -177,7 +182,9 @@ async function syncPositions(supabase: any, records: any[]) {
       total_mileage: record.totaldistance,
       status_text: record.strstatus,
       gps_time: record.updatetime ? new Date(record.updatetime).toISOString() : null,
-      cached_at: now
+      cached_at: now,
+      last_synced_at: now,
+      sync_priority: syncPriority
     };
   })
 
@@ -189,6 +196,8 @@ async function syncPositions(supabase: any, records: any[]) {
       ignoreDuplicates: false 
     })
   }
+  
+  console.log(`[syncPositions] Updated ${positions.length} positions (${positions.filter(p => p.sync_priority === 'high').length} moving)`)
 
   // SMART HISTORY: Only record if position changed significantly (>50m) or 5 min elapsed
   const validPositions = positions.filter(p => p.latitude && p.longitude)

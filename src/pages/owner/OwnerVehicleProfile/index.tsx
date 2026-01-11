@@ -17,6 +17,7 @@ import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { PullToRefreshIndicator } from "@/components/ui/pull-to-refresh";
 import { useAddress } from "@/hooks/useAddress";
 import { useVehicleProfileData } from "@/hooks/useVehicleProfileData";
+import { useVehicleLiveData } from "@/hooks/useVehicleLiveData";
 import {
   useVehicleTrips,
   useVehicleEvents,
@@ -59,18 +60,26 @@ export default function OwnerVehicleProfile() {
     limit: 100,
   }), [dateRange]);
   
-  // Primary vehicle data with real-time updates
+  // FLEET-SCALE SAFE: Metadata from useVehicleProfileData
   const {
     vehicle,
-    position,
     llmSettings,
     displayName,
-    isOnline,
-    status,
-    lastUpdate,
-    isLoading,
+    isLoading: metadataLoading,
     refetch: refetchProfile,
   } = useVehicleProfileData(deviceId ?? null);
+  
+  // FLEET-SCALE SAFE: Live GPS data from database (not Edge Function)
+  const {
+    data: liveData,
+    isLoading: liveLoading,
+    refetch: refetchLive,
+  } = useVehicleLiveData(deviceId ?? null);
+  
+  // Derive status from live data
+  const isOnline = liveData?.isOnline ?? false;
+  const status: 'online' | 'charging' | 'offline' = isOnline ? 'online' : 'offline';
+  const lastUpdate = liveData?.lastUpdate ?? null;
   
   // Secondary data hooks
   const { data: trips, isLoading: tripsLoading, refetch: refetchTrips } = useVehicleTrips(deviceId ?? null, filterOptions);
@@ -86,8 +95,8 @@ export default function OwnerVehicleProfile() {
   
   // Reverse geocoding for current location
   const { address: currentAddress } = useAddress(
-    position?.latitude,
-    position?.longitude
+    liveData?.latitude,
+    liveData?.longitude
   );
   
   // Handle refresh - also triggers trip processing
@@ -100,13 +109,14 @@ export default function OwnerVehicleProfile() {
     
     await Promise.all([
       refetchProfile(),
+      refetchLive(),
       refetchTrips(),
       refetchEvents(),
       refetchMileage(),
       refetchDaily(),
       refetchDailyStats(),
     ]);
-  }, [deviceId, refetchProfile, refetchTrips, refetchEvents, refetchMileage, refetchDaily, refetchDailyStats]);
+  }, [deviceId, refetchProfile, refetchLive, refetchTrips, refetchEvents, refetchMileage, refetchDaily, refetchDailyStats]);
   
   // Pull-to-refresh
   const { pullDistance, isRefreshing: isPullRefreshing, handlers } = usePullToRefresh({
@@ -120,7 +130,9 @@ export default function OwnerVehicleProfile() {
     setShowTripPlayback(true);
   }, []);
 
-  // Loading state
+  // Loading state - combine metadata and live data loading
+  const isLoading = metadataLoading || liveLoading;
+  
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex flex-col">
@@ -179,10 +191,10 @@ export default function OwnerVehicleProfile() {
         <div className="pb-8 px-4 space-y-4">
           {/* Primary Visual - Large Map */}
           <VehicleMapSection
-            latitude={position?.latitude ?? null}
-            longitude={position?.longitude ?? null}
-            heading={position?.heading ?? null}
-            speed={position?.speed ?? null}
+            latitude={liveData?.latitude ?? null}
+            longitude={liveData?.longitude ?? null}
+            heading={liveData?.heading ?? null}
+            speed={liveData?.speed ?? null}
             address={currentAddress}
             vehicleName={displayName}
             isOnline={isOnline}
@@ -194,7 +206,7 @@ export default function OwnerVehicleProfile() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <EngineControlCard
               deviceId={deviceId!}
-              ignitionOn={position?.ignition_on ?? null}
+              ignitionOn={liveData?.ignitionOn ?? null}
               isOnline={isOnline}
             />
             <DoorControlCard
@@ -208,8 +220,8 @@ export default function OwnerVehicleProfile() {
             Vehicle Status
           </div>
           <StatusMetricsRow
-            battery={position?.battery_percent ?? null}
-            totalMileage={position?.total_mileage ?? null}
+            battery={liveData?.batteryPercent ?? null}
+            totalMileage={liveData?.totalMileageKm ?? null}
           />
 
           {/* Driver Score */}
@@ -217,9 +229,9 @@ export default function OwnerVehicleProfile() {
             <DriverScoreCard deviceId={deviceId} compact />
           )}
 
-          {/* Mileage Section */}
+          {/* Mileage Section - totalMileage expects meters, convert km back */}
           <MileageSection
-            totalMileage={position?.total_mileage ?? null}
+            totalMileage={liveData?.totalMileageKm ? liveData.totalMileageKm * 1000 : null}
             dailyStats={dailyStats}
             mileageStats={mileageStats}
             dailyMileage={dailyMileage}
@@ -241,7 +253,7 @@ export default function OwnerVehicleProfile() {
           {/* Current Status */}
           <CurrentStatusCard
             status={status}
-            speed={position?.speed ?? null}
+            speed={liveData?.speed ?? null}
           />
         </div>
       </div>

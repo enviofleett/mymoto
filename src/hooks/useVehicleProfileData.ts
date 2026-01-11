@@ -1,21 +1,10 @@
-import { useEffect, useMemo } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 
-export interface VehiclePosition {
-  device_id: string;
-  latitude: number | null;
-  longitude: number | null;
-  speed: number | null;
-  heading: number | null;
-  battery_percent: number | null;
-  ignition_on: boolean | null;
-  is_online: boolean | null;
-  total_mileage: number | null;
-  gps_time: string | null;
-  cached_at: string | null;
-}
-
+/**
+ * Vehicle LLM settings interface.
+ */
 export interface VehicleLLMSettings {
   device_id: string;
   nickname: string | null;
@@ -25,24 +14,28 @@ export interface VehicleLLMSettings {
   llm_enabled: boolean | null;
 }
 
+/**
+ * Vehicle base info interface.
+ */
 export interface VehicleInfo {
   device_id: string;
   device_name: string;
   device_type: string | null;
 }
 
+/**
+ * Combined vehicle profile metadata (non-GPS data).
+ * GPS data is now handled by useVehicleLiveData hook.
+ */
 export interface VehicleProfileData {
   vehicle: VehicleInfo | null;
-  position: VehiclePosition | null;
   llmSettings: VehicleLLMSettings | null;
-  // Computed fields
   displayName: string;
-  isOnline: boolean;
-  status: 'online' | 'charging' | 'offline';
-  lastUpdate: Date | null;
 }
 
-// Fetch vehicle base info
+/**
+ * Fetch vehicle base info.
+ */
 async function fetchVehicleInfo(deviceId: string): Promise<VehicleInfo | null> {
   const { data, error } = await supabase
     .from('vehicles')
@@ -54,19 +47,9 @@ async function fetchVehicleInfo(deviceId: string): Promise<VehicleInfo | null> {
   return data;
 }
 
-// Fetch vehicle position directly
-async function fetchVehiclePosition(deviceId: string): Promise<VehiclePosition | null> {
-  const { data, error } = await supabase
-    .from('vehicle_positions')
-    .select('*')
-    .eq('device_id', deviceId)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data;
-}
-
-// Fetch LLM settings
+/**
+ * Fetch LLM settings.
+ */
 async function fetchLLMSettings(deviceId: string): Promise<VehicleLLMSettings | null> {
   const { data, error } = await supabase
     .from('vehicle_llm_settings')
@@ -79,12 +62,19 @@ async function fetchLLMSettings(deviceId: string): Promise<VehicleLLMSettings | 
 }
 
 /**
- * Primary hook for vehicle profile data with real-time updates.
- * Replaces the pattern of using useOwnerVehicles() and filtering.
+ * Hook for vehicle profile METADATA only.
+ * 
+ * FLEET-SCALE REFACTOR: This hook no longer fetches GPS position data.
+ * Use useVehicleLiveData() for live GPS telemetry.
+ * 
+ * This hook provides:
+ * - Vehicle info (name, type)
+ * - LLM settings (nickname, avatar, personality)
+ * - Display name computation
+ * 
+ * @param deviceId - Vehicle device ID
  */
 export function useVehicleProfileData(deviceId: string | null) {
-  const queryClient = useQueryClient();
-
   // Fetch vehicle info
   const vehicleQuery = useQuery({
     queryKey: ['vehicle-info', deviceId],
@@ -92,16 +82,6 @@ export function useVehicleProfileData(deviceId: string | null) {
     enabled: !!deviceId,
     staleTime: 5 * 60 * 1000, // Vehicle info rarely changes
     gcTime: 10 * 60 * 1000,
-  });
-
-  // Fetch position
-  const positionQuery = useQuery({
-    queryKey: ['vehicle-position', deviceId],
-    queryFn: () => fetchVehiclePosition(deviceId!),
-    enabled: !!deviceId,
-    staleTime: 10 * 1000, // Position updates frequently
-    gcTime: 5 * 60 * 1000,
-    refetchInterval: 30 * 1000, // Poll every 30 seconds as fallback
   });
 
   // Fetch LLM settings
@@ -113,77 +93,32 @@ export function useVehicleProfileData(deviceId: string | null) {
     gcTime: 5 * 60 * 1000,
   });
 
-  // Real-time subscription for instant position updates
-  useEffect(() => {
-    if (!deviceId) return;
-
-    console.log('[useVehicleProfileData] Setting up real-time subscription for:', deviceId);
-
-    const channel = supabase
-      .channel(`vehicle-profile-position-${deviceId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'vehicle_positions',
-          filter: `device_id=eq.${deviceId}`,
-        },
-        (payload) => {
-          console.log('[useVehicleProfileData] Real-time position update received:', payload.new);
-          // Directly update cache with new position data
-          if (payload.new && typeof payload.new === 'object') {
-            queryClient.setQueryData(['vehicle-position', deviceId], payload.new);
-          }
-        }
-      )
-      .subscribe((status) => {
-        console.log('[useVehicleProfileData] Subscription status:', status);
-      });
-
-    return () => {
-      console.log('[useVehicleProfileData] Cleaning up subscription for:', deviceId);
-      supabase.removeChannel(channel);
-    };
-  }, [deviceId, queryClient]);
-
   // Compute derived values
   const profileData = useMemo<VehicleProfileData>(() => {
     const vehicle = vehicleQuery.data || null;
-    const position = positionQuery.data || null;
     const llmSettings = llmQuery.data || null;
-
-    const isOnline = position?.is_online ?? false;
-    const isCharging = (position?.battery_percent ?? 100) < (position?.battery_percent ?? 0); // Simplified - actual logic may differ
 
     return {
       vehicle,
-      position,
       llmSettings,
       displayName: llmSettings?.nickname || vehicle?.device_name || 'Vehicle',
-      isOnline,
-      status: isOnline ? 'online' : 'offline',
-      lastUpdate: position?.cached_at ? new Date(position.cached_at) : null,
     };
-  }, [vehicleQuery.data, positionQuery.data, llmQuery.data]);
+  }, [vehicleQuery.data, llmQuery.data]);
 
-  // Refetch all data
+  // Refetch metadata
   const refetch = async () => {
     await Promise.all([
       vehicleQuery.refetch(),
-      positionQuery.refetch(),
       llmQuery.refetch(),
     ]);
   };
 
   return {
     ...profileData,
-    isLoading: vehicleQuery.isLoading || positionQuery.isLoading,
-    isError: vehicleQuery.isError || positionQuery.isError,
-    error: vehicleQuery.error || positionQuery.error,
+    isLoading: vehicleQuery.isLoading,
+    isError: vehicleQuery.isError,
+    error: vehicleQuery.error,
     refetch,
-    // Expose individual refetch for targeted updates
-    refetchPosition: positionQuery.refetch,
     refetchLLMSettings: llmQuery.refetch,
   };
 }

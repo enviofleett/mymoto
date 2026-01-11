@@ -978,11 +978,13 @@ export type Database = {
           ignition_on: boolean | null
           is_online: boolean | null
           is_overspeeding: boolean | null
+          last_synced_at: string | null
           latitude: number | null
           longitude: number | null
           previous_battery_percent: number | null
           speed: number | null
           status_text: string | null
+          sync_priority: string | null
           total_mileage: number | null
         }
         Insert: {
@@ -996,11 +998,13 @@ export type Database = {
           ignition_on?: boolean | null
           is_online?: boolean | null
           is_overspeeding?: boolean | null
+          last_synced_at?: string | null
           latitude?: number | null
           longitude?: number | null
           previous_battery_percent?: number | null
           speed?: number | null
           status_text?: string | null
+          sync_priority?: string | null
           total_mileage?: number | null
         }
         Update: {
@@ -1014,11 +1018,13 @@ export type Database = {
           ignition_on?: boolean | null
           is_online?: boolean | null
           is_overspeeding?: boolean | null
+          last_synced_at?: string | null
           latitude?: number | null
           longitude?: number | null
           previous_battery_percent?: number | null
           speed?: number | null
           status_text?: string | null
+          sync_priority?: string | null
           total_mileage?: number | null
         }
         Relationships: [
@@ -1185,6 +1191,18 @@ export type Database = {
       }
     }
     Views: {
+      v_gps_sync_health: {
+        Row: {
+          avg_age_seconds: number | null
+          moving_count: number | null
+          newest_sync: string | null
+          oldest_sync: string | null
+          online_count: number | null
+          stale_count: number | null
+          total_vehicles: number | null
+        }
+        Relationships: []
+      }
       vehicle_daily_stats: {
         Row: {
           avg_distance_km: number | null
