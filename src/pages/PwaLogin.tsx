@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { supabase } from "@/integrations/supabase/client";
-import { Car, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
 import { z } from "zod";
+import myMotoLogo from "@/assets/mymoto-logo.png";
 
 const gps51Schema = z.object({
   username: z.string().min(1, "Username is required"),
@@ -82,31 +83,52 @@ export default function PwaLogin() {
   };
 
   return (
-    <div className="min-h-screen min-h-[100dvh] flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md border-border bg-card">
-        <CardHeader className="text-center space-y-4">
-          <div className="mx-auto w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center">
-            <Car className="w-8 h-8 text-primary" />
+    <div className="min-h-screen min-h-[100dvh] flex flex-col items-center justify-center bg-background p-4">
+      {/* Animated Logo */}
+      <div className="mb-8 animate-fade-in">
+        <div className="relative">
+          <img
+            src={myMotoLogo}
+            alt="MyMoto"
+            className="h-24 w-24 object-contain animate-[scale-in_0.5s_ease-out]"
+          />
+          {/* Subtle glow effect */}
+          <div className="absolute inset-0 -z-10 blur-2xl opacity-20">
+            <div className="h-24 w-24 rounded-full bg-primary" />
           </div>
-          <div>
-            <CardTitle className="text-2xl font-bold text-foreground">MyMoto</CardTitle>
-            <CardDescription className="text-muted-foreground mt-1">
-              Sign in with your GPS51 account
-            </CardDescription>
-          </div>
+        </div>
+      </div>
+
+      {/* Welcome text with staggered animation */}
+      <div className="text-center mb-6 animate-fade-in [animation-delay:200ms]">
+        <h1 className="text-3xl font-bold text-foreground tracking-tight">
+          MyMoto
+        </h1>
+        <p className="text-muted-foreground mt-1">
+          Your Vehicle Companion
+        </p>
+      </div>
+
+      {/* Login Card with animation */}
+      <Card className="w-full max-w-md border-border bg-card animate-fade-in [animation-delay:400ms]">
+        <CardHeader className="text-center space-y-2 pb-4">
+          <CardTitle className="text-xl font-semibold text-foreground">Welcome Back</CardTitle>
+          <CardDescription className="text-muted-foreground">
+            Sign in with your GPS51 account
+          </CardDescription>
         </CardHeader>
         
         <CardContent>
           <form onSubmit={handleGps51Login} className="space-y-4">
             {error && (
-              <Alert variant="destructive">
+              <Alert variant="destructive" className="animate-fade-in">
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
             
             {success && (
-              <Alert className="border-green-500/50 bg-green-500/10">
+              <Alert className="border-green-500/50 bg-green-500/10 animate-fade-in">
                 <CheckCircle2 className="h-4 w-4 text-green-500" />
                 <AlertDescription className="text-green-600">{success}</AlertDescription>
               </Alert>
@@ -142,7 +164,7 @@ export default function PwaLogin() {
 
             <Button 
               type="submit" 
-              className="w-full" 
+              className="w-full mt-2" 
               disabled={isSubmitting}
             >
               {isSubmitting ? (
@@ -161,6 +183,11 @@ export default function PwaLogin() {
           </p>
         </CardContent>
       </Card>
+
+      {/* Footer branding */}
+      <p className="text-xs text-muted-foreground/60 mt-8 animate-fade-in [animation-delay:600ms]">
+        Powered by GPS51 Tracking
+      </p>
     </div>
   );
 }
