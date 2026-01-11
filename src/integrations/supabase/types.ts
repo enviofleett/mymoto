@@ -14,6 +14,111 @@ export type Database = {
   }
   public: {
     Tables: {
+      alert_dispatch_log: {
+        Row: {
+          channel: string
+          created_at: string
+          error_message: string | null
+          event_id: string | null
+          id: string
+          metadata: Json | null
+          recipient: string
+          rule_id: string | null
+          sent_at: string | null
+          status: string
+        }
+        Insert: {
+          channel: string
+          created_at?: string
+          error_message?: string | null
+          event_id?: string | null
+          id?: string
+          metadata?: Json | null
+          recipient: string
+          rule_id?: string | null
+          sent_at?: string | null
+          status?: string
+        }
+        Update: {
+          channel?: string
+          created_at?: string
+          error_message?: string | null
+          event_id?: string | null
+          id?: string
+          metadata?: Json | null
+          recipient?: string
+          rule_id?: string | null
+          sent_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alert_dispatch_log_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "proactive_vehicle_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "alert_dispatch_log_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "alert_rules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      alert_rules: {
+        Row: {
+          channels: string[]
+          conditions: Json
+          cooldown_minutes: number | null
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          is_active: boolean
+          name: string
+          rule_type: string
+          severity: string
+          target_id: string | null
+          target_type: string
+          updated_at: string
+        }
+        Insert: {
+          channels?: string[]
+          conditions?: Json
+          cooldown_minutes?: number | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          rule_type: string
+          severity?: string
+          target_id?: string | null
+          target_type: string
+          updated_at?: string
+        }
+        Update: {
+          channels?: string[]
+          conditions?: Json
+          cooldown_minutes?: number | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          rule_type?: string
+          severity?: string
+          target_id?: string | null
+          target_type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       app_settings: {
         Row: {
           expires_at: string | null
@@ -339,6 +444,51 @@ export type Database = {
         }
         Relationships: []
       }
+      llm_analytics: {
+        Row: {
+          created_at: string
+          device_id: string | null
+          error_message: string | null
+          fallback_used: boolean | null
+          id: string
+          latency_ms: number | null
+          model_used: string
+          query_type: string
+          success: boolean | null
+          tokens_input: number | null
+          tokens_output: number | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          device_id?: string | null
+          error_message?: string | null
+          fallback_used?: boolean | null
+          id?: string
+          latency_ms?: number | null
+          model_used: string
+          query_type: string
+          success?: boolean | null
+          tokens_input?: number | null
+          tokens_output?: number | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          device_id?: string | null
+          error_message?: string | null
+          fallback_used?: boolean | null
+          id?: string
+          latency_ms?: number | null
+          model_used?: string
+          query_type?: string
+          success?: boolean | null
+          tokens_input?: number | null
+          tokens_output?: number | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       position_history: {
         Row: {
           battery_percent: number | null
@@ -577,6 +727,39 @@ export type Database = {
           time_slot?: string | null
           typical_start_hour?: number
           updated_at?: string
+        }
+        Relationships: []
+      }
+      user_preferences: {
+        Row: {
+          confidence_score: number | null
+          created_at: string
+          id: string
+          last_updated: string
+          preference_key: string
+          preference_value: Json
+          source: string
+          user_id: string
+        }
+        Insert: {
+          confidence_score?: number | null
+          created_at?: string
+          id?: string
+          last_updated?: string
+          preference_key: string
+          preference_value: Json
+          source?: string
+          user_id: string
+        }
+        Update: {
+          confidence_score?: number | null
+          created_at?: string
+          id?: string
+          last_updated?: string
+          preference_key?: string
+          preference_value?: Json
+          source?: string
+          user_id?: string
         }
         Relationships: []
       }
