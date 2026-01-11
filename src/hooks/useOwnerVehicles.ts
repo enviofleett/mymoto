@@ -5,7 +5,10 @@ import { useAuth } from "@/contexts/AuthContext";
 export interface OwnerVehicle {
   deviceId: string;
   name: string;
+  plateNumber: string; // Original device_name / plate number for identification
+  nickname: string | null; // Custom nickname from LLM settings
   alias: string | null;
+  avatarUrl: string | null; // Avatar from LLM settings
   deviceType: string | null;
   status: "online" | "offline" | "charging";
   battery: number | null;
@@ -87,10 +90,10 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
     .in("device_id", deviceIds)
     .order("created_at", { ascending: false });
 
-  // Fetch LLM settings for personality
+  // Fetch LLM settings for personality and avatar
   const { data: llmSettings } = await supabase
     .from("vehicle_llm_settings")
-    .select("device_id, personality_mode, nickname")
+    .select("device_id, personality_mode, nickname, avatar_url")
     .in("device_id", deviceIds);
 
   // Group chat history by device
@@ -116,11 +119,20 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
     
     const isOnline = pos?.is_online ?? false;
     const isCharging = pos?.speed === 0 && pos?.ignition_on === false && (pos?.battery_percent ?? 100) < 100;
+    
+    // Keep original plate number for identification
+    const plateNumber = vehicle?.device_name || a.device_id;
+    const nickname = settings?.nickname || null;
+    // Display name: nickname or alias or plate number
+    const displayName = nickname || a.vehicle_alias || plateNumber;
 
     return {
       deviceId: a.device_id,
-      name: settings?.nickname || a.vehicle_alias || vehicle?.device_name || a.device_id,
+      name: displayName,
+      plateNumber,
+      nickname,
       alias: a.vehicle_alias,
+      avatarUrl: settings?.avatar_url || null,
       deviceType: vehicle?.device_type || null,
       status: !isOnline ? "offline" : isCharging ? "charging" : "online" as const,
       battery: pos?.battery_percent ?? null,

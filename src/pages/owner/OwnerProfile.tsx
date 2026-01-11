@@ -114,31 +114,47 @@ export default function OwnerProfile() {
               {/* Quick vehicle preview */}
               {!isLoading && vehicles && vehicles.length > 0 && (
                 <div className="mt-3 pt-3 border-t border-border/50 space-y-2.5">
-                  {vehicles.slice(0, 2).map((vehicle) => (
-                    <div
-                      key={vehicle.deviceId}
-                      className="flex items-center gap-3"
-                    >
-                      <div className="w-8 h-8 rounded-full bg-muted/60 flex items-center justify-center">
-                        <Car className="h-3.5 w-3.5 text-muted-foreground" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm text-foreground truncate">
-                          {vehicle.name}
-                        </div>
-                      </div>
-                      <Badge
-                        variant="secondary"
-                        className={
-                          vehicle.status === "online"
-                            ? "bg-status-active/15 text-status-active text-[10px] px-1.5 py-0"
-                            : "bg-muted text-muted-foreground text-[10px] px-1.5 py-0"
-                        }
+                  {vehicles.slice(0, 2).map((vehicle) => {
+                    const hasNickname = vehicle.nickname && vehicle.nickname !== vehicle.plateNumber;
+                    return (
+                      <div
+                        key={vehicle.deviceId}
+                        className="flex items-center gap-3"
                       >
-                        {vehicle.status}
-                      </Badge>
-                    </div>
-                  ))}
+                        {vehicle.avatarUrl ? (
+                          <img 
+                            src={vehicle.avatarUrl}
+                            alt={vehicle.name}
+                            className="w-8 h-8 rounded-full object-cover border border-border"
+                          />
+                        ) : (
+                          <div className="w-8 h-8 rounded-full bg-muted/60 flex items-center justify-center">
+                            <Car className="h-3.5 w-3.5 text-muted-foreground" />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm text-foreground truncate">
+                            {vehicle.name}
+                            {hasNickname && (
+                              <span className="text-muted-foreground text-xs ml-1">
+                                ({vehicle.plateNumber})
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <Badge
+                          variant="secondary"
+                          className={
+                            vehicle.status === "online"
+                              ? "bg-status-active/15 text-status-active text-[10px] px-1.5 py-0"
+                              : "bg-muted text-muted-foreground text-[10px] px-1.5 py-0"
+                          }
+                        >
+                          {vehicle.status}
+                        </Badge>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
