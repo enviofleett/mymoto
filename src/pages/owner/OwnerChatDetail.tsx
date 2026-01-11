@@ -12,6 +12,7 @@ import { useOwnerVehicles } from "@/hooks/useOwnerVehicles";
 import { useVehicleLLMSettings } from "@/hooks/useVehicleProfile";
 import { ArrowLeft, Car, User, Send, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ChatMessageContent } from "@/components/chat/ChatMessageContent";
 
 interface ChatMessage {
   id: string;
@@ -251,7 +252,9 @@ export default function OwnerChatDetail() {
                     : "bg-muted text-foreground rounded-bl-md"
                 )}
               >
-                <p className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                <div className="text-sm whitespace-pre-wrap leading-relaxed">
+                  <ChatMessageContent content={msg.content} isUser={msg.role === "user"} />
+                </div>
                 <p className={cn(
                   "text-[10px] mt-1.5 text-right",
                   msg.role === "user" ? "text-primary-foreground/70" : "text-muted-foreground"
@@ -276,7 +279,9 @@ export default function OwnerChatDetail() {
                 </AvatarFallback>
               </Avatar>
               <div className="rounded-2xl rounded-bl-md px-3.5 py-2.5 max-w-[75%] bg-muted">
-                <p className="text-sm whitespace-pre-wrap leading-relaxed">{streamingContent}</p>
+                <div className="text-sm whitespace-pre-wrap leading-relaxed">
+                  <ChatMessageContent content={streamingContent} isUser={false} />
+                </div>
               </div>
             </div>
           )}
