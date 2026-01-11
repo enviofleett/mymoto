@@ -117,6 +117,8 @@ export function useVehicleProfileData(deviceId: string | null) {
   useEffect(() => {
     if (!deviceId) return;
 
+    console.log('[useVehicleProfileData] Setting up real-time subscription for:', deviceId);
+
     const channel = supabase
       .channel(`vehicle-profile-position-${deviceId}`)
       .on(
@@ -128,16 +130,19 @@ export function useVehicleProfileData(deviceId: string | null) {
           filter: `device_id=eq.${deviceId}`,
         },
         (payload) => {
-          console.log('[useVehicleProfileData] Real-time position update:', payload.new);
+          console.log('[useVehicleProfileData] Real-time position update received:', payload.new);
           // Directly update cache with new position data
           if (payload.new && typeof payload.new === 'object') {
             queryClient.setQueryData(['vehicle-position', deviceId], payload.new);
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('[useVehicleProfileData] Subscription status:', status);
+      });
 
     return () => {
+      console.log('[useVehicleProfileData] Cleaning up subscription for:', deviceId);
       supabase.removeChannel(channel);
     };
   }, [deviceId, queryClient]);

@@ -27,7 +27,7 @@ export function VehicleMapSection({
   isRefreshing,
   onRefresh,
 }: VehicleMapSectionProps) {
-  if (!latitude || !longitude) {
+  if (latitude === null || longitude === null) {
     return (
       <Card className="border-border bg-card/50">
         <CardContent className="p-8 text-center">
