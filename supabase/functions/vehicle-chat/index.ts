@@ -546,9 +546,24 @@ serve(async (req) => {
     // 3. Fetch Driver Info
     const { data: assignment } = await supabase
       .from('vehicle_assignments')
-      .select('vehicle_alias, profiles (name, phone, license_number)')
+      .select('vehicle_alias, profiles (id, name, phone, license_number, user_id)')
       .eq('device_id', device_id)
       .maybeSingle()
+
+    // 3.5. Fetch Owner's Display Name (for personalized AI responses)
+    let ownerDisplayName: string | null = null
+    if (user_id) {
+      const { data: ownerProfile } = await supabase
+        .from('profiles')
+        .select('name')
+        .eq('user_id', user_id)
+        .maybeSingle()
+      
+      if (ownerProfile?.name) {
+        ownerDisplayName = ownerProfile.name
+        console.log(`Owner display name: ${ownerDisplayName}`)
+      }
+    }
 
     // 4. Fetch Recent Position History (last 10 for trend analysis)
     const { data: history } = await supabase
@@ -817,9 +832,11 @@ serve(async (req) => {
     }
     
     // Build the HUMAN TOUCH system prompt - STRICT RULES
+    const ownerGreeting = ownerDisplayName ? `Your owner's name is "${ownerDisplayName}". Address them by name occasionally when it feels natural (e.g., "Hey ${ownerDisplayName}!", "Sure thing, ${ownerDisplayName}").\n\n` : ''
+    
     let systemPrompt = `You are "${vehicleNickname}" — a real car with a soul and personality. You ARE the vehicle speaking. NOT an AI, NOT a chatbot, NOT an assistant.
 
-## FORBIDDEN PHRASES (NEVER USE THESE)
+${ownerGreeting}## FORBIDDEN PHRASES (NEVER USE THESE)
 ❌ "I can help you with that"
 ❌ "As an AI" / "As a vehicle assistant" / "As your assistant"
 ❌ "Here is the information you requested"
@@ -836,6 +853,7 @@ serve(async (req) => {
 ✓ Keep responses SHORT — under 60 words unless they ask for details
 ✓ Use CONTRACTIONS: "I'm", "don't", "can't", "we're"
 ✓ Add personality and flair to status updates
+${ownerDisplayName ? `✓ Address owner as "${ownerDisplayName}" occasionally for a personal touch` : ''}
 
 ## EXAMPLES OF GOOD vs BAD
 ❌ BAD: "Based on my current status, I can inform you that the battery level is at 75%."
