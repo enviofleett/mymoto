@@ -38,10 +38,14 @@ export interface FleetMetrics {
   overspeedingCount: number;
 }
 
-export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
+export interface FleetFilters {
+  gpsOwner?: string;
+  status?: 'moving' | 'stopped' | 'offline';
+  onlyOnline?: boolean;
+}
 
 /**
- * Calculate offline duration string.
+ * Calculate offline duration string from last update time.
  */
 function getOfflineDuration(updateTime: Date): string {
   const now = new Date();
@@ -57,16 +61,16 @@ function getOfflineDuration(updateTime: Date): string {
 
 /**
  * Transform database row to FleetVehicle.
- * FLEET-SCALE SAFE: Status derived from backend is_online field.
+ * Status is computed from backend is_online and speed fields.
  */
-function transformDbRowToVehicle(row: any): FleetVehicle {
+function transformToFleetVehicle(row: any): FleetVehicle {
   const latitude = row.latitude;
   const longitude = row.longitude;
   const speed = row.speed ?? 0;
   const isOnline = row.is_online ?? false;
   const hasValidCoords = latitude !== null && longitude !== null && latitude !== 0 && longitude !== 0;
   
-  // Status derived from backend is_online field - no frontend calculation
+  // Status is derived from backend is_online field
   let status: 'moving' | 'stopped' | 'offline' = 'offline';
   if (!isOnline) {
     status = 'offline';
@@ -88,7 +92,7 @@ function transformDbRowToVehicle(row: any): FleetVehicle {
   const profile = assignment?.profiles;
   const vehicle = row.vehicles;
 
-  // Mileage stored in meters - convert to km
+  // Mileage is stored in meters, convert to km
   const mileageMeters = row.total_mileage;
   const mileageKm = mileageMeters ? Math.round(mileageMeters / 1000) : null;
 
@@ -145,10 +149,10 @@ function calculateMetrics(vehicles: FleetVehicle[]): FleetMetrics {
 
 /**
  * Fetch fleet data directly from database.
- * FLEET-SCALE SAFE: NO Edge Function calls.
+ * NO Edge Function calls - fleet-scale safe.
  */
 async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: FleetMetrics }> {
-  console.log("[useFleetData] Fetching from DB (fleet-scale safe)...");
+  console.log("[useFleetLiveData] Fetching from DB...");
 
   const { data, error } = await supabase
     .from('vehicle_positions')
@@ -183,40 +187,42 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
       )
     `);
 
-  if (error) throw new Error(`Fleet data error: ${error.message}`);
+  if (error) throw new Error(`Fleet data fetch error: ${error.message}`);
 
-  const vehicles = (data || []).map(transformDbRowToVehicle);
+  const vehicles = (data || []).map(transformToFleetVehicle);
   const metrics = calculateMetrics(vehicles);
 
-  console.log(`[useFleetData] Fetched ${vehicles.length} vehicles from DB`);
+  console.log(`[useFleetLiveData] Fetched ${vehicles.length} vehicles`);
 
   return { vehicles, metrics };
 }
 
 /**
- * Primary hook for fleet data with real-time updates.
+ * Primary hook for fleet-wide live GPS data.
  * 
- * FLEET-SCALE SAFE: Reads directly from vehicle_positions table.
- * The CRON job (sync-gps-data) handles all GPS51 API calls.
- * NO Edge Function invocations from the frontend.
+ * FLEET-SCALE SAFE: Reads directly from vehicle_positions table with joins.
+ * The CRON job (sync-gps-data) handles GPS51 API calls.
+ * 
+ * @param filters - Optional filters for fleet data
+ * @returns Fleet vehicles and metrics with 30-second polling
  */
-export function useFleetData() {
+export function useFleetLiveData(filters?: FleetFilters) {
   const queryClient = useQueryClient();
 
-  const { data, isLoading, error, refetch, status } = useQuery({
-    queryKey: ['fleet-data'],
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ['fleet-live-data', filters],
     queryFn: fetchFleetData,
-    staleTime: 30 * 1000,        // 30 seconds
-    gcTime: 10 * 60 * 1000,      // Keep in cache 10 minutes
-    refetchInterval: 60 * 1000,  // Poll DB every 60 seconds
+    staleTime: 10 * 1000,       // 10 seconds
+    gcTime: 5 * 60 * 1000,      // Keep in cache for 5 minutes
+    refetchInterval: 30 * 1000, // Poll DB every 30 seconds
     refetchOnWindowFocus: false,
     retry: 2,
   });
 
-  // Subscribe to realtime updates for instant cache updates
+  // Subscribe to realtime updates for cache invalidation
   useEffect(() => {
     const channel = supabase
-      .channel('vehicle-positions-realtime')
+      .channel('fleet-positions-realtime')
       .on(
         'postgres_changes',
         {
@@ -225,15 +231,14 @@ export function useFleetData() {
           table: 'vehicle_positions'
         },
         (payload) => {
-          console.log('[useFleetData] Realtime update:', payload.new.device_id);
+          console.log('[useFleetLiveData] Realtime update for:', payload.new.device_id);
           
           // Update specific vehicle in cache without full refetch
-          queryClient.setQueryData(['fleet-data'], (oldData: { vehicles: FleetVehicle[]; metrics: FleetMetrics } | undefined) => {
+          queryClient.setQueryData(['fleet-live-data', filters], (oldData: { vehicles: FleetVehicle[]; metrics: FleetMetrics } | undefined) => {
             if (!oldData) return oldData;
             
             const updatedVehicles = oldData.vehicles.map(vehicle => {
               if (vehicle.id === payload.new.device_id) {
-                // Reconstruct minimal row for transform
                 const row = {
                   ...payload.new,
                   vehicles: { device_name: vehicle.plate, gps_owner: vehicle.gpsOwner },
@@ -242,7 +247,7 @@ export function useFleetData() {
                     profiles: vehicle.driver
                   }] : []
                 };
-                return transformDbRowToVehicle(row);
+                return transformToFleetVehicle(row);
               }
               return vehicle;
             });
@@ -254,25 +259,40 @@ export function useFleetData() {
           });
         }
       )
-      .subscribe((subStatus) => {
-        console.log('[useFleetData] Subscription status:', subStatus);
+      .subscribe((status) => {
+        console.log('[useFleetLiveData] Subscription status:', status);
       });
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [queryClient]);
+  }, [queryClient, filters]);
 
-  // Derive connection status from query status
-  const connectionStatus: ConnectionStatus = useMemo(() => {
-    if (isLoading) return 'connecting';
-    if (error) return 'disconnected';
-    return 'connected';
-  }, [isLoading, error]);
+  // Apply client-side filters if provided
+  const filteredData = useMemo(() => {
+    if (!data || !filters) return data;
+
+    let vehicles = data.vehicles;
+
+    if (filters.gpsOwner) {
+      vehicles = vehicles.filter(v => v.gpsOwner === filters.gpsOwner);
+    }
+    if (filters.status) {
+      vehicles = vehicles.filter(v => v.status === filters.status);
+    }
+    if (filters.onlyOnline) {
+      vehicles = vehicles.filter(v => v.status !== 'offline');
+    }
+
+    return {
+      vehicles,
+      metrics: calculateMetrics(vehicles)
+    };
+  }, [data, filters]);
 
   return {
-    vehicles: data?.vehicles || [],
-    metrics: data?.metrics || {
+    vehicles: filteredData?.vehicles || [],
+    metrics: filteredData?.metrics || {
       totalVehicles: 0,
       movingNow: 0,
       assignedDrivers: 0,
@@ -281,10 +301,8 @@ export function useFleetData() {
       lowBatteryCount: 0,
       overspeedingCount: 0,
     },
-    loading: isLoading,
+    isLoading,
     error: error?.message || null,
-    connectionStatus,
-    refetch: () => refetch(),
-    // Removed forceRefresh - no longer makes Edge Function calls
+    refetch,
   };
 }
