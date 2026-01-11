@@ -37,7 +37,9 @@ export default function OwnerChatDetail() {
 
   const vehicle = vehicles?.find(v => v.deviceId === deviceId);
   const vehicleName = llmSettings?.nickname || vehicle?.name || "Vehicle";
-  const avatarUrl = llmSettings?.avatar_url;
+  const plateNumber = vehicle?.plateNumber || vehicle?.name || "";
+  const hasNickname = llmSettings?.nickname && llmSettings.nickname !== plateNumber;
+  const avatarUrl = llmSettings?.avatar_url || vehicle?.avatarUrl;
   
   const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vehicle-chat`;
 
@@ -186,7 +188,14 @@ export default function OwnerChatDetail() {
           </div>
 
           <div className="flex-1 min-w-0">
-            <h2 className="font-medium text-foreground text-sm truncate">{vehicleName}</h2>
+            <h2 className="font-medium text-foreground text-sm truncate">
+              {vehicleName}
+              {hasNickname && (
+                <span className="text-muted-foreground font-normal ml-1">
+                  ({plateNumber})
+                </span>
+              )}
+            </h2>
             <p className="text-[11px] text-muted-foreground">
               {vehicle?.status === "online" ? "Online" : "Offline"}
             </p>

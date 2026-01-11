@@ -14,17 +14,28 @@ function VehicleChatItem({ vehicle, onClick }: { vehicle: OwnerVehicle; onClick:
     if (vehicle.status === "charging") return "bg-status-maintenance";
     return "bg-muted-foreground";
   };
+
+  // Show plate number in brackets if there's a custom nickname
+  const hasNickname = vehicle.nickname && vehicle.nickname !== vehicle.plateNumber;
   
   return (
     <button
       onClick={onClick}
       className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/30 transition-colors text-left border-b border-border/50 last:border-b-0"
     >
-      {/* Vehicle Icon */}
+      {/* Vehicle Icon/Avatar */}
       <div className="relative shrink-0">
-        <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
-          <Car className="h-5 w-5 text-muted-foreground" />
-        </div>
+        {vehicle.avatarUrl ? (
+          <img 
+            src={vehicle.avatarUrl}
+            alt={vehicle.name}
+            className="w-12 h-12 rounded-full object-cover border border-border"
+          />
+        ) : (
+          <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
+            <Car className="h-5 w-5 text-muted-foreground" />
+          </div>
+        )}
         <div className={cn(
           "absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-background",
           getStatusColor()
@@ -34,7 +45,14 @@ function VehicleChatItem({ vehicle, onClick }: { vehicle: OwnerVehicle; onClick:
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
-          <h3 className="font-medium text-foreground text-sm truncate">{vehicle.name}</h3>
+          <h3 className="font-medium text-foreground text-sm truncate">
+            {vehicle.name}
+            {hasNickname && (
+              <span className="text-muted-foreground font-normal ml-1">
+                ({vehicle.plateNumber})
+              </span>
+            )}
+          </h3>
           {vehicle.lastMessageTime && (
             <span className="text-[11px] text-muted-foreground shrink-0">
               {formatDistanceToNow(vehicle.lastMessageTime, { addSuffix: false })}

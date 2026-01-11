@@ -543,6 +543,11 @@ export default function OwnerVehicleProfile() {
             </div>
             <h1 className="text-xl font-semibold text-foreground">
               {llmSettings?.nickname || vehicle.name}
+              {llmSettings?.nickname && llmSettings.nickname !== vehicle.name && (
+                <span className="text-muted-foreground font-normal text-sm ml-1">
+                  ({vehicle.name})
+                </span>
+              )}
             </h1>
             {llmSettings?.personality_mode && (
               <p className="text-xs text-muted-foreground mt-1">

@@ -80,17 +80,28 @@ function VehicleCard({ vehicle, onClick }: { vehicle: OwnerVehicle; onClick: () 
     return "bg-muted-foreground";
   };
 
+  // Show plate number in brackets if there's a custom nickname
+  const hasNickname = vehicle.nickname && vehicle.nickname !== vehicle.plateNumber;
+
   return (
     <button 
       className="w-full text-left bg-card border border-border/50 rounded-xl p-4 hover:bg-muted/30 transition-colors active:scale-[0.99]"
       onClick={onClick}
     >
       <div className="flex items-center gap-3">
-        {/* Vehicle Icon */}
+        {/* Vehicle Icon/Avatar */}
         <div className="relative shrink-0">
-          <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
-            <Car className="h-5 w-5 text-muted-foreground" />
-          </div>
+          {vehicle.avatarUrl ? (
+            <img 
+              src={vehicle.avatarUrl}
+              alt={vehicle.name}
+              className="w-12 h-12 rounded-full object-cover border border-border"
+            />
+          ) : (
+            <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
+              <Car className="h-5 w-5 text-muted-foreground" />
+            </div>
+          )}
           <div className={cn(
             "absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-card",
             getStatusColor()
@@ -99,7 +110,14 @@ function VehicleCard({ vehicle, onClick }: { vehicle: OwnerVehicle; onClick: () 
 
         {/* Info */}
         <div className="flex-1 min-w-0">
-          <h3 className="font-medium text-foreground text-sm leading-tight">{vehicle.name}</h3>
+          <h3 className="font-medium text-foreground text-sm leading-tight truncate">
+            {vehicle.name}
+            {hasNickname && (
+              <span className="text-muted-foreground font-normal ml-1">
+                ({vehicle.plateNumber})
+              </span>
+            )}
+          </h3>
           {vehicle.battery !== null && (
             <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
               <Battery className="h-3 w-3" />
