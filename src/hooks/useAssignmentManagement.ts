@@ -201,6 +201,45 @@ export function useAssignVehicles() {
   });
 }
 
+export function useBulkAutoAssign() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (assignments: { deviceId: string; profileId: string }[]) => {
+      const results = await Promise.all(
+        assignments.map(async ({ deviceId, profileId }) => {
+          const { error } = await supabase
+            .from("vehicle_assignments")
+            .upsert({
+              device_id: deviceId,
+              profile_id: profileId,
+              updated_at: new Date().toISOString(),
+            }, {
+              onConflict: "device_id",
+            });
+          return { deviceId, error };
+        })
+      );
+
+      const errors = results.filter(r => r.error);
+      if (errors.length > 0) {
+        throw new Error(`Failed to assign ${errors.length} vehicles`);
+      }
+
+      return { assigned: assignments.length };
+    },
+    onSuccess: (data) => {
+      toast.success(`Auto-assigned ${data.assigned} vehicle(s) successfully`);
+      queryClient.invalidateQueries({ queryKey: ["vehicles-with-assignments"] });
+      queryClient.invalidateQueries({ queryKey: ["profiles-with-assignments"] });
+      queryClient.invalidateQueries({ queryKey: ["assignment-stats"] });
+    },
+    onError: (error) => {
+      toast.error(`Auto-assignment failed: ${error.message}`);
+    },
+  });
+}
+
 export function useUnassignVehicles() {
   const queryClient = useQueryClient();
 
