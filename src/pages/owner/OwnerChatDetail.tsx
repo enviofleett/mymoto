@@ -4,10 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useOwnerVehicles } from "@/hooks/useOwnerVehicles";
+import { useVehicleLLMSettings } from "@/hooks/useVehicleProfile";
 import { ArrowLeft, Car, User, Send, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +26,7 @@ export default function OwnerChatDetail() {
   const { user } = useAuth();
   const { toast } = useToast();
   const { data: vehicles } = useOwnerVehicles();
+  const { data: llmSettings } = useVehicleLLMSettings(deviceId ?? null);
   
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -33,7 +36,8 @@ export default function OwnerChatDetail() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const vehicle = vehicles?.find(v => v.deviceId === deviceId);
-  const vehicleName = vehicle?.name || "Vehicle";
+  const vehicleName = llmSettings?.nickname || vehicle?.name || "Vehicle";
+  const avatarUrl = llmSettings?.avatar_url;
   
   const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vehicle-chat`;
 
@@ -169,9 +173,12 @@ export default function OwnerChatDetail() {
           </Button>
           
           <div className="relative shrink-0">
-            <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center">
-              <Car className="h-4 w-4 text-muted-foreground" />
-            </div>
+            <Avatar className="w-9 h-9">
+              <AvatarImage src={avatarUrl || undefined} alt={vehicleName} />
+              <AvatarFallback className="bg-muted">
+                <Car className="h-4 w-4 text-muted-foreground" />
+              </AvatarFallback>
+            </Avatar>
             <div className={cn(
               "absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-card",
               vehicle?.status === "online" ? "bg-status-active" : "bg-muted-foreground"
@@ -220,9 +227,12 @@ export default function OwnerChatDetail() {
               )}
             >
               {msg.role === "assistant" && (
-                <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center shrink-0">
-                  <Car className="h-3.5 w-3.5 text-muted-foreground" />
-                </div>
+                <Avatar className="w-7 h-7 shrink-0">
+                  <AvatarImage src={avatarUrl || undefined} alt={vehicleName} />
+                  <AvatarFallback className="bg-muted">
+                    <Car className="h-3.5 w-3.5 text-muted-foreground" />
+                  </AvatarFallback>
+                </Avatar>
               )}
               <div
                 className={cn(
@@ -250,9 +260,12 @@ export default function OwnerChatDetail() {
 
           {streamingContent && (
             <div className="flex gap-2 justify-start">
-              <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center shrink-0">
-                <Car className="h-3.5 w-3.5 text-muted-foreground" />
-              </div>
+              <Avatar className="w-7 h-7 shrink-0">
+                <AvatarImage src={avatarUrl || undefined} alt={vehicleName} />
+                <AvatarFallback className="bg-muted">
+                  <Car className="h-3.5 w-3.5 text-muted-foreground" />
+                </AvatarFallback>
+              </Avatar>
               <div className="rounded-2xl rounded-bl-md px-3.5 py-2.5 max-w-[75%] bg-muted">
                 <p className="text-sm whitespace-pre-wrap leading-relaxed">{streamingContent}</p>
               </div>
@@ -261,9 +274,12 @@ export default function OwnerChatDetail() {
 
           {loading && !streamingContent && (
             <div className="flex gap-2 justify-start">
-              <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center shrink-0">
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-              </div>
+              <Avatar className="w-7 h-7 shrink-0">
+                <AvatarImage src={avatarUrl || undefined} alt={vehicleName} />
+                <AvatarFallback className="bg-muted">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                </AvatarFallback>
+              </Avatar>
               <div className="rounded-2xl rounded-bl-md px-3.5 py-2.5 bg-muted">
                 <p className="text-sm text-muted-foreground">Thinking...</p>
               </div>

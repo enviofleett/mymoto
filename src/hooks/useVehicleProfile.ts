@@ -37,6 +37,7 @@ export interface VehicleLLMSettings {
   language_preference: string;
   personality_mode: string;
   llm_enabled: boolean;
+  avatar_url: string | null;
 }
 
 export interface MileageStats {
