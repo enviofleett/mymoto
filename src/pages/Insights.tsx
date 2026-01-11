@@ -16,6 +16,7 @@ import { format } from "date-fns";
 import { BillingConfigCard } from "@/components/admin/BillingConfigCard";
 import { AiSimulationCard } from "@/components/admin/AiSimulationCard";
 import { DataBackfillCard } from "@/components/admin/DataBackfillCard";
+import { GhostVehicleCard } from "@/components/admin/GhostVehicleCard";
 import { FleetInsights } from "@/components/fleet/FleetInsights";
 import {
   LineChart,
@@ -431,9 +432,12 @@ const Insights = () => {
           </div>
         )}
 
-        {/* Additional Admin Tools */}
+        {/* Database Cleanup Tools */}
         {isAdmin && (
-          <BillingConfigCard />
+          <div className="grid gap-6 lg:grid-cols-2">
+            <GhostVehicleCard />
+            <BillingConfigCard />
+          </div>
         )}
 
         {/* Insight History */}
