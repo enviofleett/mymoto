@@ -3,23 +3,71 @@ import App from "./App.tsx";
 import "./index.css";
 import { registerSW } from 'virtual:pwa-register';
 
-// Register service worker with auto-update
+// App version for cache busting
+const APP_VERSION = '1.3.0';
+
+// Force update check for existing PWA users
+const checkAndForceUpdate = async () => {
+  const storedVersion = localStorage.getItem('mymoto-app-version');
+  
+  if (storedVersion && storedVersion !== APP_VERSION) {
+    console.log('[PWA] Version mismatch detected:', storedVersion, '->', APP_VERSION);
+    
+    // Clear all caches
+    if ('caches' in window) {
+      const cacheNames = await caches.keys();
+      console.log('[PWA] Clearing caches:', cacheNames);
+      await Promise.all(cacheNames.map(name => caches.delete(name)));
+    }
+    
+    // Update stored version
+    localStorage.setItem('mymoto-app-version', APP_VERSION);
+    
+    // Force reload to get fresh assets
+    console.log('[PWA] Forcing reload for new version...');
+    window.location.reload();
+    return;
+  }
+  
+  // Set version if not set
+  if (!storedVersion) {
+    localStorage.setItem('mymoto-app-version', APP_VERSION);
+  }
+};
+
+// Run version check immediately
+checkAndForceUpdate();
+
+// Register service worker with aggressive auto-update
 const updateSW = registerSW({
   immediate: true,
   onNeedRefresh() {
-    console.log('[PWA] New version available, updating...');
-    updateSW(true); // Auto-update without prompt
+    console.log('[PWA] New version available, force updating...');
+    
+    // Clear all caches before update
+    if ('caches' in window) {
+      caches.keys().then(names => {
+        console.log('[PWA] Clearing caches before update:', names);
+        Promise.all(names.map(name => caches.delete(name))).then(() => {
+          localStorage.setItem('mymoto-app-version', APP_VERSION);
+          updateSW(true);
+        });
+      });
+    } else {
+      updateSW(true);
+    }
   },
   onOfflineReady() {
     console.log('[PWA] App ready to work offline');
   },
   onRegisteredSW(swUrl, r) {
-    console.log('[PWA] Service Worker registered:', swUrl);
-    // Check for updates every 60 seconds
+    console.log('[PWA] Service Worker registered:', swUrl, 'Version:', APP_VERSION);
+    // Check for updates every 30 seconds for faster propagation
     if (r) {
       setInterval(() => {
+        console.log('[PWA] Checking for updates...');
         r.update();
-      }, 60000);
+      }, 30000);
     }
   },
   onRegisterError(error) {

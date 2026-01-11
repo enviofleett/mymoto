@@ -6,8 +6,8 @@ import { Card } from '@/components/ui/card';
 import { MapPin, Navigation, ExternalLink } from 'lucide-react';
 
 interface VehicleLocationMapProps {
-  latitude: number;
-  longitude: number;
+  latitude: number | null | undefined;
+  longitude: number | null | undefined;
   heading?: number | null;
   speed?: number | null;
   address?: string | null;
@@ -33,24 +33,16 @@ export function VehicleLocationMap({
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const marker = useRef<mapboxgl.Marker | null>(null);
+  const isMapInitialized = useRef(false);
   const [mapLoaded, setMapLoaded] = useState(false);
 
-  // Initialize map only when we have valid coordinates
-  useEffect(() => {
-    if (!mapContainer.current) return;
-    
-    // Don't initialize if coordinates are not available yet
-    if (latitude === undefined || longitude === undefined) {
-      console.log('[VehicleLocationMap] Waiting for coordinates...');
-      return;
-    }
+  // Check if we have valid coordinates
+  const hasValidCoordinates = latitude !== null && latitude !== undefined && 
+                               longitude !== null && longitude !== undefined;
 
-    // Don't reinitialize if map already exists
-    if (map.current) {
-      console.log('[VehicleLocationMap] Map already initialized, updating center');
-      map.current.setCenter([longitude, latitude]);
-      return;
-    }
+  // Initialize map ONCE when container is ready and we have valid coordinates
+  useEffect(() => {
+    if (!mapContainer.current || !hasValidCoordinates || isMapInitialized.current) return;
 
     const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
     if (!token) {
@@ -64,7 +56,7 @@ export function VehicleLocationMap({
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
       style: 'mapbox://styles/mapbox/dark-v11',
-      center: [longitude, latitude],
+      center: [longitude as number, latitude as number],
       zoom: 16,
       pitch: 45,
       bearing: heading || 0,
@@ -83,17 +75,23 @@ export function VehicleLocationMap({
       setMapLoaded(true);
     });
 
+    isMapInitialized.current = true;
+
     return () => {
       marker.current?.remove();
       map.current?.remove();
       map.current = null;
+      isMapInitialized.current = false;
       setMapLoaded(false);
     };
-  }, [latitude, longitude]);
+  }, [hasValidCoordinates]);
 
   // Update marker when coordinates or heading change
   useEffect(() => {
-    if (!map.current || !mapLoaded) return;
+    if (!map.current || !mapLoaded || !hasValidCoordinates) return;
+
+    const lng = longitude as number;
+    const lat = latitude as number;
 
     // Remove existing marker
     marker.current?.remove();
@@ -118,18 +116,34 @@ export function VehicleLocationMap({
     `;
 
     marker.current = new mapboxgl.Marker({ element: el, anchor: 'center' })
-      .setLngLat([longitude, latitude])
+      .setLngLat([lng, lat])
       .addTo(map.current);
 
     // Pan to new location smoothly
     map.current.flyTo({
-      center: [longitude, latitude],
+      center: [lng, lat],
       duration: 1000,
       essential: true,
     });
-  }, [latitude, longitude, heading, speed, isOnline, mapLoaded]);
+  }, [latitude, longitude, heading, speed, isOnline, mapLoaded, hasValidCoordinates]);
 
-  const googleMapsLink = `https://www.google.com/maps?q=${latitude},${longitude}`;
+  const googleMapsLink = hasValidCoordinates 
+    ? `https://www.google.com/maps?q=${latitude},${longitude}`
+    : '#';
+
+  // Show loading state if no valid coordinates
+  if (!hasValidCoordinates) {
+    return (
+      <div className={cn("relative", className)}>
+        <div className={cn("w-full rounded-xl overflow-hidden bg-muted/50 flex items-center justify-center", mapHeight)}>
+          <div className="text-center p-8">
+            <div className="w-12 h-12 mx-auto rounded-full bg-muted animate-pulse mb-3" />
+            <p className="text-sm text-muted-foreground">Loading map...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={cn("relative", className)}>

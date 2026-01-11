@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { VehicleLocationMap } from "@/components/fleet/VehicleLocationMap";
 import { RefreshCw, MapPin } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 interface VehicleMapSectionProps {
@@ -14,6 +15,7 @@ interface VehicleMapSectionProps {
   isOnline: boolean;
   isRefreshing: boolean;
   onRefresh: () => void;
+  isLoading?: boolean;
 }
 
 export function VehicleMapSection({
@@ -26,7 +28,28 @@ export function VehicleMapSection({
   isOnline,
   isRefreshing,
   onRefresh,
+  isLoading = false,
 }: VehicleMapSectionProps) {
+  // Show loading skeleton while data is being fetched
+  if (isLoading) {
+    return (
+      <Card className="border-border bg-card/50 overflow-hidden">
+        <CardContent className="p-0">
+          <div className="h-80 relative">
+            <Skeleton className="absolute inset-0 rounded-none" />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-center">
+                <div className="w-12 h-12 mx-auto rounded-full bg-muted/50 animate-pulse mb-3" />
+                <p className="text-sm text-muted-foreground">Loading map...</p>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Show no GPS signal state
   if (latitude === null || longitude === null) {
     return (
       <Card className="border-border bg-card/50">
@@ -38,10 +61,22 @@ export function VehicleMapSection({
           <p className="text-xs text-muted-foreground/70 mt-1">
             Vehicle location is unavailable
           </p>
+          <Button
+            size="sm"
+            variant="outline"
+            className="mt-4"
+            onClick={onRefresh}
+            disabled={isRefreshing}
+          >
+            <RefreshCw className={cn("h-4 w-4 mr-2", isRefreshing && "animate-spin")} />
+            Retry
+          </Button>
         </CardContent>
       </Card>
     );
   }
+
+  console.log('[VehicleMapSection] Rendering map with:', { latitude, longitude, heading, speed, isOnline });
 
   return (
     <div className="relative">
