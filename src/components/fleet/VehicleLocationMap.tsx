@@ -35,15 +35,30 @@ export function VehicleLocationMap({
   const marker = useRef<mapboxgl.Marker | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
 
+  // Initialize map only when we have valid coordinates
   useEffect(() => {
     if (!mapContainer.current) return;
-
-    const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
-    if (!token) {
-      console.error('VITE_MAPBOX_ACCESS_TOKEN is not set');
+    
+    // Don't initialize if coordinates are not available yet
+    if (latitude === undefined || longitude === undefined) {
+      console.log('[VehicleLocationMap] Waiting for coordinates...');
       return;
     }
 
+    // Don't reinitialize if map already exists
+    if (map.current) {
+      console.log('[VehicleLocationMap] Map already initialized, updating center');
+      map.current.setCenter([longitude, latitude]);
+      return;
+    }
+
+    const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
+    if (!token) {
+      console.error('[VehicleLocationMap] VITE_MAPBOX_ACCESS_TOKEN is not set');
+      return;
+    }
+
+    console.log('[VehicleLocationMap] Initializing map with coordinates:', { latitude, longitude });
     mapboxgl.accessToken = token;
 
     map.current = new mapboxgl.Map({
@@ -64,14 +79,17 @@ export function VehicleLocationMap({
     );
 
     map.current.on('load', () => {
+      console.log('[VehicleLocationMap] Map loaded successfully');
       setMapLoaded(true);
     });
 
     return () => {
       marker.current?.remove();
       map.current?.remove();
+      map.current = null;
+      setMapLoaded(false);
     };
-  }, []);
+  }, [latitude, longitude]);
 
   // Update marker when coordinates or heading change
   useEffect(() => {
