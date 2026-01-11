@@ -16,6 +16,7 @@ import Profile from "./pages/Profile";
 import AdminWallets from "./pages/AdminWallets";
 import AdminStorage from "./pages/AdminStorage";
 import AdminAlerts from "./pages/AdminAlerts";
+import AdminAiSettings from "./pages/AdminAiSettings";
 import NotificationSettings from "./pages/NotificationSettings";
 import NotFound from "./pages/NotFound";
 import InstallApp from "./pages/InstallApp";
@@ -62,6 +63,7 @@ const App = () => {
               <Route path="/admin/wallets" element={<ProtectedRoute><AdminWallets /></ProtectedRoute>} />
               <Route path="/admin/storage" element={<ProtectedRoute><AdminStorage /></ProtectedRoute>} />
               <Route path="/admin/alerts" element={<ProtectedRoute><AdminAlerts /></ProtectedRoute>} />
+              <Route path="/admin/ai-settings" element={<ProtectedRoute><AdminAiSettings /></ProtectedRoute>} />
               
               {/* Owner PWA Routes */}
               <Route path="/owner" element={<ProtectedRoute><OwnerChat /></ProtectedRoute>} />

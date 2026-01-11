@@ -110,6 +110,14 @@ export function TopNavigation({ connectionStatus }: TopNavigationProps) {
                 <Bell className="h-4 w-4" />
                 <span>Alerts</span>
               </NavLink>
+              <NavLink
+                to="/admin/ai-settings"
+                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground rounded-md transition-colors hover:text-foreground hover:bg-muted"
+                activeClassName="text-primary bg-primary/10"
+              >
+                <Brain className="h-4 w-4" />
+                <span>AI Brain</span>
+              </NavLink>
             </>
           )}
         </nav>
