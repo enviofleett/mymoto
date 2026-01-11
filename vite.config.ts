@@ -33,13 +33,12 @@ export default defineConfig(({ mode }) => ({
         name: "MyMoto - Vehicle Companion",
         short_name: "MyMoto",
         description: "Chat with your vehicles and manage your fleet",
-        version: "1.1.0",
         theme_color: "#131618",
         background_color: "#131618",
         display: "standalone",
         orientation: "portrait",
         scope: "/",
-        start_url: "/?v=1.1.0",
+        start_url: "/?v=1.2.0",
         icons: [
           {
             src: "/pwa-192x192.png",
