@@ -255,6 +255,16 @@ async function syncPositions(supabase: any, records: any[]) {
   const ALERT_COOLDOWN_MS = 30 * 60 * 1000 // 30 minutes
   const recentCutoff = new Date(Date.now() - ALERT_COOLDOWN_MS).toISOString()
   
+  // Fetch previous ignition states for change detection
+  const { data: prevPositions } = await supabase
+    .from('vehicle_positions')
+    .select('device_id, ignition_on')
+    .in('device_id', positions.map(p => p.device_id))
+  
+  const prevIgnitionMap = new Map<string, boolean | null>(
+    (prevPositions || []).map((p: any) => [p.device_id, p.ignition_on])
+  )
+  
   const eventsToInsert: Array<{
     device_id: string;
     event_type: string;
@@ -302,6 +312,39 @@ async function syncPositions(supabase: any, records: any[]) {
         title: 'Low Battery Warning',
         message: `Battery level at ${pos.battery_percent}%`,
         metadata: { battery: pos.battery_percent, detected_by: 'gps-data' }
+      })
+    }
+
+    // 4. IGNITION ON DETECTION (state change from off -> on)
+    const prevIgnition = prevIgnitionMap.get(pos.device_id)
+    if (pos.ignition_on === true && prevIgnition === false) {
+      eventsToInsert.push({
+        device_id: pos.device_id,
+        event_type: 'ignition_on',
+        severity: 'info',
+        title: 'Engine Started',
+        message: 'Vehicle engine has been turned on',
+        metadata: { 
+          lat: pos.latitude, 
+          lon: pos.longitude, 
+          detected_by: 'gps-data' 
+        }
+      })
+    }
+
+    // 5. IGNITION OFF DETECTION (state change from on -> off)
+    if (pos.ignition_on === false && prevIgnition === true) {
+      eventsToInsert.push({
+        device_id: pos.device_id,
+        event_type: 'ignition_off',
+        severity: 'info',
+        title: 'Engine Stopped',
+        message: 'Vehicle engine has been turned off',
+        metadata: { 
+          lat: pos.latitude, 
+          lon: pos.longitude, 
+          detected_by: 'gps-data' 
+        }
       })
     }
   }
