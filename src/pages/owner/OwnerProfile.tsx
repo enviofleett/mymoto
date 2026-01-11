@@ -18,6 +18,7 @@ import {
   Shield,
   CreditCard,
   User,
+  Download,
 } from "lucide-react";
 
 export default function OwnerProfile() {
@@ -38,6 +39,7 @@ export default function OwnerProfile() {
     { icon: CreditCard, label: "Payment Methods", path: "/owner/payments" },
     { icon: HelpCircle, label: "Help & Support", path: "/owner/help" },
     { icon: Settings, label: "App Settings", path: "/owner/settings" },
+    { icon: Download, label: "Install App", path: "/app" },
   ];
 
   return (
