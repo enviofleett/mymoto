@@ -101,7 +101,7 @@ export function useVehiclesWithAssignments(search: string = "", filter: "all" | 
   return useQuery({
     queryKey: ["vehicles-with-assignments", search, filter],
     queryFn: async (): Promise<VehicleWithAssignment[]> => {
-      // Get all vehicles
+      // Get ALL vehicles - no limit for admin panel
       let query = supabase
         .from("vehicles")
         .select("device_id, device_name, device_type, gps_owner, group_name")
@@ -111,7 +111,7 @@ export function useVehiclesWithAssignments(search: string = "", filter: "all" | 
         query = query.or(`device_name.ilike.%${search}%,device_id.ilike.%${search}%,gps_owner.ilike.%${search}%`);
       }
 
-      const { data: vehicles, error } = await query.limit(500);
+      const { data: vehicles, error } = await query;
       if (error) throw error;
 
       // Get all assignments with profile names
@@ -148,6 +148,61 @@ export function useVehiclesWithAssignments(search: string = "", filter: "all" | 
       }
 
       return result;
+    },
+  });
+}
+
+// Get unique GPS owners from vehicles
+export function useGpsOwners() {
+  return useQuery({
+    queryKey: ["gps-owners"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("vehicles")
+        .select("gps_owner")
+        .not("gps_owner", "is", null)
+        .order("gps_owner");
+
+      if (error) throw error;
+
+      // Get unique owners with vehicle counts
+      const ownerCounts = new Map<string, number>();
+      data?.forEach(v => {
+        if (v.gps_owner) {
+          ownerCounts.set(v.gps_owner, (ownerCounts.get(v.gps_owner) || 0) + 1);
+        }
+      });
+
+      return Array.from(ownerCounts.entries()).map(([owner, count]) => ({
+        gps_owner: owner,
+        vehicleCount: count,
+      }));
+    },
+  });
+}
+
+// Unassign ALL vehicles (reset all assignments)
+export function useUnassignAllVehicles() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      const { error, count } = await supabase
+        .from("vehicle_assignments")
+        .delete()
+        .neq("device_id", ""); // Delete all rows
+
+      if (error) throw error;
+      return { unassigned: count || 0 };
+    },
+    onSuccess: (data) => {
+      toast.success(`Successfully unassigned all ${data.unassigned} vehicle(s)`);
+      queryClient.invalidateQueries({ queryKey: ["vehicles-with-assignments"] });
+      queryClient.invalidateQueries({ queryKey: ["profiles-with-assignments"] });
+      queryClient.invalidateQueries({ queryKey: ["assignment-stats"] });
+    },
+    onError: (error) => {
+      toast.error(`Failed to unassign all: ${error.message}`);
     },
   });
 }
