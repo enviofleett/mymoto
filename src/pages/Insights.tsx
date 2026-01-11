@@ -15,6 +15,7 @@ import { RefreshCw, Brain, TrendingUp, AlertTriangle, Wifi, Bot, Save } from "lu
 import { format } from "date-fns";
 import { BillingConfigCard } from "@/components/admin/BillingConfigCard";
 import { AiSimulationCard } from "@/components/admin/AiSimulationCard";
+import { DataBackfillCard } from "@/components/admin/DataBackfillCard";
 import { FleetInsights } from "@/components/fleet/FleetInsights";
 import {
   LineChart,
@@ -426,8 +427,13 @@ const Insights = () => {
         {isAdmin && (
           <div className="grid gap-6 lg:grid-cols-2">
             <AiSimulationCard />
-            <BillingConfigCard />
+            <DataBackfillCard />
           </div>
+        )}
+
+        {/* Additional Admin Tools */}
+        {isAdmin && (
+          <BillingConfigCard />
         )}
 
         {/* Insight History */}
