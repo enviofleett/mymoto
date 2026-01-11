@@ -8,6 +8,7 @@ import MarkerClusterGroup from "react-leaflet-cluster";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { useFleetData, FleetVehicle } from "@/hooks/useFleetData";
+import { useRealtimeFleetUpdates } from "@/hooks/useRealtimeVehicleUpdates";
 import { Crosshair, Layers } from "lucide-react";
 import { VehiclePopupContent } from "@/components/fleet/VehiclePopupContent";
 
@@ -42,6 +43,10 @@ const LiveMap = () => {
   const { vehicles, loading, connectionStatus } = useFleetData();
   const [mapLayer, setMapLayer] = useState<"street" | "satellite">("street");
   const [recenterTrigger, setRecenterTrigger] = useState(0);
+
+  // Enable real-time updates for all fleet vehicles
+  const deviceIds = vehicles.map((v) => v.id).filter(Boolean) as string[];
+  useRealtimeFleetUpdates(deviceIds);
 
   // Filter vehicles with valid coordinates
   const vehiclesWithLocation = vehicles.filter(

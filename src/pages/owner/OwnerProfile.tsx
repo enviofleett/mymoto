@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOwnerVehicles } from "@/hooks/useOwnerVehicles";
+import { useRealtimeFleetUpdates } from "@/hooks/useRealtimeVehicleUpdates";
+import { SmartBriefingCard } from "@/components/profile/SmartBriefingCard";
 import {
   LogOut,
   Mail,
@@ -26,6 +28,12 @@ export default function OwnerProfile() {
   const { user, signOut } = useAuth();
   const { data: vehicles, isLoading } = useOwnerVehicles();
   const [loggingOut, setLoggingOut] = useState(false);
+
+  // Enable real-time updates for owner vehicles
+  const deviceIds = vehicles?.map(v => v.deviceId) || [];
+  useRealtimeFleetUpdates(deviceIds);
+
+  const primaryVehicleId = vehicles?.[0]?.deviceId;
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -54,6 +62,9 @@ export default function OwnerProfile() {
 
         {/* Content */}
         <div className="flex-1 p-4 space-y-3">
+          {/* AI Briefing Card */}
+          {primaryVehicleId && <SmartBriefingCard deviceId={primaryVehicleId} />}
+
           {/* User Card */}
           <Card className="border-border/50 bg-card">
             <CardContent className="p-4">
