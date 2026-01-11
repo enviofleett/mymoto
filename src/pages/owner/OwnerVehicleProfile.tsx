@@ -1222,13 +1222,15 @@ export default function OwnerVehicleProfile() {
             </Card>
           </div>
 
-          {/* Debug Connectivity Card - RSH128EA only */}
-          {deviceId === '1361282381' && (
+          {/* Debug Connectivity Card - Test vehicles only */}
+          {(deviceId === '1361282381' || deviceId === '13612339015') && (
             <Card className="border-dashed border-2 border-yellow-500/50 bg-yellow-500/5">
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 mb-3">
                   <Info className="h-4 w-4 text-yellow-600" />
-                  <h4 className="font-semibold text-yellow-600 text-sm">Debug: RSH128EA Connectivity</h4>
+                  <h4 className="font-semibold text-yellow-600 text-sm">
+                    Debug: {vehicle?.name || deviceId} Connectivity
+                  </h4>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <span className="text-muted-foreground">DB Connection:</span>
