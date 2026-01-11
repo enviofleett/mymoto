@@ -151,7 +151,7 @@ function calculateMetrics(vehicles: FleetVehicle[]): FleetMetrics {
 async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: FleetMetrics }> {
   console.log("[useFleetData] Fetching from DB (fleet-scale safe)...");
 
-  // Fetch positions with vehicle info - use FK hint to disambiguate multiple relationships
+  // Fetch positions only - no joins to avoid FK issues
   const { data: positions, error: posError } = await supabase
     .from('vehicle_positions')
     .select(`
@@ -167,15 +167,19 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
       total_mileage,
       status_text,
       gps_time,
-      cached_at,
-      vehicles!fk_vehicle_positions_device_id (
-        device_id,
-        device_name,
-        gps_owner
-      )
+      cached_at
     `);
 
   if (posError) throw new Error(`Fleet data error: ${posError.message}`);
+
+  // Fetch vehicles separately
+  const { data: vehiclesList, error: vehiclesError } = await supabase
+    .from('vehicles')
+    .select('device_id, device_name, gps_owner');
+
+  if (vehiclesError) {
+    console.warn('[useFleetData] Could not fetch vehicles:', vehiclesError.message);
+  }
 
   // Fetch assignments with profiles separately
   const { data: assignments, error: assignError } = await supabase
@@ -195,15 +199,17 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
     console.warn('[useFleetData] Could not fetch assignments:', assignError.message);
   }
 
-  // Create a lookup map for assignments by device_id
-  const assignmentMap = new Map<string, any>();
-  (assignments || []).forEach(a => {
-    assignmentMap.set(a.device_id, a);
-  });
+  // Create lookup maps
+  const vehiclesMap = new Map<string, any>();
+  (vehiclesList || []).forEach(v => vehiclesMap.set(v.device_id, v));
 
-  // Merge positions with their assignments
+  const assignmentMap = new Map<string, any>();
+  (assignments || []).forEach(a => assignmentMap.set(a.device_id, a));
+
+  // Merge positions with vehicles and assignments
   const mergedData = (positions || []).map(pos => ({
     ...pos,
+    vehicles: vehiclesMap.get(pos.device_id) || null,
     vehicle_assignments: assignmentMap.has(pos.device_id) 
       ? [assignmentMap.get(pos.device_id)] 
       : []
