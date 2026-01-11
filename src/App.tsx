@@ -19,6 +19,7 @@ import AdminAlerts from "./pages/AdminAlerts";
 import NotificationSettings from "./pages/NotificationSettings";
 import NotFound from "./pages/NotFound";
 import InstallApp from "./pages/InstallApp";
+import PwaLogin from "./pages/PwaLogin";
 
 // Owner PWA pages
 import OwnerChat from "./pages/owner/OwnerChat";
@@ -47,6 +48,7 @@ const App = () => {
           <AuthProvider>
             <Routes>
               <Route path="/auth" element={<Auth />} />
+              <Route path="/login" element={<PwaLogin />} />
               <Route path="/app" element={<InstallApp />} />
               
               {/* Admin Dashboard Routes */}
