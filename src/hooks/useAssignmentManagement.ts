@@ -344,3 +344,50 @@ export function useCreateProfile() {
     },
   });
 }
+
+// Bulk create profiles from GPS owner names
+export function useBulkCreateProfiles() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (gpsOwnerNames: string[]) => {
+      // Detect if GPS owner looks like a phone number
+      const isPhoneNumber = (value: string) => {
+        const digits = value.replace(/\D/g, "");
+        return digits.length >= 10;
+      };
+
+      const profilesToCreate = gpsOwnerNames.map((ownerName) => {
+        if (isPhoneNumber(ownerName)) {
+          // If it looks like a phone, use it as phone and generate a name
+          return {
+            name: ownerName,
+            phone: ownerName,
+          };
+        } else {
+          // Otherwise use as name
+          return {
+            name: ownerName,
+          };
+        }
+      });
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .insert(profilesToCreate)
+        .select();
+
+      if (error) throw error;
+      return { created: data?.length || 0 };
+    },
+    onSuccess: (data) => {
+      toast.success(`Successfully created ${data.created} profile(s)`);
+      queryClient.invalidateQueries({ queryKey: ["profiles-with-assignments"] });
+      queryClient.invalidateQueries({ queryKey: ["assignment-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["gps-owners"] });
+    },
+    onError: (error) => {
+      toast.error(`Failed to create profiles: ${error.message}`);
+    },
+  });
+}
