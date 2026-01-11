@@ -33,12 +33,13 @@ export default defineConfig(({ mode }) => ({
         name: "MyMoto - Vehicle Companion",
         short_name: "MyMoto",
         description: "Chat with your vehicles and manage your fleet",
+        version: "1.1.0",
         theme_color: "#131618",
         background_color: "#131618",
         display: "standalone",
         orientation: "portrait",
         scope: "/",
-        start_url: "/",
+        start_url: "/?v=1.1.0",
         icons: [
           {
             src: "/pwa-192x192.png",
@@ -61,6 +62,9 @@ export default defineConfig(({ mode }) => ({
       workbox: {
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MiB
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,

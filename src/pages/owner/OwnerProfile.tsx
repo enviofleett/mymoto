@@ -169,7 +169,7 @@ export default function OwnerProfile() {
 
           {/* App version */}
           <div className="text-center text-[11px] text-muted-foreground/60 pt-2 pb-4">
-            MyMoto v1.0.0
+            MyMoto v1.1.0 (QA Fixes)
           </div>
         </div>
       </div>
