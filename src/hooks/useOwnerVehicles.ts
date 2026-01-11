@@ -27,31 +27,51 @@ export interface OwnerVehicle {
 }
 
 async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
+  console.log("[useOwnerVehicles] Starting fetch for userId:", userId);
+  
   // First get the profile for this user
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
-    .select("id")
+    .select("id, name, email")
     .eq("user_id", userId)
     .maybeSingle();
 
+  console.log("[useOwnerVehicles] Profile lookup result:", { profile, profileError });
+
+  let profileId = profile?.id;
+
   if (profileError || !profile) {
     // Try by email
+    console.log("[useOwnerVehicles] No profile by user_id, trying email lookup...");
     const { data: { user } } = await supabase.auth.getUser();
+    console.log("[useOwnerVehicles] Auth user:", user?.email);
+    
     if (user?.email) {
-      const { data: emailProfile } = await supabase
+      const { data: emailProfile, error: emailError } = await supabase
         .from("profiles")
-        .select("id")
+        .select("id, name, email")
         .eq("email", user.email)
         .maybeSingle();
       
-      if (!emailProfile) return [];
+      console.log("[useOwnerVehicles] Email profile lookup:", { emailProfile, emailError });
+      
+      if (!emailProfile) {
+        console.warn("[useOwnerVehicles] No profile found for user");
+        return [];
+      }
+      profileId = emailProfile.id;
     } else {
+      console.warn("[useOwnerVehicles] No email available for fallback lookup");
       return [];
     }
   }
 
-  const profileId = profile?.id;
-  if (!profileId) return [];
+  if (!profileId) {
+    console.warn("[useOwnerVehicles] No profileId available");
+    return [];
+  }
+  
+  console.log("[useOwnerVehicles] Using profileId:", profileId);
 
   // Fetch assignments for this profile
   const { data: assignments, error } = await supabase
@@ -62,22 +82,35 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
     `)
     .eq("profile_id", profileId);
 
-  if (error) throw error;
-  if (!assignments || assignments.length === 0) return [];
+  console.log("[useOwnerVehicles] Assignments query:", { assignments, error, count: assignments?.length });
+
+  if (error) {
+    console.error("[useOwnerVehicles] Assignments error:", error);
+    throw error;
+  }
+  if (!assignments || assignments.length === 0) {
+    console.warn("[useOwnerVehicles] No vehicle assignments found for profile:", profileId);
+    return [];
+  }
 
   const deviceIds = assignments.map(a => a.device_id);
+  console.log("[useOwnerVehicles] Fetching data for deviceIds:", deviceIds);
 
   // Fetch vehicle info
-  const { data: vehicles } = await supabase
+  const { data: vehicles, error: vehiclesError } = await supabase
     .from("vehicles")
     .select("device_id, device_name, device_type")
     .in("device_id", deviceIds);
 
+  console.log("[useOwnerVehicles] Vehicles data:", { vehicles, vehiclesError, count: vehicles?.length });
+
   // Fetch positions - note: total_mileage is stored in meters
-  const { data: positions } = await supabase
+  const { data: positions, error: positionsError } = await supabase
     .from("vehicle_positions")
     .select("device_id, latitude, longitude, speed, heading, battery_percent, ignition_on, is_online, is_overspeeding, gps_time, total_mileage")
     .in("device_id", deviceIds);
+
+  console.log("[useOwnerVehicles] Positions data:", { positions, positionsError, count: positions?.length });
 
   // Create maps for easy lookup
   const vehicleMap = new Map(vehicles?.map(v => [v.device_id, v]) || []);
