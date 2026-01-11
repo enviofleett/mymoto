@@ -44,3 +44,9 @@ verify_jwt = false
 
 [functions.predictive-briefing]
 verify_jwt = false
+
+[functions.manage-preferences]
+verify_jwt = false
+
+[functions.analyze-completed-trip]
+verify_jwt = false
