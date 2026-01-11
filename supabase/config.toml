@@ -53,3 +53,6 @@ verify_jwt = false
 
 [functions.analyze-completed-trip]
 verify_jwt = false
+
+[functions.gps-history-backfill]
+verify_jwt = false
