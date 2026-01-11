@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { OwnerLayout } from "@/components/layouts/OwnerLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -7,8 +8,10 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOwnerVehicles } from "@/hooks/useOwnerVehicles";
+import { useOwnerProfile } from "@/hooks/useOwnerProfile";
 import { useRealtimeFleetUpdates } from "@/hooks/useRealtimeVehicleUpdates";
 import { SmartBriefingCard } from "@/components/profile/SmartBriefingCard";
+import { EditProfileDialog } from "@/components/owner/EditProfileDialog";
 import {
   LogOut,
   Mail,
@@ -21,17 +24,26 @@ import {
   CreditCard,
   User,
   Download,
+  Phone,
+  Pencil,
 } from "lucide-react";
 
 export default function OwnerProfile() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { user, signOut } = useAuth();
   const { data: vehicles, isLoading } = useOwnerVehicles();
+  const { data: profile, isLoading: profileLoading } = useOwnerProfile();
   const [loggingOut, setLoggingOut] = useState(false);
+  const [editProfileOpen, setEditProfileOpen] = useState(false);
 
   // Enable real-time updates for owner vehicles
   const deviceIds = vehicles?.map(v => v.deviceId) || [];
   useRealtimeFleetUpdates(deviceIds);
+
+  const handleProfileUpdated = () => {
+    queryClient.invalidateQueries({ queryKey: ["owner-profile"] });
+  };
 
   const primaryVehicleId = vehicles?.[0]?.deviceId;
 
@@ -68,21 +80,42 @@ export default function OwnerProfile() {
           {/* User Card */}
           <Card className="border-border/50 bg-card">
             <CardContent className="p-4">
-              <div className="flex items-center gap-3">
+              <button 
+                className="w-full flex items-center gap-3 text-left"
+                onClick={() => setEditProfileOpen(true)}
+              >
                 <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center shrink-0">
                   <User className="h-6 w-6 text-muted-foreground" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h2 className="text-base font-medium text-foreground truncate">
-                    {user?.email?.split("@")[0] || "User"}
-                  </h2>
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
-                    <Mail className="h-3 w-3" />
-                    <span className="truncate">{user?.email}</span>
-                  </div>
+                  {profileLoading ? (
+                    <>
+                      <Skeleton className="h-5 w-24 mb-1" />
+                      <Skeleton className="h-3 w-32" />
+                    </>
+                  ) : (
+                    <>
+                      <h2 className="text-base font-medium text-foreground truncate">
+                        {profile?.name || user?.email?.split("@")[0] || "User"}
+                      </h2>
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
+                        <Mail className="h-3 w-3" />
+                        <span className="truncate">{user?.email}</span>
+                      </div>
+                      {profile?.phone && (
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
+                          <Phone className="h-3 w-3" />
+                          <span className="truncate">{profile.phone}</span>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
-                <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-              </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </button>
             </CardContent>
           </Card>
 
@@ -200,6 +233,13 @@ export default function OwnerProfile() {
           </div>
         </div>
       </div>
+
+      {/* Edit Profile Dialog */}
+      <EditProfileDialog
+        open={editProfileOpen}
+        onOpenChange={setEditProfileOpen}
+        onProfileUpdated={handleProfileUpdated}
+      />
     </OwnerLayout>
   );
 }
