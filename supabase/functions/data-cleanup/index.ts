@@ -11,6 +11,7 @@ const API_LOGS_RETENTION_DAYS = 7
 const POSITION_HISTORY_RETENTION_DAYS = 30
 const CHAT_HISTORY_RETENTION_DAYS = 90
 const PROACTIVE_EVENTS_RETENTION_DAYS = 7
+const GHOST_VEHICLE_BUFFER_HOURS = 48
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -108,6 +109,103 @@ serve(async (req) => {
     } else {
       console.log(`Deleted proactive events older than ${PROACTIVE_EVENTS_RETENTION_DAYS} days`)
       results.proactive_events = { success: true }
+    }
+
+    // 6. Purge ghost vehicles (imported but never had location data)
+    console.log('Starting ghost vehicle purge...')
+    const ghostCutoff = new Date()
+    ghostCutoff.setHours(ghostCutoff.getHours() - GHOST_VEHICLE_BUFFER_HOURS)
+
+    const { data: oldVehicles, error: fetchError } = await supabase
+      .from('vehicles')
+      .select('device_id')
+      .lt('created_at', ghostCutoff.toISOString())
+
+    if (fetchError) {
+      console.error('Error fetching vehicles for ghost purge:', fetchError)
+      results.ghost_vehicles = { error: fetchError.message }
+    } else if (oldVehicles && oldVehicles.length > 0) {
+      const deviceIds = oldVehicles.map(v => v.device_id)
+      
+      // Get vehicles that have valid positions
+      const { data: vehiclesWithPositions } = await supabase
+        .from('vehicle_positions')
+        .select('device_id')
+        .in('device_id', deviceIds)
+        .not('latitude', 'is', null)
+        .neq('latitude', 0)
+      
+      const hasPositionSet = new Set(vehiclesWithPositions?.map(v => v.device_id) || [])
+      
+      // Get vehicles that have position history (check in batches for large sets)
+      const { data: vehiclesWithHistory } = await supabase
+        .from('position_history')
+        .select('device_id')
+        .in('device_id', deviceIds)
+      
+      const hasHistorySet = new Set(vehiclesWithHistory?.map(v => v.device_id) || [])
+      
+      // Filter to ghost vehicles: no valid position AND no history
+      const ghostDeviceIds = deviceIds.filter(id => 
+        !hasPositionSet.has(id) && !hasHistorySet.has(id)
+      )
+      
+      if (ghostDeviceIds.length > 0) {
+        console.log(`Found ${ghostDeviceIds.length} ghost vehicles to purge`)
+        
+        // Delete from dependent tables first (no cascade)
+        const dependentTables = [
+          'vehicle_positions',
+          'vehicle_assignments', 
+          'vehicle_chat_history',
+          'vehicle_command_logs',
+          'vehicle_llm_settings',
+          'proactive_vehicle_events',
+          'geofence_monitors',
+          'geofence_events',
+          'conversation_summaries',
+          'llm_analytics',
+          'trip_analytics',
+          'trip_patterns',
+          'vehicle_trips'
+        ]
+        
+        for (const table of dependentTables) {
+          const { error: depError } = await supabase
+            .from(table)
+            .delete()
+            .in('device_id', ghostDeviceIds)
+          
+          if (depError) {
+            console.error(`Error cleaning ${table} for ghost vehicles:`, depError)
+          }
+        }
+        
+        // Delete ghost vehicles
+        const { error: deleteError } = await supabase
+          .from('vehicles')
+          .delete()
+          .in('device_id', ghostDeviceIds)
+        
+        if (deleteError) {
+          console.error('Error deleting ghost vehicles:', deleteError)
+          results.ghost_vehicles = { 
+            error: deleteError.message, 
+            identified_count: ghostDeviceIds.length 
+          }
+        } else {
+          console.log(`Successfully purged ${ghostDeviceIds.length} ghost vehicles`)
+          results.ghost_vehicles = { 
+            success: true, 
+            purged_count: ghostDeviceIds.length 
+          }
+        }
+      } else {
+        console.log('No ghost vehicles found to purge')
+        results.ghost_vehicles = { success: true, purged_count: 0 }
+      }
+    } else {
+      results.ghost_vehicles = { success: true, purged_count: 0 }
     }
 
     const duration = Date.now() - startTime
