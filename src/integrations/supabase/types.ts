@@ -14,6 +14,39 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_scenario_templates: {
+        Row: {
+          category: string
+          created_at: string
+          created_by: string | null
+          id: string
+          is_system: boolean | null
+          name: string
+          prompt: string
+          updated_at: string
+        }
+        Insert: {
+          category?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_system?: boolean | null
+          name: string
+          prompt: string
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_system?: boolean | null
+          name?: string
+          prompt?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       alert_dispatch_log: {
         Row: {
           channel: string
