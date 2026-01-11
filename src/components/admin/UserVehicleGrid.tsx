@@ -38,6 +38,7 @@ import {
   Users,
   AlertTriangle,
   Phone,
+  UsersRound,
 } from "lucide-react";
 import {
   ProfileWithAssignments,
@@ -52,6 +53,7 @@ import {
 import { BulkAssignDialog } from "./BulkAssignDialog";
 import { CreateProfileDialog } from "./CreateProfileDialog";
 import { AutoAssignDialog } from "./AutoAssignDialog";
+import { AutoCreateProfilesDialog } from "./AutoCreateProfilesDialog";
 
 export function UserVehicleGrid() {
   const [vehicleSearch, setVehicleSearch] = useState("");
@@ -64,6 +66,7 @@ export function UserVehicleGrid() {
   const [showAssignDialog, setShowAssignDialog] = useState(false);
   const [showCreateProfileDialog, setShowCreateProfileDialog] = useState(false);
   const [showAutoAssignDialog, setShowAutoAssignDialog] = useState(false);
+  const [showAutoCreateProfilesDialog, setShowAutoCreateProfilesDialog] = useState(false);
   const [activeTab, setActiveTab] = useState<"users" | "gps-owners">("users");
 
   const { data: profiles, isLoading: profilesLoading } = useProfiles();
@@ -234,15 +237,21 @@ export function UserVehicleGrid() {
           </TabsContent>
 
           <TabsContent value="gps-owners" className="flex-1 flex flex-col m-0 data-[state=inactive]:hidden">
-            <div className="p-2 sm:p-3 border-b">
-              <div className="relative">
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search GPS owners..."
-                  className="pl-8 h-9 text-sm"
-                  value={ownerSearch}
-                  onChange={(e) => setOwnerSearch(e.target.value)}
-                />
+            <div className="p-2 sm:p-3 border-b space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search GPS owners..."
+                    className="pl-8 h-9 text-sm"
+                    value={ownerSearch}
+                    onChange={(e) => setOwnerSearch(e.target.value)}
+                  />
+                </div>
+                <Button size="sm" variant="outline" onClick={() => setShowAutoCreateProfilesDialog(true)}>
+                  <UsersRound className="h-4 w-4" />
+                  <span className="hidden sm:inline ml-1">Create Profiles</span>
+                </Button>
               </div>
             </div>
 
@@ -513,6 +522,11 @@ export function UserVehicleGrid() {
         onAssign={async (matches) => {
           await autoAssignMutation.mutateAsync(matches);
         }}
+      />
+
+      <AutoCreateProfilesDialog
+        open={showAutoCreateProfilesDialog}
+        onOpenChange={setShowAutoCreateProfilesDialog}
       />
     </div>
   );
