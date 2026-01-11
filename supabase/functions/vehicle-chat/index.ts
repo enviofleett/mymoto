@@ -4,6 +4,7 @@ import { buildConversationContext, estimateTokenCount } from './conversation-man
 import { routeQuery } from './query-router.ts'
 import { parseCommand, containsCommandKeywords, getCommandMetadata, GeofenceAlertParams } from './command-parser.ts'
 import { generateTextEmbedding, formatEmbeddingForPg } from '../_shared/embedding-generator.ts'
+import { learnAndGetPreferences, buildPreferenceContext } from './preference-learner.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -562,6 +563,27 @@ serve(async (req) => {
     const tokenEstimate = estimateTokenCount(conversationContext)
     console.log(`Conversation context loaded: ${conversationContext.total_message_count} total messages, ${conversationContext.recent_messages.length} recent, ~${tokenEstimate} tokens estimated`)
 
+    // 5.5. Learn user preferences from conversation and message
+    let preferenceContext = ''
+    if (user_id) {
+      try {
+        const prefResult = await learnAndGetPreferences(
+          supabase,
+          user_id,
+          message,
+          conversationContext.recent_messages.map(m => ({ role: m.role, content: m.content }))
+        )
+        preferenceContext = prefResult.contextString
+        if (prefResult.newPreferencesFound > 0) {
+          console.log(`Learned ${prefResult.newPreferencesFound} new preferences from conversation`)
+        }
+        console.log(`User preferences loaded: ${Object.keys(prefResult.preferences).length} preferences`)
+      } catch (prefError) {
+        console.error('Preference learning error:', prefError)
+        // Continue without preferences
+      }
+    }
+
     // 6. Reverse Geocode Current Position and check for learned location
     let currentLocationName = 'Unknown location'
     let learnedLocationContext = null
@@ -835,7 +857,7 @@ ${personalityInstructions[personalityMode] || personalityInstructions.casual}
 ${conversationContext.conversation_summary ? `You remember: ${conversationContext.conversation_summary}` : ''}
 ${conversationContext.important_facts.length > 0 ? `Key things you know:\n${conversationContext.important_facts.map(f => `• ${f}`).join('\n')}` : ''}
 
-
+${preferenceContext ? `## LEARNED USER PREFERENCES\n${preferenceContext}\n` : ''}
 ## REAL-TIME STATUS (${dataFreshness.toUpperCase()} as of ${formattedTimestamp})
 DATA FRESHNESS: ${dataFreshness.toUpperCase()} (as of ${formattedTimestamp})
 
