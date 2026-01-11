@@ -22,6 +22,7 @@ import {
   CheckSquare,
   Square,
   Loader2,
+  Wand2,
 } from "lucide-react";
 import {
   ProfileWithAssignments,
@@ -29,9 +30,11 @@ import {
   useProfiles,
   useVehiclesWithAssignments,
   useUnassignVehicles,
+  useBulkAutoAssign,
 } from "@/hooks/useAssignmentManagement";
 import { BulkAssignDialog } from "./BulkAssignDialog";
 import { CreateProfileDialog } from "./CreateProfileDialog";
+import { AutoAssignDialog } from "./AutoAssignDialog";
 
 export function UserVehicleGrid() {
   const [vehicleSearch, setVehicleSearch] = useState("");
@@ -41,10 +44,12 @@ export function UserVehicleGrid() {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [showAssignDialog, setShowAssignDialog] = useState(false);
   const [showCreateProfileDialog, setShowCreateProfileDialog] = useState(false);
+  const [showAutoAssignDialog, setShowAutoAssignDialog] = useState(false);
 
   const { data: profiles, isLoading: profilesLoading } = useProfiles();
   const { data: vehicles, isLoading: vehiclesLoading } = useVehiclesWithAssignments(vehicleSearch, vehicleFilter);
   const unassignMutation = useUnassignVehicles();
+  const autoAssignMutation = useBulkAutoAssign();
 
   // Filter profiles by search
   const filteredProfiles = profiles?.filter(p =>
@@ -183,6 +188,14 @@ export function UserVehicleGrid() {
               )}
             </h3>
             <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => setShowAutoAssignDialog(true)}
+              >
+                <Wand2 className="h-4 w-4 mr-1" />
+                Auto-Assign
+              </Button>
               {selectedVehicles.size > 0 && (
                 <>
                   <Button
@@ -319,6 +332,16 @@ export function UserVehicleGrid() {
       <CreateProfileDialog
         open={showCreateProfileDialog}
         onOpenChange={setShowCreateProfileDialog}
+      />
+
+      <AutoAssignDialog
+        open={showAutoAssignDialog}
+        onOpenChange={setShowAutoAssignDialog}
+        vehicles={vehicles || []}
+        profiles={profiles || []}
+        onAssign={async (matches) => {
+          await autoAssignMutation.mutateAsync(matches);
+        }}
       />
     </div>
   );
