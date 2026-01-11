@@ -1,15 +1,69 @@
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Bell, Search, Plus, Wifi, WifiOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { ConnectionStatus } from "@/hooks/useFleetData";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery } from "@tanstack/react-query";
 
 interface DashboardHeaderProps {
   connectionStatus?: ConnectionStatus;
 }
 
 export function DashboardHeader({ connectionStatus = 'connecting' }: DashboardHeaderProps) {
+  const navigate = useNavigate();
+  
+  // Real-time unread alert count
+  const { data: unreadCount = 0, refetch: refetchUnread } = useQuery({
+    queryKey: ['unread-alerts'],
+    queryFn: async () => {
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { count } = await supabase
+        .from('proactive_vehicle_events')
+        .select('*', { count: 'exact', head: true })
+        .eq('acknowledged', false)
+        .gte('created_at', twentyFourHoursAgo);
+      return count || 0;
+    },
+    refetchInterval: 60000 // Refresh every minute
+  });
+
+  // Subscribe to new alerts for real-time updates
+  useEffect(() => {
+    const channel = supabase
+      .channel('header-alerts')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'proactive_vehicle_events'
+        },
+        () => {
+          refetchUnread();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'proactive_vehicle_events'
+        },
+        () => {
+          refetchUnread();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [refetchUnread]);
+
   const statusConfig = {
     connected: {
       icon: Wifi,
@@ -78,9 +132,20 @@ export function DashboardHeader({ connectionStatus = 'connecting' }: DashboardHe
             <p>{config.label}</p>
           </TooltipContent>
         </Tooltip>
-        <Button variant="ghost" size="icon" className="relative text-muted-foreground hover:text-foreground">
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          className="relative text-muted-foreground hover:text-foreground"
+          onClick={() => navigate('/admin/alerts')}
+        >
           <Bell className="h-5 w-5" />
-          <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-status-inactive" />
+          {unreadCount > 0 ? (
+            <span className="absolute -right-1 -top-1 h-5 w-5 rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground flex items-center justify-center animate-pulse">
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </span>
+          ) : (
+            <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-muted-foreground/30" />
+          )}
         </Button>
         <Button className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90">
           <Plus className="h-4 w-4" />
