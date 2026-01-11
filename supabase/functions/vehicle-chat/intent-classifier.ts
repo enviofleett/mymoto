@@ -102,11 +102,18 @@ const INTENT_PATTERNS: Record<IntentType, PatternDefinition> = {
   history: {
     patterns: [
       /\b(history|past|previous|earlier|before)\b/i,
-      /\b(yesterday|last (week|month|year))\b/i,
+      /\b(yesterday|yesternight|last\s+night)\b/i,  // Yesterday patterns
+      /\b(last|past)\s+(week|month|year|few\s+days)\b/i,
+      /\b(\d+)\s*(days?|hours?|weeks?|months?)\s*ago\b/i,  // "3 days ago", "2 weeks ago"
+      /\b(on|this|last)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i,  // Day names
       /\b(when.*?(was|did|happened))\b/i,
       /\b(event|record|log|archive)\b/i,
+      /\b(did|have|had)\s+(you|i|we|the\s+car)\s+(move|go|drive|travel|leave)\b/i,  // Movement history
+      /\bhow\s+(far|much)\s+(did|have)\s+(you|i|we)\s+(travel|drive|go|move)\b/i,  // Distance history
+      /\b(any|were\s+there)\s+(trips?|journeys?|drives?)\b/i,  // Trip questions
+      /\bwhere\s+(did|have)\s+(you|the\s+car)\s+(go|been|travel)\b/i,  // Location history
     ],
-    weight: 7,
+    weight: 9,  // Increased weight for better historical query detection
     requires_fresh_data: false,
     requires_history: true
   },
