@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { MapPin, ChevronDown, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 
 interface LocationData {
   lat: number;
@@ -52,6 +54,54 @@ function cleanMapLinks(text: string): string {
   return text.replace(/\[Open in Maps\]\([^)]+\)/g, '').trim();
 }
 
+function MiniMap({ lat, lng }: { lat: number; lng: number }) {
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<L.Map | null>(null);
+
+  useEffect(() => {
+    if (!mapRef.current || mapInstanceRef.current) return;
+
+    const map = L.map(mapRef.current, {
+      zoomControl: false,
+      attributionControl: false,
+      dragging: false,
+      scrollWheelZoom: false,
+      doubleClickZoom: false,
+      touchZoom: false,
+    }).setView([lat, lng], 14);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    const icon = L.divIcon({
+      className: 'custom-marker',
+      html: `<div class="w-6 h-6 bg-primary rounded-full border-2 border-white shadow-lg flex items-center justify-center">
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
+          <circle cx="12" cy="10" r="3"/>
+        </svg>
+      </div>`,
+      iconSize: [24, 24],
+      iconAnchor: [12, 12],
+    });
+
+    L.marker([lat, lng], { icon }).addTo(map);
+    mapInstanceRef.current = map;
+
+    return () => {
+      map.remove();
+      mapInstanceRef.current = null;
+    };
+  }, [lat, lng]);
+
+  return (
+    <div 
+      ref={mapRef} 
+      className="w-full h-32 rounded-md overflow-hidden mb-2"
+      style={{ minHeight: '128px' }}
+    />
+  );
+}
+
 function LocationTab({ data, isUser }: { data: LocationData; isUser?: boolean }) {
   const [isOpen, setIsOpen] = useState(false);
   const mapsUrl = `https://www.google.com/maps?q=${data.lat},${data.lng}`;
@@ -85,6 +135,7 @@ function LocationTab({ data, isUser }: { data: LocationData; isUser?: boolean })
           "px-3 py-2 border-t",
           isUser ? "border-primary-foreground/20" : "border-border"
         )}>
+          <MiniMap lat={data.lat} lng={data.lng} />
           <p className="text-sm mb-2">{data.address}</p>
           <a
             href={mapsUrl}
