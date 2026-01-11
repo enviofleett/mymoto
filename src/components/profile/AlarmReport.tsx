@@ -17,20 +17,19 @@ import {
   ChevronRight,
   Calendar,
   Truck,
-  TrendingDown,
   Battery
 } from "lucide-react";
 import { format, formatDistanceToNow, subDays } from "date-fns";
 
-interface AlarmEvent {
+interface ProactiveEvent {
   id: string;
   device_id: string;
-  event_type: 'overspeed' | 'ignition_on' | 'ignition_off' | 'low_battery' | 'stopped';
-  speed: number;
-  latitude: number;
-  longitude: number;
-  gps_time: string;
-  battery_percent: number | null;
+  event_type: string;
+  severity: string;
+  title: string;
+  message: string;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
 }
 
 interface AssignedVehicle {
@@ -45,7 +44,7 @@ interface AlarmReportProps {
 }
 
 export function AlarmReport({ deviceIds, vehicles }: AlarmReportProps) {
-  const [alarms, setAlarms] = useState<AlarmEvent[]>([]);
+  const [events, setEvents] = useState<ProactiveEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
@@ -56,34 +55,30 @@ export function AlarmReport({ deviceIds, vehicles }: AlarmReportProps) {
 
   useEffect(() => {
     if (deviceIds.length > 0) {
-      fetchAlarms();
+      fetchEvents();
     } else {
       setLoading(false);
     }
   }, [deviceIds, page, selectedDevice, dateRange, eventFilter]);
 
-  const fetchAlarms = async () => {
+  const fetchEvents = async () => {
     try {
       setLoading(true);
       
       const fromDate = subDays(new Date(), parseInt(dateRange)).toISOString();
       const filterDevices = selectedDevice === "all" ? deviceIds : [selectedDevice];
       
-      // Build query - we'll detect events from position history
-      // Overspeed: speed > 120km/h
-      // Ignition changes: track when ignition_on changes
+      // Query proactive_vehicle_events directly - no client-side calculations!
       let query = supabase
-        .from("position_history")
+        .from("proactive_vehicle_events")
         .select("*")
         .in("device_id", filterDevices)
-        .gte("gps_time", fromDate)
-        .order("gps_time", { ascending: false });
+        .gte("created_at", fromDate)
+        .order("created_at", { ascending: false });
 
-      // Apply event-specific filters
-      if (eventFilter === "overspeed") {
-        query = query.gt("speed", 120);
-      } else if (eventFilter === "stopped") {
-        query = query.eq("speed", 0);
+      // Apply event type filter
+      if (eventFilter !== "all") {
+        query = query.eq("event_type", eventFilter);
       }
 
       const { data, error } = await query
@@ -91,55 +86,22 @@ export function AlarmReport({ deviceIds, vehicles }: AlarmReportProps) {
 
       if (error) throw error;
 
-      // Process data to identify alarm events
-      const events: AlarmEvent[] = [];
-      let prevIgnitionState: { [key: string]: boolean | null } = {};
+      // Cast the data to our interface
+      const typedEvents: ProactiveEvent[] = (data || []).map((e: any) => ({
+        id: e.id,
+        device_id: e.device_id,
+        event_type: e.event_type,
+        severity: e.severity,
+        title: e.title,
+        message: e.message,
+        metadata: e.metadata as Record<string, unknown> | null,
+        created_at: e.created_at,
+      }));
 
-      for (const record of data || []) {
-        let eventType: AlarmEvent['event_type'] | null = null;
-
-        // Detect overspeed (>120 km/h is a common threshold)
-        if (record.speed > 120) {
-          eventType = 'overspeed';
-        }
-        // Detect low battery (<20%)
-        else if (record.battery_percent !== null && record.battery_percent > 0 && record.battery_percent < 20) {
-          eventType = 'low_battery';
-        }
-        // Detect ignition changes
-        else if (record.ignition_on !== null && prevIgnitionState[record.device_id] !== undefined) {
-          if (record.ignition_on && !prevIgnitionState[record.device_id]) {
-            eventType = 'ignition_on';
-          } else if (!record.ignition_on && prevIgnitionState[record.device_id]) {
-            eventType = 'ignition_off';
-          }
-        }
-        // Detect stops (speed 0 with ignition off)
-        else if (record.speed === 0 && record.ignition_on === false) {
-          eventType = 'stopped';
-        }
-
-        prevIgnitionState[record.device_id] = record.ignition_on;
-
-        // Add to events if we found an event or showing all
-        if (eventType && (eventFilter === "all" || eventFilter === eventType)) {
-          events.push({
-            id: record.id,
-            device_id: record.device_id,
-            event_type: eventType,
-            speed: record.speed,
-            latitude: record.latitude,
-            longitude: record.longitude,
-            gps_time: record.gps_time,
-            battery_percent: record.battery_percent
-          });
-        }
-      }
-
-      setAlarms(events.slice(0, PAGE_SIZE));
-      setHasMore(events.length > PAGE_SIZE);
+      setEvents(typedEvents);
+      setHasMore(typedEvents.length === PAGE_SIZE);
     } catch (err) {
-      console.error("Error fetching alarms:", err);
+      console.error("Error fetching events:", err);
     } finally {
       setLoading(false);
     }
@@ -150,9 +112,9 @@ export function AlarmReport({ deviceIds, vehicles }: AlarmReportProps) {
     return vehicle?.vehicle_alias || vehicle?.device_name || deviceId;
   };
 
-  const getEventIcon = (eventType: AlarmEvent['event_type']) => {
+  const getEventIcon = (eventType: string) => {
     switch (eventType) {
-      case 'overspeed':
+      case 'overspeeding':
         return <Gauge className="h-4 w-4 text-destructive" />;
       case 'ignition_on':
         return <Power className="h-4 w-4 text-green-500" />;
@@ -160,24 +122,29 @@ export function AlarmReport({ deviceIds, vehicles }: AlarmReportProps) {
         return <PowerOff className="h-4 w-4 text-yellow-500" />;
       case 'low_battery':
         return <Battery className="h-4 w-4 text-orange-500" />;
-      case 'stopped':
-        return <TrendingDown className="h-4 w-4 text-muted-foreground" />;
+      case 'critical_battery':
+        return <Battery className="h-4 w-4 text-destructive" />;
+      default:
+        return <AlertTriangle className="h-4 w-4 text-muted-foreground" />;
     }
   };
 
-  const getEventBadge = (eventType: AlarmEvent['event_type']) => {
-    switch (eventType) {
-      case 'overspeed':
-        return <Badge variant="destructive">Overspeed</Badge>;
-      case 'ignition_on':
-        return <Badge className="bg-green-500/20 text-green-400 border-green-500/30">Engine Start</Badge>;
-      case 'ignition_off':
-        return <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">Engine Stop</Badge>;
-      case 'low_battery':
-        return <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30">Low Battery</Badge>;
-      case 'stopped':
-        return <Badge variant="secondary">Vehicle Stopped</Badge>;
-    }
+  const getEventBadge = (eventType: string, severity: string) => {
+    const severityClass = severity === 'critical' 
+      ? 'bg-destructive/20 text-destructive border-destructive/30'
+      : severity === 'warning'
+      ? 'bg-orange-500/20 text-orange-400 border-orange-500/30'
+      : 'bg-muted text-muted-foreground';
+
+    const labels: Record<string, string> = {
+      'overspeeding': 'Overspeed',
+      'ignition_on': 'Engine Start',
+      'ignition_off': 'Engine Stop',
+      'low_battery': 'Low Battery',
+      'critical_battery': 'Critical Battery',
+    };
+
+    return <Badge className={severityClass}>{labels[eventType] || eventType}</Badge>;
   };
 
   if (deviceIds.length === 0) {
@@ -204,7 +171,7 @@ export function AlarmReport({ deviceIds, vehicles }: AlarmReportProps) {
               Alarm & Event Reports
             </CardTitle>
             <CardDescription>
-              Overspeed, ignition changes, and vehicle events
+              Real-time alerts from backend detection
             </CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -229,10 +196,11 @@ export function AlarmReport({ deviceIds, vehicles }: AlarmReportProps) {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Events</SelectItem>
-                <SelectItem value="overspeed">Overspeed</SelectItem>
+                <SelectItem value="overspeeding">Overspeed</SelectItem>
                 <SelectItem value="ignition_on">Engine Start</SelectItem>
                 <SelectItem value="ignition_off">Engine Stop</SelectItem>
                 <SelectItem value="low_battery">Low Battery</SelectItem>
+                <SelectItem value="critical_battery">Critical Battery</SelectItem>
               </SelectContent>
             </Select>
             <Select value={dateRange} onValueChange={setDateRange}>
@@ -256,10 +224,10 @@ export function AlarmReport({ deviceIds, vehicles }: AlarmReportProps) {
               <Skeleton key={i} className="h-12 w-full" />
             ))}
           </div>
-        ) : alarms.length === 0 ? (
+        ) : events.length === 0 ? (
           <div className="text-center py-8">
             <Bell className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
-            <p className="text-muted-foreground">No alarm events found for this period.</p>
+            <p className="text-muted-foreground">No events found for this period.</p>
             <p className="text-xs text-muted-foreground mt-1">
               Try adjusting your filters or date range.
             </p>
@@ -278,48 +246,49 @@ export function AlarmReport({ deviceIds, vehicles }: AlarmReportProps) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {alarms.map((alarm) => (
-                    <TableRow key={alarm.id}>
+                  {events.map((event) => (
+                    <TableRow key={event.id}>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          {getEventIcon(alarm.event_type)}
-                          {getEventBadge(alarm.event_type)}
+                          {getEventIcon(event.event_type)}
+                          {getEventBadge(event.event_type, event.severity)}
                         </div>
                       </TableCell>
                       <TableCell className="font-medium">
-                        {getVehicleName(alarm.device_id)}
+                        {getVehicleName(event.device_id)}
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-col">
                           <span className="text-sm">
-                            {format(new Date(alarm.gps_time), "MMM d, HH:mm")}
+                            {format(new Date(event.created_at), "MMM d, HH:mm")}
                           </span>
                           <span className="text-xs text-muted-foreground">
-                            {formatDistanceToNow(new Date(alarm.gps_time), { addSuffix: true })}
+                            {formatDistanceToNow(new Date(event.created_at), { addSuffix: true })}
                           </span>
                         </div>
                       </TableCell>
                       <TableCell>
-                        {alarm.event_type === 'overspeed' && (
-                          <span className="text-destructive font-medium">{alarm.speed} km/h</span>
+                        {event.event_type === 'overspeeding' && event.metadata?.speed != null && (
+                          <span className="text-destructive font-medium">{event.metadata.speed as number} km/h</span>
                         )}
-                        {alarm.event_type === 'low_battery' && (
-                          <span className="text-orange-500 font-medium">{alarm.battery_percent}%</span>
+                        {(event.event_type === 'low_battery' || event.event_type === 'critical_battery') && event.metadata?.battery != null && (
+                          <span className="text-orange-500 font-medium">{event.metadata.battery as number}%</span>
                         )}
-                        {(alarm.event_type === 'ignition_on' || alarm.event_type === 'ignition_off') && (
+                        {(event.event_type === 'ignition_on' || event.event_type === 'ignition_off') && (
                           <span className="text-muted-foreground">-</span>
                         )}
-                        {alarm.event_type === 'stopped' && (
-                          <span className="text-muted-foreground">Engine off</span>
-                        )}
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-1.5">
-                          <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
-                          <span className="text-xs font-mono">
-                            {alarm.latitude.toFixed(4)}, {alarm.longitude.toFixed(4)}
-                          </span>
-                        </div>
+                        {event.metadata?.lat != null && event.metadata?.lon != null ? (
+                          <div className="flex items-center gap-1.5">
+                            <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
+                            <span className="text-xs font-mono">
+                              {(event.metadata.lat as number).toFixed(4)}, {(event.metadata.lon as number).toFixed(4)}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">-</span>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -330,7 +299,7 @@ export function AlarmReport({ deviceIds, vehicles }: AlarmReportProps) {
             {/* Pagination */}
             <div className="flex items-center justify-between mt-4 pt-4 border-t border-border">
               <p className="text-sm text-muted-foreground">
-                Showing {alarms.length} events (Page {page + 1})
+                Showing {events.length} events (Page {page + 1})
               </p>
               <div className="flex gap-2">
                 <Button

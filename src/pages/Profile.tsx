@@ -1,39 +1,34 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { DashboardLayout } from "@/components/layouts/DashboardLayout";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { 
-  User, 
   Truck, 
-  MapPin, 
-  Clock, 
   Phone, 
   Mail, 
   CreditCard, 
   Calendar,
   Navigation,
-  AlertTriangle,
   Gauge,
   Power,
-  Battery,
-  TrendingUp,
   History,
   Bell,
   Wallet
 } from "lucide-react";
-import { formatDistanceToNow, format } from "date-fns";
+import { format } from "date-fns";
 import { VehicleCard } from "@/components/profile/VehicleCard";
 import { TripHistoryTable } from "@/components/profile/TripHistoryTable";
 import { AlarmReport } from "@/components/profile/AlarmReport";
 import { TripPlayback } from "@/components/profile/TripPlayback";
 import { WalletSection } from "@/components/wallet/WalletSection";
+import { SmartBriefingCard } from "@/components/profile/SmartBriefingCard";
+import { useRealtimeFleetUpdates } from "@/hooks/useRealtimeVehicleUpdates";
 
 interface UserProfile {
   id: string;
@@ -241,6 +236,12 @@ const Profile = () => {
     );
   }
 
+  // Get primary vehicle for AI insights
+  const primaryVehicleId = assignedVehicles[0]?.device_id || null;
+  
+  // Enable realtime updates for all assigned vehicles
+  useRealtimeFleetUpdates(assignedVehicles.map(v => v.device_id));
+
   // Stats summary
   const onlineVehicles = assignedVehicles.filter(v => v.position?.is_online).length;
   const movingVehicles = assignedVehicles.filter(v => v.position?.speed && v.position.speed > 0).length;
@@ -249,6 +250,11 @@ const Profile = () => {
   return (
     <DashboardLayout>
       <div className="space-y-6">
+        {/* AI Insight Card */}
+        {primaryVehicleId && (
+          <SmartBriefingCard deviceId={primaryVehicleId} />
+        )}
+
         {/* Profile Header */}
         <Card className="border-border bg-gradient-to-br from-card to-card/80">
           <CardContent className="p-6">
