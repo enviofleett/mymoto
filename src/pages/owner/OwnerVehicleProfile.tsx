@@ -311,8 +311,16 @@ export default function OwnerVehicleProfile() {
     };
   }, [derivedStats, chartData]);
 
-  // Handle refresh
+  // Handle refresh - also triggers trip processing for fresh data
   const handleRefresh = useCallback(async () => {
+    // Trigger process-trips for this vehicle in background (don't await)
+    if (deviceId) {
+      supabase.functions.invoke('process-trips', {
+        body: { device_ids: [deviceId], lookback_hours: 24 },
+      }).catch(err => console.log('Background trip processing:', err));
+    }
+    
+    // Refetch all data
     await Promise.all([
       refetchVehicles(), 
       refetchTrips(), 
@@ -321,7 +329,7 @@ export default function OwnerVehicleProfile() {
       refetchDaily(),
       refetchDailyStats(),
     ]);
-  }, [refetchVehicles, refetchTrips, refetchEvents, refetchMileage, refetchDaily, refetchDailyStats]);
+  }, [deviceId, refetchVehicles, refetchTrips, refetchEvents, refetchMileage, refetchDaily, refetchDailyStats]);
 
   // Pull-to-refresh hook
   const { pullDistance, isRefreshing: isPullRefreshing, handlers } = usePullToRefresh({
