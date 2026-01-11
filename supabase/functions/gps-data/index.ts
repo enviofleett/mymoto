@@ -248,6 +248,93 @@ async function syncPositions(supabase: any, records: any[]) {
     const batch = historyRecords.slice(i, i + BATCH_SIZE)
     await supabase.from('position_history').insert(batch)
   }
+
+  // ============================================
+  // PROACTIVE EVENT DETECTION & ALERTING
+  // ============================================
+  const ALERT_COOLDOWN_MS = 30 * 60 * 1000 // 30 minutes
+  const recentCutoff = new Date(Date.now() - ALERT_COOLDOWN_MS).toISOString()
+  
+  const eventsToInsert: Array<{
+    device_id: string;
+    event_type: string;
+    severity: string;
+    title: string;
+    message: string;
+    metadata: Record<string, unknown>;
+  }> = []
+
+  for (const pos of positions) {
+    // 1. OVERSPEEDING DETECTION (speed > 120 km/h)
+    if (pos.speed > 120 && pos.is_overspeeding) {
+      eventsToInsert.push({
+        device_id: pos.device_id,
+        event_type: 'overspeeding',
+        severity: 'critical',
+        title: 'High Speed Alert',
+        message: `Vehicle traveling at ${Math.round(pos.speed)} km/h`,
+        metadata: { 
+          speed: pos.speed, 
+          lat: pos.latitude, 
+          lon: pos.longitude,
+          detected_by: 'gps-data'
+        }
+      })
+    }
+
+    // 2. CRITICAL BATTERY (< 10%)
+    if (pos.battery_percent && pos.battery_percent < 10) {
+      eventsToInsert.push({
+        device_id: pos.device_id,
+        event_type: 'critical_battery',
+        severity: 'critical',
+        title: 'Critical Battery Level',
+        message: `Battery at ${pos.battery_percent}% - immediate attention required`,
+        metadata: { battery: pos.battery_percent, detected_by: 'gps-data' }
+      })
+    }
+    // 3. LOW BATTERY WARNING (10-20%)
+    else if (pos.battery_percent && pos.battery_percent < 20) {
+      eventsToInsert.push({
+        device_id: pos.device_id,
+        event_type: 'low_battery',
+        severity: 'warning',
+        title: 'Low Battery Warning',
+        message: `Battery level at ${pos.battery_percent}%`,
+        metadata: { battery: pos.battery_percent, detected_by: 'gps-data' }
+      })
+    }
+  }
+
+  // De-duplicate: Check if same event was triggered recently (last 30 minutes)
+  if (eventsToInsert.length > 0) {
+    const eventDeviceIds = eventsToInsert.map(e => e.device_id)
+    
+    const { data: recentEvents } = await supabase
+      .from('proactive_vehicle_events')
+      .select('device_id, event_type')
+      .in('device_id', eventDeviceIds)
+      .gte('created_at', recentCutoff)
+
+    const recentEventKeys = new Set(
+      (recentEvents || []).map((e: any) => `${e.device_id}-${e.event_type}`)
+    )
+
+    const newEvents = eventsToInsert.filter(
+      e => !recentEventKeys.has(`${e.device_id}-${e.event_type}`)
+    )
+
+    if (newEvents.length > 0) {
+      console.log(`Inserting ${newEvents.length} proactive events (${eventsToInsert.length - newEvents.length} duplicates filtered)`)
+      const { error: eventError } = await supabase
+        .from('proactive_vehicle_events')
+        .insert(newEvents)
+      
+      if (eventError) {
+        console.error('Failed to insert proactive events:', eventError)
+      }
+    }
+  }
 }
 
 // Get ALL device IDs from database (paginated to handle 600+ vehicles)
