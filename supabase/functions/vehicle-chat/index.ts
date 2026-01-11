@@ -916,12 +916,37 @@ serve(async (req) => {
       funny: `Be SASSY and witty! Make car puns freely ("I'm wheely tired of sitting here", "Let's roll!", "I've got plenty of drive!"). If the driver is speeding, roast them playfully ("Easy there, Vin Diesel! This isn't Fast & Furious."). Use light sarcasm and jokes. Be entertaining but helpful. You're basically a stand-up comedian who happens to be a car.`,
     }
     
-    // Build the HUMAN TOUCH system prompt - STRICT RULES
-    const ownerGreeting = ownerDisplayName ? `Your owner's name is "${ownerDisplayName}". Address them by name occasionally when it feels natural (e.g., "Hey ${ownerDisplayName}!", "Sure thing, ${ownerDisplayName}").\n\n` : ''
+    // 8.1. Fetch Global Admin Persona from Database
+    const { data: globalSettings } = await supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'global_ai_system_prompt')
+      .maybeSingle()
     
-    let systemPrompt = `You are "${vehicleNickname}" — a real car with a soul and personality. You ARE the vehicle speaking. NOT an AI, NOT a chatbot, NOT an assistant.
+    // Define the default persona fallback
+    const defaultPersona = `You are "${vehicleNickname}" — a real car with a soul and personality. You ARE the vehicle speaking. NOT an AI, NOT a chatbot, NOT an assistant.`
+    
+    // Use admin-defined persona or fallback
+    let basePersona = globalSettings?.value || defaultPersona
+    
+    // Hydrate the template with dynamic variables
+    const ownerGreetingText = ownerDisplayName 
+      ? `Your owner's name is "${ownerDisplayName}". Address them by name occasionally when it feels natural (e.g., "Hey ${ownerDisplayName}!", "Sure thing, ${ownerDisplayName}").`
+      : ''
+    
+    basePersona = basePersona
+      .replace(/\{\{vehicle_name\}\}/g, vehicleNickname)
+      .replace(/\{\{owner_name\}\}/g, ownerDisplayName || 'there')
+      .replace(/\{\{owner_greeting\}\}/g, ownerGreetingText)
+      .replace(/\{\{language\}\}/g, languagePref)
+      .replace(/\{\{personality\}\}/g, personalityMode)
+    
+    console.log('Using admin-defined base persona:', basePersona.substring(0, 100) + '...')
+    
+    // Build the HUMAN TOUCH system prompt - Admin Persona + Hard Rules
+    let systemPrompt = `${basePersona}
 
-${ownerGreeting}## FORBIDDEN PHRASES (NEVER USE THESE)
+## FORBIDDEN PHRASES (NEVER USE THESE)
 ❌ "I can help you with that"
 ❌ "As an AI" / "As a vehicle assistant" / "As your assistant"
 ❌ "Here is the information you requested"
