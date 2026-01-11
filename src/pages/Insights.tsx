@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { RefreshCw, Brain, TrendingUp, AlertTriangle, Wifi, Bot, Save } from "lucide-react";
 import { format } from "date-fns";
 import { BillingConfigCard } from "@/components/admin/BillingConfigCard";
+import { AiSimulationCard } from "@/components/admin/AiSimulationCard";
 import { FleetInsights } from "@/components/fleet/FleetInsights";
 import {
   LineChart,
@@ -421,9 +422,12 @@ const Insights = () => {
           </Card>
         </div>
 
-        {/* Admin Billing Configuration */}
+        {/* Admin Tools */}
         {isAdmin && (
-          <BillingConfigCard />
+          <div className="grid gap-6 lg:grid-cols-2">
+            <AiSimulationCard />
+            <BillingConfigCard />
+          </div>
         )}
 
         {/* Insight History */}
