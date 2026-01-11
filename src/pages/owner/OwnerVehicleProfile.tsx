@@ -519,9 +519,17 @@ export default function OwnerVehicleProfile() {
           {/* Vehicle Header */}
           <div className="flex flex-col items-center py-6 px-4">
             <div className="relative mb-4">
-              <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center">
-                <Car className="h-9 w-9 text-muted-foreground" />
-              </div>
+              {llmSettings?.avatar_url ? (
+                <img 
+                  src={llmSettings.avatar_url} 
+                  alt={llmSettings?.nickname || vehicle.name}
+                  className="w-20 h-20 rounded-full object-cover border-2 border-border"
+                />
+              ) : (
+                <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center">
+                  <Car className="h-9 w-9 text-muted-foreground" />
+                </div>
+              )}
               <div
                 className={cn(
                   "absolute bottom-1 right-1 w-5 h-5 rounded-full border-[3px] border-background",
@@ -533,7 +541,9 @@ export default function OwnerVehicleProfile() {
                 )}
               />
             </div>
-            <h1 className="text-xl font-semibold text-foreground">{vehicle.name}</h1>
+            <h1 className="text-xl font-semibold text-foreground">
+              {llmSettings?.nickname || vehicle.name}
+            </h1>
             {llmSettings?.personality_mode && (
               <p className="text-xs text-muted-foreground mt-1">
                 {getPersonalityLabel(llmSettings?.personality_mode)}
