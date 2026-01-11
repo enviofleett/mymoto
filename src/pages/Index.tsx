@@ -3,6 +3,7 @@ import { DashboardLayout } from "@/components/layouts/DashboardLayout";
 import { MetricCard } from "@/components/fleet/MetricCard";
 import { RecentActivityFeed } from "@/components/fleet/RecentActivityFeed";
 import { AdminGpsStatus } from "@/components/fleet/AdminGpsStatus";
+import { GpsSyncHealthDashboard } from "@/components/fleet/GpsSyncHealthDashboard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/contexts/AuthContext";
@@ -59,8 +60,13 @@ const Index = () => {
           </p>
         </div>
 
-        {/* Admin GPS Status */}
-        {isAdmin && <AdminGpsStatus />}
+        {/* Admin GPS Status & Sync Health */}
+        {isAdmin && (
+          <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
+            <AdminGpsStatus />
+            <GpsSyncHealthDashboard />
+          </div>
+        )}
 
         {/* Error State */}
         {error && (
