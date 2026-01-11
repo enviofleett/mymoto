@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,9 +7,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Database, Download, Loader2, Check, AlertCircle, History, Calendar } from "lucide-react";
+import { Database, Download, Loader2, Check, AlertCircle, History, Calendar, Search, X } from "lucide-react";
 import { format, subDays } from "date-fns";
 
 interface Vehicle {
@@ -33,7 +34,8 @@ interface BackfillResult {
 export function DataBackfillCard() {
   const { toast } = useToast();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [selectedDevice, setSelectedDevice] = useState<string>("");
+  const [selectedDevices, setSelectedDevices] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState("");
   const [daysBack, setDaysBack] = useState<string>("7");
   const [forceOverwrite, setForceOverwrite] = useState(false);
   const [detectTrips, setDetectTrips] = useState(true);
@@ -60,11 +62,63 @@ export function DataBackfillCard() {
     setLoadingVehicles(false);
   };
 
+  // Filter vehicles based on search query
+  const filteredVehicles = useMemo(() => {
+    if (!searchQuery.trim()) return vehicles;
+    const query = searchQuery.toLowerCase();
+    return vehicles.filter(v => 
+      v.device_name.toLowerCase().includes(query) ||
+      v.device_id.toLowerCase().includes(query)
+    );
+  }, [vehicles, searchQuery]);
+
+  // Check if all filtered vehicles are selected
+  const allFilteredSelected = useMemo(() => {
+    return filteredVehicles.length > 0 && filteredVehicles.every(v => selectedDevices.has(v.device_id));
+  }, [filteredVehicles, selectedDevices]);
+
+  // Toggle single vehicle selection
+  const toggleVehicle = (deviceId: string) => {
+    setSelectedDevices(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(deviceId)) {
+        newSet.delete(deviceId);
+      } else {
+        newSet.add(deviceId);
+      }
+      return newSet;
+    });
+  };
+
+  // Select/deselect all filtered vehicles
+  const toggleSelectAll = () => {
+    if (allFilteredSelected) {
+      // Deselect all filtered
+      setSelectedDevices(prev => {
+        const newSet = new Set(prev);
+        filteredVehicles.forEach(v => newSet.delete(v.device_id));
+        return newSet;
+      });
+    } else {
+      // Select all filtered
+      setSelectedDevices(prev => {
+        const newSet = new Set(prev);
+        filteredVehicles.forEach(v => newSet.add(v.device_id));
+        return newSet;
+      });
+    }
+  };
+
+  // Clear all selections
+  const clearSelection = () => {
+    setSelectedDevices(new Set());
+  };
+
   const runBackfill = async () => {
-    if (!selectedDevice && selectedDevice !== "all") {
+    if (selectedDevices.size === 0) {
       toast({
-        title: "Select a vehicle",
-        description: "Please select a vehicle or 'All Vehicles' to backfill",
+        title: "Select vehicles",
+        description: "Please select at least one vehicle to backfill",
         variant: "destructive",
       });
       return;
@@ -73,10 +127,7 @@ export function DataBackfillCard() {
     setLoading(true);
     setResults([]);
 
-    const devicesToBackfill = selectedDevice === "all" 
-      ? vehicles 
-      : vehicles.filter(v => v.device_id === selectedDevice);
-
+    const devicesToBackfill = vehicles.filter(v => selectedDevices.has(v.device_id));
     const newResults: BackfillResult[] = [];
 
     for (const vehicle of devicesToBackfill) {
@@ -162,45 +213,113 @@ export function DataBackfillCard() {
           Fetch historical GPS track data from GPS51 and populate position_history for better AI context.
         </p>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          {/* Vehicle Selection */}
-          <div className="space-y-2">
-            <Label htmlFor="vehicle">Vehicle</Label>
-            <Select value={selectedDevice} onValueChange={setSelectedDevice}>
-              <SelectTrigger id="vehicle" disabled={loadingVehicles}>
-                <SelectValue placeholder={loadingVehicles ? "Loading..." : "Select vehicle"} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Vehicles ({vehicles.length})</SelectItem>
-                {vehicles.map((v) => (
-                  <SelectItem key={v.device_id} value={v.device_id}>
-                    {v.device_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        {/* Search Bar */}
+        <div className="space-y-2">
+          <Label htmlFor="search">Search Vehicles</Label>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              id="search"
+              placeholder="Search by name or device ID..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 pr-9"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
+        </div>
 
-          {/* Days Back */}
-          <div className="space-y-2">
-            <Label htmlFor="days">Days to Backfill</Label>
-            <Select value={daysBack} onValueChange={setDaysBack}>
-              <SelectTrigger id="days">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="1">1 day</SelectItem>
-                <SelectItem value="3">3 days</SelectItem>
-                <SelectItem value="7">7 days</SelectItem>
-                <SelectItem value="14">14 days</SelectItem>
-                <SelectItem value="30">30 days (max)</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground flex items-center gap-1">
-              <Calendar className="h-3 w-3" />
-              {dateRange.start} to {dateRange.end}
-            </p>
+        {/* Vehicle Selection with Checkboxes */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label>Select Vehicles</Label>
+            <div className="flex items-center gap-2">
+              {selectedDevices.size > 0 && (
+                <Button variant="ghost" size="sm" onClick={clearSelection} className="h-7 text-xs">
+                  Clear ({selectedDevices.size})
+                </Button>
+              )}
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={toggleSelectAll}
+                className="h-7 text-xs"
+                disabled={loadingVehicles}
+              >
+                {allFilteredSelected ? "Deselect All" : "Select All"}
+                {searchQuery && ` (${filteredVehicles.length})`}
+              </Button>
+            </div>
           </div>
+          
+          <ScrollArea className="h-[180px] rounded-md border border-border">
+            {loadingVehicles ? (
+              <div className="flex items-center justify-center h-full p-4">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : filteredVehicles.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full p-4 text-muted-foreground">
+                <Search className="h-8 w-8 mb-2 opacity-50" />
+                <p className="text-sm">No vehicles found</p>
+              </div>
+            ) : (
+              <div className="p-2 space-y-1">
+                {filteredVehicles.map((v) => (
+                  <label
+                    key={v.device_id}
+                    className={`flex items-center gap-3 p-2 rounded-md cursor-pointer transition-colors ${
+                      selectedDevices.has(v.device_id)
+                        ? "bg-primary/10 border border-primary/20"
+                        : "hover:bg-muted/50"
+                    }`}
+                  >
+                    <Checkbox
+                      checked={selectedDevices.has(v.device_id)}
+                      onCheckedChange={() => toggleVehicle(v.device_id)}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{v.device_name}</p>
+                      <p className="text-xs text-muted-foreground truncate">{v.device_id}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+          
+          {selectedDevices.size > 0 && (
+            <p className="text-xs text-muted-foreground">
+              {selectedDevices.size} vehicle{selectedDevices.size !== 1 ? "s" : ""} selected
+            </p>
+          )}
+        </div>
+
+        {/* Days Back */}
+        <div className="space-y-2">
+          <Label htmlFor="days">Days to Backfill</Label>
+          <Select value={daysBack} onValueChange={setDaysBack}>
+            <SelectTrigger id="days">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="1">1 day</SelectItem>
+              <SelectItem value="3">3 days</SelectItem>
+              <SelectItem value="7">7 days</SelectItem>
+              <SelectItem value="14">14 days</SelectItem>
+              <SelectItem value="30">30 days (max)</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground flex items-center gap-1">
+            <Calendar className="h-3 w-3" />
+            {dateRange.start} to {dateRange.end}
+          </p>
         </div>
 
         {/* Options */}
@@ -230,18 +349,18 @@ export function DataBackfillCard() {
         {/* Action Button */}
         <Button
           onClick={runBackfill}
-          disabled={loading || !selectedDevice}
+          disabled={loading || selectedDevices.size === 0}
           className="w-full"
         >
           {loading ? (
             <>
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Backfilling...
+              Backfilling {selectedDevices.size} vehicle{selectedDevices.size !== 1 ? "s" : ""}...
             </>
           ) : (
             <>
               <Download className="h-4 w-4 mr-2" />
-              Start Backfill
+              Start Backfill ({selectedDevices.size} selected)
             </>
           )}
         </Button>
