@@ -6,9 +6,43 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useOwnerVehicles, OwnerVehicle } from "@/hooks/useOwnerVehicles";
+import { useRealtimeFleetUpdates } from "@/hooks/useRealtimeVehicleUpdates";
 import { Search, Plus, Car, Wifi, WifiOff, Battery, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+// Health indicator dot based on battery level
+function HealthDot({ battery }: { battery: number | null }) {
+  const getColor = () => {
+    if (battery === null) return "bg-muted";
+    if (battery >= 70) return "bg-green-500";
+    if (battery >= 40) return "bg-yellow-500";
+    if (battery >= 20) return "bg-orange-500";
+    return "bg-red-500";
+  };
+
+  const getLabel = () => {
+    if (battery === null) return "Unknown battery";
+    if (battery >= 70) return `Healthy (${battery}%)`;
+    if (battery >= 40) return `Fair (${battery}%)`;
+    if (battery >= 20) return `Low (${battery}%)`;
+    return `Critical (${battery}%)`;
+  };
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className={cn("h-2.5 w-2.5 rounded-full shrink-0", getColor())} />
+        </TooltipTrigger>
+        <TooltipContent side="left">
+          <p className="text-xs">{getLabel()}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 
 function FleetStatusCard({ 
   icon: Icon, 
@@ -74,8 +108,9 @@ function VehicleCard({ vehicle, onClick }: { vehicle: OwnerVehicle; onClick: () 
           )}
         </div>
 
-        {/* Status & Arrow */}
+        {/* Health Dot, Status & Arrow */}
         <div className="flex items-center gap-2 shrink-0">
+          <HealthDot battery={vehicle.battery} />
           <Badge 
             variant="secondary" 
             className={cn(
@@ -100,6 +135,10 @@ export default function OwnerVehicles() {
   const navigate = useNavigate();
   const { data: vehicles, isLoading } = useOwnerVehicles();
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Enable real-time updates for all owner vehicles
+  const deviceIds = vehicles?.map(v => v.deviceId) || [];
+  useRealtimeFleetUpdates(deviceIds);
 
   const filteredVehicles = vehicles?.filter(v =>
     v.name.toLowerCase().includes(searchQuery.toLowerCase())
