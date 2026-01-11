@@ -2,87 +2,109 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
+/* ============================================
+   PREMIUM VEHICLE COMPANION - GLASSMORPHISM DESIGN SYSTEM
+   Inspired by Tesla, Polestar, and luxury EV dashboards
+   ============================================ */
 
 @layer base {
   :root {
-    /* Fleet Management - Charcoal Professional Theme */
-    --background: 210 14% 9%;
-    --foreground: 210 20% 98%;
+    /* Core Atmosphere - Deep Matte Charcoal */
+    --background: 240 10% 4%; /* #0A0A0C equivalent */
+    --foreground: 0 0% 95%; /* #F2F2F2 off-white */
 
-    --card: 210 14% 13%;
-    --card-foreground: 210 20% 98%;
+    /* Premium Glass Cards - Semi-transparent */
+    --card: 240 6% 10%; /* Base for glass effect */
+    --card-foreground: 0 0% 95%;
 
-    --popover: 210 14% 11%;
-    --popover-foreground: 210 20% 98%;
+    /* Popovers & Modals - Deeper glass */
+    --popover: 240 6% 8%;
+    --popover-foreground: 0 0% 95%;
 
-    --primary: 174 72% 46%;
-    --primary-foreground: 210 14% 9%;
+    /* Electric Sky Blue - Primary Accent */
+    --primary: 199 89% 60%; /* #38BDF8 */
+    --primary-foreground: 240 10% 4%;
 
-    --secondary: 210 10% 20%;
-    --secondary-foreground: 210 20% 90%;
+    /* Secondary - Subtle glass surfaces */
+    --secondary: 240 5% 16%;
+    --secondary-foreground: 0 0% 85%;
 
-    --muted: 210 10% 18%;
-    --muted-foreground: 215 15% 65%;
+    /* Muted - Technical grey tones */
+    --muted: 240 5% 14%;
+    --muted-foreground: 240 5% 65%; /* #A1A1AA technical grey */
 
-    --accent: 174 72% 46%;
-    --accent-foreground: 210 14% 9%;
+    /* Accent - Electric Sky Blue */
+    --accent: 199 89% 60%;
+    --accent-foreground: 240 10% 4%;
 
+    /* Destructive - Refined red */
     --destructive: 0 72% 51%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive-foreground: 0 0% 95%;
 
-    --border: 210 10% 20%;
-    --input: 210 10% 20%;
-    --ring: 174 72% 46%;
+    /* Glass Borders - Almost transparent white */
+    --border: 0 0% 100% / 0.08;
+    --input: 240 5% 18%;
+    --ring: 199 89% 60%;
 
-    --radius: 0.5rem;
+    --radius: 0.75rem;
 
-    /* Status colors */
-    --status-active: 142 70% 50%;
+    /* Status colors - Technical precision */
+    --status-active: 142 70% 45%;
     --status-maintenance: 38 90% 50%;
-    --status-inactive: 0 70% 60%;
+    --status-inactive: 0 65% 55%;
 
-    /* Sidebar */
-    --sidebar-background: 210 14% 11%;
-    --sidebar-foreground: 210 20% 85%;
-    --sidebar-primary: 174 72% 46%;
-    --sidebar-primary-foreground: 210 14% 9%;
-    --sidebar-accent: 210 10% 20%;
-    --sidebar-accent-foreground: 210 20% 98%;
-    --sidebar-border: 210 10% 20%;
-    --sidebar-ring: 174 72% 46%;
+    /* Sidebar - Premium glass */
+    --sidebar-background: 240 6% 6%;
+    --sidebar-foreground: 0 0% 85%;
+    --sidebar-primary: 199 89% 60%;
+    --sidebar-primary-foreground: 240 10% 4%;
+    --sidebar-accent: 240 5% 16%;
+    --sidebar-accent-foreground: 0 0% 95%;
+    --sidebar-border: 0 0% 100% / 0.06;
+    --sidebar-ring: 199 89% 60%;
+
+    /* Glass Effect Variables */
+    --glass-bg: rgba(24, 24, 27, 0.6);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --glass-border-light: rgba(255, 255, 255, 0.12);
+    --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    --glass-shadow-elevated: 0 16px 48px rgba(0, 0, 0, 0.5);
+    --glass-blur: blur(16px) saturate(180%);
+    --glass-blur-heavy: blur(20px) saturate(200%);
+
+    /* Accent Glow */
+    --accent-glow: 0 0 20px rgba(56, 189, 248, 0.3);
+    --accent-glow-strong: 0 0 30px rgba(56, 189, 248, 0.5);
   }
 
   .dark {
-    --background: 210 14% 9%;
-    --foreground: 210 20% 98%;
-    --card: 210 14% 13%;
-    --card-foreground: 210 20% 98%;
-    --popover: 210 14% 11%;
-    --popover-foreground: 210 20% 98%;
-    --primary: 174 72% 46%;
-    --primary-foreground: 210 14% 9%;
-    --secondary: 210 10% 20%;
-    --secondary-foreground: 210 20% 90%;
-    --muted: 210 10% 18%;
-    --muted-foreground: 215 15% 75%;
-    --accent: 174 72% 46%;
-    --accent-foreground: 210 14% 9%;
+    --background: 240 10% 4%;
+    --foreground: 0 0% 95%;
+    --card: 240 6% 10%;
+    --card-foreground: 0 0% 95%;
+    --popover: 240 6% 8%;
+    --popover-foreground: 0 0% 95%;
+    --primary: 199 89% 60%;
+    --primary-foreground: 240 10% 4%;
+    --secondary: 240 5% 16%;
+    --secondary-foreground: 0 0% 85%;
+    --muted: 240 5% 14%;
+    --muted-foreground: 240 5% 65%;
+    --accent: 199 89% 60%;
+    --accent-foreground: 240 10% 4%;
     --destructive: 0 72% 51%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 210 10% 20%;
-    --input: 210 10% 20%;
-    --ring: 174 72% 46%;
-    --sidebar-background: 210 14% 11%;
-    --sidebar-foreground: 210 20% 85%;
-    --sidebar-primary: 174 72% 46%;
-    --sidebar-primary-foreground: 210 14% 9%;
-    --sidebar-accent: 210 10% 20%;
-    --sidebar-accent-foreground: 210 20% 98%;
-    --sidebar-border: 210 10% 20%;
-    --sidebar-ring: 174 72% 46%;
+    --destructive-foreground: 0 0% 95%;
+    --border: 0 0% 100% / 0.08;
+    --input: 240 5% 18%;
+    --ring: 199 89% 60%;
+    --sidebar-background: 240 6% 6%;
+    --sidebar-foreground: 0 0% 85%;
+    --sidebar-primary: 199 89% 60%;
+    --sidebar-primary-foreground: 240 10% 4%;
+    --sidebar-accent: 240 5% 16%;
+    --sidebar-accent-foreground: 0 0% 95%;
+    --sidebar-border: 0 0% 100% / 0.06;
+    --sidebar-ring: 199 89% 60%;
   }
 }
 
@@ -91,7 +113,175 @@ All colors MUST be HSL.
     @apply border-border;
   }
 
-  body {
-    @apply bg-background text-foreground antialiased;
+  html {
+    @apply scroll-smooth;
   }
+
+  body {
+    @apply text-foreground antialiased;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    /* Premium cockpit atmosphere with radial gradient - cabin light effect */
+    background: radial-gradient(
+      ellipse 80% 50% at 50% 0%,
+      hsl(240 6% 12%) 0%,
+      hsl(240 10% 4%) 100%
+    );
+    background-attachment: fixed;
+    min-height: 100vh;
+  }
+}
+
+/* ============================================
+   GLASSMORPHISM UTILITY CLASSES
+   ============================================ */
+
+@layer components {
+  /* Base Glass Effect */
+  .glass {
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+  }
+
+  /* Elevated Glass - for modals, dialogs */
+  .glass-elevated {
+    background: rgba(24, 24, 27, 0.75);
+    backdrop-filter: var(--glass-blur-heavy);
+    -webkit-backdrop-filter: var(--glass-blur-heavy);
+    border: 1px solid var(--glass-border-light);
+    box-shadow: var(--glass-shadow-elevated);
+  }
+
+  /* Subtle Glass - for nested cards */
+  .glass-subtle {
+    background: rgba(24, 24, 27, 0.4);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+  }
+
+  /* Interactive Glass - for buttons, inputs */
+  .glass-interactive {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    transition: all 0.2s ease;
+  }
+
+  .glass-interactive:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+
+  /* Accent Glow Effects */
+  .glow-accent {
+    box-shadow: var(--accent-glow);
+  }
+
+  .glow-accent-strong {
+    box-shadow: var(--accent-glow-strong);
+  }
+
+  /* Premium text styles */
+  .text-technical {
+    @apply text-muted-foreground tracking-wide uppercase text-xs font-medium;
+  }
+
+  .text-display {
+    @apply text-foreground font-semibold tracking-tight;
+  }
+
+  /* Status indicators with glow */
+  .status-glow-active {
+    box-shadow: 0 0 12px hsl(var(--status-active) / 0.5);
+  }
+
+  .status-glow-maintenance {
+    box-shadow: 0 0 12px hsl(var(--status-maintenance) / 0.5);
+  }
+
+  .status-glow-inactive {
+    box-shadow: 0 0 12px hsl(var(--status-inactive) / 0.5);
+  }
+}
+
+/* ============================================
+   ANIMATION ENHANCEMENTS
+   ============================================ */
+
+@layer utilities {
+  .animate-glow-pulse {
+    animation: glow-pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes glow-pulse {
+    0%, 100% {
+      box-shadow: 0 0 20px rgba(56, 189, 248, 0.2);
+    }
+    50% {
+      box-shadow: 0 0 30px rgba(56, 189, 248, 0.4);
+    }
+  }
+
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+
+  @keyframes float {
+    0%, 100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-4px);
+    }
+  }
+}
+
+/* ============================================
+   SCROLLBAR STYLING - Premium Dark Theme
+   ============================================ */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+/* ============================================
+   SELECTION STYLING
+   ============================================ */
+
+::selection {
+  background: hsl(199 89% 60% / 0.3);
+  color: hsl(0 0% 95%);
+}
+
+/* ============================================
+   FOCUS STYLES - Accessible with accent glow
+   ============================================ */
+
+:focus-visible {
+  outline: 2px solid hsl(199 89% 60%);
+  outline-offset: 2px;
 }
