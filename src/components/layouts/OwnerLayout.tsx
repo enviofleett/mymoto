@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { MessageCircle, Car, Wallet, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { GlobalAlertListener } from "@/components/notifications/GlobalAlertListener";
+import { StickyAlertBanner } from "@/components/notifications/StickyAlertBanner";
 
 interface OwnerLayoutProps {
   children: ReactNode;
@@ -30,6 +31,9 @@ export function OwnerLayout({ children }: OwnerLayoutProps) {
     <div className="min-h-screen min-h-[100dvh] bg-background flex flex-col">
       {/* Global Alert Listener - Real-time notifications */}
       <GlobalAlertListener />
+      
+      {/* Sticky Alert Banner - Shows at top header */}
+      <StickyAlertBanner />
       
       {/* Main Content - scrollable area above fixed nav */}
       <main className="flex-1 overflow-auto pb-[calc(4rem+env(safe-area-inset-bottom))]">

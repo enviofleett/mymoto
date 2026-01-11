@@ -3,6 +3,7 @@ import { TopNavigation } from "@/components/navigation/TopNavigation";
 import { BottomNavigation } from "@/components/navigation/BottomNavigation";
 import { DashboardFooter } from "@/components/fleet/DashboardFooter";
 import { GlobalAlertListener } from "@/components/notifications/GlobalAlertListener";
+import { StickyAlertBanner } from "@/components/notifications/StickyAlertBanner";
 import { ConnectionStatus } from "@/hooks/useFleetData";
 
 interface DashboardLayoutProps {
@@ -15,6 +16,10 @@ export function DashboardLayout({ children, connectionStatus }: DashboardLayoutP
     <div className="flex min-h-screen w-full flex-col bg-background">
       {/* Global Alert Listener - Real-time notifications */}
       <GlobalAlertListener />
+      
+      {/* Sticky Alert Banner - Shows at top header */}
+      <StickyAlertBanner />
+      
       {/* Desktop Top Navigation */}
       <div className="hidden md:block">
         <TopNavigation connectionStatus={connectionStatus} />
