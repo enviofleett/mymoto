@@ -72,13 +72,18 @@ const Auth = () => {
     <div className="min-h-screen min-h-[100dvh] flex flex-col items-center justify-center bg-background p-4">
       {/* Large Neumorphic Logo */}
       <div className="mb-8 animate-fade-in">
-        <div className="w-32 h-32 rounded-full shadow-neumorphic bg-card flex items-center justify-center ring-4 ring-accent/30">
-          <div className="w-28 h-28 rounded-full shadow-neumorphic-inset bg-card flex items-center justify-center">
-            <img 
-              src={myMotoLogo} 
-              alt="MyMoto" 
-              className="w-20 h-20 object-contain drop-shadow-lg"
-            />
+        <div className="relative">
+          {/* Pulsing ring */}
+          <div className="absolute inset-0 w-32 h-32 rounded-full bg-accent/20 animate-[pulse_3s_ease-in-out_infinite]" />
+          
+          <div className="relative w-32 h-32 rounded-full shadow-neumorphic bg-card flex items-center justify-center ring-4 ring-accent/40">
+            <div className="w-28 h-28 rounded-full shadow-neumorphic-inset bg-card flex items-center justify-center">
+              <img 
+                src={myMotoLogo} 
+                alt="MyMoto" 
+                className="w-20 h-20 object-contain drop-shadow-lg"
+              />
+            </div>
           </div>
         </div>
       </div>
