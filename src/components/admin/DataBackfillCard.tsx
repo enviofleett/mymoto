@@ -50,14 +50,14 @@ export function DataBackfillCard() {
   const fetchVehicles = async () => {
     setLoadingVehicles(true);
     const { data, error } = await supabase
-      .from("vehicles")
+      .from("vehicles" as any)
       .select("device_id, device_name, last_synced_at")
       .order("device_name");
 
     if (error) {
       console.error("Error fetching vehicles:", error);
     } else {
-      setVehicles(data || []);
+      setVehicles((data || []) as unknown as Vehicle[]);
     }
     setLoadingVehicles(false);
   };
