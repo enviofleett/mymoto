@@ -2,6 +2,9 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
+// Cast supabase to any to bypass outdated types
+const db = supabase as any;
+
 export interface ProfileWithAssignments {
   id: string;
   name: string;
@@ -37,8 +40,8 @@ export function useAssignmentStats() {
     queryKey: ["assignment-stats"],
     queryFn: async (): Promise<AssignmentStats> => {
       const [vehiclesRes, assignmentsRes, profilesRes] = await Promise.all([
-        supabase.from("vehicles").select("device_id", { count: "exact", head: true }),
-        supabase.from("vehicle_assignments").select("device_id", { count: "exact", head: true }),
+        db.from("vehicles").select("device_id", { count: "exact", head: true }),
+        db.from("vehicle_assignments").select("device_id", { count: "exact", head: true }),
         supabase.from("profiles").select("id", { count: "exact", head: true }),
       ]);
 
@@ -46,13 +49,12 @@ export function useAssignmentStats() {
       const assignedVehicles = assignmentsRes.count || 0;
       const totalUsers = profilesRes.count || 0;
 
-      // Get users with at least one vehicle
-      const { data: usersWithAssignments } = await supabase
+      const { data: usersWithAssignments } = await db
         .from("vehicle_assignments")
         .select("profile_id")
         .not("profile_id", "is", null);
 
-      const uniqueUsersWithVehicles = new Set(usersWithAssignments?.map(a => a.profile_id)).size;
+      const uniqueUsersWithVehicles = new Set(usersWithAssignments?.map((a: any) => a.profile_id)).size;
 
       return {
         totalVehicles,
@@ -69,7 +71,6 @@ export function useProfiles() {
   return useQuery({
     queryKey: ["profiles-with-assignments"],
     queryFn: async (): Promise<ProfileWithAssignments[]> => {
-      // Get all profiles
       const { data: profiles, error } = await supabase
         .from("profiles")
         .select("id, name, email, phone, user_id")
@@ -77,13 +78,12 @@ export function useProfiles() {
 
       if (error) throw error;
 
-      // Get assignment counts per profile
-      const { data: assignments } = await supabase
+      const { data: assignments } = await db
         .from("vehicle_assignments")
         .select("profile_id");
 
       const countMap = new Map<string, number>();
-      assignments?.forEach(a => {
+      assignments?.forEach((a: any) => {
         if (a.profile_id) {
           countMap.set(a.profile_id, (countMap.get(a.profile_id) || 0) + 1);
         }
@@ -101,8 +101,7 @@ export function useVehiclesWithAssignments(search: string = "", filter: "all" | 
   return useQuery({
     queryKey: ["vehicles-with-assignments", search, filter],
     queryFn: async (): Promise<VehicleWithAssignment[]> => {
-      // Get ALL vehicles - no limit for admin panel
-      let query = supabase
+      let query = db
         .from("vehicles")
         .select("device_id, device_name, device_type, gps_owner, group_name")
         .order("device_name");
@@ -114,37 +113,30 @@ export function useVehiclesWithAssignments(search: string = "", filter: "all" | 
       const { data: vehicles, error } = await query;
       if (error) throw error;
 
-      // Get all assignments with profile names
-      const { data: assignments } = await supabase
+      const { data: assignments } = await db
         .from("vehicle_assignments")
-        .select(`
-          device_id,
-          profile_id,
-          vehicle_alias,
-          profiles:profile_id (name)
-        `);
+        .select(`device_id, profile_id, vehicle_alias, profiles:profile_id (name)`);
 
       const assignmentMap = new Map<string, { profile_id: string; profile_name: string; vehicle_alias: string | null }>();
-      assignments?.forEach(a => {
+      assignments?.forEach((a: any) => {
         if (a.profile_id) {
           assignmentMap.set(a.device_id, {
             profile_id: a.profile_id,
-            profile_name: (a.profiles as any)?.name || "Unknown",
+            profile_name: a.profiles?.name || "Unknown",
             vehicle_alias: a.vehicle_alias,
           });
         }
       });
 
-      let result = (vehicles || []).map(v => ({
+      let result = (vehicles || []).map((v: any) => ({
         ...v,
         assignedTo: assignmentMap.get(v.device_id) || null,
       }));
 
-      // Apply filter
       if (filter === "assigned") {
-        result = result.filter(v => v.assignedTo !== null);
+        result = result.filter((v: any) => v.assignedTo !== null);
       } else if (filter === "unassigned") {
-        result = result.filter(v => v.assignedTo === null);
+        result = result.filter((v: any) => v.assignedTo === null);
       }
 
       return result;
@@ -152,12 +144,11 @@ export function useVehiclesWithAssignments(search: string = "", filter: "all" | 
   });
 }
 
-// Get unique GPS owners from vehicles
 export function useGpsOwners() {
   return useQuery({
     queryKey: ["gps-owners"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from("vehicles")
         .select("gps_owner")
         .not("gps_owner", "is", null)
@@ -165,9 +156,8 @@ export function useGpsOwners() {
 
       if (error) throw error;
 
-      // Get unique owners with vehicle counts
       const ownerCounts = new Map<string, number>();
-      data?.forEach(v => {
+      data?.forEach((v: any) => {
         if (v.gps_owner) {
           ownerCounts.set(v.gps_owner, (ownerCounts.get(v.gps_owner) || 0) + 1);
         }
@@ -181,16 +171,15 @@ export function useGpsOwners() {
   });
 }
 
-// Unassign ALL vehicles (reset all assignments)
 export function useUnassignAllVehicles() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async () => {
-      const { error, count } = await supabase
+      const { error, count } = await db
         .from("vehicle_assignments")
         .delete()
-        .neq("device_id", ""); // Delete all rows
+        .neq("device_id", "");
 
       if (error) throw error;
       return { unassigned: count || 0 };
@@ -201,7 +190,7 @@ export function useUnassignAllVehicles() {
       queryClient.invalidateQueries({ queryKey: ["profiles-with-assignments"] });
       queryClient.invalidateQueries({ queryKey: ["assignment-stats"] });
     },
-    onError: (error) => {
+    onError: (error: any) => {
       toast.error(`Failed to unassign all: ${error.message}`);
     },
   });
@@ -211,37 +200,18 @@ export function useAssignVehicles() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ 
-      deviceIds, 
-      profileId, 
-      vehicleAliases 
-    }: { 
-      deviceIds: string[]; 
-      profileId: string; 
-      vehicleAliases?: Record<string, string>;
-    }) => {
-      // Upsert assignments one by one (Supabase doesn't support bulk upsert well with ON CONFLICT)
+    mutationFn: async ({ deviceIds, profileId, vehicleAliases }: { deviceIds: string[]; profileId: string; vehicleAliases?: Record<string, string> }) => {
       const results = await Promise.all(
         deviceIds.map(async (deviceId) => {
-          const { error } = await supabase
+          const { error } = await db
             .from("vehicle_assignments")
-            .upsert({
-              device_id: deviceId,
-              profile_id: profileId,
-              vehicle_alias: vehicleAliases?.[deviceId] || null,
-              updated_at: new Date().toISOString(),
-            }, {
-              onConflict: "device_id",
-            });
+            .upsert({ device_id: deviceId, profile_id: profileId, vehicle_alias: vehicleAliases?.[deviceId] || null, updated_at: new Date().toISOString() }, { onConflict: "device_id" });
           return { deviceId, error };
         })
       );
 
       const errors = results.filter(r => r.error);
-      if (errors.length > 0) {
-        throw new Error(`Failed to assign ${errors.length} vehicles`);
-      }
-
+      if (errors.length > 0) throw new Error(`Failed to assign ${errors.length} vehicles`);
       return { assigned: deviceIds.length };
     },
     onSuccess: (data) => {
@@ -250,7 +220,7 @@ export function useAssignVehicles() {
       queryClient.invalidateQueries({ queryKey: ["profiles-with-assignments"] });
       queryClient.invalidateQueries({ queryKey: ["assignment-stats"] });
     },
-    onError: (error) => {
+    onError: (error: any) => {
       toast.error(`Assignment failed: ${error.message}`);
     },
   });
@@ -263,24 +233,15 @@ export function useBulkAutoAssign() {
     mutationFn: async (assignments: { deviceId: string; profileId: string }[]) => {
       const results = await Promise.all(
         assignments.map(async ({ deviceId, profileId }) => {
-          const { error } = await supabase
+          const { error } = await db
             .from("vehicle_assignments")
-            .upsert({
-              device_id: deviceId,
-              profile_id: profileId,
-              updated_at: new Date().toISOString(),
-            }, {
-              onConflict: "device_id",
-            });
+            .upsert({ device_id: deviceId, profile_id: profileId, updated_at: new Date().toISOString() }, { onConflict: "device_id" });
           return { deviceId, error };
         })
       );
 
       const errors = results.filter(r => r.error);
-      if (errors.length > 0) {
-        throw new Error(`Failed to assign ${errors.length} vehicles`);
-      }
-
+      if (errors.length > 0) throw new Error(`Failed to assign ${errors.length} vehicles`);
       return { assigned: assignments.length };
     },
     onSuccess: (data) => {
@@ -289,7 +250,7 @@ export function useBulkAutoAssign() {
       queryClient.invalidateQueries({ queryKey: ["profiles-with-assignments"] });
       queryClient.invalidateQueries({ queryKey: ["assignment-stats"] });
     },
-    onError: (error) => {
+    onError: (error: any) => {
       toast.error(`Auto-assignment failed: ${error.message}`);
     },
   });
@@ -300,11 +261,7 @@ export function useUnassignVehicles() {
 
   return useMutation({
     mutationFn: async (deviceIds: string[]) => {
-      const { error } = await supabase
-        .from("vehicle_assignments")
-        .delete()
-        .in("device_id", deviceIds);
-
+      const { error } = await db.from("vehicle_assignments").delete().in("device_id", deviceIds);
       if (error) throw error;
       return { unassigned: deviceIds.length };
     },
@@ -314,7 +271,7 @@ export function useUnassignVehicles() {
       queryClient.invalidateQueries({ queryKey: ["profiles-with-assignments"] });
       queryClient.invalidateQueries({ queryKey: ["assignment-stats"] });
     },
-    onError: (error) => {
+    onError: (error: any) => {
       toast.error(`Unassignment failed: ${error.message}`);
     },
   });
@@ -325,12 +282,7 @@ export function useCreateProfile() {
 
   return useMutation({
     mutationFn: async ({ name, email, phone }: { name: string; email?: string; phone?: string }) => {
-      const { data, error } = await supabase
-        .from("profiles")
-        .insert({ name, email, phone })
-        .select()
-        .single();
-
+      const { data, error } = await supabase.from("profiles").insert({ name, email, phone }).select().single();
       if (error) throw error;
       return data;
     },
@@ -339,44 +291,20 @@ export function useCreateProfile() {
       queryClient.invalidateQueries({ queryKey: ["profiles-with-assignments"] });
       queryClient.invalidateQueries({ queryKey: ["assignment-stats"] });
     },
-    onError: (error) => {
+    onError: (error: any) => {
       toast.error(`Failed to create profile: ${error.message}`);
     },
   });
 }
 
-// Bulk create profiles from GPS owner names
 export function useBulkCreateProfiles() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (gpsOwnerNames: string[]) => {
-      // Detect if GPS owner looks like a phone number
-      const isPhoneNumber = (value: string) => {
-        const digits = value.replace(/\D/g, "");
-        return digits.length >= 10;
-      };
-
-      const profilesToCreate = gpsOwnerNames.map((ownerName) => {
-        if (isPhoneNumber(ownerName)) {
-          // If it looks like a phone, use it as phone and generate a name
-          return {
-            name: ownerName,
-            phone: ownerName,
-          };
-        } else {
-          // Otherwise use as name
-          return {
-            name: ownerName,
-          };
-        }
-      });
-
-      const { data, error } = await supabase
-        .from("profiles")
-        .insert(profilesToCreate)
-        .select();
-
+      const isPhoneNumber = (value: string) => value.replace(/\D/g, "").length >= 10;
+      const profilesToCreate = gpsOwnerNames.map((ownerName) => isPhoneNumber(ownerName) ? { name: ownerName, phone: ownerName } : { name: ownerName });
+      const { data, error } = await supabase.from("profiles").insert(profilesToCreate).select();
       if (error) throw error;
       return { created: data?.length || 0 };
     },
@@ -386,7 +314,7 @@ export function useBulkCreateProfiles() {
       queryClient.invalidateQueries({ queryKey: ["assignment-stats"] });
       queryClient.invalidateQueries({ queryKey: ["gps-owners"] });
     },
-    onError: (error) => {
+    onError: (error: any) => {
       toast.error(`Failed to create profiles: ${error.message}`);
     },
   });

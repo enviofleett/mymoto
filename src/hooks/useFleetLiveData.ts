@@ -156,8 +156,8 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
   console.log("[useFleetLiveData] Fetching from DB...");
 
   // Fetch positions only - no joins to avoid FK issues
-  const { data: positions, error: posError } = await supabase
-    .from('vehicle_positions')
+  const { data: positions, error: posError } = await (supabase
+    .from('vehicle_positions') as any)
     .select(`
       device_id,
       latitude,
@@ -177,8 +177,8 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
   if (posError) throw new Error(`Fleet data fetch error: ${posError.message}`);
 
   // Fetch vehicles separately
-  const { data: vehiclesList, error: vehiclesError } = await supabase
-    .from('vehicles')
+  const { data: vehiclesList, error: vehiclesError } = await (supabase
+    .from('vehicles') as any)
     .select('device_id, device_name, gps_owner');
 
   if (vehiclesError) {
@@ -186,8 +186,8 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
   }
 
   // Fetch assignments with profiles separately
-  const { data: assignments, error: assignError } = await supabase
-    .from('vehicle_assignments')
+  const { data: assignments, error: assignError } = await (supabase
+    .from('vehicle_assignments') as any)
     .select(`
       device_id,
       vehicle_alias,
@@ -205,13 +205,13 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
 
   // Create lookup maps
   const vehiclesMap = new Map<string, any>();
-  (vehiclesList || []).forEach(v => vehiclesMap.set(v.device_id, v));
+  (vehiclesList || []).forEach((v: any) => vehiclesMap.set(v.device_id, v));
 
   const assignmentMap = new Map<string, any>();
-  (assignments || []).forEach(a => assignmentMap.set(a.device_id, a));
+  (assignments || []).forEach((a: any) => assignmentMap.set(a.device_id, a));
 
   // Merge positions with vehicles and assignments
-  const mergedData = (positions || []).map(pos => ({
+  const mergedData = (positions || []).map((pos: any) => ({
     ...pos,
     vehicles: vehiclesMap.get(pos.device_id) || null,
     vehicle_assignments: assignmentMap.has(pos.device_id) 

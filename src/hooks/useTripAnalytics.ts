@@ -47,8 +47,8 @@ export function useTripAnalytics(tripId: string | null, enabled = true) {
     queryFn: async (): Promise<TripAnalytics | null> => {
       if (!tripId) return null;
       
-      const { data, error } = await supabase
-        .from('trip_analytics')
+      const { data, error } = await (supabase
+        .from('trip_analytics') as any)
         .select('*')
         .eq('trip_id', tripId)
         .maybeSingle();
@@ -63,7 +63,7 @@ export function useTripAnalytics(tripId: string | null, enabled = true) {
       return {
         ...data,
         harsh_events: parseHarshEvents(data.harsh_events),
-      };
+      } as TripAnalytics;
     },
     enabled: enabled && !!tripId,
     staleTime: 5 * 60 * 1000, // 5 minutes
@@ -77,8 +77,8 @@ export function useDriverScore(deviceId: string | null, enabled = true) {
     queryFn: async (): Promise<DriverScoreData | null> => {
       if (!deviceId) return null;
       
-      const { data, error } = await supabase
-        .rpc('get_latest_driver_score', { p_device_id: deviceId });
+      const { data, error } = await (supabase
+        .rpc as any)('get_latest_driver_score', { p_device_id: deviceId });
       
       if (error) {
         console.error('Error fetching driver score:', error);
@@ -101,8 +101,8 @@ export function useRecentTripAnalytics(deviceId: string | null, limit = 10, enab
     queryFn: async (): Promise<TripAnalytics[]> => {
       if (!deviceId) return [];
       
-      const { data, error } = await supabase
-        .from('trip_analytics')
+      const { data, error } = await (supabase
+        .from('trip_analytics') as any)
         .select('*')
         .eq('device_id', deviceId)
         .order('analyzed_at', { ascending: false })
@@ -113,10 +113,10 @@ export function useRecentTripAnalytics(deviceId: string | null, limit = 10, enab
         throw error;
       }
       
-      return (data || []).map(item => ({
+      return (data || []).map((item: any) => ({
         ...item,
         harsh_events: parseHarshEvents(item.harsh_events),
-      }));
+      })) as TripAnalytics[];
     },
     enabled: enabled && !!deviceId,
     staleTime: 2 * 60 * 1000,
