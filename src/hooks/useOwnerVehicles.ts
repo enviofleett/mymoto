@@ -74,7 +74,7 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
   console.log("[useOwnerVehicles] Using profileId:", profileId);
 
   // Fetch assignments for this profile
-  const { data: assignments, error } = await supabase
+  const { data: assignments, error } = await (supabase as any)
     .from("vehicle_assignments")
     .select(`
       device_id,
@@ -88,16 +88,19 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
     console.error("[useOwnerVehicles] Assignments error:", error);
     throw error;
   }
-  if (!assignments || assignments.length === 0) {
+  
+  const assignmentsList = (assignments || []) as { device_id: string; vehicle_alias: string | null }[];
+  
+  if (assignmentsList.length === 0) {
     console.warn("[useOwnerVehicles] No vehicle assignments found for profile:", profileId);
     return [];
   }
 
-  const deviceIds = assignments.map(a => a.device_id);
+  const deviceIds = assignmentsList.map(a => a.device_id);
   console.log("[useOwnerVehicles] Fetching data for deviceIds:", deviceIds);
 
   // Fetch vehicle info
-  const { data: vehicles, error: vehiclesError } = await supabase
+  const { data: vehicles, error: vehiclesError } = await (supabase as any)
     .from("vehicles")
     .select("device_id, device_name, device_type")
     .in("device_id", deviceIds);
@@ -105,7 +108,7 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
   console.log("[useOwnerVehicles] Vehicles data:", { vehicles, vehiclesError, count: vehicles?.length });
 
   // Fetch positions - note: total_mileage is stored in meters
-  const { data: positions, error: positionsError } = await supabase
+  const { data: positions, error: positionsError } = await (supabase as any)
     .from("vehicle_positions")
     .select("device_id, latitude, longitude, speed, heading, battery_percent, ignition_on, is_online, is_overspeeding, gps_time, total_mileage")
     .in("device_id", deviceIds);
@@ -113,25 +116,29 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
   console.log("[useOwnerVehicles] Positions data:", { positions, positionsError, count: positions?.length });
 
   // Create maps for easy lookup
-  const vehicleMap = new Map(vehicles?.map(v => [v.device_id, v]) || []);
-  const positionMap = new Map(positions?.map(p => [p.device_id, p]) || []);
+  const vehiclesList = (vehicles || []) as { device_id: string; device_name: string; device_type: string | null }[];
+  const positionsList = (positions || []) as { device_id: string; latitude: number; longitude: number; speed: number; heading: number; battery_percent: number; ignition_on: boolean; is_online: boolean; is_overspeeding: boolean; gps_time: string; total_mileage: number }[];
+  
+  const vehicleMap = new Map(vehiclesList.map(v => [v.device_id, v]));
+  const positionMap = new Map(positionsList.map(p => [p.device_id, p]));
 
   // Fetch last chat messages for each device
-  const { data: chatHistory } = await supabase
+  const { data: chatHistory } = await (supabase as any)
     .from("vehicle_chat_history")
     .select("device_id, content, created_at, role")
     .in("device_id", deviceIds)
     .order("created_at", { ascending: false });
 
   // Fetch LLM settings for personality and avatar
-  const { data: llmSettings } = await supabase
+  const { data: llmSettings } = await (supabase as any)
     .from("vehicle_llm_settings")
     .select("device_id, personality_mode, nickname, avatar_url")
     .in("device_id", deviceIds);
 
   // Group chat history by device
+  const chatList = (chatHistory || []) as { device_id: string; content: string; created_at: string; role: string }[];
   const chatByDevice = new Map<string, { content: string; time: Date; unread: number }>();
-  chatHistory?.forEach((chat) => {
+  chatList.forEach((chat) => {
     if (!chatByDevice.has(chat.device_id)) {
       chatByDevice.set(chat.device_id, {
         content: chat.content,
@@ -142,9 +149,10 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
   });
 
   // Map LLM settings
-  const settingsByDevice = new Map(llmSettings?.map(s => [s.device_id, s]) || []);
+  const llmList = (llmSettings || []) as { device_id: string; personality_mode: string; nickname: string | null; avatar_url: string | null }[];
+  const settingsByDevice = new Map(llmList.map(s => [s.device_id, s]));
 
-  return assignments.map((a) => {
+  return assignmentsList.map((a) => {
     const vehicle = vehicleMap.get(a.device_id);
     const pos = positionMap.get(a.device_id);
     const chat = chatByDevice.get(a.device_id);
