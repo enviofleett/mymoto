@@ -120,13 +120,13 @@ export function TripPlayback({ deviceId, deviceName, onClose }: TripPlaybackProp
           startDate = startOfDay(new Date());
       }
 
-      const { data, error } = await supabase
-        .from("position_history")
+      const { data, error } = await (supabase
+        .from("position_history" as any)
         .select("id, latitude, longitude, speed, heading, gps_time, ignition_on")
         .eq("device_id", deviceId)
         .gte("gps_time", startDate.toISOString())
         .lte("gps_time", endDate.toISOString())
-        .order("gps_time", { ascending: true });
+        .order("gps_time", { ascending: true }) as any);
 
       if (error) {
         console.error("Error fetching positions:", error);
@@ -134,8 +134,8 @@ export function TripPlayback({ deviceId, deviceName, onClose }: TripPlaybackProp
       }
 
       // Filter out positions without valid coordinates
-      const validPositions = (data || []).filter(
-        (p): p is PositionPoint => 
+      const validPositions = ((data || []) as any[]).filter(
+        (p: any): p is PositionPoint => 
           p.latitude !== null && 
           p.longitude !== null && 
           p.latitude !== 0 && 
