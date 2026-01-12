@@ -24,6 +24,64 @@ const SEVERITY_COLORS: Record<string, string> = {
   info: "#2563eb",
 };
 
+// In-memory deduplication cache (per isolate instance)
+// Key: eventId or deviceId+eventType, Value: timestamp
+const recentAlerts = new Map<string, number>();
+const COOLDOWN_MS = 60000; // 1 minute cooldown between duplicate alerts
+const MAX_EMAILS_PER_MINUTE = 3;
+let emailsSentThisMinute = 0;
+let lastMinuteReset = Date.now();
+
+function cleanupOldEntries() {
+  const now = Date.now();
+  // Reset minute counter
+  if (now - lastMinuteReset > 60000) {
+    emailsSentThisMinute = 0;
+    lastMinuteReset = now;
+  }
+  // Cleanup old deduplication entries
+  for (const [key, timestamp] of recentAlerts.entries()) {
+    if (now - timestamp > COOLDOWN_MS * 5) {
+      recentAlerts.delete(key);
+    }
+  }
+}
+
+function isDuplicateAlert(eventId: string, deviceId: string, eventType: string): boolean {
+  cleanupOldEntries();
+  
+  const now = Date.now();
+  const eventKey = eventId;
+  const typeKey = `${deviceId}:${eventType}`;
+  
+  // Check if same eventId was sent recently
+  if (recentAlerts.has(eventKey)) {
+    const lastSent = recentAlerts.get(eventKey)!;
+    if (now - lastSent < COOLDOWN_MS) {
+      console.log(`Skipping duplicate alert: eventId ${eventId} sent ${Math.round((now - lastSent) / 1000)}s ago`);
+      return true;
+    }
+  }
+  
+  // Check if same device+eventType was sent recently
+  if (recentAlerts.has(typeKey)) {
+    const lastSent = recentAlerts.get(typeKey)!;
+    if (now - lastSent < COOLDOWN_MS) {
+      console.log(`Skipping duplicate alert: ${typeKey} sent ${Math.round((now - lastSent) / 1000)}s ago`);
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+function markAlertSent(eventId: string, deviceId: string, eventType: string) {
+  const now = Date.now();
+  recentAlerts.set(eventId, now);
+  recentAlerts.set(`${deviceId}:${eventType}`, now);
+  emailsSentThisMinute++;
+}
+
 const handler = async (req: Request): Promise<Response> => {
   console.log("send-alert-email function called");
 
@@ -47,6 +105,24 @@ const handler = async (req: Request): Promise<Response> => {
     const { eventId, deviceId, eventType, severity, title, message, metadata }: AlertEmailRequest = await req.json();
 
     console.log(`Processing alert email for event: ${eventId}, device: ${deviceId}, severity: ${severity}`);
+
+    // Rate limiting check
+    cleanupOldEntries();
+    if (emailsSentThisMinute >= MAX_EMAILS_PER_MINUTE) {
+      console.log(`Rate limit reached: ${emailsSentThisMinute} emails sent this minute, skipping`);
+      return new Response(
+        JSON.stringify({ success: true, message: "Rate limit reached, email queued", rateLimited: true }),
+        { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+
+    // Deduplication check
+    if (isDuplicateAlert(eventId, deviceId, eventType)) {
+      return new Response(
+        JSON.stringify({ success: true, message: "Duplicate alert skipped", deduplicated: true }),
+        { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
 
     // Initialize Supabase client to get admin emails
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -226,6 +302,9 @@ const handler = async (req: Request): Promise<Response> => {
     });
 
     await client.close();
+
+    // Mark alert as sent for deduplication
+    markAlertSent(eventId, deviceId, eventType);
 
     console.log(`Alert email sent successfully to ${adminEmails.length} recipient(s)`);
 
