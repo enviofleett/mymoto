@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import myMotoLogo from "@/assets/mymoto-logo.png";
+import myMotoLogo from "@/assets/mymoto-logo-new.png";
 
 interface SplashScreenProps {
   onFinish: () => void;
@@ -24,16 +24,19 @@ const SplashScreen = ({ onFinish, minDuration = 1500 }: SplashScreenProps) => {
         fadeOut ? 'opacity-0' : 'opacity-100'
       }`}
     >
-      {/* Logo with pulse animation */}
+      {/* Neumorphic Logo Container */}
       <div className="relative animate-[scale-in_0.5s_ease-out]">
-        <img
-          src={myMotoLogo}
-          alt="MyMoto"
-          className="h-28 w-28 object-contain"
-        />
-        {/* Glow effect */}
-        <div className="absolute inset-0 -z-10 blur-2xl opacity-20 animate-pulse">
-          <div className="h-28 w-28 rounded-full bg-primary" />
+        {/* Outer neumorphic circle */}
+        <div className="w-28 h-28 rounded-full shadow-neumorphic bg-card flex items-center justify-center">
+          <img
+            src={myMotoLogo}
+            alt="MyMoto"
+            className="h-20 w-20 object-contain"
+          />
+        </div>
+        {/* Orange glow effect with pulse */}
+        <div className="absolute inset-0 -z-10 blur-3xl opacity-40 animate-pulse">
+          <div className="h-32 w-32 -ml-2 -mt-2 rounded-full bg-accent" />
         </div>
       </div>
 
@@ -45,11 +48,11 @@ const SplashScreen = ({ onFinish, minDuration = 1500 }: SplashScreenProps) => {
         Vehicle Companion
       </p>
 
-      {/* Loading indicator */}
+      {/* Loading indicator - Orange dots */}
       <div className="mt-8 flex space-x-1.5 animate-fade-in [animation-delay:400ms]">
-        <span className="h-2 w-2 animate-bounce rounded-full bg-primary [animation-delay:-0.3s]" />
-        <span className="h-2 w-2 animate-bounce rounded-full bg-primary [animation-delay:-0.15s]" />
-        <span className="h-2 w-2 animate-bounce rounded-full bg-primary" />
+        <span className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.3s]" />
+        <span className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.15s]" />
+        <span className="h-2 w-2 animate-bounce rounded-full bg-accent" />
       </div>
     </div>
   );

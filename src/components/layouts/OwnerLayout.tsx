@@ -4,6 +4,7 @@ import { MessageCircle, Car, Wallet, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { GlobalAlertListener } from "@/components/notifications/GlobalAlertListener";
 import { StickyAlertBanner } from "@/components/notifications/StickyAlertBanner";
+import myMotoLogo from "@/assets/mymoto-logo-new.png";
 
 interface OwnerLayoutProps {
   children: ReactNode;
@@ -34,6 +35,26 @@ export function OwnerLayout({ children }: OwnerLayoutProps) {
       
       {/* Sticky Alert Banner - Shows at top header */}
       <StickyAlertBanner />
+
+      {/* Top Header with Logo */}
+      <header className="sticky top-0 z-40 bg-card/95 backdrop-blur-xl border-b border-border/30 pt-[env(safe-area-inset-top)]">
+        <div className="flex items-center justify-between h-14 px-4 max-w-lg mx-auto">
+          {/* Logo on the left */}
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-full shadow-neumorphic-sm bg-card flex items-center justify-center">
+              <img 
+                src={myMotoLogo} 
+                alt="MyMoto" 
+                className="w-6 h-6 object-contain"
+              />
+            </div>
+            <span className="text-sm font-semibold text-foreground">MyMoto</span>
+          </div>
+          
+          {/* Spacer for future notification bell */}
+          <div className="w-8" />
+        </div>
+      </header>
       
       {/* Main Content - scrollable area above fixed nav */}
       <main className="flex-1 overflow-auto pb-[calc(5.5rem+env(safe-area-inset-bottom))]">
