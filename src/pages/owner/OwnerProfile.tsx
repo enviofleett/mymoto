@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { OwnerLayout } from "@/components/layouts/OwnerLayout";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -27,6 +26,7 @@ import {
   Phone,
   Pencil,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export default function OwnerProfile() {
   const navigate = useNavigate();
@@ -65,27 +65,30 @@ export default function OwnerProfile() {
   return (
     <OwnerLayout>
       <div className="flex flex-col min-h-full">
-        {/* Header */}
-        <div className="sticky top-0 z-10 bg-background pt-[env(safe-area-inset-top)] -mt-[env(safe-area-inset-top)] border-b border-border/50">
+        {/* Header - Neumorphic styling */}
+        <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm pt-[env(safe-area-inset-top)] -mt-[env(safe-area-inset-top)]">
           <div className="px-4 py-4">
-            <h1 className="text-lg font-semibold text-foreground">Profile</h1>
+            <h1 className="text-xl font-bold text-foreground">Profile</h1>
           </div>
         </div>
 
         {/* Content */}
-        <div className="flex-1 p-4 space-y-3">
+        <div className="flex-1 p-4 space-y-4">
           {/* AI Briefing Card */}
           {primaryVehicleId && <SmartBriefingCard deviceId={primaryVehicleId} />}
 
-          {/* User Card */}
-          <Card className="border-border/50 bg-card">
+          {/* User Card - Neumorphic style */}
+          <Card className="border-0 bg-card shadow-neumorphic rounded-xl">
             <CardContent className="p-4">
               <button 
-                className="w-full flex items-center gap-3 text-left"
+                className="w-full flex items-center gap-4 text-left transition-all duration-200 active:scale-[0.99]"
                 onClick={() => setEditProfileOpen(true)}
               >
-                <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center shrink-0">
-                  <User className="h-6 w-6 text-muted-foreground" />
+                {/* Neumorphic avatar container */}
+                <div className="w-16 h-16 rounded-full shadow-neumorphic-sm bg-card p-0.5 shrink-0">
+                  <div className="w-full h-full rounded-full bg-secondary flex items-center justify-center">
+                    <User className="h-7 w-7 text-muted-foreground" />
+                  </div>
                 </div>
                 <div className="flex-1 min-w-0">
                   {profileLoading ? (
@@ -111,24 +114,25 @@ export default function OwnerProfile() {
                     </>
                   )}
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="w-8 h-8 rounded-full shadow-neumorphic-sm bg-card flex items-center justify-center">
+                    <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                  </div>
                 </div>
               </button>
             </CardContent>
           </Card>
 
-          {/* Vehicles Summary */}
-          <Card className="border-border/50 bg-card">
+          {/* Vehicles Summary - Neumorphic style */}
+          <Card className="border-0 bg-card shadow-neumorphic rounded-xl">
             <CardContent className="p-4">
               <button 
-                className="w-full flex items-center justify-between"
+                className="w-full flex items-center justify-between transition-all duration-200 active:scale-[0.99]"
                 onClick={() => navigate("/owner/vehicles")}
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-                    <Car className="h-4 w-4 text-muted-foreground" />
+                  <div className="w-11 h-11 rounded-full shadow-neumorphic-sm bg-card flex items-center justify-center">
+                    <Car className="h-5 w-5 text-foreground" />
                   </div>
                   <div className="text-left">
                     <div className="text-sm font-medium text-foreground">My Vehicles</div>
@@ -141,30 +145,34 @@ export default function OwnerProfile() {
                     )}
                   </div>
                 </div>
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                <div className="w-8 h-8 rounded-full shadow-neumorphic-sm bg-card flex items-center justify-center">
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                </div>
               </button>
 
               {/* Quick vehicle preview */}
               {!isLoading && vehicles && vehicles.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-border/50 space-y-2.5">
+                <div className="mt-4 pt-4 border-t border-border/30 space-y-3">
                   {vehicles.slice(0, 2).map((vehicle) => {
                     const hasNickname = vehicle.nickname && vehicle.nickname !== vehicle.plateNumber;
                     return (
                       <div
                         key={vehicle.deviceId}
-                        className="flex items-center gap-3"
+                        className="flex items-center gap-3 p-2 rounded-lg shadow-neumorphic-inset bg-card"
                       >
-                        {vehicle.avatarUrl ? (
-                          <img 
-                            src={vehicle.avatarUrl}
-                            alt={vehicle.name}
-                            className="w-8 h-8 rounded-full object-cover border border-border"
-                          />
-                        ) : (
-                          <div className="w-8 h-8 rounded-full bg-muted/60 flex items-center justify-center">
-                            <Car className="h-3.5 w-3.5 text-muted-foreground" />
-                          </div>
-                        )}
+                        <div className="w-10 h-10 rounded-full shadow-neumorphic-sm bg-card p-0.5 shrink-0">
+                          {vehicle.avatarUrl ? (
+                            <img 
+                              src={vehicle.avatarUrl}
+                              alt={vehicle.name}
+                              className="w-full h-full rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full rounded-full bg-secondary flex items-center justify-center">
+                              <Car className="h-4 w-4 text-muted-foreground" />
+                            </div>
+                          )}
+                        </div>
                         <div className="flex-1 min-w-0">
                           <div className="text-sm text-foreground truncate">
                             {vehicle.name}
@@ -177,11 +185,12 @@ export default function OwnerProfile() {
                         </div>
                         <Badge
                           variant="secondary"
-                          className={
+                          className={cn(
+                            "text-[10px] px-2 py-0.5 rounded-lg border-0 shadow-neumorphic-sm bg-card",
                             vehicle.status === "online"
-                              ? "bg-status-active/15 text-status-active text-[10px] px-1.5 py-0"
-                              : "bg-muted text-muted-foreground text-[10px] px-1.5 py-0"
-                          }
+                              ? "text-status-active"
+                              : "text-muted-foreground"
+                          )}
                         >
                           {vehicle.status}
                         </Badge>
@@ -193,18 +202,19 @@ export default function OwnerProfile() {
             </CardContent>
           </Card>
 
-          {/* Menu Items */}
-          <Card className="border-border/50 bg-card">
+          {/* Menu Items - Neumorphic style */}
+          <Card className="border-0 bg-card shadow-neumorphic rounded-xl overflow-hidden">
             <CardContent className="p-0">
               {menuItems.map((item, index) => (
                 <button
                   key={item.path}
                   onClick={() => navigate(item.path)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/30 transition-colors ${
-                    index < menuItems.length - 1 ? "border-b border-border/50" : ""
-                  }`}
+                  className={cn(
+                    "w-full flex items-center gap-3 px-4 py-3.5 hover:bg-secondary/30 transition-all duration-200 active:bg-secondary/50",
+                    index < menuItems.length - 1 && "border-b border-border/30"
+                  )}
                 >
-                  <div className="w-9 h-9 rounded-full bg-muted/60 flex items-center justify-center">
+                  <div className="w-10 h-10 rounded-full shadow-neumorphic-sm bg-card flex items-center justify-center">
                     <item.icon className="h-4 w-4 text-muted-foreground" />
                   </div>
                   <span className="flex-1 text-left text-sm text-foreground">
@@ -216,16 +226,20 @@ export default function OwnerProfile() {
             </CardContent>
           </Card>
 
-          {/* Logout */}
-          <Button
-            variant="ghost"
-            className="w-full h-11 text-destructive hover:bg-destructive/10 hover:text-destructive"
+          {/* Logout - Neumorphic button */}
+          <button
             onClick={handleLogout}
             disabled={loggingOut}
+            className={cn(
+              "w-full h-12 rounded-xl shadow-neumorphic-sm bg-card text-destructive font-medium transition-all duration-200",
+              "hover:shadow-neumorphic active:shadow-neumorphic-inset",
+              "disabled:opacity-50 disabled:cursor-not-allowed",
+              "flex items-center justify-center gap-2"
+            )}
           >
-            <LogOut className="h-4 w-4 mr-2" />
+            <LogOut className="h-4 w-4" />
             {loggingOut ? "Logging out..." : "Log out"}
-          </Button>
+          </button>
 
           {/* App version */}
           <div className="text-center text-[11px] text-muted-foreground/60 pt-2 pb-4">

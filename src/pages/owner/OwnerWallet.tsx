@@ -5,8 +5,8 @@ export default function OwnerWallet() {
   return (
     <OwnerLayout>
       <div className="flex flex-col min-h-full">
-        {/* Header */}
-        <div className="sticky top-0 z-10 bg-background px-4 py-4 safe-area-inset-top border-b border-border">
+        {/* Header - Neumorphic styling */}
+        <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm px-4 py-4 safe-area-inset-top">
           <h1 className="text-xl font-bold text-foreground">Wallet</h1>
           <p className="text-sm text-muted-foreground">Manage your balance and payments</p>
         </div>
