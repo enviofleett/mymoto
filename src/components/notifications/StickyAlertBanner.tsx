@@ -18,23 +18,31 @@ interface ProactiveEvent {
 
 const SEVERITY_CONFIG = {
   critical: {
-    bg: "bg-destructive",
-    text: "text-destructive-foreground",
+    bg: "bg-card",
+    border: "border-l-4 border-l-destructive",
+    iconBg: "bg-destructive/20",
+    iconColor: "text-destructive",
     icon: AlertCircle,
   },
   error: {
-    bg: "bg-destructive/90",
-    text: "text-destructive-foreground",
+    bg: "bg-card",
+    border: "border-l-4 border-l-destructive",
+    iconBg: "bg-destructive/20",
+    iconColor: "text-destructive",
     icon: AlertCircle,
   },
   warning: {
-    bg: "bg-yellow-500",
-    text: "text-yellow-950",
+    bg: "bg-card",
+    border: "border-l-4 border-l-orange-500",
+    iconBg: "bg-orange-500/20",
+    iconColor: "text-orange-500",
     icon: AlertTriangle,
   },
   info: {
-    bg: "bg-blue-500",
-    text: "text-white",
+    bg: "bg-card",
+    border: "border-l-4 border-l-primary",
+    iconBg: "bg-primary/20",
+    iconColor: "text-primary",
     icon: Info,
   },
 };
@@ -100,30 +108,32 @@ export function StickyAlertBanner() {
       {/* Main Banner */}
       <div
         className={cn(
-          "flex items-center gap-3 px-4 py-3 shadow-lg cursor-pointer transition-all",
+          "flex items-center gap-3 px-4 py-3 shadow-neumorphic cursor-pointer transition-all",
           config.bg,
-          config.text
+          config.border
         )}
         onClick={() => alerts.length > 1 ? setExpanded(!expanded) : handleAlertClick(latestAlert)}
       >
-        <Icon className="h-5 w-5 shrink-0" />
+        <div className={cn("p-2 rounded-full", config.iconBg)}>
+          <Icon className={cn("h-5 w-5 shrink-0", config.iconColor)} />
+        </div>
         
         <div className="flex-1 min-w-0">
-          <p className="font-semibold text-sm truncate">{latestAlert.title}</p>
-          <p className="text-xs opacity-90 truncate">{latestAlert.message}</p>
+          <p className="font-semibold text-sm text-foreground truncate">{latestAlert.title}</p>
+          <p className="text-xs text-muted-foreground truncate">{latestAlert.message}</p>
         </div>
 
         {hasLocation && (
-          <MapPin className="h-4 w-4 shrink-0 opacity-75" />
+          <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
         )}
 
         {alerts.length > 1 && (
           <div className="flex items-center gap-1">
-            <span className="text-xs font-medium bg-white/20 px-1.5 py-0.5 rounded-full">
+            <span className="text-xs font-medium bg-primary/20 text-primary px-1.5 py-0.5 rounded-full">
               +{alerts.length - 1}
             </span>
             <ChevronDown className={cn(
-              "h-4 w-4 transition-transform",
+              "h-4 w-4 text-muted-foreground transition-transform",
               expanded && "rotate-180"
             )} />
           </div>
@@ -134,10 +144,10 @@ export function StickyAlertBanner() {
             e.stopPropagation();
             dismissAlert(latestAlert.id);
           }}
-          className="p-1.5 hover:bg-white/20 rounded-full transition-colors shrink-0"
+          className="p-1.5 hover:bg-muted rounded-full transition-colors shrink-0"
           aria-label="Dismiss alert"
         >
-          <X className="h-4 w-4" />
+          <X className="h-4 w-4 text-muted-foreground" />
         </button>
       </div>
 
@@ -152,14 +162,17 @@ export function StickyAlertBanner() {
             return (
               <div
                 key={alert.id}
-                className="flex items-center gap-3 px-4 py-2.5 border-b border-border/50 last:border-b-0 cursor-pointer hover:bg-muted/50 transition-colors"
+                className={cn(
+                  "flex items-center gap-3 px-4 py-2.5 border-b border-border/50 last:border-b-0 cursor-pointer hover:bg-muted/50 transition-colors",
+                  alertConfig.border
+                )}
                 onClick={() => handleAlertClick(alert)}
               >
                 <div className={cn(
                   "p-1.5 rounded-full",
-                  alertConfig.bg
+                  alertConfig.iconBg
                 )}>
-                  <AlertIcon className={cn("h-3.5 w-3.5", alertConfig.text)} />
+                  <AlertIcon className={cn("h-3.5 w-3.5", alertConfig.iconColor)} />
                 </div>
                 
                 <div className="flex-1 min-w-0">
