@@ -39,6 +39,7 @@ import {
   AlertTriangle,
   Phone,
   UsersRound,
+  UserCog,
 } from "lucide-react";
 import {
   ProfileWithAssignments,
@@ -54,6 +55,7 @@ import { BulkAssignDialog } from "./BulkAssignDialog";
 import { CreateProfileDialog } from "./CreateProfileDialog";
 import { AutoAssignDialog } from "./AutoAssignDialog";
 import { AutoCreateProfilesDialog } from "./AutoCreateProfilesDialog";
+import { CreateTestUserDialog } from "./CreateTestUserDialog";
 
 export function UserVehicleGrid() {
   const [vehicleSearch, setVehicleSearch] = useState("");
@@ -67,6 +69,7 @@ export function UserVehicleGrid() {
   const [showCreateProfileDialog, setShowCreateProfileDialog] = useState(false);
   const [showAutoAssignDialog, setShowAutoAssignDialog] = useState(false);
   const [showAutoCreateProfilesDialog, setShowAutoCreateProfilesDialog] = useState(false);
+  const [showCreateTestUserDialog, setShowCreateTestUserDialog] = useState(false);
   const [activeTab, setActiveTab] = useState<"users" | "gps-owners">("users");
 
   const { data: profiles, isLoading: profilesLoading } = useProfiles();
@@ -178,6 +181,10 @@ export function UserVehicleGrid() {
                 <Button size="sm" variant="outline" onClick={() => setShowCreateProfileDialog(true)}>
                   <UserPlus className="h-4 w-4" />
                   <span className="hidden sm:inline ml-1">Add</span>
+                </Button>
+                <Button size="sm" variant="default" onClick={() => setShowCreateTestUserDialog(true)}>
+                  <UserCog className="h-4 w-4" />
+                  <span className="hidden sm:inline ml-1">Test User</span>
                 </Button>
               </div>
             </div>
@@ -527,6 +534,11 @@ export function UserVehicleGrid() {
       <AutoCreateProfilesDialog
         open={showAutoCreateProfilesDialog}
         onOpenChange={setShowAutoCreateProfilesDialog}
+      />
+
+      <CreateTestUserDialog
+        open={showCreateTestUserDialog}
+        onOpenChange={setShowCreateTestUserDialog}
       />
     </div>
   );
