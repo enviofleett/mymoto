@@ -152,8 +152,8 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
   console.log("[useFleetData] Fetching from DB (fleet-scale safe)...");
 
   // Fetch positions only - no joins to avoid FK issues
-  const { data: positions, error: posError } = await supabase
-    .from('vehicle_positions')
+  const { data: positions, error: posError } = await (supabase
+    .from('vehicle_positions' as any)
     .select(`
       device_id,
       latitude,
@@ -168,22 +168,22 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
       status_text,
       gps_time,
       cached_at
-    `);
+    `) as any);
 
   if (posError) throw new Error(`Fleet data error: ${posError.message}`);
 
   // Fetch vehicles separately
-  const { data: vehiclesList, error: vehiclesError } = await supabase
-    .from('vehicles')
-    .select('device_id, device_name, gps_owner');
+  const { data: vehiclesList, error: vehiclesError } = await (supabase
+    .from('vehicles' as any)
+    .select('device_id, device_name, gps_owner') as any);
 
   if (vehiclesError) {
     console.warn('[useFleetData] Could not fetch vehicles:', vehiclesError.message);
   }
 
   // Fetch assignments with profiles separately
-  const { data: assignments, error: assignError } = await supabase
-    .from('vehicle_assignments')
+  const { data: assignments, error: assignError } = await (supabase
+    .from('vehicle_assignments' as any)
     .select(`
       device_id,
       vehicle_alias,
@@ -193,7 +193,7 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
         phone,
         license_number
       )
-    `);
+    `) as any);
 
   if (assignError) {
     console.warn('[useFleetData] Could not fetch assignments:', assignError.message);
@@ -201,13 +201,13 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
 
   // Create lookup maps
   const vehiclesMap = new Map<string, any>();
-  (vehiclesList || []).forEach(v => vehiclesMap.set(v.device_id, v));
+  ((vehiclesList || []) as any[]).forEach((v: any) => vehiclesMap.set(v.device_id, v));
 
   const assignmentMap = new Map<string, any>();
-  (assignments || []).forEach(a => assignmentMap.set(a.device_id, a));
+  ((assignments || []) as any[]).forEach((a: any) => assignmentMap.set(a.device_id, a));
 
   // Merge positions with vehicles and assignments
-  const mergedData = (positions || []).map(pos => ({
+  const mergedData = ((positions || []) as any[]).map((pos: any) => ({
     ...pos,
     vehicles: vehiclesMap.get(pos.device_id) || null,
     vehicle_assignments: assignmentMap.has(pos.device_id) 

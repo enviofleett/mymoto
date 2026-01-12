@@ -30,15 +30,15 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
   console.log("[useOwnerVehicles] Starting fetch for userId:", userId);
   
   // First get the profile for this user
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
+  const { data: profile, error: profileError } = await (supabase
+    .from("profiles" as any)
     .select("id, name, email")
     .eq("user_id", userId)
-    .maybeSingle();
+    .maybeSingle() as any);
 
   console.log("[useOwnerVehicles] Profile lookup result:", { profile, profileError });
 
-  let profileId = profile?.id;
+  let profileId = (profile as any)?.id;
 
   if (profileError || !profile) {
     // Try by email
@@ -47,11 +47,11 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
     console.log("[useOwnerVehicles] Auth user:", user?.email);
     
     if (user?.email) {
-      const { data: emailProfile, error: emailError } = await supabase
-        .from("profiles")
+      const { data: emailProfile, error: emailError } = await (supabase
+        .from("profiles" as any)
         .select("id, name, email")
         .eq("email", user.email)
-        .maybeSingle();
+        .maybeSingle() as any);
       
       console.log("[useOwnerVehicles] Email profile lookup:", { emailProfile, emailError });
       
@@ -59,7 +59,7 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
         console.warn("[useOwnerVehicles] No profile found for user");
         return [];
       }
-      profileId = emailProfile.id;
+      profileId = (emailProfile as any).id;
     } else {
       console.warn("[useOwnerVehicles] No email available for fallback lookup");
       return [];
@@ -74,64 +74,61 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
   console.log("[useOwnerVehicles] Using profileId:", profileId);
 
   // Fetch assignments for this profile
-  const { data: assignments, error } = await supabase
-    .from("vehicle_assignments")
-    .select(`
-      device_id,
-      vehicle_alias
-    `)
-    .eq("profile_id", profileId);
+  const { data: assignments, error } = await (supabase
+    .from("vehicle_assignments" as any)
+    .select(`device_id, vehicle_alias`)
+    .eq("profile_id", profileId) as any);
 
-  console.log("[useOwnerVehicles] Assignments query:", { assignments, error, count: assignments?.length });
+  console.log("[useOwnerVehicles] Assignments query:", { assignments, error, count: (assignments as any[])?.length });
 
   if (error) {
     console.error("[useOwnerVehicles] Assignments error:", error);
     throw error;
   }
-  if (!assignments || assignments.length === 0) {
+  if (!assignments || (assignments as any[]).length === 0) {
     console.warn("[useOwnerVehicles] No vehicle assignments found for profile:", profileId);
     return [];
   }
 
-  const deviceIds = assignments.map(a => a.device_id);
+  const deviceIds = (assignments as any[]).map((a: any) => a.device_id);
   console.log("[useOwnerVehicles] Fetching data for deviceIds:", deviceIds);
 
   // Fetch vehicle info
-  const { data: vehicles, error: vehiclesError } = await supabase
-    .from("vehicles")
+  const { data: vehicles, error: vehiclesError } = await (supabase
+    .from("vehicles" as any)
     .select("device_id, device_name, device_type")
-    .in("device_id", deviceIds);
+    .in("device_id", deviceIds) as any);
 
-  console.log("[useOwnerVehicles] Vehicles data:", { vehicles, vehiclesError, count: vehicles?.length });
+  console.log("[useOwnerVehicles] Vehicles data:", { vehicles, vehiclesError, count: (vehicles as any[])?.length });
 
-  // Fetch positions - note: total_mileage is stored in meters
-  const { data: positions, error: positionsError } = await supabase
-    .from("vehicle_positions")
+  // Fetch positions
+  const { data: positions, error: positionsError } = await (supabase
+    .from("vehicle_positions" as any)
     .select("device_id, latitude, longitude, speed, heading, battery_percent, ignition_on, is_online, is_overspeeding, gps_time, total_mileage")
-    .in("device_id", deviceIds);
+    .in("device_id", deviceIds) as any);
 
-  console.log("[useOwnerVehicles] Positions data:", { positions, positionsError, count: positions?.length });
+  console.log("[useOwnerVehicles] Positions data:", { positions, positionsError, count: (positions as any[])?.length });
 
   // Create maps for easy lookup
-  const vehicleMap = new Map(vehicles?.map(v => [v.device_id, v]) || []);
-  const positionMap = new Map(positions?.map(p => [p.device_id, p]) || []);
+  const vehicleMap = new Map((vehicles as any[])?.map((v: any) => [v.device_id, v]) || []);
+  const positionMap = new Map((positions as any[])?.map((p: any) => [p.device_id, p]) || []);
 
   // Fetch last chat messages for each device
-  const { data: chatHistory } = await supabase
-    .from("vehicle_chat_history")
+  const { data: chatHistory } = await (supabase
+    .from("vehicle_chat_history" as any)
     .select("device_id, content, created_at, role")
     .in("device_id", deviceIds)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false }) as any);
 
   // Fetch LLM settings for personality and avatar
-  const { data: llmSettings } = await supabase
-    .from("vehicle_llm_settings")
+  const { data: llmSettings } = await (supabase
+    .from("vehicle_llm_settings" as any)
     .select("device_id, personality_mode, nickname, avatar_url")
-    .in("device_id", deviceIds);
+    .in("device_id", deviceIds) as any);
 
   // Group chat history by device
   const chatByDevice = new Map<string, { content: string; time: Date; unread: number }>();
-  chatHistory?.forEach((chat) => {
+  (chatHistory as any[])?.forEach((chat: any) => {
     if (!chatByDevice.has(chat.device_id)) {
       chatByDevice.set(chat.device_id, {
         content: chat.content,
@@ -142,21 +139,19 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
   });
 
   // Map LLM settings
-  const settingsByDevice = new Map(llmSettings?.map(s => [s.device_id, s]) || []);
+  const settingsByDevice = new Map((llmSettings as any[])?.map((s: any) => [s.device_id, s]) || []);
 
-  return assignments.map((a) => {
-    const vehicle = vehicleMap.get(a.device_id);
-    const pos = positionMap.get(a.device_id);
+  return (assignments as any[]).map((a: any) => {
+    const vehicle = vehicleMap.get(a.device_id) as any;
+    const pos = positionMap.get(a.device_id) as any;
     const chat = chatByDevice.get(a.device_id);
-    const settings = settingsByDevice.get(a.device_id);
+    const settings = settingsByDevice.get(a.device_id) as any;
     
     const isOnline = pos?.is_online ?? false;
     const isCharging = pos?.speed === 0 && pos?.ignition_on === false && (pos?.battery_percent ?? 100) < 100;
     
-    // Keep original plate number for identification
     const plateNumber = vehicle?.device_name || a.device_id;
     const nickname = settings?.nickname || null;
-    // Display name: nickname or alias or plate number
     const displayName = nickname || a.vehicle_alias || plateNumber;
 
     return {
@@ -176,7 +171,6 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
       ignition: pos?.ignition_on ?? null,
       isOverspeeding: pos?.is_overspeeding ?? false,
       lastUpdate: pos?.gps_time ? new Date(pos.gps_time) : null,
-      // Convert total_mileage from meters to kilometers
       totalMileage: pos?.total_mileage != null ? Math.round(pos.total_mileage / 1000) : null,
       lastMessage: chat?.content?.slice(0, 80) || null,
       lastMessageTime: chat?.time || null,
