@@ -87,15 +87,15 @@ export default function OwnerChatDetail() {
   const fetchHistory = async () => {
     setHistoryLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("vehicle_chat_history")
+      const { data, error } = await (supabase
+        .from("vehicle_chat_history" as any)
         .select("*")
         .eq("device_id", deviceId)
         .order("created_at", { ascending: true })
-        .limit(50);
+        .limit(50) as any);
 
       if (error) throw error;
-      setMessages((data as ChatMessage[]) || []);
+      setMessages(((data || []) as unknown as ChatMessage[]));
     } catch (err) {
       console.error("Error fetching chat history:", err);
     } finally {
