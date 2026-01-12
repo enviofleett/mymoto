@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useOwnerVehicles, OwnerVehicle } from "@/hooks/useOwnerVehicles";
 import { Search, Car, MessageSquare, ChevronRight } from "lucide-react";
+import myMotoLogo from "@/assets/mymoto-logo-new.png";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 
@@ -95,9 +96,19 @@ export default function OwnerChat() {
     <OwnerLayout>
       <div className="flex flex-col h-full">
         {/* Header - Neumorphic styling */}
-        <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm pt-[env(safe-area-inset-top)] -mt-[env(safe-area-inset-top)]">
+        <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm">
           <div className="px-4 pt-4 pb-3">
-            <h1 className="text-xl font-bold text-foreground mb-4">Messages</h1>
+            {/* Title with logo */}
+            <div className="flex items-center gap-2.5 mb-4">
+              <div className="w-7 h-7 rounded-full shadow-neumorphic-sm bg-card flex items-center justify-center">
+                <img 
+                  src={myMotoLogo} 
+                  alt="MyMoto" 
+                  className="w-5 h-5 object-contain"
+                />
+              </div>
+              <h1 className="text-xl font-bold text-foreground">Messages</h1>
+            </div>
             
             {/* Search - Neumorphic inset style */}
             <div className="relative">

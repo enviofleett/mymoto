@@ -8,7 +8,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
 import { z } from "zod";
-import myMotoLogo from "@/assets/mymoto-logo.png";
+import myMotoLogo from "@/assets/mymoto-logo-new.png";
 
 const gps51Schema = z.object({
   username: z.string().min(1, "Username is required"),
@@ -84,17 +84,20 @@ export default function PwaLogin() {
 
   return (
     <div className="min-h-screen min-h-[100dvh] flex flex-col items-center justify-center bg-background p-4">
-      {/* Animated Logo */}
+      {/* Animated Logo with Neumorphic Glow */}
       <div className="mb-8 animate-fade-in">
         <div className="relative">
-          <img
-            src={myMotoLogo}
-            alt="MyMoto"
-            className="h-24 w-24 object-contain animate-[scale-in_0.5s_ease-out]"
-          />
-          {/* Subtle glow effect */}
-          <div className="absolute inset-0 -z-10 blur-2xl opacity-20">
-            <div className="h-24 w-24 rounded-full bg-primary" />
+          {/* Neumorphic circle container */}
+          <div className="w-24 h-24 rounded-full shadow-neumorphic bg-card flex items-center justify-center">
+            <img
+              src={myMotoLogo}
+              alt="MyMoto"
+              className="h-20 w-20 object-contain animate-[scale-in_0.5s_ease-out]"
+            />
+          </div>
+          {/* Orange glow effect */}
+          <div className="absolute inset-0 -z-10 blur-3xl opacity-30">
+            <div className="h-28 w-28 -ml-2 -mt-2 rounded-full bg-accent" />
           </div>
         </div>
       </div>
@@ -109,8 +112,8 @@ export default function PwaLogin() {
         </p>
       </div>
 
-      {/* Login Card with animation */}
-      <Card className="w-full max-w-md border-border bg-card animate-fade-in [animation-delay:400ms]">
+      {/* Login Card with Neumorphic styling */}
+      <Card className="w-full max-w-sm border-0 bg-card shadow-neumorphic rounded-2xl animate-fade-in [animation-delay:400ms]">
         <CardHeader className="text-center space-y-2 pb-4">
           <CardTitle className="text-xl font-semibold text-foreground">Welcome Back</CardTitle>
           <CardDescription className="text-muted-foreground">
@@ -121,21 +124,21 @@ export default function PwaLogin() {
         <CardContent>
           <form onSubmit={handleGps51Login} className="space-y-4">
             {error && (
-              <Alert variant="destructive" className="animate-fade-in">
+              <Alert variant="destructive" className="animate-fade-in shadow-neumorphic-inset border-0">
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
             
             {success && (
-              <Alert className="border-green-500/50 bg-green-500/10 animate-fade-in">
-                <CheckCircle2 className="h-4 w-4 text-green-500" />
-                <AlertDescription className="text-green-600">{success}</AlertDescription>
+              <Alert className="border-0 bg-status-active/10 shadow-neumorphic-inset animate-fade-in">
+                <CheckCircle2 className="h-4 w-4 text-status-active" />
+                <AlertDescription className="text-status-active">{success}</AlertDescription>
               </Alert>
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="gps51-username" className="text-foreground">GPS51 Username</Label>
+              <Label htmlFor="gps51-username" className="text-foreground text-sm">GPS51 Username</Label>
               <Input
                 id="gps51-username"
                 type="text"
@@ -143,13 +146,13 @@ export default function PwaLogin() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 disabled={isSubmitting}
-                className="bg-background border-border"
+                className="bg-card border-0 shadow-neumorphic-inset h-12 rounded-xl focus-visible:ring-accent/50 text-foreground placeholder:text-muted-foreground"
                 autoComplete="username"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="gps51-password" className="text-foreground">Password</Label>
+              <Label htmlFor="gps51-password" className="text-foreground text-sm">Password</Label>
               <Input
                 id="gps51-password"
                 type="password"
@@ -157,14 +160,14 @@ export default function PwaLogin() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={isSubmitting}
-                className="bg-background border-border"
+                className="bg-card border-0 shadow-neumorphic-inset h-12 rounded-xl focus-visible:ring-accent/50 text-foreground placeholder:text-muted-foreground"
                 autoComplete="current-password"
               />
             </div>
 
             <Button 
               type="submit" 
-              className="w-full mt-2" 
+              className="w-full mt-2 h-12 rounded-xl shadow-neumorphic-button bg-accent hover:bg-accent/90 text-accent-foreground font-semibold transition-all duration-200 hover:ring-2 hover:ring-accent/30" 
               disabled={isSubmitting}
             >
               {isSubmitting ? (
