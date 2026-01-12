@@ -28,12 +28,12 @@ export function VehicleTrips({ deviceId }: VehicleTripsProps) {
     queryKey: ['vehicle-trips', deviceId],
     queryFn: async () => {
       // Fetch position history to calculate trips
-      const { data, error } = await supabase
-        .from('position_history')
+      const { data, error } = await (supabase
+        .from('position_history' as any)
         .select('id, gps_time, latitude, longitude, speed, ignition_on')
         .eq('device_id', deviceId)
         .order('gps_time', { ascending: false })
-        .limit(500);
+        .limit(500) as any);
 
       if (error) throw error;
       
