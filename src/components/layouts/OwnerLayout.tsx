@@ -47,7 +47,7 @@ export function OwnerLayout({
             <div className="w-10 h-10 rounded-full shadow-neumorphic-sm bg-card flex items-center justify-center">
               <img alt="MyMoto" className="w-7 h-7 object-contain" src={myMotoLogo} />
             </div>
-            <span className="text-sm font-semibold text-foreground">MyMoto</span>
+            <span className="text-sm font-semibold text-foreground">mymoto</span>
           </div>
           
           {/* Spacer for future notification bell */}
