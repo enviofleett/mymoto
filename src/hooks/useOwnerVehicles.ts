@@ -74,8 +74,8 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
   console.log("[useOwnerVehicles] Using profileId:", profileId);
 
   // Fetch assignments for this profile
-  const { data: assignments, error } = await (supabase
-    .from("vehicle_assignments") as any)
+  const { data: assignments, error } = await (supabase as any)
+    .from("vehicle_assignments")
     .select(`
       device_id,
       vehicle_alias
@@ -97,16 +97,16 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
   console.log("[useOwnerVehicles] Fetching data for deviceIds:", deviceIds);
 
   // Fetch vehicle info
-  const { data: vehicles, error: vehiclesError } = await (supabase
-    .from("vehicles") as any)
+  const { data: vehicles, error: vehiclesError } = await (supabase as any)
+    .from("vehicles")
     .select("device_id, device_name, device_type")
     .in("device_id", deviceIds);
 
   console.log("[useOwnerVehicles] Vehicles data:", { vehicles, vehiclesError, count: vehicles?.length });
 
   // Fetch positions - note: total_mileage is stored in meters
-  const { data: positions, error: positionsError } = await (supabase
-    .from("vehicle_positions") as any)
+  const { data: positions, error: positionsError } = await (supabase as any)
+    .from("vehicle_positions")
     .select("device_id, latitude, longitude, speed, heading, battery_percent, ignition_on, is_online, is_overspeeding, gps_time, total_mileage")
     .in("device_id", deviceIds);
 
@@ -117,15 +117,15 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
   const positionMap = new Map(positions?.map((p: any) => [p.device_id, p]) || []);
 
   // Fetch last chat messages for each device
-  const { data: chatHistory } = await (supabase
-    .from("vehicle_chat_history") as any)
+  const { data: chatHistory } = await (supabase as any)
+    .from("vehicle_chat_history")
     .select("device_id, content, created_at, role")
     .in("device_id", deviceIds)
     .order("created_at", { ascending: false });
 
   // Fetch LLM settings for personality and avatar
-  const { data: llmSettings } = await (supabase
-    .from("vehicle_llm_settings") as any)
+  const { data: llmSettings } = await (supabase as any)
+    .from("vehicle_llm_settings")
     .select("device_id, personality_mode, nickname, avatar_url")
     .in("device_id", deviceIds);
 
