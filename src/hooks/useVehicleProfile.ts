@@ -81,8 +81,8 @@ async function fetchVehicleTrips(
   limit: number = 50,
   dateRange?: TripDateRange
 ): Promise<VehicleTrip[]> {
-  let query = supabase
-    .from("vehicle_trips")
+  let query = (supabase
+    .from("vehicle_trips") as any)
     .select("*")
     .eq("device_id", deviceId);
 
@@ -109,8 +109,8 @@ async function fetchVehicleEvents(
   limit: number = 50,
   dateRange?: TripDateRange
 ): Promise<VehicleEvent[]> {
-  let query = supabase
-    .from("proactive_vehicle_events")
+  let query = (supabase
+    .from("proactive_vehicle_events") as any)
     .select("*")
     .eq("device_id", deviceId);
 
@@ -132,8 +132,8 @@ async function fetchVehicleEvents(
 }
 
 async function fetchVehicleLLMSettings(deviceId: string): Promise<VehicleLLMSettings | null> {
-  const { data, error } = await supabase
-    .from("vehicle_llm_settings")
+  const { data, error } = await (supabase
+    .from("vehicle_llm_settings") as any)
     .select("device_id, nickname, language_preference, personality_mode, llm_enabled")
     .eq("device_id", deviceId)
     .maybeSingle();
@@ -143,7 +143,7 @@ async function fetchVehicleLLMSettings(deviceId: string): Promise<VehicleLLMSett
 }
 
 async function fetchMileageStats(deviceId: string): Promise<MileageStats> {
-  const { data, error } = await supabase.rpc("get_vehicle_mileage_stats", {
+  const { data, error } = await (supabase.rpc as any)("get_vehicle_mileage_stats", {
     p_device_id: deviceId,
   });
 
@@ -156,7 +156,7 @@ async function fetchMileageStats(deviceId: string): Promise<MileageStats> {
 }
 
 async function fetchDailyMileage(deviceId: string): Promise<DailyMileage[]> {
-  const { data, error } = await supabase.rpc("get_daily_mileage", {
+  const { data, error } = await (supabase.rpc as any)("get_daily_mileage", {
     p_device_id: deviceId,
   });
 
@@ -177,20 +177,20 @@ async function fetchVehicleDailyStats(
   startDate.setDate(startDate.getDate() - days);
   
   // Use raw SQL query to avoid type issues with views
-  const { data, error } = await supabase
-    .rpc('get_vehicle_daily_stats' as any, {
+  const { data, error } = await (supabase
+    .rpc as any)('get_vehicle_daily_stats', {
       p_device_id: deviceId,
       p_days: days
     });
 
   if (error) {
     // Fallback to direct view query if RPC doesn't exist
-    const { data: viewData, error: viewError } = await supabase
-      .from("vehicle_daily_stats")
+    const { data: viewData, error: viewError } = await (supabase
+      .from("vehicle_daily_stats") as any)
       .select("*")
       .eq("device_id", deviceId)
       .gte("stat_date", startDate.toISOString().split('T')[0])
-      .order("stat_date", { ascending: false }) as { data: unknown; error: unknown };
+      .order("stat_date", { ascending: false });
 
     if (viewError) {
       console.error("Error fetching vehicle daily stats:", viewError);

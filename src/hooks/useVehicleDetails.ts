@@ -19,8 +19,8 @@ export interface Driver {
 
 // Fetch position history for a vehicle
 async function fetchPositionHistory(deviceId: string): Promise<PositionHistory[]> {
-  const { data, error } = await supabase
-    .from("position_history")
+  const { data, error } = await (supabase
+    .from("position_history") as any)
     .select("id, latitude, longitude, speed, battery_percent, ignition_on, gps_time")
     .eq("device_id", deviceId)
     .order("gps_time", { ascending: false })
