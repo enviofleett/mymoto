@@ -38,15 +38,15 @@ export default function AdminAiSettings() {
   const fetchPrompt = async () => {
     setIsLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("app_settings")
+      const { data, error } = await (supabase
+        .from("app_settings" as any)
         .select("value")
         .eq("key", "global_ai_system_prompt")
-        .maybeSingle();
+        .maybeSingle() as any);
 
       if (error) throw error;
 
-      const value = data?.value || DEFAULT_PERSONA;
+      const value = (data as any)?.value || DEFAULT_PERSONA;
       setPrompt(value);
       setOriginalPrompt(value);
     } catch (error) {
@@ -62,8 +62,8 @@ export default function AdminAiSettings() {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      const { error } = await supabase
-        .from("app_settings")
+      const { error } = await (supabase
+        .from("app_settings" as any)
         .upsert({
           key: "global_ai_system_prompt",
           value: prompt,
@@ -72,7 +72,7 @@ export default function AdminAiSettings() {
             version: "1.0",
             updated_by: "admin"
           }
-        }, { onConflict: "key" });
+        }, { onConflict: "key" }) as any);
 
       if (error) throw error;
 

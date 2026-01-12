@@ -70,16 +70,16 @@ const Insights = () => {
 
   const fetchInsights = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("fleet_insights_history")
+    const { data, error } = await (supabase
+      .from("fleet_insights_history" as any)
       .select("*")
       .order("created_at", { ascending: false })
-      .limit(100);
+      .limit(100) as any);
 
     if (error) {
       console.error("Error fetching insights:", error);
     } else {
-      setInsights(data || []);
+      setInsights((data || []) as InsightRecord[]);
     }
     setLoading(false);
   };

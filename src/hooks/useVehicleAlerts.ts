@@ -26,15 +26,15 @@ export function useVehicleAlerts(deviceId: string | null, limit = 10) {
     queryFn: async () => {
       if (!deviceId) return [];
 
-      const { data, error } = await supabase
-        .from('proactive_vehicle_events')
+      const { data, error } = await (supabase
+        .from('proactive_vehicle_events' as any)
         .select('*')
         .eq('device_id', deviceId)
         .order('created_at', { ascending: false })
-        .limit(limit);
+        .limit(limit) as any);
 
       if (error) throw error;
-      return data as VehicleAlert[];
+      return (data || []) as VehicleAlert[];
     },
     enabled: !!deviceId,
     staleTime: 30000,
