@@ -4,9 +4,7 @@ import { MessageCircle, Car, Wallet, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { GlobalAlertListener } from "@/components/notifications/GlobalAlertListener";
 import { StickyAlertBanner } from "@/components/notifications/StickyAlertBanner";
-import { UpdatePrompt } from "@/components/pwa/UpdatePrompt";
 import myMotoLogo from "@/assets/mymoto-logo-new.png";
-
 interface OwnerLayoutProps {
   children: ReactNode;
 }
@@ -40,9 +38,6 @@ export function OwnerLayout({
       
       {/* Sticky Alert Banner - Shows at top header */}
       <StickyAlertBanner />
-      
-      {/* PWA Update Prompt */}
-      <UpdatePrompt />
 
       {/* Top Header with Logo */}
       <header className="sticky top-0 z-40 bg-card/95 backdrop-blur-xl border-b border-border/30 pt-[env(safe-area-inset-top)]">

@@ -18,27 +18,23 @@ interface ProactiveEvent {
 
 const SEVERITY_CONFIG = {
   critical: {
-    bg: "bg-card",
-    iconBg: "bg-destructive/20",
-    iconColor: "text-destructive",
+    bg: "bg-destructive",
+    text: "text-destructive-foreground",
     icon: AlertCircle,
   },
   error: {
-    bg: "bg-card",
-    iconBg: "bg-destructive/20",
-    iconColor: "text-destructive",
+    bg: "bg-destructive/90",
+    text: "text-destructive-foreground",
     icon: AlertCircle,
   },
   warning: {
-    bg: "bg-card",
-    iconBg: "bg-orange-500/20",
-    iconColor: "text-orange-500",
+    bg: "bg-yellow-500",
+    text: "text-yellow-950",
     icon: AlertTriangle,
   },
   info: {
-    bg: "bg-card",
-    iconBg: "bg-primary/20",
-    iconColor: "text-primary",
+    bg: "bg-blue-500",
+    text: "text-white",
     icon: Info,
   },
 };
@@ -104,31 +100,30 @@ export function StickyAlertBanner() {
       {/* Main Banner */}
       <div
         className={cn(
-          "flex items-center gap-3 px-4 py-3 shadow-neumorphic cursor-pointer transition-all",
-          config.bg
+          "flex items-center gap-3 px-4 py-3 shadow-lg cursor-pointer transition-all",
+          config.bg,
+          config.text
         )}
         onClick={() => alerts.length > 1 ? setExpanded(!expanded) : handleAlertClick(latestAlert)}
       >
-        <div className={cn("p-2 rounded-full", config.iconBg)}>
-          <Icon className={cn("h-5 w-5 shrink-0", config.iconColor)} />
-        </div>
+        <Icon className="h-5 w-5 shrink-0" />
         
         <div className="flex-1 min-w-0">
-          <p className="font-semibold text-sm text-foreground truncate">{latestAlert.title}</p>
-          <p className="text-xs text-muted-foreground truncate">{latestAlert.message}</p>
+          <p className="font-semibold text-sm truncate">{latestAlert.title}</p>
+          <p className="text-xs opacity-90 truncate">{latestAlert.message}</p>
         </div>
 
         {hasLocation && (
-          <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <MapPin className="h-4 w-4 shrink-0 opacity-75" />
         )}
 
         {alerts.length > 1 && (
           <div className="flex items-center gap-1">
-            <span className="text-xs font-medium bg-primary/20 text-primary px-1.5 py-0.5 rounded-full">
+            <span className="text-xs font-medium bg-white/20 px-1.5 py-0.5 rounded-full">
               +{alerts.length - 1}
             </span>
             <ChevronDown className={cn(
-              "h-4 w-4 text-muted-foreground transition-transform",
+              "h-4 w-4 transition-transform",
               expanded && "rotate-180"
             )} />
           </div>
@@ -139,10 +134,10 @@ export function StickyAlertBanner() {
             e.stopPropagation();
             dismissAlert(latestAlert.id);
           }}
-          className="p-1.5 hover:bg-muted rounded-full transition-colors shrink-0"
+          className="p-1.5 hover:bg-white/20 rounded-full transition-colors shrink-0"
           aria-label="Dismiss alert"
         >
-          <X className="h-4 w-4 text-muted-foreground" />
+          <X className="h-4 w-4" />
         </button>
       </div>
 
@@ -162,9 +157,9 @@ export function StickyAlertBanner() {
               >
                 <div className={cn(
                   "p-1.5 rounded-full",
-                  alertConfig.iconBg
+                  alertConfig.bg
                 )}>
-                  <AlertIcon className={cn("h-3.5 w-3.5", alertConfig.iconColor)} />
+                  <AlertIcon className={cn("h-3.5 w-3.5", alertConfig.text)} />
                 </div>
                 
                 <div className="flex-1 min-w-0">
