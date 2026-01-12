@@ -66,9 +66,45 @@ const Auth = () => {
     }
   };
   if (isLoading) {
-    return <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>;
+    return (
+      <div className="min-h-screen min-h-[100dvh] flex flex-col items-center justify-center bg-background p-4">
+        {/* Skeleton Logo */}
+        <div className="mb-8 animate-pulse">
+          <div className="w-32 h-32 rounded-full bg-muted shadow-neumorphic" />
+        </div>
+
+        {/* Skeleton Brand Name */}
+        <div className="h-8 w-32 bg-muted rounded-md mb-2 animate-pulse" />
+        <div className="h-4 w-48 bg-muted/60 rounded-md mb-8 animate-pulse" />
+
+        {/* Skeleton Card */}
+        <div className="w-full max-w-sm shadow-neumorphic border border-border/30 rounded-xl p-6 space-y-6">
+          {/* Header skeleton */}
+          <div className="text-center space-y-2">
+            <div className="h-6 w-32 bg-muted rounded-md mx-auto animate-pulse" />
+            <div className="h-4 w-48 bg-muted/60 rounded-md mx-auto animate-pulse" />
+          </div>
+          
+          {/* Input skeletons */}
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <div className="h-4 w-12 bg-muted/60 rounded-md animate-pulse" />
+              <div className="h-10 w-full bg-muted rounded-md shadow-neumorphic-inset animate-pulse" />
+            </div>
+            <div className="space-y-2">
+              <div className="h-4 w-16 bg-muted/60 rounded-md animate-pulse" />
+              <div className="h-10 w-full bg-muted rounded-md shadow-neumorphic-inset animate-pulse" />
+            </div>
+          </div>
+          
+          {/* Button skeleton */}
+          <div className="h-10 w-full bg-muted rounded-md shadow-neumorphic-button animate-pulse" />
+        </div>
+
+        {/* Footer skeleton */}
+        <div className="h-3 w-32 bg-muted/40 rounded-md mt-8 animate-pulse" />
+      </div>
+    );
   }
   return <div className="min-h-screen min-h-[100dvh] flex flex-col items-center justify-center bg-background p-4">
       {/* Large Neumorphic Logo */}
