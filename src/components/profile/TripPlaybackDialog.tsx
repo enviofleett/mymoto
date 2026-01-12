@@ -108,7 +108,7 @@ export function TripPlaybackDialog({
     
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from("position_history")
         .select("id, latitude, longitude, speed, heading, gps_time, ignition_on")
         .eq("device_id", deviceId)
@@ -122,8 +122,8 @@ export function TripPlaybackDialog({
       }
 
       // Filter out positions without valid coordinates
-      const validPositions = (data || []).filter(
-        (p): p is PositionPoint => 
+      const validPositions = ((data || []) as any[]).filter(
+        (p: any): p is PositionPoint => 
           p.latitude !== null && 
           p.longitude !== null && 
           p.latitude !== 0 && 

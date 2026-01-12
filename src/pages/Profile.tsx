@@ -106,7 +106,7 @@ const Profile = () => {
 
       // Fetch assigned vehicles with current positions
       if (finalProfile) {
-        const { data: assignments, error: assignError } = await supabase
+        const { data: assignments, error: assignError } = await (supabase as any)
           .from("vehicle_assignments")
           .select(`
             device_id,
