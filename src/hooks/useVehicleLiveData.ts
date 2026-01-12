@@ -56,8 +56,8 @@ function mapToVehicleLiveData(data: any): VehicleLiveData {
 async function fetchVehicleLiveData(deviceId: string): Promise<VehicleLiveData> {
   console.log("[useVehicleLiveData] Fetching from DB for:", deviceId);
 
-  const { data, error } = await (supabase
-    .from('vehicle_positions') as any)
+  const { data, error } = await (supabase as any)
+    .from('vehicle_positions')
     .select('*')
     .eq('device_id', deviceId)
     .maybeSingle();
