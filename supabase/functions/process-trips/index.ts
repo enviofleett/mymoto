@@ -174,7 +174,7 @@ Deno.serve(async (req) => {
     try {
       const body = await req.json();
       if (body.lookback_hours) {
-        lookbackHours = Math.min(body.lookback_hours, 24); // Max 24 hours
+        lookbackHours = Math.min(body.lookback_hours, 720); // Max 30 days (720 hours)
       }
       if (body.device_ids && Array.isArray(body.device_ids)) {
         deviceIds = body.device_ids;
