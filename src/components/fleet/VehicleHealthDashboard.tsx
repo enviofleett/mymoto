@@ -44,28 +44,30 @@ export function VehicleHealthDashboard({ deviceId }: VehicleHealthDashboardProps
     setLoading(true);
     try {
       // Fetch position history to calculate health metrics
-      const { data: positions, error } = await supabase
-        .from('position_history')
+      const { data: positions, error } = await (supabase
+        .from('position_history' as any)
         .select('speed, battery_percent, ignition_on, gps_time')
         .eq('device_id', deviceId)
         .order('gps_time', { ascending: false })
-        .limit(100);
+        .limit(100) as any);
 
       if (error) throw error;
 
-      if (positions && positions.length > 0) {
+      const posData = (positions || []) as any[];
+
+      if (posData.length > 0) {
         // Calculate health metrics from position history
-        const batteryReadings = positions
-          .filter(p => p.battery_percent && p.battery_percent > 0)
-          .map(p => p.battery_percent as number);
+        const batteryReadings = posData
+          .filter((p: any) => p.battery_percent && p.battery_percent > 0)
+          .map((p: any) => p.battery_percent as number);
         
         const avgBattery = batteryReadings.length > 0 
-          ? batteryReadings.reduce((a, b) => a + b, 0) / batteryReadings.length 
+          ? batteryReadings.reduce((a: number, b: number) => a + b, 0) / batteryReadings.length 
           : 50;
         
-        const speedReadings = positions
-          .filter(p => p.speed !== null)
-          .map(p => p.speed as number);
+        const speedReadings = posData
+          .filter((p: any) => p.speed !== null)
+          .map((p: any) => p.speed as number);
         
         const avgSpeed = speedReadings.length > 0 
           ? speedReadings.reduce((a, b) => a + b, 0) / speedReadings.length 

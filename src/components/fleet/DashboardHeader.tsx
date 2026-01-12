@@ -21,11 +21,11 @@ export function DashboardHeader({ connectionStatus = 'connecting' }: DashboardHe
     queryKey: ['unread-alerts'],
     queryFn: async () => {
       const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-      const { count } = await supabase
-        .from('proactive_vehicle_events')
+      const { count } = await (supabase
+        .from('proactive_vehicle_events' as any)
         .select('*', { count: 'exact', head: true })
         .eq('acknowledged', false)
-        .gte('created_at', twentyFourHoursAgo);
+        .gte('created_at', twentyFourHoursAgo) as any);
       return count || 0;
     },
     refetchInterval: 60000 // Refresh every minute

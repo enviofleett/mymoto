@@ -96,22 +96,6 @@ export function GhostVehicleCard() {
           };
         });
 
-      // Filter to ghost vehicles
-      const ghosts = oldVehicles
-        .filter(
-          (v) => !hasPositionSet.has(v.device_id) && !hasHistorySet.has(v.device_id)
-        )
-        .map((v) => {
-          const posData = vehiclesWithPositions?.find(
-            (p) => p.device_id === v.device_id
-          );
-          return {
-            ...v,
-            latitude: posData?.latitude ?? null,
-            longitude: posData?.longitude ?? null,
-          };
-        });
-
       setGhostVehicles(ghosts);
     } catch (error) {
       console.error("Error fetching ghost vehicles:", error);

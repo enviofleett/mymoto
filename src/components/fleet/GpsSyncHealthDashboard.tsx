@@ -27,10 +27,10 @@ export function GpsSyncHealthDashboard() {
   const { data: health, isLoading, error } = useQuery({
     queryKey: ['gps-sync-health'],
     queryFn: async (): Promise<SyncHealthData> => {
-      const { data, error } = await supabase
-        .from('v_gps_sync_health')
+      const { data, error } = await (supabase
+        .from('v_gps_sync_health' as any)
         .select('*')
-        .single();
+        .single() as any);
 
       if (error) throw error;
       return data as SyncHealthData;
