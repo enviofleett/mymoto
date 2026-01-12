@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Lock, Unlock, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 
 interface DoorControlCardProps {
   deviceId: string;
@@ -70,43 +70,54 @@ export function DoorControlCard({ deviceId, isOnline }: DoorControlCardProps) {
   };
 
   return (
-    <Card className="border-border bg-card/50">
+    <Card className="border-0 bg-card shadow-neumorphic rounded-xl">
       <CardContent className="p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <div className="p-2 rounded-full bg-blue-500/10">
-            <Lock className="h-4 w-4 text-blue-500" />
+        <div className="flex items-center gap-3 mb-4">
+          {/* Neumorphic icon container */}
+          <div className="w-10 h-10 rounded-full shadow-neumorphic-sm bg-card flex items-center justify-center">
+            <Lock className="h-5 w-5 text-accent" />
           </div>
           <span className="font-medium text-foreground">Door Control</span>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <Button
-            variant="outline"
-            className="flex flex-col items-center py-4 h-auto border-green-500/30 hover:border-green-500/50 hover:bg-green-500/5"
+          {/* Lock button - Neumorphic style */}
+          <button
             onClick={handleLock}
             disabled={isLoading || !isOnline}
+            className={cn(
+              "flex flex-col items-center py-4 rounded-xl transition-all duration-200",
+              "shadow-neumorphic-sm bg-card",
+              "hover:shadow-neumorphic active:shadow-neumorphic-inset",
+              "disabled:opacity-50 disabled:cursor-not-allowed"
+            )}
           >
             {isLoading && pendingCommand === "lock" ? (
-              <Loader2 className="h-5 w-5 mb-1 animate-spin text-green-500" />
+              <Loader2 className="h-6 w-6 mb-2 animate-spin text-status-active" />
             ) : (
-              <Lock className="h-5 w-5 mb-1 text-green-500" />
+              <Lock className="h-6 w-6 mb-2 text-status-active" />
             )}
-            <span className="text-sm font-medium">Lock Doors</span>
-          </Button>
+            <span className="text-sm font-medium text-foreground">Lock</span>
+          </button>
           
-          <Button
-            variant="outline"
-            className="flex flex-col items-center py-4 h-auto border-orange-500/30 hover:border-orange-500/50 hover:bg-orange-500/5"
+          {/* Unlock button - Neumorphic style with orange accent */}
+          <button
             onClick={handleUnlock}
             disabled={isLoading || !isOnline}
+            className={cn(
+              "flex flex-col items-center py-4 rounded-xl transition-all duration-200",
+              "shadow-neumorphic-sm bg-card",
+              "hover:shadow-neumorphic active:shadow-neumorphic-inset",
+              "disabled:opacity-50 disabled:cursor-not-allowed"
+            )}
           >
             {isLoading && pendingCommand === "unlock" ? (
-              <Loader2 className="h-5 w-5 mb-1 animate-spin text-orange-500" />
+              <Loader2 className="h-6 w-6 mb-2 animate-spin text-accent" />
             ) : (
-              <Unlock className="h-5 w-5 mb-1 text-orange-500" />
+              <Unlock className="h-6 w-6 mb-2 text-accent" />
             )}
-            <span className="text-sm font-medium">Unlock Doors</span>
-          </Button>
+            <span className="text-sm font-medium text-foreground">Unlock</span>
+          </button>
         </div>
 
         <p className="text-xs text-muted-foreground text-center mt-3">

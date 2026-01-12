@@ -1,4 +1,3 @@
-import { Button } from "@/components/ui/button";
 import { ArrowLeft, Settings, Car } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
@@ -29,39 +28,49 @@ export function ProfileHeader({
 
   return (
     <>
-      {/* Top Navigation */}
-      <div className="sticky top-0 z-10 bg-background px-4 py-3 safe-area-inset-top">
+      {/* Top Navigation - Neumorphic buttons */}
+      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm px-4 py-3 safe-area-inset-top">
         <div className="flex items-center justify-between">
-          <Button variant="ghost" size="icon" onClick={onBack}>
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <Button variant="ghost" size="icon" onClick={onSettings}>
-            <Settings className="h-5 w-5" />
-          </Button>
+          <button
+            onClick={onBack}
+            className="w-10 h-10 rounded-full bg-card shadow-neumorphic-sm flex items-center justify-center transition-all duration-200 active:shadow-neumorphic-inset"
+          >
+            <ArrowLeft className="h-5 w-5 text-foreground" />
+          </button>
+          <button
+            onClick={onSettings}
+            className="w-10 h-10 rounded-full bg-card shadow-neumorphic-sm flex items-center justify-center transition-all duration-200 active:shadow-neumorphic-inset"
+          >
+            <Settings className="h-5 w-5 text-foreground" />
+          </button>
         </div>
       </div>
 
-      {/* Profile Section */}
+      {/* Profile Section - Premium styling */}
       <div className="flex flex-col items-center py-6 px-4">
         <div className="relative mb-4">
-          {avatarUrl ? (
-            <img 
-              src={avatarUrl} 
-              alt={displayName}
-              className="w-20 h-20 rounded-full object-cover border-2 border-border"
-            />
-          ) : (
-            <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center">
-              <Car className="h-9 w-9 text-muted-foreground" />
-            </div>
-          )}
+          {/* Neumorphic avatar container */}
+          <div className="w-24 h-24 rounded-full shadow-neumorphic p-1 bg-card">
+            {avatarUrl ? (
+              <img 
+                src={avatarUrl} 
+                alt={displayName}
+                className="w-full h-full rounded-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full rounded-full bg-secondary flex items-center justify-center">
+                <Car className="h-10 w-10 text-muted-foreground" />
+              </div>
+            )}
+          </div>
+          {/* Status indicator with glow */}
           <div
             className={cn(
-              "absolute bottom-1 right-1 w-5 h-5 rounded-full border-[3px] border-background",
+              "absolute bottom-1 right-1 w-5 h-5 rounded-full border-[3px] border-card transition-all duration-300",
               status === "online"
-                ? "bg-status-active"
+                ? "bg-status-active shadow-[0_0_12px_hsl(142_70%_50%/0.6)]"
                 : status === "charging"
-                ? "bg-status-maintenance"
+                ? "bg-accent shadow-[0_0_12px_hsl(24_95%_53%/0.6)]"
                 : "bg-muted-foreground"
             )}
           />
