@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Rocket, History, Loader2 } from "lucide-react";
+import { Rocket, History, Loader2, Zap } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
@@ -25,6 +25,7 @@ export function PushUpdateCard() {
   const [releaseNotes, setReleaseNotes] = useState("");
   const [isMandatory, setIsMandatory] = useState(false);
   const [isPushing, setIsPushing] = useState(false);
+  const [isForcing, setIsForcing] = useState(false);
   const [recentUpdates, setRecentUpdates] = useState<AppUpdate[]>([]);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
@@ -56,7 +57,7 @@ export function PushUpdateCard() {
     fetchRecentUpdates();
   }, []);
 
-  const handlePushUpdate = async () => {
+  const pushUpdate = async (forceMandatory: boolean = false) => {
     if (!version.trim()) {
       toast({
         title: "Version required",
@@ -76,7 +77,12 @@ export function PushUpdateCard() {
       return;
     }
 
-    setIsPushing(true);
+    if (forceMandatory) {
+      setIsForcing(true);
+    } else {
+      setIsPushing(true);
+    }
+
     try {
       // Deactivate all previous updates (type assertion for new table)
       await (supabase
@@ -84,21 +90,25 @@ export function PushUpdateCard() {
         .update({ is_active: false })
         .eq('is_active', true));
 
-      // Insert new update
+      // Insert new update - force mandatory if using Force Update
       const { error } = await (supabase
         .from('app_updates' as any)
         .insert({
           version: version.trim(),
-          release_notes: releaseNotes.trim() || null,
-          is_mandatory: isMandatory,
+          release_notes: forceMandatory 
+            ? (releaseNotes.trim() || 'Critical update - immediate action required')
+            : (releaseNotes.trim() || null),
+          is_mandatory: forceMandatory || isMandatory,
           is_active: true,
         }));
 
       if (error) throw error;
 
       toast({
-        title: "Update pushed!",
-        description: `Version ${version} is now being pushed to all users`,
+        title: forceMandatory ? "Force update pushed!" : "Update pushed!",
+        description: forceMandatory 
+          ? `Version ${version} is being forced to all users immediately`
+          : `Version ${version} is now being pushed to all users`,
       });
 
       // Reset form and refresh list
@@ -114,8 +124,12 @@ export function PushUpdateCard() {
       });
     } finally {
       setIsPushing(false);
+      setIsForcing(false);
     }
   };
+
+  const handlePushUpdate = () => pushUpdate(false);
+  const handleForceUpdate = () => pushUpdate(true);
 
   return (
     <Card className="shadow-neumorphic">
@@ -169,24 +183,49 @@ export function PushUpdateCard() {
           />
         </div>
 
-        {/* Push Button */}
-        <Button
-          onClick={handlePushUpdate}
-          disabled={isPushing || !version.trim()}
-          className="w-full gap-2"
-        >
-          {isPushing ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Pushing...
-            </>
-          ) : (
-            <>
-              <Rocket className="h-4 w-4" />
-              Push Update to All Users
-            </>
-          )}
-        </Button>
+        {/* Action Buttons */}
+        <div className="flex gap-2">
+          <Button
+            onClick={handlePushUpdate}
+            disabled={isPushing || isForcing || !version.trim()}
+            className="flex-1 gap-2"
+            variant="outline"
+          >
+            {isPushing ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Pushing...
+              </>
+            ) : (
+              <>
+                <Rocket className="h-4 w-4" />
+                Push Update
+              </>
+            )}
+          </Button>
+          
+          <Button
+            onClick={handleForceUpdate}
+            disabled={isPushing || isForcing || !version.trim()}
+            className="flex-1 gap-2 bg-destructive hover:bg-destructive/90"
+          >
+            {isForcing ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Forcing...
+              </>
+            ) : (
+              <>
+                <Zap className="h-4 w-4" />
+                Force Update All
+              </>
+            )}
+          </Button>
+        </div>
+        
+        <p className="text-xs text-muted-foreground text-center">
+          Force Update makes the update mandatory and cannot be dismissed
+        </p>
 
         {/* Recent Updates */}
         <div className="pt-4 border-t border-border">
