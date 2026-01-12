@@ -43,7 +43,7 @@ export function GhostVehicleCard() {
       cutoffDate.setHours(cutoffDate.getHours() - GHOST_BUFFER_HOURS);
 
       // Get all vehicles older than 48 hours
-      const { data: oldVehicles, error: vehiclesError } = await (supabase as any)
+      const { data: oldVehicles, error: vehiclesError } = await supabase
         .from("vehicles")
         .select("device_id, device_name, created_at")
         .lt("created_at", cutoffDate.toISOString());
@@ -58,7 +58,7 @@ export function GhostVehicleCard() {
       const deviceIds = oldVehicles.map((v) => v.device_id);
 
       // Get vehicles with valid positions
-      const { data: vehiclesWithPositions } = await (supabase as any)
+      const { data: vehiclesWithPositions } = await supabase
         .from("vehicle_positions")
         .select("device_id, latitude, longitude")
         .in("device_id", deviceIds)
@@ -70,7 +70,7 @@ export function GhostVehicleCard() {
       );
 
       // Get vehicles with position history
-      const { data: vehiclesWithHistory } = await (supabase as any)
+      const { data: vehiclesWithHistory } = await supabase
         .from("position_history")
         .select("device_id")
         .in("device_id", deviceIds);

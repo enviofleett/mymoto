@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Download, Share, PlusSquare, Smartphone, CheckCircle2, Car } from "lucide-react";
-import WelcomePopup from "@/components/pwa/WelcomePopup";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -80,7 +79,6 @@ const InstallApp = () => {
 
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
-      <WelcomePopup isIOS={isIOS} isAndroid={isAndroid} />
       <div className="w-full max-w-md space-y-8">
         {/* App Logo & Branding */}
         <div className="text-center space-y-4">

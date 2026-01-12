@@ -49,7 +49,7 @@ export function DataBackfillCard() {
 
   const fetchVehicles = async () => {
     setLoadingVehicles(true);
-    const { data, error } = await (supabase as any)
+    const { data, error } = await supabase
       .from("vehicles")
       .select("device_id, device_name, last_synced_at")
       .order("device_name");

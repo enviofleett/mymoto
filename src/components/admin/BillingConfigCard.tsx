@@ -18,7 +18,7 @@ export function BillingConfigCard() {
   }, []);
 
   const fetchConfig = async () => {
-    const { data, error } = await (supabase as any)
+    const { data, error } = await supabase
       .from("billing_config")
       .select("value")
       .eq("key", "daily_llm_rate")
@@ -43,7 +43,7 @@ export function BillingConfigCard() {
 
     setSaving(true);
 
-    const { error } = await (supabase as any)
+    const { error } = await supabase
       .from("billing_config")
       .update({ value: rate, updated_at: new Date().toISOString() })
       .eq("key", "daily_llm_rate");
