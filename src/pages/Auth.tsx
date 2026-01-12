@@ -89,9 +89,7 @@ const Auth = () => {
       <h1 className="text-3xl font-bold text-foreground mb-2 tracking-tight">
         mymoto
       </h1>
-      <p className="text-muted-foreground mb-8 text-center">
-        Fleet GPS Management System
-      </p>
+      <p className="text-muted-foreground mb-8 text-center">Bond better with cars.</p>
 
       {/* Login Card */}
       <Card className="w-full max-w-sm shadow-neumorphic border-border/30">
