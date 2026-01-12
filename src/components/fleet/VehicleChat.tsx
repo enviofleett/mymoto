@@ -15,6 +15,18 @@ interface ChatMessage {
   created_at: string;
 }
 
+interface VehicleContext {
+  speed: number;
+  battery_percent: number;
+  ignition_on: boolean;
+  latitude: number;
+  longitude: number;
+  is_online: boolean;
+  is_overspeeding: boolean;
+  total_mileage: number;
+  gps_time: string;
+}
+
 interface LocationData {
   lat: number;
   lon: number;
@@ -174,28 +186,28 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
   const { data: historyData, isLoading: historyLoading } = useQuery({
     queryKey: ['vehicle-chat-history', deviceId],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('vehicle_chat_history')
+      const { data, error } = await (supabase
+        .from('vehicle_chat_history' as any)
         .select('*')
         .eq('device_id', deviceId)
         .order('created_at', { ascending: true })
-        .limit(50);
+        .limit(50) as any) as { data: ChatMessage[] | null; error: any };
 
       if (error) throw error;
-      return (data as ChatMessage[]) || [];
+      return data || [];
     },
     enabled: !!deviceId
   });
 
   // Fetch current vehicle telemetry for context
-  const { data: vehicleContext } = useQuery({
+  const { data: vehicleContext } = useQuery<VehicleContext | null>({
     queryKey: ['vehicle-context', deviceId],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('vehicle_positions')
+      const { data, error } = await (supabase
+        .from('vehicle_positions' as any)
         .select('*')
         .eq('device_id', deviceId)
-        .single();
+        .single() as any) as { data: VehicleContext | null; error: any };
 
       if (error) throw error;
       return data;

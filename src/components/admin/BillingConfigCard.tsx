@@ -18,11 +18,11 @@ export function BillingConfigCard() {
   }, []);
 
   const fetchConfig = async () => {
-    const { data, error } = await supabase
-      .from("billing_config")
+    const { data, error } = await (supabase
+      .from("billing_config" as any)
       .select("value")
       .eq("key", "daily_llm_rate")
-      .single();
+      .single() as any) as { data: { value: number } | null; error: any };
 
     if (!error && data) {
       setDailyRate(String(data.value));
@@ -43,10 +43,10 @@ export function BillingConfigCard() {
 
     setSaving(true);
 
-    const { error } = await supabase
-      .from("billing_config")
+    const { error } = await (supabase
+      .from("billing_config" as any)
       .update({ value: rate, updated_at: new Date().toISOString() })
-      .eq("key", "daily_llm_rate");
+      .eq("key", "daily_llm_rate") as any);
 
     if (error) {
       toast({
