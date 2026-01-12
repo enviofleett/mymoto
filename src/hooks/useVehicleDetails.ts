@@ -32,14 +32,14 @@ async function fetchPositionHistory(deviceId: string): Promise<PositionHistory[]
 
 // Fetch available drivers
 async function fetchAvailableDrivers(): Promise<Driver[]> {
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from("profiles")
     .select("id, name, phone")
     .eq("status", "active")
     .order("name");
 
   if (error) throw error;
-  return data || [];
+  return (data || []) as Driver[];
 }
 
 // Hook for position history with caching
