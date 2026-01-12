@@ -81,8 +81,8 @@ async function fetchVehicleTrips(
   limit: number = 50,
   dateRange?: TripDateRange
 ): Promise<VehicleTrip[]> {
-  let query = (supabase
-    .from("vehicle_trips") as any)
+  let query = (supabase as any)
+    .from("vehicle_trips")
     .select("*")
     .eq("device_id", deviceId);
 
@@ -109,8 +109,8 @@ async function fetchVehicleEvents(
   limit: number = 50,
   dateRange?: TripDateRange
 ): Promise<VehicleEvent[]> {
-  let query = (supabase
-    .from("proactive_vehicle_events") as any)
+  let query = (supabase as any)
+    .from("proactive_vehicle_events")
     .select("*")
     .eq("device_id", deviceId);
 
@@ -132,8 +132,8 @@ async function fetchVehicleEvents(
 }
 
 async function fetchVehicleLLMSettings(deviceId: string): Promise<VehicleLLMSettings | null> {
-  const { data, error } = await (supabase
-    .from("vehicle_llm_settings") as any)
+  const { data, error } = await (supabase as any)
+    .from("vehicle_llm_settings")
     .select("device_id, nickname, language_preference, personality_mode, llm_enabled")
     .eq("device_id", deviceId)
     .maybeSingle();
@@ -185,8 +185,8 @@ async function fetchVehicleDailyStats(
 
   if (error) {
     // Fallback to direct view query if RPC doesn't exist
-    const { data: viewData, error: viewError } = await (supabase
-      .from("vehicle_daily_stats") as any)
+    const { data: viewData, error: viewError } = await (supabase as any)
+      .from("vehicle_daily_stats")
       .select("*")
       .eq("device_id", deviceId)
       .gte("stat_date", startDate.toISOString().split('T')[0])

@@ -47,8 +47,8 @@ export function useTripAnalytics(tripId: string | null, enabled = true) {
     queryFn: async (): Promise<TripAnalytics | null> => {
       if (!tripId) return null;
       
-      const { data, error } = await (supabase
-        .from('trip_analytics') as any)
+      const { data, error } = await (supabase as any)
+        .from('trip_analytics')
         .select('*')
         .eq('trip_id', tripId)
         .maybeSingle();
@@ -101,8 +101,8 @@ export function useRecentTripAnalytics(deviceId: string | null, limit = 10, enab
     queryFn: async (): Promise<TripAnalytics[]> => {
       if (!deviceId) return [];
       
-      const { data, error } = await (supabase
-        .from('trip_analytics') as any)
+      const { data, error } = await (supabase as any)
+        .from('trip_analytics')
         .select('*')
         .eq('device_id', deviceId)
         .order('analyzed_at', { ascending: false })
