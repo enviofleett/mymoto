@@ -72,7 +72,7 @@ export function AiSimulationCard() {
 
   const fetchTemplates = async () => {
     setLoadingTemplates(true);
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('ai_scenario_templates')
       .select('*')
       .order('is_system', { ascending: false })
@@ -85,8 +85,8 @@ export function AiSimulationCard() {
     } else {
       setTemplates(data || []);
       // Pre-select first 5 system templates by default
-      const defaultSelected = new Set(
-        (data || []).filter(t => t.is_system).slice(0, 5).map(t => t.id)
+      const defaultSelected = new Set<string>(
+        (data || []).filter((t: any) => t.is_system).slice(0, 5).map((t: any) => t.id as string)
       );
       setSelectedTemplateIds(defaultSelected);
     }

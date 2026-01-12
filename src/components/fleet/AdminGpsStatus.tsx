@@ -29,7 +29,7 @@ export function AdminGpsStatus() {
 
   const fetchTokenStatus = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('app_settings')
         .select('value, metadata, updated_at, expires_at')
         .eq('key', 'gps_token')
