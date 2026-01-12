@@ -36,7 +36,7 @@ export function useWallet() {
   const fetchWallet = async () => {
     if (!user) return;
 
-    const { data, error } = await (supabase as any)
+    const { data, error } = await supabase
       .from("wallets")
       .select("id, balance, currency")
       .eq("user_id", user.id)
@@ -46,7 +46,7 @@ export function useWallet() {
       console.error("Error fetching wallet:", error);
       // Wallet might not exist yet, create one
       if (error.code === "PGRST116") {
-        const { data: newWallet, error: createError } = await (supabase as any)
+        const { data: newWallet, error: createError } = await supabase
           .from("wallets")
           .insert({ user_id: user.id })
           .select()
@@ -54,17 +54,17 @@ export function useWallet() {
 
       if (!createError && newWallet) {
           setWallet({
-            id: (newWallet as any).id,
-            balance: parseFloat(String((newWallet as any).balance)) || 0,
-            currency: (newWallet as any).currency || "NGN",
+            id: newWallet.id,
+            balance: parseFloat(String(newWallet.balance)) || 0,
+            currency: newWallet.currency || "NGN",
           });
         }
       }
     } else if (data) {
       setWallet({
-        id: (data as any).id,
-        balance: parseFloat(String((data as any).balance)) || 0,
-        currency: (data as any).currency || "NGN",
+        id: data.id,
+        balance: parseFloat(String(data.balance)) || 0,
+        currency: data.currency || "NGN",
       });
     }
     setLoading(false);
@@ -73,7 +73,7 @@ export function useWallet() {
   const fetchTransactions = async () => {
     if (!user) return;
 
-    const { data: walletData } = await (supabase as any)
+    const { data: walletData } = await supabase
       .from("wallets")
       .select("id")
       .eq("user_id", user.id)
@@ -81,16 +81,16 @@ export function useWallet() {
 
     if (!walletData) return;
 
-    const { data, error } = await (supabase as any)
+    const { data, error } = await supabase
       .from("wallet_transactions")
       .select("id, amount, type, description, reference, created_at")
-      .eq("wallet_id", (walletData as any).id)
+      .eq("wallet_id", walletData.id)
       .order("created_at", { ascending: false })
       .limit(50);
 
     if (!error && data) {
       setTransactions(
-        ((data as any[]) || []).map((t: any) => ({
+        data.map((t) => ({
           ...t,
           amount: parseFloat(String(t.amount)),
           type: t.type as "credit" | "debit",

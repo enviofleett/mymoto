@@ -21,7 +21,7 @@ export function DashboardHeader({ connectionStatus = 'connecting' }: DashboardHe
     queryKey: ['unread-alerts'],
     queryFn: async () => {
       const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-      const { count } = await (supabase as any)
+      const { count } = await supabase
         .from('proactive_vehicle_events')
         .select('*', { count: 'exact', head: true })
         .eq('acknowledged', false)

@@ -28,7 +28,7 @@ export function VehicleTrips({ deviceId }: VehicleTripsProps) {
     queryKey: ['vehicle-trips', deviceId],
     queryFn: async () => {
       // Fetch position history to calculate trips
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('position_history')
         .select('id, gps_time, latitude, longitude, speed, ignition_on')
         .eq('device_id', deviceId)

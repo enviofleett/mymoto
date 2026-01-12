@@ -13,7 +13,7 @@ export function SmartBriefingCard({ deviceId }: SmartBriefingCardProps) {
   const { data: briefing, isLoading } = useQuery({
     queryKey: ['latest-briefing', deviceId],
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('vehicle_chat_history')
         .select('content, created_at')
         .eq('device_id', deviceId)
@@ -26,7 +26,7 @@ export function SmartBriefingCard({ deviceId }: SmartBriefingCardProps) {
         console.error('Error fetching briefing:', error);
         return null;
       }
-      return data as { content: string; created_at: string } | null;
+      return data;
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
     enabled: !!deviceId,

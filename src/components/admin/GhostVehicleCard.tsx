@@ -43,50 +43,49 @@ export function GhostVehicleCard() {
       cutoffDate.setHours(cutoffDate.getHours() - GHOST_BUFFER_HOURS);
 
       // Get all vehicles older than 48 hours
-      const { data: oldVehicles, error: vehiclesError } = await (supabase as any)
+      const { data: oldVehicles, error: vehiclesError } = await supabase
         .from("vehicles")
         .select("device_id, device_name, created_at")
         .lt("created_at", cutoffDate.toISOString());
 
       if (vehiclesError) throw vehiclesError;
-      
-      const vehicleList = (oldVehicles || []) as { device_id: string; device_name: string | null; created_at: string }[];
-      
-      if (vehicleList.length === 0) {
+      if (!oldVehicles || oldVehicles.length === 0) {
         setGhostVehicles([]);
         setLoading(false);
         return;
       }
 
-      const deviceIds = vehicleList.map((v) => v.device_id);
+      const deviceIds = oldVehicles.map((v) => v.device_id);
 
       // Get vehicles with valid positions
-      const { data: vehiclesWithPositions } = await (supabase as any)
+      const { data: vehiclesWithPositions } = await supabase
         .from("vehicle_positions")
         .select("device_id, latitude, longitude")
         .in("device_id", deviceIds)
         .not("latitude", "is", null)
         .neq("latitude", 0);
 
-      const positionsData = (vehiclesWithPositions || []) as { device_id: string; latitude: number; longitude: number }[];
-      const hasPositionSet = new Set(positionsData.map((v) => v.device_id));
+      const hasPositionSet = new Set(
+        vehiclesWithPositions?.map((v) => v.device_id) || []
+      );
 
       // Get vehicles with position history
-      const { data: vehiclesWithHistory } = await (supabase as any)
+      const { data: vehiclesWithHistory } = await supabase
         .from("position_history")
         .select("device_id")
         .in("device_id", deviceIds);
 
-      const historyData = (vehiclesWithHistory || []) as { device_id: string }[];
-      const hasHistorySet = new Set(historyData.map((v) => v.device_id));
+      const hasHistorySet = new Set(
+        vehiclesWithHistory?.map((v) => v.device_id) || []
+      );
 
       // Filter to ghost vehicles
-      const ghosts = vehicleList
+      const ghosts = oldVehicles
         .filter(
           (v) => !hasPositionSet.has(v.device_id) && !hasHistorySet.has(v.device_id)
         )
         .map((v) => {
-          const posData = positionsData.find(
+          const posData = vehiclesWithPositions?.find(
             (p) => p.device_id === v.device_id
           );
           return {

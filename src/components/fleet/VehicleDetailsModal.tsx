@@ -59,12 +59,12 @@ export function VehicleDetailsModal({
   // Fetch LLM settings for avatar and nickname
   useEffect(() => {
     if (open && vehicle?.id) {
-      (supabase as any)
+      supabase
         .from('vehicle_llm_settings')
         .select('nickname, avatar_url')
         .eq('device_id', vehicle.id)
         .maybeSingle()
-        .then(({ data }: { data: any }) => {
+        .then(({ data }) => {
           setLlmSettings(data);
         });
     }
@@ -80,7 +80,7 @@ export function VehicleDetailsModal({
 
     setLoading(true);
     try {
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from("vehicle_assignments")
         .upsert({
           device_id: vehicle.id,
@@ -111,7 +111,7 @@ export function VehicleDetailsModal({
 
     setLoading(true);
     try {
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from("vehicle_assignments")
         .update({ profile_id: null })
         .eq("device_id", vehicle.id);

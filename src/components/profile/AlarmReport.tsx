@@ -69,7 +69,7 @@ export function AlarmReport({ deviceIds, vehicles }: AlarmReportProps) {
       const filterDevices = selectedDevice === "all" ? deviceIds : [selectedDevice];
       
       // Query proactive_vehicle_events directly - no client-side calculations!
-      let query = (supabase as any)
+      let query = supabase
         .from("proactive_vehicle_events")
         .select("*")
         .in("device_id", filterDevices)

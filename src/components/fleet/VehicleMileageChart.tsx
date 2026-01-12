@@ -22,7 +22,7 @@ export function VehicleMileageChart({ deviceId, days = 7 }: VehicleMileageChartP
       // Fetch position history for last N days
       const startDate = subDays(new Date(), days).toISOString();
       
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('position_history')
         .select('gps_time, speed, latitude, longitude')
         .eq('device_id', deviceId)

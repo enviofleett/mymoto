@@ -174,7 +174,7 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
   const { data: historyData, isLoading: historyLoading } = useQuery({
     queryKey: ['vehicle-chat-history', deviceId],
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('vehicle_chat_history')
         .select('*')
         .eq('device_id', deviceId)
@@ -182,35 +182,23 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
         .limit(50);
 
       if (error) throw error;
-      return (data || []) as ChatMessage[];
+      return (data as ChatMessage[]) || [];
     },
     enabled: !!deviceId
   });
 
   // Fetch current vehicle telemetry for context
-  interface VehiclePositionData {
-    speed: number;
-    battery_percent: number;
-    ignition_on: boolean;
-    latitude: number;
-    longitude: number;
-    is_online: boolean;
-    is_overspeeding: boolean;
-    total_mileage: number;
-    gps_time: string;
-  }
-  
   const { data: vehicleContext } = useQuery({
     queryKey: ['vehicle-context', deviceId],
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('vehicle_positions')
         .select('*')
         .eq('device_id', deviceId)
         .single();
 
       if (error) throw error;
-      return data as VehiclePositionData;
+      return data;
     },
     enabled: !!deviceId,
     refetchInterval: 30000 // Refresh every 30s for live context

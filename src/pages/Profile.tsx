@@ -102,11 +102,11 @@ const Profile = () => {
         finalProfile = emailProfile;
       }
 
-      setProfile(finalProfile as unknown as UserProfile);
+      setProfile(finalProfile);
 
       // Fetch assigned vehicles with current positions
       if (finalProfile) {
-        const { data: assignments, error: assignError } = await (supabase as any)
+        const { data: assignments, error: assignError } = await supabase
           .from("vehicle_assignments")
           .select(`
             device_id,

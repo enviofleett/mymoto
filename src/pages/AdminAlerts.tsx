@@ -124,7 +124,7 @@ export default function AdminAlerts() {
   const { data: events = [], isLoading, refetch } = useQuery({
     queryKey: ["admin-alerts", severityFilter, eventTypeFilter, acknowledgedFilter],
     queryFn: async () => {
-      let query = (supabase as any)
+      let query = supabase
         .from("proactive_vehicle_events")
         .select("*")
         .order("created_at", { ascending: false })
@@ -163,7 +163,7 @@ export default function AdminAlerts() {
   // Acknowledge mutation
   const acknowledgeMutation = useMutation({
     mutationFn: async (eventIds: string[]) => {
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from("proactive_vehicle_events")
         .update({
           acknowledged: true,

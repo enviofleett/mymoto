@@ -29,7 +29,7 @@ export function AdminGpsStatus() {
 
   const fetchTokenStatus = async () => {
     try {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('app_settings')
         .select('value, metadata, updated_at, expires_at')
         .eq('key', 'gps_token')
@@ -40,12 +40,11 @@ export function AdminGpsStatus() {
         return;
       }
 
-      const tokenData = data as { value: string; metadata: TokenStatus['metadata']; updated_at: string; expires_at: string } | null;
       setTokenStatus({
-        hasToken: !!tokenData?.value,
-        updatedAt: tokenData?.updated_at || null,
-        expiresAt: tokenData?.expires_at || null,
-        metadata: tokenData?.metadata || null,
+        hasToken: !!data?.value,
+        updatedAt: data?.updated_at || null,
+        expiresAt: data?.expires_at || null,
+        metadata: data?.metadata as TokenStatus['metadata'] || null,
       });
     } catch (error) {
       console.error('Failed to fetch token status:', error);
