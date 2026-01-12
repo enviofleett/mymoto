@@ -102,7 +102,7 @@ const Profile = () => {
         finalProfile = emailProfile;
       }
 
-      setProfile(finalProfile);
+      setProfile(finalProfile as unknown as UserProfile);
 
       // Fetch assigned vehicles with current positions
       if (finalProfile) {

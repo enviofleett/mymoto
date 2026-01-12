@@ -62,7 +62,7 @@ const Fleet = () => {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setDrivers(data || []);
+      setDrivers((data || []) as unknown as Driver[]);
     } catch (err) {
       console.error("Error fetching drivers:", err);
       toast({
