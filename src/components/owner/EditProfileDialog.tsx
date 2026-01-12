@@ -8,10 +8,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, User } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface EditProfileDialogProps {
   open: boolean;
@@ -121,27 +121,32 @@ export function EditProfileDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[400px]">
+      <DialogContent className="sm:max-w-[400px] bg-card border-0 shadow-neumorphic rounded-2xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <User className="h-5 w-5" />
+          <DialogTitle className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full shadow-neumorphic-sm bg-card flex items-center justify-center">
+              <User className="h-5 w-5 text-foreground" />
+            </div>
             Edit Profile
           </DialogTitle>
         </DialogHeader>
 
         {loading ? (
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <div className="w-12 h-12 rounded-full shadow-neumorphic bg-card flex items-center justify-center">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
           </div>
         ) : (
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label htmlFor="displayName">Display Name</Label>
+              <Label htmlFor="displayName" className="text-foreground">Display Name</Label>
               <Input
                 id="displayName"
                 placeholder="Enter your name"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
+                className="bg-card border-0 shadow-neumorphic-inset h-12 rounded-xl focus-visible:ring-accent/30"
               />
               <p className="text-xs text-muted-foreground">
                 This is how your AI assistant will address you
@@ -149,42 +154,52 @@ export function EditProfileDialog({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="phone">Phone Number</Label>
+              <Label htmlFor="phone" className="text-foreground">Phone Number</Label>
               <Input
                 id="phone"
                 type="tel"
                 placeholder="+234 800 000 0000"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
+                className="bg-card border-0 shadow-neumorphic-inset h-12 rounded-xl focus-visible:ring-accent/30"
               />
               <p className="text-xs text-muted-foreground">
                 For alerts and notifications
               </p>
             </div>
 
-            <div className="flex gap-2 pt-2">
-              <Button
-                variant="outline"
-                className="flex-1"
+            <div className="flex gap-3 pt-2">
+              <button
                 onClick={() => onOpenChange(false)}
                 disabled={saving}
+                className={cn(
+                  "flex-1 h-12 rounded-xl shadow-neumorphic-sm bg-card font-medium text-muted-foreground transition-all duration-200",
+                  "hover:shadow-neumorphic active:shadow-neumorphic-inset",
+                  "disabled:opacity-50"
+                )}
               >
                 Cancel
-              </Button>
-              <Button
-                className="flex-1"
+              </button>
+              <button
                 onClick={handleSave}
                 disabled={saving}
+                className={cn(
+                  "flex-1 h-12 rounded-xl shadow-neumorphic-sm bg-card font-medium text-accent transition-all duration-200",
+                  "hover:shadow-neumorphic active:shadow-neumorphic-inset",
+                  "ring-2 ring-accent/50",
+                  "disabled:opacity-50 disabled:cursor-not-allowed",
+                  "flex items-center justify-center gap-2"
+                )}
               >
                 {saving ? (
                   <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    <Loader2 className="h-4 w-4 animate-spin" />
                     Saving...
                   </>
                 ) : (
                   "Save Changes"
                 )}
-              </Button>
+              </button>
             </div>
           </div>
         )}

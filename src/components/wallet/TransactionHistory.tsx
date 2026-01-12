@@ -1,16 +1,9 @@
 import { format } from "date-fns";
-import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { ArrowDownLeft, ArrowUpRight, History } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 
 interface Transaction {
   id: string;
@@ -32,21 +25,19 @@ export function TransactionHistory({
 }: TransactionHistoryProps) {
   if (loading) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Transaction History</CardTitle>
+      <Card className="border-0 bg-card shadow-neumorphic rounded-2xl">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <div className="w-8 h-8 rounded-full shadow-neumorphic-sm bg-card flex items-center justify-center">
+              <History className="h-4 w-4 text-foreground" />
+            </div>
+            Transaction History
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
             {[...Array(5)].map((_, i) => (
-              <div key={i} className="flex items-center gap-4">
-                <Skeleton className="h-10 w-10 rounded-full" />
-                <div className="flex-1 space-y-2">
-                  <Skeleton className="h-4 w-48" />
-                  <Skeleton className="h-3 w-24" />
-                </div>
-                <Skeleton className="h-4 w-20" />
-              </div>
+              <Skeleton key={i} className="h-16 rounded-xl" />
             ))}
           </div>
         </CardContent>
@@ -56,14 +47,19 @@ export function TransactionHistory({
 
   if (transactions.length === 0) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Transaction History</CardTitle>
+      <Card className="border-0 bg-card shadow-neumorphic rounded-2xl">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <div className="w-8 h-8 rounded-full shadow-neumorphic-sm bg-card flex items-center justify-center">
+              <History className="h-4 w-4 text-foreground" />
+            </div>
+            Transaction History
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-center py-8 text-muted-foreground">
-            <p>No transactions yet</p>
-            <p className="text-sm">
+          <div className="text-center py-8 rounded-xl shadow-neumorphic-inset bg-card">
+            <p className="text-foreground font-medium">No transactions yet</p>
+            <p className="text-sm text-muted-foreground mt-1">
               Top up your wallet to get started
             </p>
           </div>
@@ -73,102 +69,57 @@ export function TransactionHistory({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Transaction History</CardTitle>
+    <Card className="border-0 bg-card shadow-neumorphic rounded-2xl">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <div className="w-8 h-8 rounded-full shadow-neumorphic-sm bg-card flex items-center justify-center">
+            <History className="h-4 w-4 text-foreground" />
+          </div>
+          Transaction History
+        </CardTitle>
       </CardHeader>
       <CardContent>
-        {/* Mobile View */}
-        <div className="block md:hidden space-y-3">
+        {/* Mobile View - Neumorphic cards */}
+        <div className="space-y-3">
           {transactions.map((tx) => (
             <div
               key={tx.id}
-              className="flex items-center gap-3 p-3 rounded-lg border bg-card"
+              className="flex items-center gap-3 p-3 rounded-xl shadow-neumorphic-sm bg-card transition-all duration-200 hover:shadow-neumorphic"
             >
+              {/* Icon with neumorphic container */}
               <div
-                className={`p-2 rounded-full ${
+                className={cn(
+                  "w-10 h-10 rounded-full shadow-neumorphic-sm bg-card flex items-center justify-center shrink-0",
                   tx.type === "credit"
-                    ? "bg-green-500/10 text-green-600"
-                    : "bg-red-500/10 text-red-600"
-                }`}
+                    ? "ring-2 ring-status-active/30"
+                    : "ring-2 ring-destructive/30"
+                )}
               >
                 {tx.type === "credit" ? (
-                  <ArrowDownLeft className="h-4 w-4" />
+                  <ArrowDownLeft className="h-4 w-4 text-status-active" />
                 ) : (
-                  <ArrowUpRight className="h-4 w-4" />
+                  <ArrowUpRight className="h-4 w-4 text-destructive" />
                 )}
               </div>
+              
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{tx.description}</p>
+                <p className="text-sm font-medium text-foreground truncate">{tx.description}</p>
                 <p className="text-xs text-muted-foreground">
                   {format(new Date(tx.created_at), "MMM d, yyyy HH:mm")}
                 </p>
               </div>
+              
               <span
-                className={`font-medium ${
-                  tx.type === "credit" ? "text-green-600" : "text-red-600"
-                }`}
+                className={cn(
+                  "font-semibold text-sm",
+                  tx.type === "credit" ? "text-status-active" : "text-destructive"
+                )}
               >
-                {tx.type === "credit" ? "+" : ""}₦
+                {tx.type === "credit" ? "+" : "-"}₦
                 {Math.abs(tx.amount).toLocaleString()}
               </span>
             </div>
           ))}
-        </div>
-
-        {/* Desktop Table */}
-        <div className="hidden md:block">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Type</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Reference</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {transactions.map((tx) => (
-                <TableRow key={tx.id}>
-                  <TableCell>
-                    <Badge
-                      variant={tx.type === "credit" ? "default" : "secondary"}
-                      className={
-                        tx.type === "credit"
-                          ? "bg-green-500/10 text-green-600 hover:bg-green-500/20"
-                          : "bg-red-500/10 text-red-600 hover:bg-red-500/20"
-                      }
-                    >
-                      {tx.type === "credit" ? (
-                        <ArrowDownLeft className="h-3 w-3 mr-1" />
-                      ) : (
-                        <ArrowUpRight className="h-3 w-3 mr-1" />
-                      )}
-                      {tx.type}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="max-w-[200px] truncate">
-                    {tx.description}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {tx.reference?.slice(0, 12) || "-"}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {format(new Date(tx.created_at), "MMM d, yyyy HH:mm")}
-                  </TableCell>
-                  <TableCell
-                    className={`text-right font-medium ${
-                      tx.type === "credit" ? "text-green-600" : "text-red-600"
-                    }`}
-                  >
-                    {tx.type === "credit" ? "+" : ""}₦
-                    {Math.abs(tx.amount).toLocaleString()}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
         </div>
       </CardContent>
     </Card>

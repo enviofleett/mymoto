@@ -1,7 +1,7 @@
 import { Wallet, TrendingUp, TrendingDown, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 
 interface WalletCardProps {
   balance: number;
@@ -23,79 +23,95 @@ export function WalletCard({
 
   if (loading) {
     return (
-      <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">
+      <Card className="border-0 bg-card shadow-neumorphic rounded-2xl">
         <CardHeader className="pb-2">
           <Skeleton className="h-4 w-24" />
         </CardHeader>
         <CardContent>
           <Skeleton className="h-10 w-40 mb-4" />
-          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-12 w-full rounded-xl" />
         </CardContent>
       </Card>
     );
   }
 
   return (
-    <Card
-      className={`bg-gradient-to-br border ${
-        isNegative
-          ? "from-destructive/10 to-destructive/5 border-destructive/20"
+    <Card className="border-0 bg-card shadow-neumorphic rounded-2xl overflow-hidden">
+      {/* Gradient accent bar */}
+      <div className={cn(
+        "h-1",
+        isNegative 
+          ? "bg-gradient-to-r from-destructive to-destructive/50"
           : isLow
-          ? "from-yellow-500/10 to-yellow-500/5 border-yellow-500/20"
-          : "from-primary/10 to-primary/5 border-primary/20"
-      }`}
-    >
-      <CardHeader className="pb-2">
+          ? "bg-gradient-to-r from-accent to-accent/50"
+          : "bg-gradient-to-r from-status-active to-status-active/50"
+      )} />
+      
+      <CardHeader className="pb-2 pt-4">
         <CardTitle className="text-sm font-medium text-muted-foreground flex items-center justify-between">
           <span className="flex items-center gap-2">
-            <Wallet className="h-4 w-4" />
-            Wallet Balance
+            <div className="w-8 h-8 rounded-full shadow-neumorphic-sm bg-card flex items-center justify-center">
+              <Wallet className="h-4 w-4 text-foreground" />
+            </div>
+            <span>Wallet Balance</span>
           </span>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
+          <button
             onClick={onRefresh}
+            className="w-9 h-9 rounded-full shadow-neumorphic-sm bg-card flex items-center justify-center transition-all duration-200 hover:shadow-neumorphic active:shadow-neumorphic-inset"
           >
-            <RefreshCw className="h-4 w-4" />
-          </Button>
+            <RefreshCw className="h-4 w-4 text-muted-foreground" />
+          </button>
         </CardTitle>
       </CardHeader>
-      <CardContent>
-        <div className="flex items-baseline gap-2 mb-4">
-          <span className="text-3xl font-bold">
-            {currency === "NGN" ? "₦" : currency}
-          </span>
-          <span
-            className={`text-4xl font-bold ${
-              isNegative ? "text-destructive" : ""
-            }`}
-          >
-            {balance.toLocaleString("en-NG", {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}
-          </span>
+      
+      <CardContent className="pb-5">
+        {/* Balance display - Neumorphic inset */}
+        <div className="rounded-xl shadow-neumorphic-inset bg-card p-4 mb-4">
+          <div className="flex items-baseline gap-2 justify-center">
+            <span className="text-2xl font-bold text-muted-foreground">
+              {currency === "NGN" ? "₦" : currency}
+            </span>
+            <span
+              className={cn(
+                "text-4xl font-bold",
+                isNegative ? "text-destructive" : "text-foreground"
+              )}
+            >
+              {balance.toLocaleString("en-NG", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
+            </span>
+          </div>
         </div>
 
         {isNegative && (
-          <p className="text-sm text-destructive mb-3 flex items-center gap-1">
+          <div className="flex items-center gap-2 text-sm text-destructive mb-3 p-3 rounded-lg shadow-neumorphic-inset bg-card">
             <TrendingDown className="h-4 w-4" />
-            Your balance is negative. LLM features are disabled.
-          </p>
+            <span>Your balance is negative. LLM features are disabled.</span>
+          </div>
         )}
 
         {isLow && !isNegative && (
-          <p className="text-sm text-yellow-600 dark:text-yellow-500 mb-3 flex items-center gap-1">
+          <div className="flex items-center gap-2 text-sm text-accent mb-3 p-3 rounded-lg shadow-neumorphic-inset bg-card">
             <TrendingDown className="h-4 w-4" />
-            Low balance warning. Top up soon!
-          </p>
+            <span>Low balance warning. Top up soon!</span>
+          </div>
         )}
 
-        <Button onClick={onTopUp} className="w-full" size="lg">
-          <TrendingUp className="mr-2 h-4 w-4" />
+        {/* Top up button - Neumorphic with accent ring */}
+        <button 
+          onClick={onTopUp} 
+          className={cn(
+            "w-full h-12 rounded-xl shadow-neumorphic-sm bg-card font-medium transition-all duration-200",
+            "hover:shadow-neumorphic active:shadow-neumorphic-inset",
+            "flex items-center justify-center gap-2",
+            "ring-2 ring-accent/50 text-accent"
+          )}
+        >
+          <TrendingUp className="h-4 w-4" />
           Top Up Wallet
-        </Button>
+        </button>
       </CardContent>
     </Card>
   );
