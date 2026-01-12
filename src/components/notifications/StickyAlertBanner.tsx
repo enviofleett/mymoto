@@ -19,28 +19,24 @@ interface ProactiveEvent {
 const SEVERITY_CONFIG = {
   critical: {
     bg: "bg-card",
-    border: "border-l-4 border-l-destructive",
     iconBg: "bg-destructive/20",
     iconColor: "text-destructive",
     icon: AlertCircle,
   },
   error: {
     bg: "bg-card",
-    border: "border-l-4 border-l-destructive",
     iconBg: "bg-destructive/20",
     iconColor: "text-destructive",
     icon: AlertCircle,
   },
   warning: {
     bg: "bg-card",
-    border: "border-l-4 border-l-orange-500",
     iconBg: "bg-orange-500/20",
     iconColor: "text-orange-500",
     icon: AlertTriangle,
   },
   info: {
     bg: "bg-card",
-    border: "border-l-4 border-l-primary",
     iconBg: "bg-primary/20",
     iconColor: "text-primary",
     icon: Info,
@@ -109,8 +105,7 @@ export function StickyAlertBanner() {
       <div
         className={cn(
           "flex items-center gap-3 px-4 py-3 shadow-neumorphic cursor-pointer transition-all",
-          config.bg,
-          config.border
+          config.bg
         )}
         onClick={() => alerts.length > 1 ? setExpanded(!expanded) : handleAlertClick(latestAlert)}
       >
@@ -162,10 +157,7 @@ export function StickyAlertBanner() {
             return (
               <div
                 key={alert.id}
-                className={cn(
-                  "flex items-center gap-3 px-4 py-2.5 border-b border-border/50 last:border-b-0 cursor-pointer hover:bg-muted/50 transition-colors",
-                  alertConfig.border
-                )}
+                className="flex items-center gap-3 px-4 py-2.5 border-b border-border/50 last:border-b-0 cursor-pointer hover:bg-muted/50 transition-colors"
                 onClick={() => handleAlertClick(alert)}
               >
                 <div className={cn(
