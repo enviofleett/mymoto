@@ -44,11 +44,8 @@ export function VehicleLocationMap({
   useEffect(() => {
     if (!mapContainer.current || !hasValidCoordinates || isMapInitialized.current) return;
 
-    const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
-    if (!token) {
-      console.error('[VehicleLocationMap] VITE_MAPBOX_ACCESS_TOKEN is not set');
-      return;
-    }
+    // Public Mapbox token for client-side map rendering
+    const token = 'pk.eyJ1IjoibXltb3RvLWFwcCIsImEiOiJjbTU1ajVmMjcwNjRpMmpzOHVsc3E3dG14In0.7MyBLnhhk-xPnLR_AvVfSg';
 
     console.log('[VehicleLocationMap] Initializing map with coordinates:', { latitude, longitude });
     mapboxgl.accessToken = token;

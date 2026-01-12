@@ -1,4 +1,5 @@
-const MAPBOX_ACCESS_TOKEN = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
+// Public Mapbox token for client-side geocoding
+const MAPBOX_ACCESS_TOKEN = 'pk.eyJ1IjoibXltb3RvLWFwcCIsImEiOiJjbTU1ajVmMjcwNjRpMmpzOHVsc3E3dG14In0.7MyBLnhhk-xPnLR_AvVfSg';
 
 export async function getAddressFromCoordinates(lat: number, lon: number): Promise<string> {
   // Fallback if no token configured
