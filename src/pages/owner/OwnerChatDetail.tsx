@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -194,28 +193,32 @@ export default function OwnerChatDetail() {
 
   return (
     <div className="flex flex-col h-screen bg-background">
-      {/* Header */}
-      <div className="sticky top-0 z-10 bg-card/95 backdrop-blur-sm border-b border-border/50 pt-[env(safe-area-inset-top)] -mt-[env(safe-area-inset-top)]">
-        <div className="flex items-center gap-3 px-3 py-2">
-          <Button
-            variant="ghost"
-            size="icon"
+      {/* Header - Neumorphic styling */}
+      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm pt-[env(safe-area-inset-top)] -mt-[env(safe-area-inset-top)]">
+        <div className="flex items-center gap-3 px-4 py-3">
+          {/* Neumorphic back button */}
+          <button
             onClick={() => navigate("/owner")}
-            className="shrink-0 h-9 w-9"
+            className="w-10 h-10 rounded-full bg-card shadow-neumorphic-sm flex items-center justify-center transition-all duration-200 active:shadow-neumorphic-inset shrink-0"
           >
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
+            <ArrowLeft className="h-5 w-5 text-foreground" />
+          </button>
           
+          {/* Neumorphic avatar */}
           <div className="relative shrink-0">
-            <Avatar className="w-9 h-9">
-              <AvatarImage src={avatarUrl || undefined} alt={vehicleName} />
-              <AvatarFallback className="bg-muted">
-                <Car className="h-4 w-4 text-muted-foreground" />
-              </AvatarFallback>
-            </Avatar>
+            <div className="w-11 h-11 rounded-full shadow-neumorphic-sm bg-card p-0.5">
+              <Avatar className="w-full h-full">
+                <AvatarImage src={avatarUrl || undefined} alt={vehicleName} />
+                <AvatarFallback className="bg-secondary">
+                  <Car className="h-5 w-5 text-muted-foreground" />
+                </AvatarFallback>
+              </Avatar>
+            </div>
             <div className={cn(
-              "absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-card",
-              vehicle?.status === "online" ? "bg-status-active" : "bg-muted-foreground"
+              "absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-card transition-all duration-300",
+              vehicle?.status === "online" 
+                ? "bg-status-active shadow-[0_0_8px_hsl(142_70%_50%/0.5)]" 
+                : "bg-muted-foreground"
             )} />
           </div>
 
@@ -243,14 +246,14 @@ export default function OwnerChatDetail() {
               {[1, 2, 3].map((i) => (
                 <div key={i} className="flex gap-2">
                   <Skeleton className="h-10 w-10 rounded-full shrink-0" />
-                  <Skeleton className="h-16 flex-1 rounded-lg" />
+                  <Skeleton className="h-16 flex-1 rounded-xl" />
                 </div>
               ))}
             </div>
           ) : allMessages.length === 0 && !loading ? (
             <div className="flex flex-col items-center justify-center py-16">
-              <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-                <Car className="h-7 w-7 text-muted-foreground" />
+              <div className="w-20 h-20 rounded-full shadow-neumorphic bg-card flex items-center justify-center mb-4">
+                <Car className="h-8 w-8 text-muted-foreground" />
               </div>
               <h3 className="font-medium text-foreground mb-1">{vehicleName}</h3>
               <p className="text-xs text-muted-foreground text-center max-w-[200px]">
@@ -269,8 +272,8 @@ export default function OwnerChatDetail() {
               switch (severity) {
                 case 'critical': return "bg-destructive/10 border border-destructive/30";
                 case 'error': return "bg-destructive/10 border border-destructive/20";
-                case 'warning': return "bg-yellow-500/10 border border-yellow-500/30";
-                default: return "bg-blue-500/10 border border-blue-500/20";
+                case 'warning': return "bg-accent/10 border border-accent/30";
+                default: return "bg-secondary border border-border";
               }
             };
 
@@ -283,42 +286,44 @@ export default function OwnerChatDetail() {
                 )}
               >
                 {msg.role === "assistant" && (
-                  <Avatar className="w-7 h-7 shrink-0">
-                    {isAlert ? (
-                      <AvatarFallback className={cn(
-                        severity === 'critical' || severity === 'error' 
-                          ? "bg-destructive/20" 
-                          : severity === 'warning' 
-                            ? "bg-yellow-500/20" 
-                            : "bg-blue-500/20"
-                      )}>
-                        <AlertTriangle className={cn(
-                          "h-3.5 w-3.5",
+                  <div className="w-8 h-8 rounded-full shadow-neumorphic-sm bg-card p-0.5 shrink-0">
+                    <Avatar className="w-full h-full">
+                      {isAlert ? (
+                        <AvatarFallback className={cn(
                           severity === 'critical' || severity === 'error' 
-                            ? "text-destructive" 
+                            ? "bg-destructive/20" 
                             : severity === 'warning' 
-                              ? "text-yellow-600" 
-                              : "text-blue-500"
-                        )} />
-                      </AvatarFallback>
-                    ) : (
-                      <>
-                        <AvatarImage src={avatarUrl || undefined} alt={vehicleName} />
-                        <AvatarFallback className="bg-muted">
-                          <Car className="h-3.5 w-3.5 text-muted-foreground" />
+                              ? "bg-accent/20" 
+                              : "bg-secondary"
+                        )}>
+                          <AlertTriangle className={cn(
+                            "h-3.5 w-3.5",
+                            severity === 'critical' || severity === 'error' 
+                              ? "text-destructive" 
+                              : severity === 'warning' 
+                                ? "text-accent" 
+                                : "text-muted-foreground"
+                          )} />
                         </AvatarFallback>
-                      </>
-                    )}
-                  </Avatar>
+                      ) : (
+                        <>
+                          <AvatarImage src={avatarUrl || undefined} alt={vehicleName} />
+                          <AvatarFallback className="bg-secondary">
+                            <Car className="h-3.5 w-3.5 text-muted-foreground" />
+                          </AvatarFallback>
+                        </>
+                      )}
+                    </Avatar>
+                  </div>
                 )}
                 <div
                   className={cn(
-                    "rounded-2xl px-3.5 py-2.5 max-w-[75%]",
+                    "rounded-2xl px-4 py-3 max-w-[75%] shadow-neumorphic-sm",
                     msg.role === "user"
-                      ? "bg-primary text-primary-foreground rounded-br-md"
+                      ? "bg-accent text-accent-foreground rounded-br-md"
                       : isAlert 
-                        ? cn("rounded-bl-md", getAlertBgClass())
-                        : "bg-muted text-foreground rounded-bl-md"
+                        ? cn("rounded-bl-md bg-card", getAlertBgClass())
+                        : "bg-card text-foreground rounded-bl-md"
                   )}
                 >
                   {isAlert && (
@@ -328,8 +333,8 @@ export default function OwnerChatDetail() {
                         severity === 'critical' || severity === 'error' 
                           ? "text-destructive" 
                           : severity === 'warning' 
-                            ? "text-yellow-600" 
-                            : "text-blue-500"
+                            ? "text-accent" 
+                            : "text-muted-foreground"
                       )}>
                         {severity === 'critical' ? '🚨 Critical Alert' : 
                          severity === 'error' ? '⚠️ Alert' : 
@@ -342,14 +347,14 @@ export default function OwnerChatDetail() {
                   </div>
                   <p className={cn(
                     "text-[10px] mt-1.5 text-right",
-                    msg.role === "user" ? "text-primary-foreground/70" : "text-muted-foreground"
+                    msg.role === "user" ? "text-accent-foreground/70" : "text-muted-foreground"
                   )}>
                     {format(new Date(msg.created_at), "MMM d, HH:mm")}
                   </p>
                 </div>
                 {msg.role === "user" && (
-                  <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
-                    <User className="h-3.5 w-3.5 text-primary" />
+                  <div className="w-8 h-8 rounded-full shadow-neumorphic-sm bg-accent/20 flex items-center justify-center shrink-0">
+                    <User className="h-3.5 w-3.5 text-accent" />
                   </div>
                 )}
               </div>
@@ -358,13 +363,15 @@ export default function OwnerChatDetail() {
 
           {streamingContent && (
             <div className="flex gap-2 justify-start">
-              <Avatar className="w-7 h-7 shrink-0">
-                <AvatarImage src={avatarUrl || undefined} alt={vehicleName} />
-                <AvatarFallback className="bg-muted">
-                  <Car className="h-3.5 w-3.5 text-muted-foreground" />
-                </AvatarFallback>
-              </Avatar>
-              <div className="rounded-2xl rounded-bl-md px-3.5 py-2.5 max-w-[75%] bg-muted">
+              <div className="w-8 h-8 rounded-full shadow-neumorphic-sm bg-card p-0.5 shrink-0">
+                <Avatar className="w-full h-full">
+                  <AvatarImage src={avatarUrl || undefined} alt={vehicleName} />
+                  <AvatarFallback className="bg-secondary">
+                    <Car className="h-3.5 w-3.5 text-muted-foreground" />
+                  </AvatarFallback>
+                </Avatar>
+              </div>
+              <div className="rounded-2xl rounded-bl-md px-4 py-3 max-w-[75%] bg-card shadow-neumorphic-sm">
                 <div className="text-sm whitespace-pre-wrap leading-relaxed">
                   <ChatMessageContent content={streamingContent} isUser={false} />
                 </div>
@@ -374,13 +381,10 @@ export default function OwnerChatDetail() {
 
           {loading && !streamingContent && (
             <div className="flex gap-2 justify-start">
-              <Avatar className="w-7 h-7 shrink-0">
-                <AvatarImage src={avatarUrl || undefined} alt={vehicleName} />
-                <AvatarFallback className="bg-muted">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                </AvatarFallback>
-              </Avatar>
-              <div className="rounded-2xl rounded-bl-md px-3.5 py-2.5 bg-muted">
+              <div className="w-8 h-8 rounded-full shadow-neumorphic-sm bg-card flex items-center justify-center shrink-0">
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+              </div>
+              <div className="rounded-2xl rounded-bl-md px-4 py-3 bg-card shadow-neumorphic-sm">
                 <p className="text-sm text-muted-foreground">Thinking...</p>
               </div>
             </div>
@@ -390,25 +394,30 @@ export default function OwnerChatDetail() {
         </div>
       </ScrollArea>
 
-      {/* Input */}
-      <div className="sticky bottom-0 bg-card/95 backdrop-blur-sm border-t border-border/50 px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-        <div className="flex items-center gap-2">
+      {/* Input - Neumorphic styling */}
+      <div className="sticky bottom-0 bg-background/95 backdrop-blur-sm px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+        <div className="flex items-center gap-3">
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
             placeholder="Type a message..."
             disabled={loading}
-            className="flex-1 bg-muted/50 border-border/50 rounded-full h-10 text-sm px-4"
+            className="flex-1 bg-card border-0 shadow-neumorphic-inset rounded-full h-12 text-sm px-5 focus-visible:ring-accent/30"
           />
-          <Button
+          {/* Neumorphic send button */}
+          <button
             onClick={handleSend}
             disabled={loading || !input.trim()}
-            size="icon"
-            className="shrink-0 rounded-full h-10 w-10"
+            className={cn(
+              "w-12 h-12 rounded-full bg-card shadow-neumorphic-sm flex items-center justify-center transition-all duration-200 shrink-0",
+              "hover:shadow-neumorphic active:shadow-neumorphic-inset",
+              "disabled:opacity-50 disabled:cursor-not-allowed",
+              input.trim() && "ring-2 ring-accent/50"
+            )}
           >
-            <Send className="h-4 w-4" />
-          </Button>
+            <Send className={cn("h-5 w-5", input.trim() ? "text-accent" : "text-muted-foreground")} />
+          </button>
         </div>
       </div>
     </div>

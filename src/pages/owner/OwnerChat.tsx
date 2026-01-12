@@ -10,8 +10,8 @@ import { cn } from "@/lib/utils";
 
 function VehicleChatItem({ vehicle, onClick }: { vehicle: OwnerVehicle; onClick: () => void }) {
   const getStatusColor = () => {
-    if (vehicle.status === "online") return "bg-status-active";
-    if (vehicle.status === "charging") return "bg-status-maintenance";
+    if (vehicle.status === "online") return "bg-status-active shadow-[0_0_8px_hsl(142_70%_50%/0.5)]";
+    if (vehicle.status === "charging") return "bg-accent shadow-[0_0_8px_hsl(24_95%_53%/0.5)]";
     return "bg-muted-foreground";
   };
 
@@ -21,23 +21,25 @@ function VehicleChatItem({ vehicle, onClick }: { vehicle: OwnerVehicle; onClick:
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/30 transition-colors text-left border-b border-border/50 last:border-b-0"
+      className="w-full flex items-center gap-3 p-4 bg-card shadow-neumorphic-sm rounded-xl hover:shadow-neumorphic transition-all duration-200 active:shadow-neumorphic-inset text-left"
     >
-      {/* Vehicle Icon/Avatar */}
+      {/* Vehicle Icon/Avatar with neumorphic container */}
       <div className="relative shrink-0">
-        {vehicle.avatarUrl ? (
-          <img 
-            src={vehicle.avatarUrl}
-            alt={vehicle.name}
-            className="w-12 h-12 rounded-full object-cover border border-border"
-          />
-        ) : (
-          <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
-            <Car className="h-5 w-5 text-muted-foreground" />
-          </div>
-        )}
+        <div className="w-14 h-14 rounded-full shadow-neumorphic-sm bg-card p-0.5">
+          {vehicle.avatarUrl ? (
+            <img 
+              src={vehicle.avatarUrl}
+              alt={vehicle.name}
+              className="w-full h-full rounded-full object-cover"
+            />
+          ) : (
+            <div className="w-full h-full rounded-full bg-secondary flex items-center justify-center">
+              <Car className="h-6 w-6 text-muted-foreground" />
+            </div>
+          )}
+        </div>
         <div className={cn(
-          "absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-background",
+          "absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-card transition-all duration-300",
           getStatusColor()
         )} />
       </div>
@@ -66,13 +68,15 @@ function VehicleChatItem({ vehicle, onClick }: { vehicle: OwnerVehicle; onClick:
 
       {/* Unread badge or chevron */}
       {vehicle.unreadCount > 0 ? (
-        <div className="shrink-0 min-w-[20px] h-5 px-1.5 rounded-full bg-primary flex items-center justify-center">
-          <span className="text-[10px] font-semibold text-primary-foreground">
+        <div className="shrink-0 min-w-[22px] h-[22px] px-1.5 rounded-full bg-accent shadow-[0_0_12px_hsl(24_95%_53%/0.4)] flex items-center justify-center">
+          <span className="text-[10px] font-semibold text-accent-foreground">
             {vehicle.unreadCount}
           </span>
         </div>
       ) : (
-        <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+        <div className="w-8 h-8 rounded-full shadow-neumorphic-sm bg-card flex items-center justify-center">
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        </div>
       )}
     </button>
   );
@@ -90,42 +94,36 @@ export default function OwnerChat() {
   return (
     <OwnerLayout>
       <div className="flex flex-col h-full">
-        {/* Header */}
-        <div className="sticky top-0 z-10 bg-background pt-[env(safe-area-inset-top)] -mt-[env(safe-area-inset-top)] border-b border-border/50">
+        {/* Header - Neumorphic styling */}
+        <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm pt-[env(safe-area-inset-top)] -mt-[env(safe-area-inset-top)]">
           <div className="px-4 pt-4 pb-3">
-            <h1 className="text-lg font-semibold text-foreground mb-3">Messages</h1>
+            <h1 className="text-xl font-bold text-foreground mb-4">Messages</h1>
             
-            {/* Search */}
+            {/* Search - Neumorphic inset style */}
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search conversations..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 bg-muted/40 border-border/50 h-10 rounded-lg text-sm"
+                className="pl-11 bg-card border-0 shadow-neumorphic-inset h-12 rounded-xl focus-visible:ring-accent/30 text-foreground placeholder:text-muted-foreground"
               />
             </div>
           </div>
         </div>
 
         {/* Vehicle List */}
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-auto px-4 pb-4">
           {isLoading ? (
-            <div className="p-4 space-y-3">
+            <div className="space-y-3 pt-2">
               {[1, 2, 3].map((i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <Skeleton className="h-12 w-12 rounded-full" />
-                  <div className="flex-1 space-y-2">
-                    <Skeleton className="h-4 w-28" />
-                    <Skeleton className="h-3 w-40" />
-                  </div>
-                </div>
+                <Skeleton key={i} className="h-20 rounded-xl" />
               ))}
             </div>
           ) : filteredVehicles.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 px-4">
-              <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-                <MessageSquare className="h-7 w-7 text-muted-foreground" />
+              <div className="w-20 h-20 rounded-full shadow-neumorphic bg-card flex items-center justify-center mb-4">
+                <MessageSquare className="h-8 w-8 text-muted-foreground" />
               </div>
               <h3 className="font-medium text-foreground mb-1">No conversations</h3>
               <p className="text-sm text-muted-foreground text-center">
@@ -135,7 +133,7 @@ export default function OwnerChat() {
               </p>
             </div>
           ) : (
-            <div>
+            <div className="space-y-3 pt-2">
               {filteredVehicles.map((vehicle) => (
                 <VehicleChatItem
                   key={vehicle.deviceId}
