@@ -23,11 +23,11 @@ export function WalletSection() {
   // Fetch daily rate
   useEffect(() => {
     const fetchRate = async () => {
-      const { data } = await (supabase
-        .from("billing_config" as any)
+      const { data } = await supabase
+        .from("billing_config")
         .select("value")
         .eq("key", "daily_llm_rate")
-        .single() as any);
+        .single();
 
       if (data) {
         setDailyRate(parseFloat(String(data.value)));

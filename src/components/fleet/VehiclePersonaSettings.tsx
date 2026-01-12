@@ -58,16 +58,16 @@ export function VehiclePersonaSettings({ deviceId, vehicleName }: VehiclePersona
   const fetchSettings = async () => {
     setLoading(true);
     try {
-      const { data, error } = await (supabase
-        .from('vehicle_llm_settings' as any)
+      const { data, error } = await supabase
+        .from('vehicle_llm_settings')
         .select('*')
         .eq('device_id', deviceId)
-        .maybeSingle() as any);
+        .maybeSingle();
 
       if (error) throw error;
 
       if (data) {
-        setSettings(data as LlmSettings);
+        setSettings(data);
         setNickname(data.nickname || "");
         setLanguage(data.language_preference);
         setPersonality(data.personality_mode);
@@ -153,11 +153,11 @@ export function VehiclePersonaSettings({ deviceId, vehicleName }: VehiclePersona
     setSaving(true);
     try {
       // Step 1: Ensure vehicle exists in vehicles table
-      const { data: vehicleExists, error: vehicleCheckError } = await (supabase
-        .from('vehicles' as any)
+      const { data: vehicleExists, error: vehicleCheckError } = await supabase
+        .from('vehicles')
         .select('device_id')
         .eq('device_id', deviceId)
-        .maybeSingle() as any);
+        .maybeSingle();
 
       if (vehicleCheckError) {
         console.error('Error checking vehicle existence:', vehicleCheckError);
@@ -166,12 +166,12 @@ export function VehiclePersonaSettings({ deviceId, vehicleName }: VehiclePersona
 
       if (!vehicleExists) {
         // Create minimal vehicle entry to satisfy foreign key constraint
-        const { error: vehicleCreateError } = await (supabase
-          .from('vehicles' as any)
+        const { error: vehicleCreateError } = await supabase
+          .from('vehicles')
           .upsert({
             device_id: deviceId,
             device_name: vehicleName,
-          }, { onConflict: 'device_id' }) as any);
+          }, { onConflict: 'device_id' });
 
         if (vehicleCreateError) {
           console.error('Failed to create vehicle entry:', vehicleCreateError);
@@ -198,8 +198,8 @@ export function VehiclePersonaSettings({ deviceId, vehicleName }: VehiclePersona
       }
 
       // Step 2: Save LLM settings
-      const { error } = await (supabase
-        .from('vehicle_llm_settings' as any)
+      const { error } = await supabase
+        .from('vehicle_llm_settings')
         .upsert({
           device_id: deviceId,
           nickname: nickname.trim() || null,
@@ -208,7 +208,7 @@ export function VehiclePersonaSettings({ deviceId, vehicleName }: VehiclePersona
           llm_enabled: llmEnabled,
           avatar_url: avatarUrl,
           updated_at: new Date().toISOString(),
-        }, { onConflict: 'device_id' }) as any);
+        }, { onConflict: 'device_id' });
 
       if (error) {
         // Handle RLS policy errors specifically

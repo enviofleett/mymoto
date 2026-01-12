@@ -80,7 +80,7 @@ const Profile = () => {
       setLoading(true);
 
       // First check if user has a profile linked
-      const { data: profileData, error: profileError } = await (supabase as any)
+      const { data: profileData, error: profileError } = await supabase
         .from("profiles")
         .select("*")
         .eq("user_id", user?.id)
@@ -93,7 +93,7 @@ const Profile = () => {
       // If no profile exists with user_id, try to find by email
       let finalProfile = profileData;
       if (!profileData && user?.email) {
-        const { data: emailProfile } = await (supabase as any)
+        const { data: emailProfile } = await supabase
           .from("profiles")
           .select("*")
           .eq("email", user.email)
@@ -102,11 +102,11 @@ const Profile = () => {
         finalProfile = emailProfile;
       }
 
-      setProfile(finalProfile as UserProfile);
+      setProfile(finalProfile);
 
       // Fetch assigned vehicles with current positions
       if (finalProfile) {
-        const { data: assignments, error: assignError } = await (supabase as any)
+        const { data: assignments, error: assignError } = await supabase
           .from("vehicle_assignments")
           .select(`
             device_id,

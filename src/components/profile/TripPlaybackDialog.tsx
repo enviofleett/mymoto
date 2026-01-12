@@ -108,24 +108,22 @@ export function TripPlaybackDialog({
     
     setLoading(true);
     try {
-      const { data, error } = await (supabase
-        .from("position_history" as any)
+      const { data, error } = await supabase
+        .from("position_history")
         .select("id, latitude, longitude, speed, heading, gps_time, ignition_on")
         .eq("device_id", deviceId)
         .gte("gps_time", startTime)
         .lte("gps_time", endTime)
-        .order("gps_time", { ascending: true }) as any);
+        .order("gps_time", { ascending: true });
 
       if (error) {
         console.error("Error fetching positions:", error);
         return;
       }
 
-      const rawData = (data || []) as any[];
-
       // Filter out positions without valid coordinates
-      const validPositions: PositionPoint[] = rawData.filter(
-        (p: any) => 
+      const validPositions = (data || []).filter(
+        (p): p is PositionPoint => 
           p.latitude !== null && 
           p.longitude !== null && 
           p.latitude !== 0 && 

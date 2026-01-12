@@ -156,7 +156,7 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
   console.log("[useFleetLiveData] Fetching from DB...");
 
   // Fetch positions only - no joins to avoid FK issues
-  const { data: positions, error: posError } = await (supabase as any)
+  const { data: positions, error: posError } = await supabase
     .from('vehicle_positions')
     .select(`
       device_id,
@@ -177,7 +177,7 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
   if (posError) throw new Error(`Fleet data fetch error: ${posError.message}`);
 
   // Fetch vehicles separately
-  const { data: vehiclesList, error: vehiclesError } = await (supabase as any)
+  const { data: vehiclesList, error: vehiclesError } = await supabase
     .from('vehicles')
     .select('device_id, device_name, gps_owner');
 
@@ -186,7 +186,7 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
   }
 
   // Fetch assignments with profiles separately
-  const { data: assignments, error: assignError } = await (supabase as any)
+  const { data: assignments, error: assignError } = await supabase
     .from('vehicle_assignments')
     .select(`
       device_id,
@@ -205,13 +205,13 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
 
   // Create lookup maps
   const vehiclesMap = new Map<string, any>();
-  (vehiclesList || []).forEach((v: any) => vehiclesMap.set(v.device_id, v));
+  (vehiclesList || []).forEach(v => vehiclesMap.set(v.device_id, v));
 
   const assignmentMap = new Map<string, any>();
-  (assignments || []).forEach((a: any) => assignmentMap.set(a.device_id, a));
+  (assignments || []).forEach(a => assignmentMap.set(a.device_id, a));
 
   // Merge positions with vehicles and assignments
-  const mergedData = (positions || []).map((pos: any) => ({
+  const mergedData = (positions || []).map(pos => ({
     ...pos,
     vehicles: vehiclesMap.get(pos.device_id) || null,
     vehicle_assignments: assignmentMap.has(pos.device_id) 

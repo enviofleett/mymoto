@@ -56,13 +56,13 @@ const Fleet = () => {
 
   const fetchDrivers = async () => {
     try {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from("profiles")
         .select("*")
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setDrivers((data || []) as Driver[]);
+      setDrivers(data || []);
     } catch (err) {
       console.error("Error fetching drivers:", err);
       toast({
@@ -107,7 +107,7 @@ const Fleet = () => {
 
     try {
       if (editingDriver) {
-        const { error } = await (supabase as any)
+        const { error } = await supabase
           .from("profiles")
           .update({
             name: formData.name,
@@ -121,7 +121,7 @@ const Fleet = () => {
         if (error) throw error;
         toast({ title: "Success", description: "Driver updated successfully" });
       } else {
-        const { error } = await (supabase as any).from("profiles").insert({
+        const { error } = await supabase.from("profiles").insert({
           name: formData.name,
           email: formData.email || null,
           phone: formData.phone || null,
@@ -150,7 +150,7 @@ const Fleet = () => {
     if (!confirm("Are you sure you want to delete this driver?")) return;
 
     try {
-      const { error } = await (supabase as any).from("profiles").delete().eq("id", id);
+      const { error } = await supabase.from("profiles").delete().eq("id", id);
       if (error) throw error;
       toast({ title: "Success", description: "Driver deleted successfully" });
       fetchDrivers();

@@ -66,17 +66,17 @@ export function TripHistoryTable({ deviceIds, vehicles }: TripHistoryTableProps)
       const fromDate = subDays(new Date(), parseInt(dateRange)).toISOString();
       const filterDevices = selectedDevice === "all" ? deviceIds : [selectedDevice];
       
-      const { data, error } = await (supabase
-        .from("position_history" as any)
+      const { data, error } = await supabase
+        .from("position_history")
         .select("*")
         .in("device_id", filterDevices)
         .gte("gps_time", fromDate)
         .order("gps_time", { ascending: false })
-        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1) as any);
+        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
       if (error) throw error;
       
-      setTrips((data || []) as TripRecord[]);
+      setTrips(data || []);
       setHasMore((data?.length || 0) === PAGE_SIZE);
     } catch (err) {
       console.error("Error fetching trip history:", err);

@@ -30,8 +30,8 @@ export function RecentActivityFeed({ deviceId, limit = 20, showCard = true }: Re
 
   useEffect(() => {
     const fetchHistory = async () => {
-      let query = (supabase
-        .from('position_history' as any)
+      let query = supabase
+        .from('position_history')
         .select(`
           id,
           device_id,
@@ -43,7 +43,7 @@ export function RecentActivityFeed({ deviceId, limit = 20, showCard = true }: Re
           longitude
         `)
         .order('gps_time', { ascending: false })
-        .limit(limit * 2)) as any;  // Fetch more to derive events
+        .limit(limit * 2);  // Fetch more to derive events
 
       // Filter by device if provided
       if (deviceId) {
@@ -58,23 +58,21 @@ export function RecentActivityFeed({ deviceId, limit = 20, showCard = true }: Re
         return;
       }
 
-      const historyData = (data || []) as any[];
-
       // Fetch vehicle names separately
-      const deviceIds = [...new Set(historyData.map((item: any) => item.device_id).filter(Boolean))];
-      const { data: vehiclesData } = await (supabase
-        .from('vehicles' as any)
+      const deviceIds = [...new Set(data.map(item => item.device_id).filter(Boolean))];
+      const { data: vehiclesData } = await supabase
+        .from('vehicles')
         .select('device_id, device_name')
-        .in('device_id', deviceIds) as any);
+        .in('device_id', deviceIds);
 
-      const vehicleMap = new Map((vehiclesData || []).map((v: any) => [v.device_id, v.device_name]));
+      const vehicleMap = new Map(vehiclesData?.map(v => [v.device_id, v.device_name]) || []);
 
       // Derive activity events from position history
       const events: ActivityItem[] = [];
 
-      for (let i = 0; i < historyData.length - 1; i++) {
-        const current = historyData[i] as any;
-        const previous = historyData[i + 1] as any;
+      for (let i = 0; i < data.length - 1; i++) {
+        const current = data[i];
+        const previous = data[i + 1];
 
         // Ignition state changes
         if (current.ignition_on && !previous.ignition_on) {
