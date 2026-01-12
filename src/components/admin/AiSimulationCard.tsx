@@ -72,21 +72,21 @@ export function AiSimulationCard() {
 
   const fetchTemplates = async () => {
     setLoadingTemplates(true);
-    const { data, error } = await supabase
-      .from('ai_scenario_templates')
+    const { data, error } = await (supabase
+      .from('ai_scenario_templates' as any)
       .select('*')
       .order('is_system', { ascending: false })
       .order('category')
-      .order('name');
+      .order('name') as any);
 
     if (error) {
       console.error("Error fetching templates:", error);
       toast.error("Failed to load scenario templates");
     } else {
-      setTemplates(data || []);
+      setTemplates((data as ScenarioTemplate[]) || []);
       // Pre-select first 5 system templates by default
-      const defaultSelected = new Set(
-        (data || []).filter(t => t.is_system).slice(0, 5).map(t => t.id)
+      const defaultSelected = new Set<string>(
+        ((data as ScenarioTemplate[]) || []).filter(t => t.is_system).slice(0, 5).map(t => t.id)
       );
       setSelectedTemplateIds(defaultSelected);
     }
@@ -100,8 +100,8 @@ export function AiSimulationCard() {
     }
 
     setSavingTemplate(true);
-    const { data, error } = await supabase
-      .from('ai_scenario_templates')
+    const { data, error } = await (supabase
+      .from('ai_scenario_templates' as any)
       .insert({
         name: newTemplateName.trim(),
         prompt: newTemplatePrompt.trim(),
@@ -109,7 +109,7 @@ export function AiSimulationCard() {
         is_system: false,
       })
       .select()
-      .single();
+      .single() as any);
 
     if (error) {
       console.error("Error saving template:", error);
@@ -125,10 +125,10 @@ export function AiSimulationCard() {
   };
 
   const handleDeleteTemplate = async (id: string) => {
-    const { error } = await supabase
-      .from('ai_scenario_templates')
+    const { error } = await (supabase
+      .from('ai_scenario_templates' as any)
       .delete()
-      .eq('id', id);
+      .eq('id', id) as any);
 
     if (error) {
       console.error("Error deleting template:", error);
@@ -172,11 +172,11 @@ export function AiSimulationCard() {
 
     try {
       // 1. Resolve user by email
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
+      const { data: profile, error: profileError } = await (supabase
+        .from('profiles' as any)
         .select('id, user_id, name')
         .eq('email', email.trim().toLowerCase())
-        .maybeSingle();
+        .maybeSingle() as any) as { data: { id: string; user_id: string; name: string } | null; error: any };
 
       if (profileError) {
         throw new Error(`Failed to lookup user: ${profileError.message}`);
@@ -195,10 +195,10 @@ export function AiSimulationCard() {
       }
 
       // 2. Get assigned vehicles
-      const { data: assignments, error: assignmentsError } = await supabase
-        .from('vehicle_assignments')
+      const { data: assignments, error: assignmentsError } = await (supabase
+        .from('vehicle_assignments' as any)
         .select('device_id, vehicle_alias')
-        .eq('profile_id', profile.id);
+        .eq('profile_id', profile.id) as any) as { data: { device_id: string; vehicle_alias: string | null }[] | null; error: any };
 
       if (assignmentsError) {
         throw new Error(`Failed to fetch vehicles: ${assignmentsError.message}`);

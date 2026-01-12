@@ -44,12 +44,12 @@ export function VehicleHealthDashboard({ deviceId }: VehicleHealthDashboardProps
     setLoading(true);
     try {
       // Fetch position history to calculate health metrics
-      const { data: positions, error } = await supabase
-        .from('position_history')
+      const { data: positions, error } = await (supabase
+        .from('position_history' as any)
         .select('speed, battery_percent, ignition_on, gps_time')
         .eq('device_id', deviceId)
         .order('gps_time', { ascending: false })
-        .limit(100);
+        .limit(100) as any) as { data: { speed: number; battery_percent: number; ignition_on: boolean; gps_time: string }[] | null; error: any };
 
       if (error) throw error;
 
