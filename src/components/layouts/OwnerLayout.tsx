@@ -44,8 +44,8 @@ export function OwnerLayout({
         <div className="flex items-center justify-between h-14 px-4 max-w-lg mx-auto">
           {/* Logo on the left */}
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-full shadow-neumorphic-sm bg-card flex items-center justify-center">
-              <img alt="MyMoto" className="w-6 h-6 object-contain" src="/lovable-uploads/40afa3f6-9ae5-4c53-b498-54541c3d9537.png" />
+            <div className="w-10 h-10 rounded-full shadow-neumorphic-sm bg-card flex items-center justify-center">
+              <img alt="MyMoto" className="w-7 h-7 object-contain" src={myMotoLogo} />
             </div>
             <span className="text-sm font-semibold text-foreground">MyMoto</span>
           </div>
