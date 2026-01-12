@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   AlertDialog,
@@ -12,7 +11,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Power, Loader2, ShieldCheck, ShieldAlert } from "lucide-react";
+import { Power, Loader2, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useVehicleCommand } from "@/hooks/useVehicleProfile";
 
@@ -33,11 +32,9 @@ export function EngineControlCard({
 
   const isEngineRunning = ignitionOn === true;
   
-  // Engine shutdown is only active when we send a stop command and ignition is off
-  // For display: Green = running/secured, Red = shutdown command was used
   const engineStatus = isEngineRunning 
-    ? { label: "Engine Running", color: "text-green-500", bgColor: "bg-green-500/10", icon: Power }
-    : { label: "Engine Secured", color: "text-green-500", bgColor: "bg-green-500/10", icon: ShieldCheck };
+    ? { label: "Engine Running", color: "text-status-active", icon: Power }
+    : { label: "Engine Secured", color: "text-status-active", icon: ShieldCheck };
 
   const handleToggle = () => {
     const command = isEngineRunning ? "stop_engine" : "start_engine";
@@ -60,23 +57,27 @@ export function EngineControlCard({
 
   return (
     <>
-      <Card className="border-border bg-card/50">
+      <Card className="border-0 bg-card shadow-neumorphic rounded-xl">
         <CardContent className="p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <div className={cn("p-2 rounded-full", engineStatus.bgColor)}>
-              <engineStatus.icon className={cn("h-4 w-4", engineStatus.color)} />
+          <div className="flex items-center gap-3 mb-4">
+            {/* Neumorphic icon container */}
+            <div className={cn(
+              "w-10 h-10 rounded-full shadow-neumorphic-sm bg-card flex items-center justify-center",
+              isEngineRunning && "ring-2 ring-status-active/50"
+            )}>
+              <engineStatus.icon className={cn("h-5 w-5", engineStatus.color)} />
             </div>
             <span className="font-medium text-foreground">Engine Control</span>
           </div>
 
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-4">
             <div>
               <div className="text-sm text-muted-foreground">Status</div>
               <div className="flex items-center gap-2 mt-1">
                 {isEngineRunning ? (
-                  <Power className="h-4 w-4 text-green-500" />
+                  <Power className="h-4 w-4 text-status-active" />
                 ) : (
-                  <ShieldCheck className="h-4 w-4 text-green-500" />
+                  <ShieldCheck className="h-4 w-4 text-status-active" />
                 )}
                 <span className={cn("text-sm font-medium", engineStatus.color)}>
                   {engineStatus.label}
@@ -86,10 +87,10 @@ export function EngineControlCard({
             <Badge
               variant="outline"
               className={cn(
-                "px-3 py-1",
+                "px-3 py-1 border-0 shadow-neumorphic-sm bg-card",
                 isEngineRunning
-                  ? "border-green-500/50 text-green-500"
-                  : "border-green-500/50 text-green-500"
+                  ? "text-status-active"
+                  : "text-status-active"
               )}
             >
               <span className="mr-1.5">●</span>
@@ -97,24 +98,27 @@ export function EngineControlCard({
             </Badge>
           </div>
 
-          <Button
-            className={cn(
-              "w-full",
-              isEngineRunning
-                ? "bg-red-500/10 text-red-500 hover:bg-red-500/20"
-                : "bg-green-500/10 text-green-500 hover:bg-green-500/20"
-            )}
-            variant="ghost"
+          {/* Neumorphic action button */}
+          <button
             onClick={handleToggle}
             disabled={isCommandPending || !isOnline}
+            className={cn(
+              "w-full py-3 rounded-xl font-medium transition-all duration-200",
+              "shadow-neumorphic-sm bg-card",
+              "hover:shadow-neumorphic active:shadow-neumorphic-inset",
+              "disabled:opacity-50 disabled:cursor-not-allowed",
+              isEngineRunning
+                ? "text-destructive"
+                : "text-status-active"
+            )}
           >
             {isCommandPending ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              <Loader2 className="h-4 w-4 mr-2 inline animate-spin" />
             ) : (
-              <Power className="h-4 w-4 mr-2" />
+              <Power className="h-4 w-4 mr-2 inline" />
             )}
             {isEngineRunning ? "Stop Engine" : "Start Engine"}
-          </Button>
+          </button>
 
           <p className="text-xs text-muted-foreground text-center mt-3">
             {!isOnline 
@@ -125,7 +129,7 @@ export function EngineControlCard({
       </Card>
 
       <AlertDialog open={showConfirm} onOpenChange={setShowConfirm}>
-        <AlertDialogContent>
+        <AlertDialogContent className="bg-card border-border shadow-neumorphic">
           <AlertDialogHeader>
             <AlertDialogTitle>
               {pendingCommand === "stop_engine" ? "Stop Engine?" : "Start Engine?"}
@@ -138,15 +142,19 @@ export function EngineControlCard({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setPendingCommand(null)}>
+            <AlertDialogCancel 
+              onClick={() => setPendingCommand(null)}
+              className="shadow-neumorphic-sm bg-card border-0"
+            >
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleConfirm}
               className={cn(
+                "shadow-neumorphic-sm border-0",
                 pendingCommand === "stop_engine"
-                  ? "bg-red-500 hover:bg-red-600"
-                  : "bg-green-500 hover:bg-green-600"
+                  ? "bg-destructive hover:bg-destructive/90"
+                  : "bg-status-active hover:bg-status-active/90 text-primary-foreground"
               )}
             >
               {isCommandPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}

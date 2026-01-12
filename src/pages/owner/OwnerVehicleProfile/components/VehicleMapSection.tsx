@@ -1,4 +1,3 @@
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { VehicleLocationMap } from "@/components/fleet/VehicleLocationMap";
 import { RefreshCw, MapPin } from "lucide-react";
@@ -33,7 +32,7 @@ export function VehicleMapSection({
   // Show loading skeleton while data is being fetched
   if (isLoading) {
     return (
-      <Card className="border-border bg-card/50 overflow-hidden">
+      <Card className="border-0 bg-card shadow-neumorphic rounded-2xl overflow-hidden">
         <CardContent className="p-0">
           <div className="h-80 relative">
             <Skeleton className="absolute inset-0 rounded-none" />
@@ -52,25 +51,27 @@ export function VehicleMapSection({
   // Show no GPS signal state
   if (latitude === null || longitude === null) {
     return (
-      <Card className="border-border bg-card/50">
+      <Card className="border-0 bg-card shadow-neumorphic rounded-2xl">
         <CardContent className="p-8 text-center">
-          <div className="w-16 h-16 mx-auto rounded-full bg-muted flex items-center justify-center mb-3">
+          <div className="w-16 h-16 mx-auto rounded-full shadow-neumorphic-inset bg-card flex items-center justify-center mb-4">
             <MapPin className="h-8 w-8 text-muted-foreground" />
           </div>
-          <p className="text-muted-foreground">No GPS Signal</p>
-          <p className="text-xs text-muted-foreground/70 mt-1">
+          <p className="text-foreground font-medium">No GPS Signal</p>
+          <p className="text-xs text-muted-foreground mt-1">
             Vehicle location is unavailable
           </p>
-          <Button
-            size="sm"
-            variant="outline"
-            className="mt-4"
+          <button
             onClick={onRefresh}
             disabled={isRefreshing}
+            className={cn(
+              "mt-4 px-4 py-2 rounded-full shadow-neumorphic-sm bg-card text-sm font-medium text-foreground transition-all duration-200",
+              "hover:shadow-neumorphic active:shadow-neumorphic-inset",
+              "disabled:opacity-50"
+            )}
           >
-            <RefreshCw className={cn("h-4 w-4 mr-2", isRefreshing && "animate-spin")} />
+            <RefreshCw className={cn("h-4 w-4 inline mr-2", isRefreshing && "animate-spin")} />
             Retry
-          </Button>
+          </button>
         </CardContent>
       </Card>
     );
@@ -80,27 +81,34 @@ export function VehicleMapSection({
 
   return (
     <div className="relative">
-      <VehicleLocationMap
-        latitude={latitude}
-        longitude={longitude}
-        heading={heading}
-        speed={speed}
-        address={address}
-        vehicleName={vehicleName}
-        isOnline={isOnline}
-        showAddressCard={true}
-        mapHeight="h-80"
-        className="rounded-xl shadow-lg"
-      />
-      <Button
-        size="icon"
-        variant="ghost"
-        className="absolute top-3 left-3 h-9 w-9 bg-card/80 backdrop-blur-sm shadow-md z-20"
+      {/* Neumorphic map container */}
+      <div className="rounded-2xl shadow-neumorphic overflow-hidden">
+        <VehicleLocationMap
+          latitude={latitude}
+          longitude={longitude}
+          heading={heading}
+          speed={speed}
+          address={address}
+          vehicleName={vehicleName}
+          isOnline={isOnline}
+          showAddressCard={true}
+          mapHeight="h-80"
+          className="rounded-2xl"
+        />
+      </div>
+      {/* Neumorphic refresh button */}
+      <button
         onClick={onRefresh}
         disabled={isRefreshing}
+        className={cn(
+          "absolute top-3 left-3 w-10 h-10 rounded-full bg-card/90 backdrop-blur-sm shadow-neumorphic-sm z-20",
+          "flex items-center justify-center transition-all duration-200",
+          "hover:shadow-neumorphic active:shadow-neumorphic-inset",
+          "disabled:opacity-50"
+        )}
       >
-        <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
-      </Button>
+        <RefreshCw className={cn("h-4 w-4 text-foreground", isRefreshing && "animate-spin")} />
+      </button>
     </div>
   );
 }

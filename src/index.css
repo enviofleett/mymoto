@@ -2,42 +2,44 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
+/* Definition of the design system - Premium Neumorphic Dark Theme
+   All colors MUST be HSL.
 */
 
 @layer base {
   :root {
-    /* Fleet Management - Charcoal Professional Theme */
-    --background: 210 14% 9%;
-    --foreground: 210 20% 98%;
+    /* Premium Neumorphic Dark Theme */
+    --background: 220 16% 12%;
+    --foreground: 0 0% 98%;
 
-    --card: 210 14% 13%;
-    --card-foreground: 210 20% 98%;
+    --card: 220 16% 16%;
+    --card-foreground: 0 0% 98%;
 
-    --popover: 210 14% 11%;
-    --popover-foreground: 210 20% 98%;
+    --popover: 220 16% 14%;
+    --popover-foreground: 0 0% 98%;
 
-    --primary: 174 72% 46%;
-    --primary-foreground: 210 14% 9%;
+    /* Primary is now white for clean text/icons */
+    --primary: 0 0% 98%;
+    --primary-foreground: 220 16% 12%;
 
-    --secondary: 210 10% 20%;
-    --secondary-foreground: 210 20% 90%;
+    --secondary: 220 12% 22%;
+    --secondary-foreground: 0 0% 90%;
 
-    --muted: 210 10% 18%;
-    --muted-foreground: 215 15% 65%;
+    --muted: 220 12% 20%;
+    --muted-foreground: 220 10% 55%;
 
-    --accent: 174 72% 46%;
-    --accent-foreground: 210 14% 9%;
+    /* Accent is now orange for highlights */
+    --accent: 24 95% 53%;
+    --accent-foreground: 0 0% 98%;
 
     --destructive: 0 72% 51%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive-foreground: 0 0% 98%;
 
-    --border: 210 10% 20%;
-    --input: 210 10% 20%;
-    --ring: 174 72% 46%;
+    --border: 220 12% 22%;
+    --input: 220 12% 22%;
+    --ring: 24 95% 53%;
 
-    --radius: 0.5rem;
+    --radius: 0.75rem;
 
     /* Status colors */
     --status-active: 142 70% 50%;
@@ -45,44 +47,44 @@ All colors MUST be HSL.
     --status-inactive: 0 70% 60%;
 
     /* Sidebar */
-    --sidebar-background: 210 14% 11%;
-    --sidebar-foreground: 210 20% 85%;
-    --sidebar-primary: 174 72% 46%;
-    --sidebar-primary-foreground: 210 14% 9%;
-    --sidebar-accent: 210 10% 20%;
-    --sidebar-accent-foreground: 210 20% 98%;
-    --sidebar-border: 210 10% 20%;
-    --sidebar-ring: 174 72% 46%;
+    --sidebar-background: 220 16% 14%;
+    --sidebar-foreground: 220 10% 85%;
+    --sidebar-primary: 0 0% 98%;
+    --sidebar-primary-foreground: 220 16% 12%;
+    --sidebar-accent: 220 12% 22%;
+    --sidebar-accent-foreground: 0 0% 98%;
+    --sidebar-border: 220 12% 22%;
+    --sidebar-ring: 24 95% 53%;
   }
 
   .dark {
-    --background: 210 14% 9%;
-    --foreground: 210 20% 98%;
-    --card: 210 14% 13%;
-    --card-foreground: 210 20% 98%;
-    --popover: 210 14% 11%;
-    --popover-foreground: 210 20% 98%;
-    --primary: 174 72% 46%;
-    --primary-foreground: 210 14% 9%;
-    --secondary: 210 10% 20%;
-    --secondary-foreground: 210 20% 90%;
-    --muted: 210 10% 18%;
-    --muted-foreground: 215 15% 75%;
-    --accent: 174 72% 46%;
-    --accent-foreground: 210 14% 9%;
+    --background: 220 16% 12%;
+    --foreground: 0 0% 98%;
+    --card: 220 16% 16%;
+    --card-foreground: 0 0% 98%;
+    --popover: 220 16% 14%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 220 16% 12%;
+    --secondary: 220 12% 22%;
+    --secondary-foreground: 0 0% 90%;
+    --muted: 220 12% 20%;
+    --muted-foreground: 220 10% 60%;
+    --accent: 24 95% 53%;
+    --accent-foreground: 0 0% 98%;
     --destructive: 0 72% 51%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 210 10% 20%;
-    --input: 210 10% 20%;
-    --ring: 174 72% 46%;
-    --sidebar-background: 210 14% 11%;
-    --sidebar-foreground: 210 20% 85%;
-    --sidebar-primary: 174 72% 46%;
-    --sidebar-primary-foreground: 210 14% 9%;
-    --sidebar-accent: 210 10% 20%;
-    --sidebar-accent-foreground: 210 20% 98%;
-    --sidebar-border: 210 10% 20%;
-    --sidebar-ring: 174 72% 46%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 220 12% 22%;
+    --input: 220 12% 22%;
+    --ring: 24 95% 53%;
+    --sidebar-background: 220 16% 14%;
+    --sidebar-foreground: 220 10% 85%;
+    --sidebar-primary: 0 0% 98%;
+    --sidebar-primary-foreground: 220 16% 12%;
+    --sidebar-accent: 220 12% 22%;
+    --sidebar-accent-foreground: 0 0% 98%;
+    --sidebar-border: 220 12% 22%;
+    --sidebar-ring: 24 95% 53%;
   }
 }
 
@@ -93,5 +95,38 @@ All colors MUST be HSL.
 
   body {
     @apply bg-background text-foreground antialiased;
+  }
+}
+
+/* Neumorphic shadow utilities */
+@layer utilities {
+  .shadow-neumorphic {
+    box-shadow: 
+      8px 8px 16px rgba(0, 0, 0, 0.4),
+      -4px -4px 12px rgba(60, 68, 85, 0.15);
+  }
+
+  .shadow-neumorphic-sm {
+    box-shadow: 
+      4px 4px 8px rgba(0, 0, 0, 0.35),
+      -2px -2px 6px rgba(60, 68, 85, 0.12);
+  }
+
+  .shadow-neumorphic-inset {
+    box-shadow: 
+      inset 4px 4px 8px rgba(0, 0, 0, 0.3),
+      inset -2px -2px 6px rgba(60, 68, 85, 0.1);
+  }
+
+  .shadow-neumorphic-button {
+    box-shadow: 
+      3px 3px 6px rgba(0, 0, 0, 0.3),
+      -2px -2px 4px rgba(60, 68, 85, 0.1);
+  }
+
+  .shadow-neumorphic-button:active {
+    box-shadow: 
+      inset 2px 2px 4px rgba(0, 0, 0, 0.25),
+      inset -1px -1px 3px rgba(60, 68, 85, 0.08);
   }
 }
