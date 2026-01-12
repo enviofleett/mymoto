@@ -87,7 +87,7 @@ export default function OwnerChatDetail() {
   const fetchHistory = async () => {
     setHistoryLoading(true);
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from("vehicle_chat_history")
         .select("*")
         .eq("device_id", deviceId)

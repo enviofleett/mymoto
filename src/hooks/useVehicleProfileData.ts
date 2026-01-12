@@ -37,28 +37,28 @@ export interface VehicleProfileData {
  * Fetch vehicle base info.
  */
 async function fetchVehicleInfo(deviceId: string): Promise<VehicleInfo | null> {
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from('vehicles')
     .select('device_id, device_name, device_type')
     .eq('device_id', deviceId)
     .maybeSingle();
 
   if (error) throw error;
-  return data;
+  return data as VehicleInfo | null;
 }
 
 /**
  * Fetch LLM settings.
  */
 async function fetchLLMSettings(deviceId: string): Promise<VehicleLLMSettings | null> {
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from('vehicle_llm_settings')
     .select('device_id, nickname, avatar_url, personality_mode, language_preference, llm_enabled')
     .eq('device_id', deviceId)
     .maybeSingle();
 
   if (error) throw error;
-  return data;
+  return data as VehicleLLMSettings | null;
 }
 
 /**
