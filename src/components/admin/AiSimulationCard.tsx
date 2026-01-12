@@ -73,7 +73,7 @@ export function AiSimulationCard() {
   const fetchTemplates = async () => {
     setLoadingTemplates(true);
     const { data, error } = await supabase
-      .from('ai_scenario_templates' as any)
+      .from('ai_scenario_templates')
       .select('*')
       .order('is_system', { ascending: false })
       .order('category')
@@ -83,11 +83,10 @@ export function AiSimulationCard() {
       console.error("Error fetching templates:", error);
       toast.error("Failed to load scenario templates");
     } else {
-      const templatesData = (data || []) as unknown as ScenarioTemplate[];
-      setTemplates(templatesData);
+      setTemplates(data || []);
       // Pre-select first 5 system templates by default
       const defaultSelected = new Set(
-        templatesData.filter(t => t.is_system).slice(0, 5).map(t => t.id)
+        (data || []).filter(t => t.is_system).slice(0, 5).map(t => t.id)
       );
       setSelectedTemplateIds(defaultSelected);
     }
@@ -102,7 +101,7 @@ export function AiSimulationCard() {
 
     setSavingTemplate(true);
     const { data, error } = await supabase
-      .from('ai_scenario_templates' as any)
+      .from('ai_scenario_templates')
       .insert({
         name: newTemplateName.trim(),
         prompt: newTemplatePrompt.trim(),
@@ -117,7 +116,7 @@ export function AiSimulationCard() {
       toast.error("Failed to save template");
     } else {
       toast.success("Template saved!");
-      setTemplates(prev => [...prev, data as unknown as ScenarioTemplate]);
+      setTemplates(prev => [...prev, data]);
       setNewTemplateName("");
       setNewTemplatePrompt("");
       setNewTemplateCategory("general");
@@ -127,7 +126,7 @@ export function AiSimulationCard() {
 
   const handleDeleteTemplate = async (id: string) => {
     const { error } = await supabase
-      .from('ai_scenario_templates' as any)
+      .from('ai_scenario_templates')
       .delete()
       .eq('id', id);
 
@@ -197,17 +196,15 @@ export function AiSimulationCard() {
 
       // 2. Get assigned vehicles
       const { data: assignments, error: assignmentsError } = await supabase
-        .from('vehicle_assignments' as any)
+        .from('vehicle_assignments')
         .select('device_id, vehicle_alias')
         .eq('profile_id', profile.id);
-      
-      const assignmentsData = (assignments || []) as unknown as { device_id: string; vehicle_alias: string | null }[];
 
       if (assignmentsError) {
         throw new Error(`Failed to fetch vehicles: ${assignmentsError.message}`);
       }
 
-      if (!assignmentsData || assignmentsData.length === 0) {
+      if (!assignments || assignments.length === 0) {
         toast.error("No vehicles assigned to this user");
         setIsSimulating(false);
         return;
@@ -217,7 +214,7 @@ export function AiSimulationCard() {
       const selectedTemplates = templates.filter(t => selectedTemplateIds.has(t.id));
 
       // 4. Initialize results with pending status
-      const initialResults: SimulationResult[] = assignmentsData.map((vehicle, index) => {
+      const initialResults: SimulationResult[] = assignments.map((vehicle, index) => {
         const template = selectedTemplates[index % selectedTemplates.length];
         return {
           deviceId: vehicle.device_id,
@@ -228,12 +225,12 @@ export function AiSimulationCard() {
       });
 
       setResults(initialResults);
-      toast.info(`Triggering AI for ${assignmentsData.length} vehicle(s) with ${selectedTemplates.length} scenario(s)...`);
+      toast.info(`Triggering AI for ${assignments.length} vehicle(s) with ${selectedTemplates.length} scenario(s)...`);
 
       // 5. Trigger AI scenarios in parallel
       const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vehicle-chat`;
 
-      const promises = assignmentsData.map(async (vehicle, index) => {
+      const promises = assignments.map(async (vehicle, index) => {
         const template = selectedTemplates[index % selectedTemplates.length];
         
         try {
