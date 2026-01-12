@@ -156,7 +156,7 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
   console.log("[useFleetLiveData] Fetching from DB...");
 
   // Fetch positions only - no joins to avoid FK issues
-  const { data: positions, error: posError } = await supabase
+  const { data: positions, error: posError } = await (supabase as any)
     .from('vehicle_positions')
     .select(`
       device_id,
@@ -177,7 +177,7 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
   if (posError) throw new Error(`Fleet data fetch error: ${posError.message}`);
 
   // Fetch vehicles separately
-  const { data: vehiclesList, error: vehiclesError } = await supabase
+  const { data: vehiclesList, error: vehiclesError } = await (supabase as any)
     .from('vehicles')
     .select('device_id, device_name, gps_owner');
 
@@ -186,7 +186,7 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
   }
 
   // Fetch assignments with profiles separately
-  const { data: assignments, error: assignError } = await supabase
+  const { data: assignments, error: assignError } = await (supabase as any)
     .from('vehicle_assignments')
     .select(`
       device_id,
