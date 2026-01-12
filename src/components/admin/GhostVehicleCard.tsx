@@ -43,10 +43,10 @@ export function GhostVehicleCard() {
       cutoffDate.setHours(cutoffDate.getHours() - GHOST_BUFFER_HOURS);
 
       // Get all vehicles older than 48 hours
-      const { data: oldVehicles, error: vehiclesError } = await (supabase
-        .from("vehicles" as any)
+      const { data: oldVehicles, error: vehiclesError } = await supabase
+        .from("vehicles")
         .select("device_id, device_name, created_at")
-        .lt("created_at", cutoffDate.toISOString()) as any) as { data: { device_id: string; device_name: string | null; created_at: string }[] | null; error: any };
+        .lt("created_at", cutoffDate.toISOString());
 
       if (vehiclesError) throw vehiclesError;
       if (!oldVehicles || oldVehicles.length === 0) {
@@ -58,22 +58,22 @@ export function GhostVehicleCard() {
       const deviceIds = oldVehicles.map((v) => v.device_id);
 
       // Get vehicles with valid positions
-      const { data: vehiclesWithPositions } = await (supabase
-        .from("vehicle_positions" as any)
+      const { data: vehiclesWithPositions } = await supabase
+        .from("vehicle_positions")
         .select("device_id, latitude, longitude")
         .in("device_id", deviceIds)
         .not("latitude", "is", null)
-        .neq("latitude", 0) as any) as { data: { device_id: string; latitude: number; longitude: number }[] | null };
+        .neq("latitude", 0);
 
       const hasPositionSet = new Set(
         vehiclesWithPositions?.map((v) => v.device_id) || []
       );
 
       // Get vehicles with position history
-      const { data: vehiclesWithHistory } = await (supabase
-        .from("position_history" as any)
+      const { data: vehiclesWithHistory } = await supabase
+        .from("position_history")
         .select("device_id")
-        .in("device_id", deviceIds) as any) as { data: { device_id: string }[] | null };
+        .in("device_id", deviceIds);
 
       const hasHistorySet = new Set(
         vehiclesWithHistory?.map((v) => v.device_id) || []

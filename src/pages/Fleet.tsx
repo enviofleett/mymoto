@@ -56,13 +56,13 @@ const Fleet = () => {
 
   const fetchDrivers = async () => {
     try {
-      const { data, error } = await (supabase
-        .from("profiles" as any)
+      const { data, error } = await supabase
+        .from("profiles")
         .select("*")
-        .order("created_at", { ascending: false }) as any);
+        .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setDrivers((data || []) as Driver[]);
+      setDrivers(data || []);
     } catch (err) {
       console.error("Error fetching drivers:", err);
       toast({
@@ -107,8 +107,8 @@ const Fleet = () => {
 
     try {
       if (editingDriver) {
-        const { error } = await (supabase
-          .from("profiles" as any)
+        const { error } = await supabase
+          .from("profiles")
           .update({
             name: formData.name,
             email: formData.email || null,
@@ -116,18 +116,18 @@ const Fleet = () => {
             license_number: formData.license_number || null,
             status: formData.status,
           })
-          .eq("id", editingDriver.id) as any);
+          .eq("id", editingDriver.id);
 
         if (error) throw error;
         toast({ title: "Success", description: "Driver updated successfully" });
       } else {
-        const { error } = await (supabase.from("profiles" as any).insert({
+        const { error } = await supabase.from("profiles").insert({
           name: formData.name,
           email: formData.email || null,
           phone: formData.phone || null,
           license_number: formData.license_number || null,
           status: formData.status,
-        }) as any);
+        });
 
         if (error) throw error;
         toast({ title: "Success", description: "Driver added successfully" });
@@ -150,7 +150,7 @@ const Fleet = () => {
     if (!confirm("Are you sure you want to delete this driver?")) return;
 
     try {
-      const { error } = await (supabase.from("profiles" as any).delete().eq("id", id) as any);
+      const { error } = await supabase.from("profiles").delete().eq("id", id);
       if (error) throw error;
       toast({ title: "Success", description: "Driver deleted successfully" });
       fetchDrivers();

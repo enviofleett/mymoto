@@ -40,9 +40,9 @@ export function useAdminWallets() {
     setLoading(true);
     
     // Fetch wallets with user emails from profiles
-    const { data: walletsData, error: walletsError } = await (supabase
-      .from("wallets" as any)
-      .select("id, user_id, balance, currency, created_at") as any);
+    const { data: walletsData, error: walletsError } = await supabase
+      .from("wallets")
+      .select("id, user_id, balance, currency, created_at");
 
     if (walletsError) {
       console.error("Error fetching wallets:", walletsError);
@@ -52,16 +52,16 @@ export function useAdminWallets() {
 
     // Get user emails from user_roles (we can't access auth.users directly)
     // For now, we'll show user_id and try to get emails from profiles if available
-    const userIds = (walletsData as any[])?.map((w: any) => w.user_id) || [];
+    const userIds = walletsData?.map(w => w.user_id) || [];
     
-    const { data: profilesData } = await (supabase
-      .from("profiles" as any)
+    const { data: profilesData } = await supabase
+      .from("profiles")
       .select("user_id, email")
-      .in("user_id", userIds) as any);
+      .in("user_id", userIds);
 
-    const profileMap = new Map((profilesData as any[])?.map((p: any) => [p.user_id, p.email]) || []);
+    const profileMap = new Map(profilesData?.map(p => [p.user_id, p.email]) || []);
 
-    const enrichedWallets: UserWallet[] = ((walletsData || []) as any[]).map((w: any) => ({
+    const enrichedWallets: UserWallet[] = (walletsData || []).map(w => ({
       id: w.id,
       user_id: w.user_id,
       balance: parseFloat(String(w.balance)) || 0,
@@ -75,44 +75,43 @@ export function useAdminWallets() {
   };
 
   const fetchStats = async () => {
-    const { data, error } = await (supabase
-      .from("wallet_transactions" as any)
-      .select("amount, type") as any);
+    const { data, error } = await supabase
+      .from("wallet_transactions")
+      .select("amount, type");
 
     if (error) {
       console.error("Error fetching stats:", error);
       return;
     }
 
-    const txData = (data || []) as any[];
-    const credits = txData.filter((t: any) => t.type === "credit").reduce((sum: number, t: any) => sum + parseFloat(String(t.amount)), 0) || 0;
-    const debits = txData.filter((t: any) => t.type === "debit").reduce((sum: number, t: any) => sum + parseFloat(String(t.amount)), 0) || 0;
+    const credits = data?.filter(t => t.type === "credit").reduce((sum, t) => sum + parseFloat(String(t.amount)), 0) || 0;
+    const debits = data?.filter(t => t.type === "debit").reduce((sum, t) => sum + parseFloat(String(t.amount)), 0) || 0;
 
     setStats({
       totalRevenue: debits,
       totalCredits: credits,
       totalDebits: debits,
-      transactionCount: txData.length || 0,
+      transactionCount: data?.length || 0,
     });
   };
 
   const fetchNewUserBonus = async () => {
-    const { data } = await (supabase
-      .from("billing_config" as any)
+    const { data } = await supabase
+      .from("billing_config")
       .select("value")
       .eq("key", "new_user_bonus")
-      .single() as any);
+      .single();
 
     if (data) {
-      setNewUserBonus(parseFloat(String((data as any).value)) || 0);
+      setNewUserBonus(parseFloat(String(data.value)) || 0);
     }
   };
 
   const updateNewUserBonus = async (amount: number) => {
-    const { error } = await (supabase
-      .from("billing_config" as any)
-      .update({ value: amount, updated_at: new Date().toISOString() } as any)
-      .eq("key", "new_user_bonus") as any);
+    const { error } = await supabase
+      .from("billing_config")
+      .update({ value: amount, updated_at: new Date().toISOString() })
+      .eq("key", "new_user_bonus");
 
     if (error) {
       toast({
@@ -133,11 +132,11 @@ export function useAdminWallets() {
 
   const adjustWallet = async (walletId: string, amount: number, type: "credit" | "debit", description: string) => {
     // First, get current balance
-    const { data: wallet, error: fetchError } = await (supabase
-      .from("wallets" as any)
+    const { data: wallet, error: fetchError } = await supabase
+      .from("wallets")
       .select("balance")
       .eq("id", walletId)
-      .single() as any);
+      .single();
 
     if (fetchError || !wallet) {
       toast({
@@ -148,7 +147,7 @@ export function useAdminWallets() {
       return false;
     }
 
-    const currentBalance = parseFloat(String((wallet as any).balance)) || 0;
+    const currentBalance = parseFloat(String(wallet.balance)) || 0;
     const newBalance = type === "credit" 
       ? currentBalance + amount 
       : currentBalance - amount;
@@ -163,10 +162,10 @@ export function useAdminWallets() {
     }
 
     // Update wallet balance
-    const { error: updateError } = await (supabase
-      .from("wallets" as any)
-      .update({ balance: newBalance } as any)
-      .eq("id", walletId) as any);
+    const { error: updateError } = await supabase
+      .from("wallets")
+      .update({ balance: newBalance })
+      .eq("id", walletId);
 
     if (updateError) {
       toast({
@@ -178,14 +177,14 @@ export function useAdminWallets() {
     }
 
     // Create transaction record
-    const { error: txError } = await (supabase
-      .from("wallet_transactions" as any)
+    const { error: txError } = await supabase
+      .from("wallet_transactions")
       .insert({
         wallet_id: walletId,
         amount,
         type,
         description: description || `Admin ${type}`,
-      } as any) as any);
+      });
 
     if (txError) {
       console.error("Transaction record error:", txError);

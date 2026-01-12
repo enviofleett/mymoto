@@ -95,16 +95,16 @@ export function CommandHistory({ deviceId }: CommandHistoryProps) {
     setLoading(true);
     try {
       // Fetch from actual vehicle_command_logs table
-      const { data, error } = await (supabase
-        .from('vehicle_command_logs' as any)
+      const { data, error } = await supabase
+        .from('vehicle_command_logs')
         .select('id, device_id, command_type, status, created_at, result, error_message, user_id')
         .eq('device_id', deviceId)
         .order('created_at', { ascending: false })
-        .limit(20) as any) as { data: VehicleCommand[] | null; error: any };
+        .limit(20);
 
       if (error) throw error;
       
-      setCommands(data || []);
+      setCommands((data as VehicleCommand[]) || []);
     } catch (err) {
       console.error('Error fetching commands:', err);
     } finally {

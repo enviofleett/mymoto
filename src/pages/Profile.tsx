@@ -80,34 +80,34 @@ const Profile = () => {
       setLoading(true);
 
       // First check if user has a profile linked
-      const { data: profileData, error: profileError } = await (supabase
-        .from("profiles" as any)
+      const { data: profileData, error: profileError } = await supabase
+        .from("profiles")
         .select("*")
         .eq("user_id", user?.id)
-        .maybeSingle() as any);
+        .maybeSingle();
 
       if (profileError && profileError.code !== "PGRST116") {
         console.error("Error fetching profile:", profileError);
       }
 
       // If no profile exists with user_id, try to find by email
-      let finalProfile = profileData as UserProfile | null;
+      let finalProfile = profileData;
       if (!profileData && user?.email) {
-        const { data: emailProfile } = await (supabase
-          .from("profiles" as any)
+        const { data: emailProfile } = await supabase
+          .from("profiles")
           .select("*")
           .eq("email", user.email)
-          .maybeSingle() as any);
+          .maybeSingle();
         
-        finalProfile = emailProfile as UserProfile | null;
+        finalProfile = emailProfile;
       }
 
       setProfile(finalProfile);
 
       // Fetch assigned vehicles with current positions
       if (finalProfile) {
-        const { data: assignments, error: assignError } = await (supabase
-          .from("vehicle_assignments" as any)
+        const { data: assignments, error: assignError } = await supabase
+          .from("vehicle_assignments")
           .select(`
             device_id,
             vehicle_alias,
@@ -128,7 +128,7 @@ const Profile = () => {
               total_mileage
             )
           `)
-          .eq("profile_id", finalProfile.id) as any);
+          .eq("profile_id", finalProfile.id);
 
         if (assignError) {
           console.error("Error fetching assignments:", assignError);

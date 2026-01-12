@@ -81,10 +81,10 @@ async function fetchVehicleTrips(
   limit: number = 50,
   dateRange?: TripDateRange
 ): Promise<VehicleTrip[]> {
-  let query = (supabase
-    .from("vehicle_trips" as any)
+  let query = supabase
+    .from("vehicle_trips")
     .select("*")
-    .eq("device_id", deviceId) as any);
+    .eq("device_id", deviceId);
 
   if (dateRange?.from) {
     query = query.gte("start_time", dateRange.from.toISOString());
@@ -109,10 +109,10 @@ async function fetchVehicleEvents(
   limit: number = 50,
   dateRange?: TripDateRange
 ): Promise<VehicleEvent[]> {
-  let query = (supabase
-    .from("proactive_vehicle_events" as any)
+  let query = supabase
+    .from("proactive_vehicle_events")
     .select("*")
-    .eq("device_id", deviceId) as any);
+    .eq("device_id", deviceId);
 
   if (dateRange?.from) {
     query = query.gte("created_at", dateRange.from.toISOString());
@@ -132,20 +132,20 @@ async function fetchVehicleEvents(
 }
 
 async function fetchVehicleLLMSettings(deviceId: string): Promise<VehicleLLMSettings | null> {
-  const { data, error } = await (supabase
-    .from("vehicle_llm_settings" as any)
+  const { data, error } = await supabase
+    .from("vehicle_llm_settings")
     .select("device_id, nickname, language_preference, personality_mode, llm_enabled")
     .eq("device_id", deviceId)
-    .maybeSingle() as any);
+    .maybeSingle();
 
   if (error) throw error;
   return data as VehicleLLMSettings | null;
 }
 
 async function fetchMileageStats(deviceId: string): Promise<MileageStats> {
-  const { data, error } = await (supabase.rpc("get_vehicle_mileage_stats" as any, {
+  const { data, error } = await supabase.rpc("get_vehicle_mileage_stats", {
     p_device_id: deviceId,
-  }) as any);
+  });
 
   if (error) {
     console.error("Error fetching mileage stats:", error);
@@ -156,9 +156,9 @@ async function fetchMileageStats(deviceId: string): Promise<MileageStats> {
 }
 
 async function fetchDailyMileage(deviceId: string): Promise<DailyMileage[]> {
-  const { data, error } = await (supabase.rpc("get_daily_mileage" as any, {
+  const { data, error } = await supabase.rpc("get_daily_mileage", {
     p_device_id: deviceId,
-  }) as any);
+  });
 
   if (error) {
     console.error("Error fetching daily mileage:", error);
@@ -185,12 +185,12 @@ async function fetchVehicleDailyStats(
 
   if (error) {
     // Fallback to direct view query if RPC doesn't exist
-    const { data: viewData, error: viewError } = await (supabase
-      .from("vehicle_daily_stats" as any)
+    const { data: viewData, error: viewError } = await supabase
+      .from("vehicle_daily_stats")
       .select("*")
       .eq("device_id", deviceId)
       .gte("stat_date", startDate.toISOString().split('T')[0])
-      .order("stat_date", { ascending: false }) as any);
+      .order("stat_date", { ascending: false }) as { data: unknown; error: unknown };
 
     if (viewError) {
       console.error("Error fetching vehicle daily stats:", viewError);

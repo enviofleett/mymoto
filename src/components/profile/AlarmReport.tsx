@@ -69,12 +69,12 @@ export function AlarmReport({ deviceIds, vehicles }: AlarmReportProps) {
       const filterDevices = selectedDevice === "all" ? deviceIds : [selectedDevice];
       
       // Query proactive_vehicle_events directly - no client-side calculations!
-      let query = (supabase
-        .from("proactive_vehicle_events" as any)
+      let query = supabase
+        .from("proactive_vehicle_events")
         .select("*")
         .in("device_id", filterDevices)
         .gte("created_at", fromDate)
-        .order("created_at", { ascending: false })) as any;
+        .order("created_at", { ascending: false });
 
       // Apply event type filter
       if (eventFilter !== "all") {

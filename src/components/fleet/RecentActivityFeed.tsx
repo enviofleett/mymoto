@@ -29,25 +29,9 @@ export function RecentActivityFeed({ deviceId, limit = 20, showCard = true }: Re
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    interface PositionHistoryRow {
-      id: string;
-      device_id: string;
-      speed: number;
-      ignition_on: boolean;
-      battery_percent: number;
-      gps_time: string;
-      latitude: number;
-      longitude: number;
-    }
-
-    interface VehicleRow {
-      device_id: string;
-      device_name: string;
-    }
-
     const fetchHistory = async () => {
       let query = supabase
-        .from('position_history' as any)
+        .from('position_history')
         .select(`
           id,
           device_id,
@@ -66,7 +50,7 @@ export function RecentActivityFeed({ deviceId, limit = 20, showCard = true }: Re
         query = query.eq('device_id', deviceId);
       }
 
-      const { data, error } = await (query as any) as { data: PositionHistoryRow[] | null; error: any };
+      const { data, error } = await query;
 
       if (error) {
         console.error("Error fetching activity:", error);
@@ -75,11 +59,11 @@ export function RecentActivityFeed({ deviceId, limit = 20, showCard = true }: Re
       }
 
       // Fetch vehicle names separately
-      const deviceIds = [...new Set((data || []).map(item => item.device_id).filter(Boolean))];
-      const { data: vehiclesData } = await (supabase
-        .from('vehicles' as any)
+      const deviceIds = [...new Set(data.map(item => item.device_id).filter(Boolean))];
+      const { data: vehiclesData } = await supabase
+        .from('vehicles')
         .select('device_id, device_name')
-        .in('device_id', deviceIds) as any) as { data: VehicleRow[] | null };
+        .in('device_id', deviceIds);
 
       const vehicleMap = new Map(vehiclesData?.map(v => [v.device_id, v.device_name]) || []);
 

@@ -50,10 +50,10 @@ export function StickyAlertBanner() {
 
   const dismissAlert = useCallback(async (alertId: string) => {
     // Mark as acknowledged in database
-    await (supabase
-      .from("proactive_vehicle_events" as any)
-      .update({ acknowledged: true, acknowledged_at: new Date().toISOString() } as any)
-      .eq("id", alertId) as any);
+    await supabase
+      .from("proactive_vehicle_events")
+      .update({ acknowledged: true, acknowledged_at: new Date().toISOString() })
+      .eq("id", alertId);
 
     setAlerts((prev) => prev.filter((a) => a.id !== alertId));
   }, []);

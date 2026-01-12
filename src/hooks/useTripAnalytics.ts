@@ -47,11 +47,11 @@ export function useTripAnalytics(tripId: string | null, enabled = true) {
     queryFn: async (): Promise<TripAnalytics | null> => {
       if (!tripId) return null;
       
-      const { data, error } = await (supabase
-        .from('trip_analytics' as any)
+      const { data, error } = await supabase
+        .from('trip_analytics')
         .select('*')
         .eq('trip_id', tripId)
-        .maybeSingle() as any);
+        .maybeSingle();
       
       if (error) {
         console.error('Error fetching trip analytics:', error);
@@ -77,8 +77,8 @@ export function useDriverScore(deviceId: string | null, enabled = true) {
     queryFn: async (): Promise<DriverScoreData | null> => {
       if (!deviceId) return null;
       
-      const { data, error } = await (supabase
-        .rpc('get_latest_driver_score' as any, { p_device_id: deviceId }) as any);
+      const { data, error } = await supabase
+        .rpc('get_latest_driver_score', { p_device_id: deviceId });
       
       if (error) {
         console.error('Error fetching driver score:', error);
@@ -101,12 +101,12 @@ export function useRecentTripAnalytics(deviceId: string | null, limit = 10, enab
     queryFn: async (): Promise<TripAnalytics[]> => {
       if (!deviceId) return [];
       
-      const { data, error } = await (supabase
-        .from('trip_analytics' as any)
+      const { data, error } = await supabase
+        .from('trip_analytics')
         .select('*')
         .eq('device_id', deviceId)
         .order('analyzed_at', { ascending: false })
-        .limit(limit) as any);
+        .limit(limit);
       
       if (error) {
         console.error('Error fetching recent trip analytics:', error);

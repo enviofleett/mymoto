@@ -17,18 +17,18 @@ export function useOwnerProfile() {
     queryFn: async (): Promise<OwnerProfile | null> => {
       if (!user) return null;
 
-      const { data, error } = await (supabase
-        .from("profiles" as any)
+      const { data, error } = await supabase
+        .from("profiles")
         .select("id, name, phone, email")
         .eq("user_id", user.id)
-        .maybeSingle() as any);
+        .maybeSingle();
 
       if (error) {
         console.error("Error fetching owner profile:", error);
         throw error;
       }
 
-      return data as OwnerProfile | null;
+      return data;
     },
     enabled: !!user,
   });

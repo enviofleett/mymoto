@@ -49,11 +49,11 @@ export function EditProfileDialog({
     
     setLoading(true);
     try {
-      const { data, error } = await (supabase
-        .from("profiles" as any)
+      const { data, error } = await supabase
+        .from("profiles")
         .select("id, name, phone, email")
         .eq("user_id", user.id)
-        .maybeSingle() as any);
+        .maybeSingle();
 
       if (error) throw error;
 
@@ -85,25 +85,25 @@ export function EditProfileDialog({
     try {
       if (profile) {
         // Update existing profile
-        const { error } = await (supabase
-          .from("profiles" as any)
+        const { error } = await supabase
+          .from("profiles")
           .update({
             name: displayName.trim(),
             phone: phone.trim() || null,
-          } as any)
-          .eq("id", profile.id) as any);
+          })
+          .eq("id", profile.id);
 
         if (error) throw error;
       } else {
         // Create new profile
-        const { error } = await (supabase
-          .from("profiles" as any)
+        const { error } = await supabase
+          .from("profiles")
           .insert({
             user_id: user.id,
             name: displayName.trim(),
             phone: phone.trim() || null,
             email: user.email,
-          } as any) as any);
+          });
 
         if (error) throw error;
       }

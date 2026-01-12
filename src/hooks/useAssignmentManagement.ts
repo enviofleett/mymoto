@@ -37,9 +37,9 @@ export function useAssignmentStats() {
     queryKey: ["assignment-stats"],
     queryFn: async (): Promise<AssignmentStats> => {
       const [vehiclesRes, assignmentsRes, profilesRes] = await Promise.all([
-        (supabase.from("vehicles" as any).select("device_id", { count: "exact", head: true }) as any),
-        (supabase.from("vehicle_assignments" as any).select("device_id", { count: "exact", head: true }) as any),
-        (supabase.from("profiles" as any).select("id", { count: "exact", head: true }) as any),
+        supabase.from("vehicles").select("device_id", { count: "exact", head: true }),
+        supabase.from("vehicle_assignments").select("device_id", { count: "exact", head: true }),
+        supabase.from("profiles").select("id", { count: "exact", head: true }),
       ]);
 
       const totalVehicles = vehiclesRes.count || 0;
@@ -47,12 +47,12 @@ export function useAssignmentStats() {
       const totalUsers = profilesRes.count || 0;
 
       // Get users with at least one vehicle
-      const { data: usersWithAssignments } = await (supabase
-        .from("vehicle_assignments" as any)
+      const { data: usersWithAssignments } = await supabase
+        .from("vehicle_assignments")
         .select("profile_id")
-        .not("profile_id", "is", null) as any);
+        .not("profile_id", "is", null);
 
-      const uniqueUsersWithVehicles = new Set((usersWithAssignments as any[])?.map((a: any) => a.profile_id)).size;
+      const uniqueUsersWithVehicles = new Set(usersWithAssignments?.map(a => a.profile_id)).size;
 
       return {
         totalVehicles,
@@ -70,26 +70,26 @@ export function useProfiles() {
     queryKey: ["profiles-with-assignments"],
     queryFn: async (): Promise<ProfileWithAssignments[]> => {
       // Get all profiles
-      const { data: profiles, error } = await (supabase
-        .from("profiles" as any)
+      const { data: profiles, error } = await supabase
+        .from("profiles")
         .select("id, name, email, phone, user_id")
-        .order("name") as any);
+        .order("name");
 
       if (error) throw error;
 
       // Get assignment counts per profile
-      const { data: assignments } = await (supabase
-        .from("vehicle_assignments" as any)
-        .select("profile_id") as any);
+      const { data: assignments } = await supabase
+        .from("vehicle_assignments")
+        .select("profile_id");
 
       const countMap = new Map<string, number>();
-      ((assignments || []) as any[]).forEach((a: any) => {
+      assignments?.forEach(a => {
         if (a.profile_id) {
           countMap.set(a.profile_id, (countMap.get(a.profile_id) || 0) + 1);
         }
       });
 
-      return ((profiles || []) as any[]).map((p: any) => ({
+      return (profiles || []).map(p => ({
         ...p,
         assignmentCount: countMap.get(p.id) || 0,
       }));
@@ -102,10 +102,10 @@ export function useVehiclesWithAssignments(search: string = "", filter: "all" | 
     queryKey: ["vehicles-with-assignments", search, filter],
     queryFn: async (): Promise<VehicleWithAssignment[]> => {
       // Get ALL vehicles - no limit for admin panel
-      let query = (supabase
-        .from("vehicles" as any)
+      let query = supabase
+        .from("vehicles")
         .select("device_id, device_name, device_type, gps_owner, group_name")
-        .order("device_name")) as any;
+        .order("device_name");
 
       if (search) {
         query = query.or(`device_name.ilike.%${search}%,device_id.ilike.%${search}%,gps_owner.ilike.%${search}%`);
@@ -115,17 +115,17 @@ export function useVehiclesWithAssignments(search: string = "", filter: "all" | 
       if (error) throw error;
 
       // Get all assignments with profile names
-      const { data: assignments } = await (supabase
-        .from("vehicle_assignments" as any)
+      const { data: assignments } = await supabase
+        .from("vehicle_assignments")
         .select(`
           device_id,
           profile_id,
           vehicle_alias,
           profiles:profile_id (name)
-        `) as any);
+        `);
 
       const assignmentMap = new Map<string, { profile_id: string; profile_name: string; vehicle_alias: string | null }>();
-      ((assignments || []) as any[]).forEach((a: any) => {
+      assignments?.forEach(a => {
         if (a.profile_id) {
           assignmentMap.set(a.device_id, {
             profile_id: a.profile_id,
@@ -135,16 +135,16 @@ export function useVehiclesWithAssignments(search: string = "", filter: "all" | 
         }
       });
 
-      let result = ((vehicles || []) as any[]).map((v: any) => ({
+      let result = (vehicles || []).map(v => ({
         ...v,
         assignedTo: assignmentMap.get(v.device_id) || null,
       }));
 
       // Apply filter
       if (filter === "assigned") {
-        result = result.filter((v: any) => v.assignedTo !== null);
+        result = result.filter(v => v.assignedTo !== null);
       } else if (filter === "unassigned") {
-        result = result.filter((v: any) => v.assignedTo === null);
+        result = result.filter(v => v.assignedTo === null);
       }
 
       return result;
@@ -157,17 +157,17 @@ export function useGpsOwners() {
   return useQuery({
     queryKey: ["gps-owners"],
     queryFn: async () => {
-      const { data, error } = await (supabase
-        .from("vehicles" as any)
+      const { data, error } = await supabase
+        .from("vehicles")
         .select("gps_owner")
         .not("gps_owner", "is", null)
-        .order("gps_owner") as any);
+        .order("gps_owner");
 
       if (error) throw error;
 
       // Get unique owners with vehicle counts
       const ownerCounts = new Map<string, number>();
-      ((data || []) as any[]).forEach((v: any) => {
+      data?.forEach(v => {
         if (v.gps_owner) {
           ownerCounts.set(v.gps_owner, (ownerCounts.get(v.gps_owner) || 0) + 1);
         }
@@ -187,10 +187,10 @@ export function useUnassignAllVehicles() {
 
   return useMutation({
     mutationFn: async () => {
-      const { error, count } = await (supabase
-        .from("vehicle_assignments" as any)
+      const { error, count } = await supabase
+        .from("vehicle_assignments")
         .delete()
-        .neq("device_id", "") as any); // Delete all rows
+        .neq("device_id", ""); // Delete all rows
 
       if (error) throw error;
       return { unassigned: count || 0 };
@@ -223,16 +223,16 @@ export function useAssignVehicles() {
       // Upsert assignments one by one (Supabase doesn't support bulk upsert well with ON CONFLICT)
       const results = await Promise.all(
         deviceIds.map(async (deviceId) => {
-          const { error } = await (supabase
-            .from("vehicle_assignments" as any)
+          const { error } = await supabase
+            .from("vehicle_assignments")
             .upsert({
               device_id: deviceId,
               profile_id: profileId,
               vehicle_alias: vehicleAliases?.[deviceId] || null,
               updated_at: new Date().toISOString(),
-            } as any, {
+            }, {
               onConflict: "device_id",
-            }) as any);
+            });
           return { deviceId, error };
         })
       );
@@ -263,15 +263,15 @@ export function useBulkAutoAssign() {
     mutationFn: async (assignments: { deviceId: string; profileId: string }[]) => {
       const results = await Promise.all(
         assignments.map(async ({ deviceId, profileId }) => {
-          const { error } = await (supabase
-            .from("vehicle_assignments" as any)
+          const { error } = await supabase
+            .from("vehicle_assignments")
             .upsert({
               device_id: deviceId,
               profile_id: profileId,
               updated_at: new Date().toISOString(),
-            } as any, {
+            }, {
               onConflict: "device_id",
-            }) as any);
+            });
           return { deviceId, error };
         })
       );
@@ -300,10 +300,10 @@ export function useUnassignVehicles() {
 
   return useMutation({
     mutationFn: async (deviceIds: string[]) => {
-      const { error } = await (supabase
-        .from("vehicle_assignments" as any)
+      const { error } = await supabase
+        .from("vehicle_assignments")
         .delete()
-        .in("device_id", deviceIds) as any);
+        .in("device_id", deviceIds);
 
       if (error) throw error;
       return { unassigned: deviceIds.length };
@@ -325,11 +325,11 @@ export function useCreateProfile() {
 
   return useMutation({
     mutationFn: async ({ name, email, phone }: { name: string; email?: string; phone?: string }) => {
-      const { data, error } = await (supabase
-        .from("profiles" as any)
-        .insert({ name, email, phone } as any)
+      const { data, error } = await supabase
+        .from("profiles")
+        .insert({ name, email, phone })
         .select()
-        .single() as any);
+        .single();
 
       if (error) throw error;
       return data;
@@ -372,10 +372,10 @@ export function useBulkCreateProfiles() {
         }
       });
 
-      const { data, error } = await (supabase
-        .from("profiles" as any)
-        .insert(profilesToCreate as any)
-        .select() as any);
+      const { data, error } = await supabase
+        .from("profiles")
+        .insert(profilesToCreate)
+        .select();
 
       if (error) throw error;
       return { created: data?.length || 0 };

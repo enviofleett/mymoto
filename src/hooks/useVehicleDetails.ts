@@ -19,27 +19,27 @@ export interface Driver {
 
 // Fetch position history for a vehicle
 async function fetchPositionHistory(deviceId: string): Promise<PositionHistory[]> {
-  const { data, error } = await (supabase
-    .from("position_history" as any)
+  const { data, error } = await supabase
+    .from("position_history")
     .select("id, latitude, longitude, speed, battery_percent, ignition_on, gps_time")
     .eq("device_id", deviceId)
     .order("gps_time", { ascending: false })
-    .limit(50) as any);
+    .limit(50);
 
   if (error) throw error;
-  return (data || []) as PositionHistory[];
+  return data || [];
 }
 
 // Fetch available drivers
 async function fetchAvailableDrivers(): Promise<Driver[]> {
-  const { data, error } = await (supabase
-    .from("profiles" as any)
+  const { data, error } = await supabase
+    .from("profiles")
     .select("id, name, phone")
     .eq("status", "active")
-    .order("name") as any);
+    .order("name");
 
   if (error) throw error;
-  return (data || []) as Driver[];
+  return data || [];
 }
 
 // Hook for position history with caching

@@ -34,11 +34,11 @@ export function AssignDriverDialog({ open, onOpenChange, vehicle, onSuccess }: A
 
   const fetchAvailableDrivers = async () => {
     try {
-      const { data, error } = await (supabase
-        .from("profiles" as any)
+      const { data, error } = await supabase
+        .from("profiles")
         .select("id, name, phone")
         .eq("status", "active")
-        .order("name") as any) as { data: Driver[] | null; error: any };
+        .order("name");
 
       if (error) throw error;
       setDrivers(data || []);
@@ -52,13 +52,13 @@ export function AssignDriverDialog({ open, onOpenChange, vehicle, onSuccess }: A
 
     setLoading(true);
     try {
-      const { error } = await (supabase
-        .from("vehicle_assignments" as any)
+      const { error } = await supabase
+        .from("vehicle_assignments")
         .upsert({
           device_id: vehicle.id,
           profile_id: selectedDriverId,
           updated_at: new Date().toISOString(),
-        }, { onConflict: 'device_id' }) as any);
+        }, { onConflict: 'device_id' });
 
       if (error) throw error;
 
