@@ -153,6 +153,7 @@ export default function OwnerVehicleProfile() {
   // CRITICAL FIX #3: Unified loading and error states
   const isInitialLoading = liveLoading && !liveData;
   const hasCriticalError = liveError !== null && liveError !== undefined;
+  const hasNoData = !liveLoading && !liveData && !liveError;
   
   // Show error state for critical data failures
   if (hasCriticalError) {
@@ -164,7 +165,34 @@ export default function OwnerVehicleProfile() {
             <p className="text-sm text-muted-foreground mb-4">
               {liveError instanceof Error ? liveError.message : "An unexpected error occurred"}
             </p>
-            <Button onClick={() => refetchLive()}>Retry</Button>
+            <div className="flex gap-2 justify-center">
+              <Button onClick={() => refetchLive()}>Retry</Button>
+              <Button variant="outline" onClick={() => navigate("/owner/vehicles")}>
+                Back to Vehicles
+              </Button>
+            </div>
+          </div>
+        </div>
+      </OwnerLayout>
+    );
+  }
+
+  // Show message when no data exists (vehicle not in database)
+  if (hasNoData) {
+    return (
+      <OwnerLayout>
+        <div className="flex items-center justify-center h-full">
+          <div className="text-center max-w-md px-4">
+            <p className="text-foreground font-medium mb-2">No vehicle data available</p>
+            <p className="text-sm text-muted-foreground mb-4">
+              This vehicle hasn't been synced yet or doesn't exist in the system.
+            </p>
+            <div className="flex gap-2 justify-center">
+              <Button onClick={() => refetchLive()}>Refresh</Button>
+              <Button variant="outline" onClick={() => navigate("/owner/vehicles")}>
+                Back to Vehicles
+              </Button>
+            </div>
           </div>
         </div>
       </OwnerLayout>
@@ -290,11 +318,28 @@ export default function OwnerVehicleProfile() {
     onRefresh: handleRefresh,
   });
 
-  // Display values with safe fallbacks
+  // Display values with safe fallbacks - ensure we always have something to display
   const displayName = llmSettings?.nickname || deviceId;
   const vehicleName = deviceId;
   const avatarUrl = llmSettings?.avatar_url || null;
   const personalityMode = llmSettings?.personality_mode || null;
+
+  // Ensure we have at least basic data before rendering main content
+  // If liveData is null at this point, it means the query completed but returned no data
+  // This shouldn't happen due to our checks above, but add safety check
+  if (!liveData && !liveLoading && !liveError) {
+    // This case should be caught by hasNoData check above, but add safety
+    return (
+      <OwnerLayout>
+        <div className="flex items-center justify-center h-full">
+          <div className="text-center max-w-md px-4">
+            <p className="text-foreground font-medium mb-2">Loading vehicle data...</p>
+            <Button variant="outline" onClick={() => refetchLive()}>Refresh</Button>
+          </div>
+        </div>
+      </OwnerLayout>
+    );
+  }
 
   return (
     <OwnerLayout>

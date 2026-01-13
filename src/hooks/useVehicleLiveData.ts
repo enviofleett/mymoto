@@ -54,7 +54,9 @@ export function mapToVehicleLiveData(data: any): VehicleLiveData {
  * NO Edge Function calls - this is the fleet-scale safe approach.
  */
 async function fetchVehicleLiveData(deviceId: string): Promise<VehicleLiveData> {
-  console.log("[useVehicleLiveData] Fetching from DB for:", deviceId);
+  if (process.env.NODE_ENV === 'development') {
+    console.log("[useVehicleLiveData] Fetching from DB for:", deviceId);
+  }
 
   const { data, error } = await (supabase as any)
     .from('vehicle_positions')
@@ -62,11 +64,26 @@ async function fetchVehicleLiveData(deviceId: string): Promise<VehicleLiveData> 
     .eq('device_id', deviceId)
     .maybeSingle();
 
-  if (error) throw new Error(`DB fetch error: ${error.message}`);
-  if (!data) throw new Error(`No position data found for device: ${deviceId}`);
+  if (error) {
+    const errorMessage = `DB fetch error: ${error.message}`;
+    if (process.env.NODE_ENV === 'development') {
+      console.error("[useVehicleLiveData] Error:", errorMessage);
+    }
+    throw new Error(errorMessage);
+  }
+  
+  if (!data) {
+    const errorMessage = `No position data found for device: ${deviceId}`;
+    if (process.env.NODE_ENV === 'development') {
+      console.warn("[useVehicleLiveData] No data:", errorMessage);
+    }
+    throw new Error(errorMessage);
+  }
 
   // Debug output for troubleshooting
-  console.log("Raw GPS Data:", data);
+  if (process.env.NODE_ENV === 'development') {
+    console.log("[useVehicleLiveData] Raw GPS Data:", data);
+  }
 
   return mapToVehicleLiveData(data);
 }
