@@ -920,24 +920,20 @@ serve(async (req) => {
     
     // Validate and get language instruction with safe fallback
     const languageInstruction = languageInstructions[languagePref] || languageInstructions.english
-    if (!languageInstruction) {
-      console.error(`[ERROR] Invalid language preference: "${languagePref}", falling back to english`)
-      console.error(`[ERROR] Available languages: ${Object.keys(languageInstructions).join(', ')}`)
-    } else if (languagePref !== 'english' && languageInstructions[languagePref] === undefined) {
-      console.warn(`[WARN] Language preference "${languagePref}" not found, using fallback: english`)
+    if (!languageInstructions[languagePref]) {
+      console.warn(`[WARN] Language preference "${languagePref}" not found in available languages, using fallback: english`)
+      console.warn(`[WARN] Available languages: ${Object.keys(languageInstructions).join(', ')}`)
     }
     
     // Validate and get personality instruction with safe fallback
     const personalityInstruction = personalityInstructions[personalityMode] || personalityInstructions.casual
-    if (!personalityInstruction) {
-      console.error(`[ERROR] Invalid personality mode: "${personalityMode}", falling back to casual`)
-      console.error(`[ERROR] Available personalities: ${Object.keys(personalityInstructions).join(', ')}`)
-    } else if (personalityMode !== 'casual' && personalityInstructions[personalityMode] === undefined) {
-      console.warn(`[WARN] Personality mode "${personalityMode}" not found, using fallback: casual`)
+    if (!personalityInstructions[personalityMode]) {
+      console.warn(`[WARN] Personality mode "${personalityMode}" not found in available personalities, using fallback: casual`)
+      console.warn(`[WARN] Available personalities: ${Object.keys(personalityInstructions).join(', ')}`)
     }
     
     // Log the selected settings for debugging
-    console.log(`[Settings] Language: ${languagePref}, Personality: ${personalityMode}`)
+    console.log(`[Settings] Language: ${languagePref} (${languageInstructions[languagePref] ? 'found' : 'using fallback'}), Personality: ${personalityMode} (${personalityInstructions[personalityMode] ? 'found' : 'using fallback'})`)
     
     // 8.1. Fetch Global Admin Persona from Database
     const { data: globalSettings } = await supabase
