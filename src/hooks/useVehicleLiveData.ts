@@ -26,7 +26,7 @@ export interface VehicleLiveData {
  * Maps database row to VehicleLiveData interface.
  * Handles mileage conversion (meters to km) and type normalization.
  */
-function mapToVehicleLiveData(data: any): VehicleLiveData {
+export function mapToVehicleLiveData(data: any): VehicleLiveData {
   // Mileage is stored in meters, convert to km
   const mileageMeters = data.total_mileage;
   const mileageKm = mileageMeters ? Math.round(mileageMeters / 1000) : null;
@@ -73,11 +73,9 @@ async function fetchVehicleLiveData(deviceId: string): Promise<VehicleLiveData> 
 
 /**
  * Primary hook for single vehicle live GPS data.
- * 
- * FLEET-SCALE SAFE: Reads directly from vehicle_positions table.
+ * * FLEET-SCALE SAFE: Reads directly from vehicle_positions table.
  * The CRON job (sync-gps-data) handles GPS51 API calls.
- * 
- * @param deviceId - Vehicle device ID
+ * * @param deviceId - Vehicle device ID
  * @returns Live telemetry data with 15-second polling
  */
 export function useVehicleLiveData(deviceId: string | null) {
