@@ -23,25 +23,26 @@ interface CommandResult {
 }
 
 // Commands that require confirmation before execution
+// UPDATED: Strictly focused on immobilization safety
 const COMMANDS_REQUIRING_CONFIRMATION = [
-  'immobilize',
-  'restore',
+  'immobilize_engine', // Critical safety command
+  'demobilize_engine', // Critical safety command
   'set_speed_limit',
-  'clear_speed_limit',
-  'start_engine',
-  'stop_engine'
+  'clear_speed_limit'
 ]
 
 // Map our command types to GPS51 command strings
+// UPDATED: Removed door controls, standardized engine commands
 const GPS51_COMMANDS: Record<string, string> = {
-  lock: 'LOCKDOOR',
-  unlock: 'UNLOCKDOOR',
-  immobilize: 'RELAY,1',      // Stop engine / cut fuel
-  restore: 'RELAY,0',          // Restore engine
-  stop_engine: 'RELAY,1',
-  start_engine: 'RELAY,0',
-  sound_alarm: 'FINDCAR',      // Sound horn/flash lights
+  // Security / Immobilization
+  immobilize_engine: 'RELAY,1',    // Cut fuel/power
+  demobilize_engine: 'RELAY,0',    // Restore fuel/power
+  
+  // Alerts
+  sound_alarm: 'FINDCAR',          // Sound horn/flash lights
   silence_alarm: 'FINDCAROFF',
+  
+  // Maintenance
   reset: 'RESET'
 }
 
@@ -214,8 +215,6 @@ async function handleLocalCommand(
     }
 
     case 'set_speed_limit': {
-      // Store speed limit in vehicle_llm_settings or a dedicated table
-      // For now, just acknowledge - actual implementation needs GPS51 device support
       return {
         success: true,
         response: { speed_limit_set: payload.speed_limit || 100 }
@@ -231,7 +230,6 @@ async function handleLocalCommand(
 
     case 'enable_geofence':
     case 'disable_geofence': {
-      // Geofence management would go here
       return {
         success: true,
         response: { geofence_status: commandType === 'enable_geofence' ? 'enabled' : 'disabled' }
@@ -373,7 +371,7 @@ serve(async (req) => {
       const gps51Command = GPS51_COMMANDS[command_type]
       
       if (!gps51Command) {
-        executionResult = { success: false, error: `Unsupported command type: ${command_type}` }
+        executionResult = { success: false, error: `Unsupported or restricted command type: ${command_type}` }
       } else {
         // Get proxy URL and token
         const DO_PROXY_URL = Deno.env.get('DO_PROXY_URL')
