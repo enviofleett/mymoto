@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { callGps51WithRateLimit, getValidGps51Token } from "../_shared/gps51-client.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -6,20 +7,6 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Max-Age": "86400",
 };
-
-// Rate limiting: Max 10 GPS51 API calls per second to avoid spikes
-const GPS51_API_DELAY_MS = 100; // 100ms = 10 calls/second max
-let lastApiCallTime = 0;
-
-// Helper to rate-limit GPS51 API calls
-async function rateLimitedDelay() {
-  const now = Date.now();
-  const timeSinceLastCall = now - lastApiCallTime;
-  if (timeSinceLastCall < GPS51_API_DELAY_MS) {
-    await new Promise(resolve => setTimeout(resolve, GPS51_API_DELAY_MS - timeSinceLastCall));
-  }
-  lastApiCallTime = Date.now();
-}
 
 interface PositionPoint {
   id: string;
@@ -67,56 +54,7 @@ interface Gps51Trip {
   [key: string]: any;
 }
 
-// Get valid GPS51 token and serverid
-async function getValidToken(supabase: any): Promise<{ token: string; username: string; serverid: string }> {
-  const { data: tokenData, error } = await supabase
-    .from('app_settings')
-    .select('value, expires_at, metadata')
-    .eq('key', 'gps_token')
-    .maybeSingle();
-
-  if (error) throw new Error(`Token fetch error: ${error.message}`);
-  if (!tokenData?.value) throw new Error('No GPS token found. Admin login required.');
-
-  if (tokenData.expires_at) {
-    const expiresAt = new Date(tokenData.expires_at);
-    if (new Date() >= expiresAt) {
-      throw new Error('Token expired. Admin refresh required.');
-    }
-  }
-
-  return {
-    token: tokenData.value,
-    username: tokenData.metadata?.username || '',
-    serverid: tokenData.metadata?.serverid || '1'
-  };
-}
-
-// Call GPS51 API via proxy with rate limiting
-async function callGps51(proxyUrl: string, action: string, token: string, serverid: string, body: any): Promise<any> {
-  await rateLimitedDelay(); // Rate limit to avoid spikes
-  
-  const targetUrl = `https://api.gps51.com/openapi?action=${action}&token=${token}&serverid=${serverid}`;
-  
-  console.log(`[GPS51 API] Calling ${action} with serverid=${serverid}`);
-  
-  const response = await fetch(proxyUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      targetUrl,
-      method: 'POST',
-      data: body
-    })
-  });
-
-  if (!response.ok) {
-    throw new Error(`GPS51 API HTTP error: ${response.status}`);
-  }
-
-  const result = await response.json();
-  return result;
-}
+// Use shared GPS51 client (has centralized rate limiting)
 
 // Format date for GPS51 API (yyyy-MM-dd HH:mm:ss)
 function formatDateForGps51(date: Date): string {
@@ -131,6 +69,7 @@ function formatDateForGps51(date: Date): string {
 
 // Fetch trips from GPS51 querytrips API
 async function fetchTripsFromGps51(
+  supabase: any,
   proxyUrl: string,
   token: string,
   serverid: string,
@@ -143,12 +82,19 @@ async function fetchTripsFromGps51(
   const begintime = formatDateForGps51(startDate);
   const endtime = formatDateForGps51(endDate);
   
-  const result = await callGps51(proxyUrl, 'querytrips', token, serverid, {
-    deviceid: deviceId,
-    begintime,
-    endtime,
-    timezone: 8 // GMT+8 (China time zone, default)
-  });
+  const result = await callGps51WithRateLimit(
+    supabase,
+    proxyUrl,
+    'querytrips',
+    token,
+    serverid,
+    {
+      deviceid: deviceId,
+      begintime,
+      endtime,
+      timezone: 8 // GMT+8 (China time zone, default)
+    }
+  );
 
   if (result.status !== 0) {
     throw new Error(`GPS51 querytrips error: ${result.cause || 'Unknown error'} (status: ${result.status})`);
@@ -549,7 +495,7 @@ Deno.serve(async (req) => {
       throw new Error("Missing DO_PROXY_URL environment variable");
     }
 
-    const { token, username, serverid } = await getValidToken(supabase);
+    const { token, username, serverid } = await getValidGps51Token(supabase);
     console.log(`[sync-trips-incremental] Using GPS51 token for user: ${username}, serverid: ${serverid}`);
 
     // Get devices to sync
@@ -581,10 +527,8 @@ Deno.serve(async (req) => {
     for (let i = 0; i < uniqueDevices.length; i++) {
       const deviceId = uniqueDevices[i];
       
-      // Add delay between devices to avoid API spikes (except first device)
-      if (i > 0) {
-        await new Promise(resolve => setTimeout(resolve, GPS51_API_DELAY_MS));
-      }
+      // Rate limiting is handled by shared GPS51 client
+      // No need for manual delays here
 
       try {
         console.log(`[sync-trips-incremental] Processing device ${i + 1}/${uniqueDevices.length}: ${deviceId}`);
@@ -628,8 +572,9 @@ Deno.serve(async (req) => {
             .eq("device_id", deviceId);
         }
 
-        // Fetch trips from GPS51 API
+        // Fetch trips from GPS51 API (with centralized rate limiting)
         const trips = await fetchTripsFromGps51(
+          supabase,
           DO_PROXY_URL,
           token,
           serverid,

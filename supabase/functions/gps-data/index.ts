@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { callGps51WithRateLimit, getValidGps51Token } from "../_shared/gps51-client.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -17,31 +18,7 @@ interface TokenData {
   metadata: { username?: string; serverid?: string } | null
 }
 
-// Get valid token, auto-refresh if expired
-async function getValidToken(supabase: any): Promise<{ token: string; username: string; serverid: string }> {
-  const { data: tokenData, error } = await supabase
-    .from('app_settings')
-    .select('value, expires_at, metadata')
-    .eq('key', 'gps_token')
-    .maybeSingle()
-
-  if (error) throw new Error(`Token fetch error: ${error.message}`)
-  if (!tokenData?.value) throw new Error('No GPS token found. Admin login required.')
-
-  // Check if token is expired
-  if (tokenData.expires_at) {
-    const expiresAt = new Date(tokenData.expires_at)
-    if (new Date() >= expiresAt) {
-      throw new Error('Token expired. Admin refresh required.')
-    }
-  }
-
-  return {
-    token: tokenData.value,
-    username: tokenData.metadata?.username || '',
-    serverid: tokenData.metadata?.serverid || '1'
-  }
-}
+// Using shared getValidGps51Token from _shared/gps51-client.ts
 
 // Check if cached data is still valid
 async function getCachedPositions(supabase: any): Promise<any[] | null> {
@@ -97,25 +74,12 @@ async function logApiCall(supabase: any, action: string, requestBody: any, respo
   }
 }
 
-// Call GPS51 API via proxy - MUST include serverid per GPS51 spec
-async function callGps51(proxyUrl: string, action: string, token: string, serverid: string, body: any): Promise<any> {
+// Use shared GPS51 client (has centralized rate limiting)
+// Wrapper to maintain compatibility with existing code
+async function callGps51(proxyUrl: string, action: string, token: string, serverid: string, body: any, supabase: any): Promise<any> {
   const startTime = Date.now()
-  // CRITICAL: serverid MUST be in URL query per GPS51 OpenAPI spec
-  const targetUrl = `https://api.gps51.com/openapi?action=${action}&token=${token}&serverid=${serverid}`
   
-  console.log(`GPS51 API call: action=${action}, serverid=${serverid}, body keys:`, Object.keys(body || {}))
-  
-  const response = await fetch(proxyUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      targetUrl,
-      method: 'POST',
-      data: body
-    })
-  })
-
-  const result = await response.json()
+  const result = await callGps51WithRateLimit(supabase, proxyUrl, action, token, serverid, body)
   const duration = Date.now() - startTime
   
   return { result, duration }
@@ -422,7 +386,7 @@ async function getAllDeviceIds(supabase: any, proxyUrl: string, token: string, s
   }
   
   // Fallback to API call - MUST include serverid
-  const { result } = await callGps51(proxyUrl, 'querymonitorlist', token, serverid, { username })
+  const { result } = await callGps51(proxyUrl, 'querymonitorlist', token, serverid, { username }, supabase)
   
   if (result.status !== 0 || !result.groups) {
     console.error('Failed to fetch device list:', result)
@@ -450,7 +414,7 @@ serve(async (req) => {
     if (!DO_PROXY_URL) throw new Error('Missing DO_PROXY_URL secret')
 
     // Get valid token - now includes serverid
-    const { token, username, serverid } = await getValidToken(supabase)
+    const { token, username, serverid } = await getValidGps51Token(supabase)
     console.log(`Token retrieved: serverid=${serverid}, username=${username}`)
 
     // For lastposition, check cache first
@@ -490,8 +454,8 @@ serve(async (req) => {
       }
     }
 
-    // Call GPS51 API - now includes serverid in URL query
-    const { result: apiResponse, duration } = await callGps51(DO_PROXY_URL, action, token, serverid, finalBody)
+    // Call GPS51 API - now includes serverid in URL query (with centralized rate limiting)
+    const { result: apiResponse, duration } = await callGps51(DO_PROXY_URL, action, token, serverid, finalBody, supabase)
     
     // Handle null/undefined response
     if (!apiResponse) {
