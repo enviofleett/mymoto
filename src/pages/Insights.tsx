@@ -17,6 +17,7 @@ import { BillingConfigCard } from "@/components/admin/BillingConfigCard";
 import { AiSimulationCard } from "@/components/admin/AiSimulationCard";
 import { DataBackfillCard } from "@/components/admin/DataBackfillCard";
 import { GhostVehicleCard } from "@/components/admin/GhostVehicleCard";
+import { StaleVehicleCard } from "@/components/admin/StaleVehicleCard";
 import { FleetInsights } from "@/components/fleet/FleetInsights";
 import {
   LineChart,
@@ -436,6 +437,13 @@ const Insights = () => {
         {isAdmin && (
           <div className="grid gap-6 lg:grid-cols-2">
             <GhostVehicleCard />
+            <StaleVehicleCard />
+          </div>
+        )}
+
+        {/* Billing Config */}
+        {isAdmin && (
+          <div className="grid gap-6 lg:grid-cols-2">
             <BillingConfigCard />
           </div>
         )}
