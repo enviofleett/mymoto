@@ -39,7 +39,7 @@ export function MileageSection({
   totalMileage,
   dailyStats,
   mileageStats,
-  dailyMileage, // Keeping prop for compatibility, but we rely on dailyStats for consistency
+  dailyMileage,
   dateRange,
 }: MileageSectionProps) {
   const isFilterActive = !!dateRange?.from;
@@ -51,7 +51,6 @@ export function MileageSection({
     }
     
     if (dateRange?.from) {
-      // Use UTC string comparison to avoid timezone shifts stripping "Today"
       const fromDate = dateRange.from.toISOString().split('T')[0];
       const toDate = dateRange.to?.toISOString().split('T')[0] || fromDate;
       
@@ -67,7 +66,6 @@ export function MileageSection({
   }, [dailyStats, dateRange]);
 
   // Convert daily stats to chart data
-  // FIX: This is now the ONLY data source for charts to prevent "jumping"
   const chartData = useMemo(() => {
     if (!dailyStats || dailyStats.length === 0) return [];
     
@@ -101,7 +99,7 @@ export function MileageSection({
     };
   }, [derivedStats, chartData]);
 
-  // Data to display in charts (Always use chartData for consistency)
+  // Use chartData consistently to prevent UI jumping
   const displayData = chartData.length > 0 ? chartData : [];
 
   return (
@@ -132,9 +130,10 @@ export function MileageSection({
               {isFilterActive ? "Period Distance" : "Total Odometer"}
             </div>
             <div className="text-3xl font-bold text-foreground">
+              {/* DEFENSIVE FIX: Check strictly for number type */}
               {isFilterActive 
                 ? derivedStats.totalDistance.toFixed(1)
-                : totalMileage !== null 
+                : typeof totalMileage === 'number' 
                   ? totalMileage.toLocaleString(undefined, { maximumFractionDigits: 0 }) 
                   : "--"
               } <span className="text-base font-normal">km</span>
@@ -195,10 +194,7 @@ export function MileageSection({
             </div>
             <div className="text-right">
               <div className="text-lg font-bold text-primary">
-                {isFilterActive 
-                  ? derivedStats.totalDistance.toFixed(1)
-                  : derivedStats.totalDistance.toFixed(1) // Consistent total
-                } km
+                {derivedStats.totalDistance.toFixed(1)} km
               </div>
               <div className="text-xs text-muted-foreground">
                 Avg: {derivedStats.avgPerDay.toFixed(1)}/day
@@ -208,7 +204,6 @@ export function MileageSection({
 
           <div className="h-40">
             <ResponsiveContainer width="100%" height="100%">
-              {/* FIX: Use displayData instead of toggling sources */}
               <AreaChart data={displayData}>
                 <defs>
                   <linearGradient id="mileageGradient" x1="0" y1="0" x2="0" y2="1">
@@ -229,7 +224,7 @@ export function MileageSection({
                     border: "1px solid hsl(var(--border))",
                     borderRadius: "8px",
                   }}
-                  formatter={(value: number) => [`${value.toFixed(1)} km`, 'Distance']}
+                  formatter={(value: number) => [`${typeof value === 'number' ? value.toFixed(1) : 0} km`, 'Distance']}
                 />
                 <Area
                   type="monotone"
@@ -270,7 +265,6 @@ export function MileageSection({
 
           <div className="h-40">
             <ResponsiveContainer width="100%" height="100%">
-              {/* FIX: Use displayData instead of toggling sources */}
               <BarChart data={displayData}>
                 <XAxis
                   dataKey="day"
