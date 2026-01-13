@@ -30,7 +30,7 @@ export function RecentActivityFeed({ deviceId, limit = 20, showCard = true }: Re
 
   useEffect(() => {
     const fetchHistory = async () => {
-      let query = supabase
+      let query = (supabase as any)
         .from('position_history')
         .select(`
           id,
@@ -59,20 +59,21 @@ export function RecentActivityFeed({ deviceId, limit = 20, showCard = true }: Re
       }
 
       // Fetch vehicle names separately
-      const deviceIds = [...new Set(data.map(item => item.device_id).filter(Boolean))];
-      const { data: vehiclesData } = await supabase
+      const deviceIds = [...new Set((data as any[]).map((item: any) => item.device_id).filter(Boolean))];
+      const { data: vehiclesData } = await (supabase as any)
         .from('vehicles')
         .select('device_id, device_name')
         .in('device_id', deviceIds);
 
-      const vehicleMap = new Map(vehiclesData?.map(v => [v.device_id, v.device_name]) || []);
+      const vehicleMap = new Map((vehiclesData as any[])?.map((v: any) => [v.device_id, v.device_name]) || []);
 
       // Derive activity events from position history
       const events: ActivityItem[] = [];
+      const positionData = data as any[];
 
-      for (let i = 0; i < data.length - 1; i++) {
-        const current = data[i];
-        const previous = data[i + 1];
+      for (let i = 0; i < positionData.length - 1; i++) {
+        const current = positionData[i];
+        const previous = positionData[i + 1];
 
         // Ignition state changes
         if (current.ignition_on && !previous.ignition_on) {

@@ -37,9 +37,9 @@ export function useAssignmentStats() {
     queryKey: ["assignment-stats"],
     queryFn: async (): Promise<AssignmentStats> => {
       const [vehiclesRes, assignmentsRes, profilesRes] = await Promise.all([
-        supabase.from("vehicles").select("device_id", { count: "exact", head: true }),
-        supabase.from("vehicle_assignments").select("device_id", { count: "exact", head: true }),
-        supabase.from("profiles").select("id", { count: "exact", head: true }),
+        (supabase as any).from("vehicles").select("device_id", { count: "exact", head: true }),
+        (supabase as any).from("vehicle_assignments").select("device_id", { count: "exact", head: true }),
+        (supabase as any).from("profiles").select("id", { count: "exact", head: true }),
       ]);
 
       const totalVehicles = vehiclesRes.count || 0;
@@ -47,7 +47,7 @@ export function useAssignmentStats() {
       const totalUsers = profilesRes.count || 0;
 
       // Get users with at least one vehicle
-      const { data: usersWithAssignments } = await supabase
+      const { data: usersWithAssignments } = await (supabase as any)
         .from("vehicle_assignments")
         .select("profile_id")
         .not("profile_id", "is", null);
@@ -70,7 +70,7 @@ export function useProfiles() {
     queryKey: ["profiles-with-assignments"],
     queryFn: async (): Promise<ProfileWithAssignments[]> => {
       // Get all profiles
-      const { data: profiles, error } = await supabase
+      const { data: profiles, error } = await (supabase as any)
         .from("profiles")
         .select("id, name, email, phone, user_id")
         .order("name");
@@ -78,7 +78,7 @@ export function useProfiles() {
       if (error) throw error;
 
       // Get assignment counts per profile
-      const { data: assignments } = await supabase
+      const { data: assignments } = await (supabase as any)
         .from("vehicle_assignments")
         .select("profile_id");
 
@@ -102,7 +102,7 @@ export function useVehiclesWithAssignments(search: string = "", filter: "all" | 
     queryKey: ["vehicles-with-assignments", search, filter],
     queryFn: async (): Promise<VehicleWithAssignment[]> => {
       // Get ALL vehicles - no limit for admin panel
-      let query = supabase
+      let query = (supabase as any)
         .from("vehicles")
         .select("device_id, device_name, device_type, gps_owner, group_name")
         .order("device_name");
@@ -115,7 +115,7 @@ export function useVehiclesWithAssignments(search: string = "", filter: "all" | 
       if (error) throw error;
 
       // Get all assignments with profile names
-      const { data: assignments } = await supabase
+      const { data: assignments } = await (supabase as any)
         .from("vehicle_assignments")
         .select(`
           device_id,
@@ -157,7 +157,7 @@ export function useGpsOwners() {
   return useQuery({
     queryKey: ["gps-owners"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from("vehicles")
         .select("gps_owner")
         .not("gps_owner", "is", null)
@@ -187,7 +187,7 @@ export function useUnassignAllVehicles() {
 
   return useMutation({
     mutationFn: async () => {
-      const { error, count } = await supabase
+      const { error, count } = await (supabase as any)
         .from("vehicle_assignments")
         .delete()
         .neq("device_id", ""); // Delete all rows
@@ -223,7 +223,7 @@ export function useAssignVehicles() {
       // Upsert assignments one by one (Supabase doesn't support bulk upsert well with ON CONFLICT)
       const results = await Promise.all(
         deviceIds.map(async (deviceId) => {
-          const { error } = await supabase
+          const { error } = await (supabase as any)
             .from("vehicle_assignments")
             .upsert({
               device_id: deviceId,
@@ -263,7 +263,7 @@ export function useBulkAutoAssign() {
     mutationFn: async (assignments: { deviceId: string; profileId: string }[]) => {
       const results = await Promise.all(
         assignments.map(async ({ deviceId, profileId }) => {
-          const { error } = await supabase
+          const { error } = await (supabase as any)
             .from("vehicle_assignments")
             .upsert({
               device_id: deviceId,
@@ -300,7 +300,7 @@ export function useUnassignVehicles() {
 
   return useMutation({
     mutationFn: async (deviceIds: string[]) => {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from("vehicle_assignments")
         .delete()
         .in("device_id", deviceIds);
@@ -325,7 +325,7 @@ export function useCreateProfile() {
 
   return useMutation({
     mutationFn: async ({ name, email, phone }: { name: string; email?: string; phone?: string }) => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from("profiles")
         .insert({ name, email, phone })
         .select()

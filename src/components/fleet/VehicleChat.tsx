@@ -174,7 +174,7 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
   const { data: historyData, isLoading: historyLoading } = useQuery({
     queryKey: ['vehicle-chat-history', deviceId],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('vehicle_chat_history')
         .select('*')
         .eq('device_id', deviceId)
@@ -191,14 +191,14 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
   const { data: vehicleContext } = useQuery({
     queryKey: ['vehicle-context', deviceId],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('vehicle_positions')
         .select('*')
         .eq('device_id', deviceId)
         .single();
 
       if (error) throw error;
-      return data;
+      return data as any;
     },
     enabled: !!deviceId,
     refetchInterval: 30000 // Refresh every 30s for live context

@@ -93,7 +93,7 @@ export function ProactiveNotifications({
   const fetchEvents = useCallback(async () => {
     setLoading(true);
     try {
-      let query = supabase
+      let query = (supabase as any)
         .from('proactive_vehicle_events')
         .select('*')
         .order('created_at', { ascending: false })
@@ -110,7 +110,7 @@ export function ProactiveNotifications({
       const { data, error } = await query;
       if (error) throw error;
 
-      setEvents((data || []).map(e => ({
+      setEvents((data || []).map((e: any) => ({
         ...e,
         severity: e.severity as ProactiveEvent['severity'],
         metadata: e.metadata as Record<string, unknown>
@@ -165,7 +165,7 @@ export function ProactiveNotifications({
   // Acknowledge an event
   const handleAcknowledge = useCallback(async (eventId: string) => {
     try {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('proactive_vehicle_events')
         .update({
           acknowledged: true,
