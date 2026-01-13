@@ -12,6 +12,8 @@ const POSITION_HISTORY_RETENTION_DAYS = 30
 const CHAT_HISTORY_RETENTION_DAYS = 90
 const PROACTIVE_EVENTS_RETENTION_DAYS = 7
 const GHOST_VEHICLE_BUFFER_HOURS = 48
+// New retention period for stale/abandoned vehicles
+const STALE_VEHICLE_DAYS = 30
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -206,6 +208,79 @@ serve(async (req) => {
       }
     } else {
       results.ghost_vehicles = { success: true, purged_count: 0 }
+    }
+
+    // 7. Clean up stale/abandoned vehicles (offline > 30 days)
+    console.log('Starting stale vehicle cleanup...')
+    const staleCutoff = new Date()
+    staleCutoff.setDate(staleCutoff.getDate() - STALE_VEHICLE_DAYS)
+
+    // Find vehicles with position data older than the cutoff
+    const { data: staleVehicles, error: staleFetchError } = await supabase
+      .from('vehicle_positions')
+      .select('device_id')
+      .lt('gps_time', staleCutoff.toISOString())
+
+    if (staleFetchError) {
+      console.error('Error fetching stale vehicles:', staleFetchError)
+      results.stale_vehicles = { error: staleFetchError.message }
+    } else if (staleVehicles && staleVehicles.length > 0) {
+      const staleDeviceIds = staleVehicles.map(v => v.device_id)
+      console.log(`Found ${staleDeviceIds.length} stale vehicles to purge`)
+
+      // Tables to clean up - INCLUDES 'position_history' which ghost check skips
+      const dependentTables = [
+        'position_history',      // <--- Critical addition for stale vehicles
+        'vehicle_positions',
+        'vehicle_assignments', 
+        'vehicle_chat_history',
+        'vehicle_command_logs',
+        'vehicle_llm_settings',
+        'proactive_vehicle_events',
+        'geofence_monitors',
+        'geofence_events',
+        'conversation_summaries',
+        'llm_analytics',
+        'trip_analytics',
+        'trip_patterns',
+        'vehicle_trips'
+      ]
+
+      // Delete from dependent tables first
+      for (const table of dependentTables) {
+        const { error: depError } = await supabase
+          .from(table)
+          .delete()
+          .in('device_id', staleDeviceIds)
+        
+        if (depError) {
+          console.error(`Error cleaning ${table} for stale vehicles:`, depError)
+          // We continue despite errors to try and clean as much as possible
+        }
+      }
+
+      // Delete the vehicles
+      const { error: deleteError } = await supabase
+        .from('vehicles')
+        .delete()
+        .in('device_id', staleDeviceIds)
+
+      if (deleteError) {
+        console.error('Error deleting stale vehicles:', deleteError)
+        results.stale_vehicles = { 
+          error: deleteError.message, 
+          identified_count: staleDeviceIds.length 
+        }
+      } else {
+        console.log(`Successfully purged ${staleDeviceIds.length} stale vehicles`)
+        results.stale_vehicles = { 
+          success: true, 
+          purged_count: staleDeviceIds.length 
+        }
+      }
+    } else {
+      console.log('No stale vehicles found to purge')
+      results.stale_vehicles = { success: true, purged_count: 0 }
     }
 
     const duration = Date.now() - startTime
