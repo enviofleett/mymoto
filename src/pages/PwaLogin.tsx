@@ -117,7 +117,7 @@ export default function PwaLogin() {
         <CardHeader className="text-center space-y-2 pb-4">
           <CardTitle className="text-xl font-semibold text-foreground">Welcome Back</CardTitle>
           <CardDescription className="text-muted-foreground">
-            Sign in with your GPS51 account
+            Sign in to your account
           </CardDescription>
         </CardHeader>
         
@@ -138,11 +138,11 @@ export default function PwaLogin() {
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="gps51-username" className="text-foreground text-sm">GPS51 Username</Label>
+              <Label htmlFor="gps51-username" className="text-foreground text-sm">Username</Label>
               <Input
                 id="gps51-username"
                 type="text"
-                placeholder="Enter your GPS51 username"
+                placeholder="Enter your username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 disabled={isSubmitting}
@@ -182,14 +182,14 @@ export default function PwaLogin() {
           </form>
 
           <p className="text-xs text-muted-foreground text-center mt-6">
-            Your vehicles will be automatically synced from GPS51
+            Your vehicles will be automatically synced
           </p>
         </CardContent>
       </Card>
 
       {/* Footer branding */}
       <p className="text-xs text-muted-foreground/60 mt-8 animate-fade-in [animation-delay:600ms]">
-        Powered by GPS51 Tracking
+        MyMoto Vehicle Companion
       </p>
     </div>
   );
