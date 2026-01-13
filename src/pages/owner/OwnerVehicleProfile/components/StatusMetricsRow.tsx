@@ -26,7 +26,7 @@ export function StatusMetricsRow({ battery, totalMileage }: StatusMetricsRowProp
 
   return (
     <div className="grid grid-cols-2 gap-4">
-      {/* Battery - Neumorphic inset style */}
+      {/* Battery */}
       <Card className="border-0 bg-card shadow-neumorphic-inset rounded-xl">
         <CardContent className="p-4">
           <div className="flex items-center gap-2 mb-2">
@@ -36,13 +36,13 @@ export function StatusMetricsRow({ battery, totalMileage }: StatusMetricsRowProp
             <span className="text-sm text-muted-foreground">Battery</span>
           </div>
           <div className={cn("text-2xl font-bold", getBatteryColor(battery))}>
-            {battery !== null ? `${battery}%` : "--%"}
+            {typeof battery === 'number' ? `${battery}%` : "--%"}
           </div>
           <div className="text-xs text-muted-foreground">{getBatteryStatus(battery)}</div>
         </CardContent>
       </Card>
 
-      {/* Mileage - Neumorphic inset style */}
+      {/* Mileage */}
       <Card className="border-0 bg-card shadow-neumorphic-inset rounded-xl">
         <CardContent className="p-4">
           <div className="flex items-center gap-2 mb-2">
@@ -52,7 +52,8 @@ export function StatusMetricsRow({ battery, totalMileage }: StatusMetricsRowProp
             <span className="text-sm text-muted-foreground">Mileage</span>
           </div>
           <div className="text-2xl font-bold text-foreground">
-            {totalMileage !== null 
+            {/* DEFENSIVE FIX: Check strictly for number type */}
+            {typeof totalMileage === 'number'
               ? totalMileage.toLocaleString(undefined, { maximumFractionDigits: 0 }) 
               : "--"} <span className="text-sm font-normal text-muted-foreground">km</span>
           </div>
