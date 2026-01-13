@@ -33,22 +33,40 @@ async function fetchTripSyncStatus(deviceId: string): Promise<TripSyncStatus | n
 
 // Trigger manual sync
 async function triggerTripSync(deviceId: string, forceFullSync: boolean = false): Promise<any> {
-  // Get the current session to ensure we send auth token
-  const { data: { session } } = await supabase.auth.getSession();
+  // Get the current session - refresh if needed
+  let { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  
+  // If no session, try to get user to ensure we're authenticated
+  if (!session) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error("You must be logged in to sync trips. Please sign in and try again.");
+    }
+    // Retry getting session after user check
+    const retry = await supabase.auth.getSession();
+    session = retry.data.session;
+  }
+  
+  // Ensure we have a valid access token
+  if (!session?.access_token) {
+    throw new Error("Authentication token is missing. Please sign in again.");
+  }
   
   const { data, error } = await supabase.functions.invoke("sync-trips-incremental", {
     body: {
       device_ids: [deviceId],
       force_full_sync: forceFullSync,
     },
-    headers: session?.access_token
-      ? {
-          Authorization: `Bearer ${session.access_token}`,
-        }
-      : undefined,
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+    },
   });
 
   if (error) {
+    // Provide more helpful error messages
+    if (error.message?.includes("401") || error.message?.includes("Unauthorized")) {
+      throw new Error("Authentication failed. Please sign in again or check if the function allows your access.");
+    }
     throw new Error(error.message || "Failed to sync trips");
   }
 
