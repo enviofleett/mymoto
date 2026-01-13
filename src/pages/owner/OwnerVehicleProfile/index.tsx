@@ -19,6 +19,7 @@ import { PullToRefreshIndicator } from "@/components/ui/pull-to-refresh";
 import { useAddress } from "@/hooks/useAddress";
 import { useVehicleProfileData } from "@/hooks/useVehicleProfileData";
 import { useVehicleLiveData } from "@/hooks/useVehicleLiveData";
+import { useRealtimeVehicleUpdates } from "@/hooks/useRealtimeVehicleUpdates";
 import {
   useVehicleTrips,
   useVehicleEvents,
@@ -78,6 +79,9 @@ export default function OwnerVehicleProfile() {
     refetch: refetchLive,
   } = useVehicleLiveData(deviceId ?? null);
   
+  // ENABLE REAL-TIME UPDATES
+  useRealtimeVehicleUpdates(deviceId ?? null);
+  
   // Derive status from live data
   const isOnline = liveData?.isOnline ?? false;
   const status: 'online' | 'charging' | 'offline' = isOnline ? 'online' : 'offline';
@@ -103,11 +107,9 @@ export default function OwnerVehicleProfile() {
   
   /**
    * CRITICAL: Pull-to-refresh handler that guarantees fresh data.
-   * 
-   * Strategy: Invalidate queries FIRST (marks as stale), THEN refetch.
+   * * Strategy: Invalidate queries FIRST (marks as stale), THEN refetch.
    * This bypasses staleTime and forces a network request.
-   * 
-   * "Real-time" Definition:
+   * * "Real-time" Definition:
    * - Manual refresh: User-triggered, always fetches latest from DB
    * - Live updates: useVehicleLiveData polls every 15s, events via WebSocket
    */
