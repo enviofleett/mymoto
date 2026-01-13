@@ -215,18 +215,21 @@ serve(async (req) => {
     const staleCutoff = new Date()
     staleCutoff.setDate(staleCutoff.getDate() - STALE_VEHICLE_DAYS)
 
-    // Find vehicles with position data older than the cutoff
-    const { data: staleVehicles, error: staleFetchError } = await supabase
+    // Get all vehicles with their latest position time
+    const { data: allPositions, error: staleFetchError } = await supabase
       .from('vehicle_positions')
-      .select('device_id')
-      .lt('gps_time', staleCutoff.toISOString())
+      .select('device_id, gps_time')
 
     if (staleFetchError) {
       console.error('Error fetching stale vehicles:', staleFetchError)
       results.stale_vehicles = { error: staleFetchError.message }
-    } else if (staleVehicles && staleVehicles.length > 0) {
-      const staleDeviceIds = staleVehicles.map(v => v.device_id)
-      console.log(`Found ${staleDeviceIds.length} stale vehicles to purge`)
+    } else if (allPositions && allPositions.length > 0) {
+      // Filter to vehicles whose MOST RECENT position is older than 30 days
+      const staleDeviceIds = allPositions
+        .filter(v => v.gps_time && new Date(v.gps_time) < staleCutoff)
+        .map(v => v.device_id)
+      
+      console.log(`Found ${staleDeviceIds.length} stale vehicles to purge (last seen > ${STALE_VEHICLE_DAYS} days ago)`)
 
       // Tables to clean up - INCLUDES 'position_history' which ghost check skips
       const dependentTables = [
