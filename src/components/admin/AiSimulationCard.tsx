@@ -32,6 +32,11 @@ interface ScenarioTemplate {
   is_system: boolean;
 }
 
+interface VehicleAssignment {
+  device_id: string;
+  vehicle_alias: string | null;
+}
+
 const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   location: <MapPin className="h-3 w-3" />,
   maintenance: <Wrench className="h-3 w-3" />,
@@ -72,7 +77,7 @@ export function AiSimulationCard() {
 
   const fetchTemplates = async () => {
     setLoadingTemplates(true);
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('ai_scenario_templates')
       .select('*')
       .order('is_system', { ascending: false })
@@ -83,10 +88,11 @@ export function AiSimulationCard() {
       console.error("Error fetching templates:", error);
       toast.error("Failed to load scenario templates");
     } else {
-      setTemplates(data || []);
+      const templatesData = (data || []) as ScenarioTemplate[];
+      setTemplates(templatesData);
       // Pre-select first 5 system templates by default
       const defaultSelected = new Set(
-        (data || []).filter(t => t.is_system).slice(0, 5).map(t => t.id)
+        templatesData.filter(t => t.is_system).slice(0, 5).map(t => t.id)
       );
       setSelectedTemplateIds(defaultSelected);
     }
@@ -100,7 +106,7 @@ export function AiSimulationCard() {
     }
 
     setSavingTemplate(true);
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('ai_scenario_templates')
       .insert({
         name: newTemplateName.trim(),
@@ -116,7 +122,7 @@ export function AiSimulationCard() {
       toast.error("Failed to save template");
     } else {
       toast.success("Template saved!");
-      setTemplates(prev => [...prev, data]);
+      setTemplates(prev => [...prev, data as ScenarioTemplate]);
       setNewTemplateName("");
       setNewTemplatePrompt("");
       setNewTemplateCategory("general");
@@ -125,7 +131,7 @@ export function AiSimulationCard() {
   };
 
   const handleDeleteTemplate = async (id: string) => {
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from('ai_scenario_templates')
       .delete()
       .eq('id', id);
@@ -195,7 +201,7 @@ export function AiSimulationCard() {
       }
 
       // 2. Get assigned vehicles
-      const { data: assignments, error: assignmentsError } = await supabase
+      const { data: assignments, error: assignmentsError } = await (supabase as any)
         .from('vehicle_assignments')
         .select('device_id, vehicle_alias')
         .eq('profile_id', profile.id);
@@ -204,7 +210,9 @@ export function AiSimulationCard() {
         throw new Error(`Failed to fetch vehicles: ${assignmentsError.message}`);
       }
 
-      if (!assignments || assignments.length === 0) {
+      const vehicleAssignments = (assignments || []) as VehicleAssignment[];
+
+      if (vehicleAssignments.length === 0) {
         toast.error("No vehicles assigned to this user");
         setIsSimulating(false);
         return;
@@ -214,7 +222,7 @@ export function AiSimulationCard() {
       const selectedTemplates = templates.filter(t => selectedTemplateIds.has(t.id));
 
       // 4. Initialize results with pending status
-      const initialResults: SimulationResult[] = assignments.map((vehicle, index) => {
+      const initialResults: SimulationResult[] = vehicleAssignments.map((vehicle, index) => {
         const template = selectedTemplates[index % selectedTemplates.length];
         return {
           deviceId: vehicle.device_id,
@@ -225,12 +233,12 @@ export function AiSimulationCard() {
       });
 
       setResults(initialResults);
-      toast.info(`Triggering AI for ${assignments.length} vehicle(s) with ${selectedTemplates.length} scenario(s)...`);
+      toast.info(`Triggering AI for ${vehicleAssignments.length} vehicle(s) with ${selectedTemplates.length} scenario(s)...`);
 
       // 5. Trigger AI scenarios in parallel
       const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vehicle-chat`;
 
-      const promises = assignments.map(async (vehicle, index) => {
+      const promises = vehicleAssignments.map(async (vehicle, index) => {
         const template = selectedTemplates[index % selectedTemplates.length];
         
         try {
@@ -294,7 +302,7 @@ export function AiSimulationCard() {
         s => s.status === 'fulfilled' && s.value.success
       ).length;
 
-      toast.success(`Simulation complete: ${successCount}/${assignments.length} successful`);
+      toast.success(`Simulation complete: ${successCount}/${vehicleAssignments.length} successful`);
 
     } catch (error) {
       console.error("Simulation error:", error);
@@ -489,16 +497,16 @@ export function AiSimulationCard() {
                   <div>
                     <Label htmlFor="templateCategory" className="text-xs">Category</Label>
                     <Select value={newTemplateCategory} onValueChange={setNewTemplateCategory}>
-                      <SelectTrigger id="templateCategory" className="h-8 text-sm mt-1">
+                      <SelectTrigger className="h-8 text-sm mt-1">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
+                        <SelectItem value="general">General</SelectItem>
                         <SelectItem value="location">Location</SelectItem>
                         <SelectItem value="maintenance">Maintenance</SelectItem>
                         <SelectItem value="analytics">Analytics</SelectItem>
                         <SelectItem value="command">Command</SelectItem>
                         <SelectItem value="personality">Personality</SelectItem>
-                        <SelectItem value="general">General</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -507,10 +515,11 @@ export function AiSimulationCard() {
                   <Label htmlFor="templatePrompt" className="text-xs">Prompt</Label>
                   <Textarea
                     id="templatePrompt"
-                    placeholder="Enter the AI prompt..."
+                    placeholder="Enter the scenario prompt..."
                     value={newTemplatePrompt}
                     onChange={(e) => setNewTemplatePrompt(e.target.value)}
-                    className="text-sm mt-1 min-h-[60px]"
+                    className="text-sm mt-1 resize-none"
+                    rows={3}
                   />
                 </div>
                 <Button 
@@ -518,11 +527,7 @@ export function AiSimulationCard() {
                   onClick={handleSaveTemplate}
                   disabled={savingTemplate || !newTemplateName.trim() || !newTemplatePrompt.trim()}
                 >
-                  {savingTemplate ? (
-                    <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                  ) : (
-                    <Plus className="mr-2 h-3 w-3" />
-                  )}
+                  {savingTemplate ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
                   Save Template
                 </Button>
               </div>
@@ -530,19 +535,23 @@ export function AiSimulationCard() {
 
             {/* Existing Templates */}
             <div>
-              <h4 className="text-sm font-medium mb-2">Saved Templates</h4>
+              <h4 className="text-sm font-medium mb-2">Existing Templates</h4>
               <ScrollArea className="h-[200px]">
                 {loadingTemplates ? (
-                  <div className="flex items-center justify-center h-full">
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin" />
                   </div>
+                ) : Object.entries(groupedTemplates).length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-8">
+                    No templates yet
+                  </p>
                 ) : (
-                  <div className="space-y-3 pr-2">
+                  <div className="space-y-4 pr-2">
                     {Object.entries(groupedTemplates).map(([category, categoryTemplates]) => (
                       <div key={category}>
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="flex items-center gap-2 mb-2">
                           {CATEGORY_ICONS[category]}
-                          <span className="text-xs font-medium text-muted-foreground uppercase">
+                          <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                             {category}
                           </span>
                         </div>
@@ -550,15 +559,13 @@ export function AiSimulationCard() {
                           {categoryTemplates.map((template) => (
                             <div
                               key={template.id}
-                              className="flex items-center gap-2 p-2 rounded bg-muted/50 group"
+                              className="flex items-center justify-between p-2 rounded-lg bg-muted/30 hover:bg-muted/50"
                             >
-                              <div className="flex-1 min-w-0">
+                              <div className="flex-1 min-w-0 mr-2">
                                 <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium truncate">
-                                    {template.name}
-                                  </span>
+                                  <span className="text-sm font-medium truncate">{template.name}</span>
                                   {template.is_system && (
-                                    <Badge variant="secondary" className="text-xs">System</Badge>
+                                    <Lock className="h-3 w-3 text-muted-foreground shrink-0" />
                                   )}
                                 </div>
                                 <p className="text-xs text-muted-foreground truncate">
@@ -569,7 +576,7 @@ export function AiSimulationCard() {
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                                  className="h-7 w-7 shrink-0"
                                   onClick={() => handleDeleteTemplate(template.id)}
                                 >
                                   <Trash2 className="h-3 w-3 text-destructive" />

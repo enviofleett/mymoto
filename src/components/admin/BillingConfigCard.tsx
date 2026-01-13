@@ -7,6 +7,12 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
+interface BillingConfigRow {
+  key: string;
+  value: number;
+  updated_at: string;
+}
+
 export function BillingConfigCard() {
   const { toast } = useToast();
   const [dailyRate, setDailyRate] = useState<string>("500");
@@ -18,14 +24,15 @@ export function BillingConfigCard() {
   }, []);
 
   const fetchConfig = async () => {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from("billing_config")
       .select("value")
       .eq("key", "daily_llm_rate")
       .single();
 
     if (!error && data) {
-      setDailyRate(String(data.value));
+      const configData = data as BillingConfigRow;
+      setDailyRate(String(configData.value));
     }
     setLoading(false);
   };
@@ -43,7 +50,7 @@ export function BillingConfigCard() {
 
     setSaving(true);
 
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from("billing_config")
       .update({ value: rate, updated_at: new Date().toISOString() })
       .eq("key", "daily_llm_rate");
