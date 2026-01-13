@@ -33,11 +33,19 @@ async function fetchTripSyncStatus(deviceId: string): Promise<TripSyncStatus | n
 
 // Trigger manual sync
 async function triggerTripSync(deviceId: string, forceFullSync: boolean = false): Promise<any> {
+  // Get the current session to ensure we send auth token
+  const { data: { session } } = await supabase.auth.getSession();
+  
   const { data, error } = await supabase.functions.invoke("sync-trips-incremental", {
     body: {
       device_ids: [deviceId],
       force_full_sync: forceFullSync,
     },
+    headers: session?.access_token
+      ? {
+          Authorization: `Bearer ${session.access_token}`,
+        }
+      : undefined,
   });
 
   if (error) {

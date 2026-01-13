@@ -11,7 +11,15 @@
 2. **Copy the code** from: `supabase/functions/sync-trips-incremental/index.ts`
 3. Paste it into the code editor
 
-### Step 3: Set Environment Variables
+### Step 3: Configure Function Settings
+**IMPORTANT:** After creating the function, you MUST disable JWT verification:
+
+1. In the function editor, look for **"Settings"** or **"Configuration"** tab
+2. Find **"Verify JWT"** or **"Require Authentication"** option
+3. **Turn it OFF** or set to **"false"**
+4. This allows the function to be called without JWT verification
+
+### Step 4: Set Environment Variables
 The function needs these environment variables (they should already be set globally):
 - `SUPABASE_URL` - Your Supabase URL
 - `SUPABASE_SERVICE_ROLE_KEY` - Your service role key
@@ -26,7 +34,7 @@ To check/set them:
 1. Click **"Deploy"** or **"Save"**
 2. Wait for deployment to complete
 
-### Step 5: Test
+### Step 6: Test
 After deployment, test it:
 ```bash
 curl -X POST 'https://cmvpnsqiefbsqkwnraka.supabase.co/functions/v1/sync-trips-incremental' \

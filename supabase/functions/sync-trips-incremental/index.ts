@@ -171,8 +171,15 @@ Deno.serve(async (req) => {
   console.log("[sync-trips-incremental] Starting incremental trip sync");
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    // Get environment variables
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error("Missing required environment variables: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+    }
+    
+    // Create Supabase client with service role key (bypasses RLS)
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Parse request body for optional parameters
