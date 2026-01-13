@@ -25,11 +25,15 @@ import {
   Zap,
   Power,
   Info,
+  RefreshCw,
+  CheckCircle2,
+  Radio,
 } from "lucide-react";
-import { format, parseISO, isSameDay, differenceInMinutes } from "date-fns";
+import { format, parseISO, isSameDay, differenceInMinutes, formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 import type { DateRange } from "react-day-picker";
 import type { VehicleTrip, VehicleEvent } from "@/hooks/useVehicleProfile";
+import type { TripSyncStatus } from "@/hooks/useTripSync";
 
 interface ReportsSectionProps {
   deviceId: string;
@@ -40,6 +44,10 @@ interface ReportsSectionProps {
   dateRange: DateRange | undefined;
   onDateRangeChange: (range: DateRange | undefined) => void;
   onPlayTrip: (trip: VehicleTrip) => void;
+  syncStatus?: TripSyncStatus | null;
+  isSyncing?: boolean;
+  onForceSync?: () => void;
+  isRealtimeActive?: boolean;
 }
 
 export function ReportsSection({
@@ -51,6 +59,10 @@ export function ReportsSection({
   dateRange,
   onDateRangeChange,
   onPlayTrip,
+  syncStatus,
+  isSyncing = false,
+  onForceSync,
+  isRealtimeActive = false,
 }: ReportsSectionProps) {
   const [isDateFilterOpen, setIsDateFilterOpen] = useState(false);
   const isFilterActive = !!dateRange?.from;
@@ -139,12 +151,43 @@ export function ReportsSection({
   return (
     <Card className="border-border bg-card/50">
       <CardContent className="p-4">
-        {/* Date Filter */}
+        {/* Date Filter and Sync Controls */}
         <div className="flex items-center justify-between mb-4">
-          <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-            Reports
+          <div className="flex items-center gap-2">
+            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              Reports
+            </div>
+            {/* Sync Status Indicator */}
+            {syncStatus && (
+              <div className="flex items-center gap-1.5">
+                {isSyncing ? (
+                  <RefreshCw className="h-3 w-3 text-blue-500 animate-spin" />
+                ) : syncStatus.sync_status === "completed" ? (
+                  <CheckCircle2 className="h-3 w-3 text-green-500" />
+                ) : syncStatus.sync_status === "error" ? (
+                  <AlertTriangle className="h-3 w-3 text-red-500" />
+                ) : null}
+                {isRealtimeActive && (
+                  <Radio className="h-3 w-3 text-green-500 animate-pulse" title="Realtime updates active" />
+                )}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2">
+            {/* Force Sync Button */}
+            {onForceSync && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={onForceSync}
+                disabled={isSyncing}
+                title="Force sync last 7 days of trips"
+              >
+                <RefreshCw className={cn("h-3 w-3 mr-1", isSyncing && "animate-spin")} />
+                Sync
+              </Button>
+            )}
             {isFilterActive && (
               <Button
                 variant="ghost"
@@ -191,6 +234,27 @@ export function ReportsSection({
             </Popover>
           </div>
         </div>
+
+        {/* Sync Status Details */}
+        {syncStatus && syncStatus.last_sync_at && (
+          <div className="mb-3 p-2 rounded-md bg-muted/30 text-xs text-muted-foreground">
+            <div className="flex items-center justify-between">
+              <span>
+                Last synced: {formatDistanceToNow(new Date(syncStatus.last_sync_at), { addSuffix: true })}
+              </span>
+              {syncStatus.trips_processed > 0 && (
+                <span className="text-green-600">
+                  +{syncStatus.trips_processed} trips
+                </span>
+              )}
+            </div>
+            {syncStatus.sync_status === "error" && syncStatus.error_message && (
+              <div className="mt-1 text-red-500 text-xs">
+                Error: {syncStatus.error_message}
+              </div>
+            )}
+          </div>
+        )}
 
         <Tabs defaultValue="trips" className="w-full">
           <TabsList className="grid w-full grid-cols-2 mb-4">
