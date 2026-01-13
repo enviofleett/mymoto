@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -44,6 +45,7 @@ import type { DateRange } from "react-day-picker";
 export default function OwnerVehicleProfile() {
   const { deviceId } = useParams<{ deviceId: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   
   // UI State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -99,14 +101,49 @@ export default function OwnerVehicleProfile() {
     liveData?.longitude
   );
   
-  // Handle refresh - also triggers trip processing
+  /**
+   * CRITICAL: Pull-to-refresh handler that guarantees fresh data.
+   * 
+   * Strategy: Invalidate queries FIRST (marks as stale), THEN refetch.
+   * This bypasses staleTime and forces a network request.
+   * 
+   * "Real-time" Definition:
+   * - Manual refresh: User-triggered, always fetches latest from DB
+   * - Live updates: useVehicleLiveData polls every 15s, events via WebSocket
+   */
   const handleRefresh = useCallback(async () => {
-    if (deviceId) {
-      supabase.functions.invoke('process-trips', {
-        body: { device_ids: [deviceId], lookback_hours: 24 },
-      }).catch(err => console.log('Background trip processing:', err));
-    }
+    if (!deviceId) return;
     
+    console.log('[Pull-to-Refresh] Invalidating all vehicle profile caches...');
+    
+    // 1. Trigger background trip processing (fire-and-forget)
+    supabase.functions.invoke('process-trips', {
+      body: { device_ids: [deviceId], lookback_hours: 24 },
+    }).catch(err => console.log('Background trip processing:', err));
+    
+    // 2. INVALIDATE all cached queries for this device
+    // This marks them as stale IMMEDIATELY, forcing refetch to hit the network
+    await queryClient.invalidateQueries({ 
+      predicate: (query) => {
+        const key = query.queryKey;
+        // Invalidate all vehicle-specific queries
+        return Array.isArray(key) && (
+          key[0] === 'vehicle-live-data' ||
+          key[0] === 'vehicle-trips' ||
+          key[0] === 'vehicle-events' ||
+          key[0] === 'mileage-stats' ||
+          key[0] === 'daily-mileage' ||
+          key[0] === 'vehicle-daily-stats' ||
+          key[0] === 'vehicle-info' ||
+          key[0] === 'vehicle-llm-settings' ||
+          key[0] === 'driver-score'
+        ) && key[1] === deviceId;
+      }
+    });
+    
+    console.log('[Pull-to-Refresh] Cache invalidated, refetching all data...');
+    
+    // 3. Refetch all queries (now guaranteed to hit the network)
     await Promise.all([
       refetchProfile(),
       refetchLive(),
@@ -116,7 +153,9 @@ export default function OwnerVehicleProfile() {
       refetchDaily(),
       refetchDailyStats(),
     ]);
-  }, [deviceId, refetchProfile, refetchLive, refetchTrips, refetchEvents, refetchMileage, refetchDaily, refetchDailyStats]);
+    
+    console.log('[Pull-to-Refresh] Complete - all data refreshed from server');
+  }, [deviceId, queryClient, refetchProfile, refetchLive, refetchTrips, refetchEvents, refetchMileage, refetchDaily, refetchDailyStats]);
   
   // Pull-to-refresh
   const { pullDistance, isRefreshing: isPullRefreshing, handlers } = usePullToRefresh({
