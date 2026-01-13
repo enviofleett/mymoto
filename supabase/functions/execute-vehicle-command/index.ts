@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { callGps51WithRateLimit, getValidGps51Token } from "../_shared/gps51-client.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -56,33 +57,11 @@ const LOCAL_ONLY_COMMANDS = [
   'disable_geofence'
 ]
 
-// Get valid token from app_settings
-async function getValidToken(supabase: any): Promise<{ token: string; serverid: string }> {
-  const { data: tokenData, error } = await supabase
-    .from('app_settings')
-    .select('value, expires_at, metadata')
-    .eq('key', 'gps_token')
-    .maybeSingle()
+// Using shared GPS51 client for token management
 
-  if (error) throw new Error(`Token fetch error: ${error.message}`)
-  if (!tokenData?.value) throw new Error('No GPS token found. Admin login required.')
-
-  // Check if token is expired
-  if (tokenData.expires_at) {
-    const expiresAt = new Date(tokenData.expires_at)
-    if (new Date() >= expiresAt) {
-      throw new Error('Token expired. Admin refresh required.')
-    }
-  }
-
-  return {
-    token: tokenData.value,
-    serverid: tokenData.metadata?.serverid || '1'
-  }
-}
-
-// Call GPS51 API via proxy to send command
+// Call GPS51 API via proxy to send command (with rate limiting)
 async function callGps51Command(
+  supabase: any,
   proxyUrl: string,
   token: string,
   serverid: string,
@@ -91,41 +70,39 @@ async function callGps51Command(
 ): Promise<{ success: boolean; commandId?: string; response?: string; error?: string }> {
   console.log(`[GPS51] Sending command: ${command} to device: ${deviceId}`)
   
-  // GPS51 sendcommand action
-  const targetUrl = `https://api.gps51.com/openapi?action=sendcommand&token=${token}&serverid=${serverid}`
-  
-  const response = await fetch(proxyUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      targetUrl,
-      method: 'POST',
-      data: {
-        deviceid: deviceId,
-        command: command
-      }
+  try {
+    // Use shared client for centralized rate limiting
+    const result = await callGps51WithRateLimit(supabase, proxyUrl, 'sendcommand', token, serverid, {
+      deviceid: deviceId,
+      command: command
     })
-  })
+    
+    console.log(`[GPS51] Command response:`, JSON.stringify(result))
 
-  const result = await response.json()
-  console.log(`[GPS51] Command response:`, JSON.stringify(result))
+    if (result.status !== 0) {
+      return {
+        success: false,
+        error: result.message || `GPS51 error: status ${result.status}`
+      }
+    }
 
-  if (result.status !== 0) {
+    return {
+      success: true,
+      commandId: result.commandid || result.record?.commandid,
+      response: 'Command sent to device'
+    }
+  } catch (error) {
+    console.error(`[GPS51] Command send error:`, error)
     return {
       success: false,
-      error: result.message || `GPS51 error: status ${result.status}`
+      error: error instanceof Error ? error.message : 'Failed to send command'
     }
-  }
-
-  return {
-    success: true,
-    commandId: result.commandid || result.record?.commandid,
-    response: 'Command sent to device'
   }
 }
 
-// Poll for command result (GPS51 requires polling)
+// Poll for command result (GPS51 requires polling, with rate limiting)
 async function pollCommandResult(
+  supabase: any,
   proxyUrl: string,
   token: string,
   serverid: string,
@@ -134,26 +111,17 @@ async function pollCommandResult(
 ): Promise<{ success: boolean; response?: string; error?: string }> {
   console.log(`[GPS51] Polling for command result: ${commandId}`)
   
-  const targetUrl = `https://api.gps51.com/openapi?action=querycommand&token=${token}&serverid=${serverid}`
-  
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    // Wait 1 second between attempts
+    // Wait 1 second between attempts (rate limiting is handled by shared client)
     if (attempt > 0) {
       await new Promise(resolve => setTimeout(resolve, 1000))
     }
     
     try {
-      const response = await fetch(proxyUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          targetUrl,
-          method: 'POST',
-          data: { commandid: commandId }
-        })
+      // Use shared client for centralized rate limiting
+      const result = await callGps51WithRateLimit(supabase, proxyUrl, 'querycommand', token, serverid, {
+        commandid: commandId
       })
-
-      const result = await response.json()
       
       // Check if command has been executed (commandstatus = 1)
       if (result.record?.commandstatus === 1 || result.commandstatus === 1) {
@@ -385,16 +353,16 @@ serve(async (req) => {
           executionResult = { success: false, error: 'GPS proxy not configured' }
         } else {
           try {
-            const { token, serverid } = await getValidToken(supabase)
+            const { token, serverid } = await getValidGps51Token(supabase)
             
-            // Send command to GPS51
-            const sendResult = await callGps51Command(DO_PROXY_URL, token, serverid, device_id, gps51Command)
+            // Send command to GPS51 (with centralized rate limiting)
+            const sendResult = await callGps51Command(supabase, DO_PROXY_URL, token, serverid, device_id, gps51Command)
             
             if (!sendResult.success) {
               executionResult = { success: false, error: sendResult.error }
             } else if (sendResult.commandId) {
-              // Poll for result (with shorter timeout for faster response)
-              const pollResult = await pollCommandResult(DO_PROXY_URL, token, serverid, sendResult.commandId, 5)
+              // Poll for result (with shorter timeout for faster response, rate limiting handled by shared client)
+              const pollResult = await pollCommandResult(supabase, DO_PROXY_URL, token, serverid, sendResult.commandId, 5)
               executionResult = {
                 success: pollResult.success,
                 response: { 

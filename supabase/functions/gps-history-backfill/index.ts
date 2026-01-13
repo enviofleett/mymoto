@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { callGps51WithRateLimit, getValidGps51Token } from "../_shared/gps51-client.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -26,49 +27,7 @@ interface TrackRecord {
   ignition_on: boolean
 }
 
-// Get valid GPS token
-async function getValidToken(supabase: any): Promise<{ token: string; username: string; serverid: string }> {
-  const { data: tokenData, error } = await supabase
-    .from('app_settings')
-    .select('value, expires_at, metadata')
-    .eq('key', 'gps_token')
-    .maybeSingle()
-
-  if (error) throw new Error(`Token fetch error: ${error.message}`)
-  if (!tokenData?.value) throw new Error('No GPS token found. Admin login required.')
-
-  if (tokenData.expires_at) {
-    const expiresAt = new Date(tokenData.expires_at)
-    if (new Date() >= expiresAt) {
-      throw new Error('Token expired. Admin refresh required.')
-    }
-  }
-
-  return {
-    token: tokenData.value,
-    username: tokenData.metadata?.username || '',
-    serverid: tokenData.metadata?.serverid || '1'
-  }
-}
-
-// Call GPS51 API via proxy
-async function callGps51(proxyUrl: string, action: string, token: string, serverid: string, body: any): Promise<any> {
-  const targetUrl = `https://api.gps51.com/openapi?action=${action}&token=${token}&serverid=${serverid}`
-  
-  console.log(`GPS51 API call: action=${action}, serverid=${serverid}`)
-  
-  const response = await fetch(proxyUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      targetUrl,
-      method: 'POST',
-      data: body
-    })
-  })
-
-  return await response.json()
-}
+// Using shared GPS51 client for rate limiting
 
 // Parse ignition status from strstatus
 function parseIgnition(strstatus: string | null): boolean {
@@ -83,6 +42,7 @@ function formatDateForGps51(date: Date): string {
 
 // Fetch track history from GPS51
 async function fetchTrackHistory(
+  supabase: any,
   proxyUrl: string,
   token: string,
   serverid: string,
@@ -93,7 +53,8 @@ async function fetchTrackHistory(
   console.log(`Fetching track history for ${deviceId} from ${startDate.toISOString()} to ${endDate.toISOString()}`)
   
   // GPS51 querytrack action expects starttime/endtime in specific format
-  const result = await callGps51(proxyUrl, 'querytrack', token, serverid, {
+  // Using shared client for centralized rate limiting
+  const result = await callGps51WithRateLimit(supabase, proxyUrl, 'querytrack', token, serverid, {
     deviceid: deviceId,
     starttime: formatDateForGps51(startDate),
     endtime: formatDateForGps51(endDate),
@@ -426,16 +387,16 @@ serve(async (req) => {
       })
     }
 
-    // Get GPS token and proxy URL
-    const { token, serverid } = await getValidToken(supabase)
+    // Get GPS token and proxy URL (using shared client)
+    const { token, serverid } = await getValidGps51Token(supabase)
     const proxyUrl = Deno.env.get('DO_PROXY_URL')
     
     if (!proxyUrl) {
       throw new Error('DO_PROXY_URL not configured')
     }
 
-    // Fetch track history from GPS51
-    const trackRecords = await fetchTrackHistory(proxyUrl, token, serverid, device_id, startDate, endDate)
+    // Fetch track history from GPS51 (with centralized rate limiting)
+    const trackRecords = await fetchTrackHistory(supabase, proxyUrl, token, serverid, device_id, startDate, endDate)
 
     if (trackRecords.length === 0) {
       return new Response(JSON.stringify({

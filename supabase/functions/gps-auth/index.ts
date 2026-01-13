@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { crypto } from "https://deno.land/std@0.168.0/crypto/mod.ts"
+import { callGps51LoginWithRateLimit } from "../_shared/gps51-client.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -51,40 +52,41 @@ serve(async (req) => {
     // Hash password
     const passwordHash = await md5(GPS_PASS_PLAIN)
 
-    // Call GPS51 login
+    // Call GPS51 login with centralized rate limiting
     const startTime = Date.now()
-    const proxyResponse = await fetch(DO_PROXY_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        targetUrl: 'https://api.gps51.com/openapi?action=login',
-        method: 'POST',
-        data: {
-          type: "USER",
-          from: "web",
-          username: GPS_USER,
-          password: passwordHash,
-          browser: "Chrome/120.0.0.0"
-        }
-      })
-    })
-
-    const duration = Date.now() - startTime
-    console.log(`GPS51 login took ${duration}ms`)
-
-    const responseText = await proxyResponse.text()
-    
-    // Check for HTML error response
-    if (responseText.startsWith('<!DOCTYPE') || responseText.startsWith('<html')) {
-      throw new Error(`Proxy returned HTML error page. Check DO_PROXY_URL configuration.`)
+    const loginData = {
+      type: "USER",
+      from: "web",
+      username: GPS_USER,
+      password: passwordHash,
+      browser: "Chrome/120.0.0.0"
     }
 
     let apiResponse
     try {
-      apiResponse = JSON.parse(responseText)
-    } catch {
-      throw new Error(`Invalid JSON from proxy: ${responseText.substring(0, 200)}`)
+      apiResponse = await callGps51LoginWithRateLimit(supabase, DO_PROXY_URL, loginData)
+    } catch (error) {
+      const duration = Date.now() - startTime
+      
+      // Log the failed login attempt
+      await supabase.from('gps_api_logs').insert({
+        action: 'login',
+        request_body: { username: GPS_USER },
+        response_status: 0,
+        response_body: { error: error instanceof Error ? error.message : 'Unknown error' },
+        error_message: error instanceof Error ? error.message : 'Login failed',
+        duration_ms: duration
+      }).catch(err => console.error('Failed to log error:', err))
+      
+      // Handle rate limit errors gracefully
+      if (error instanceof Error && error.message.includes('rate limit')) {
+        throw error // Re-throw rate limit errors with clear message
+      }
+      throw new Error(`GPS51 login failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
+
+    const duration = Date.now() - startTime
+    console.log(`GPS51 login took ${duration}ms`)
 
     // Log the login attempt
     await supabase.from('gps_api_logs').insert({
@@ -94,7 +96,7 @@ serve(async (req) => {
       response_body: { ...apiResponse, token: apiResponse.token ? '***' : null },
       error_message: apiResponse.status !== 0 ? `Login failed with status ${apiResponse.status}` : null,
       duration_ms: duration
-    })
+    }).catch(err => console.error('Failed to log API call:', err))
 
     if (apiResponse.status !== 0 || !apiResponse.token) {
       throw new Error(`GPS51 Login Failed: status=${apiResponse.status}, message=${apiResponse.message || 'Unknown'}`)

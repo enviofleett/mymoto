@@ -293,6 +293,54 @@ export async function callGps51WithRateLimit(
 }
 
 /**
+ * Call GPS51 login API with rate limiting (for login calls that don't have a token yet)
+ */
+export async function callGps51LoginWithRateLimit(
+  supabase: any,
+  proxyUrl: string,
+  body: any
+): Promise<any> {
+  // Apply rate limiting (same as regular calls)
+  await applyRateLimit(supabase);
+  
+  const targetUrl = `https://api.gps51.com/openapi?action=login`;
+  
+  console.log(`[GPS51 Client] Calling login (no token required)`);
+  
+  try {
+    const response = await fetch(proxyUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        targetUrl,
+        method: "POST",
+        data: body,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`GPS51 API HTTP error: ${response.status}`);
+    }
+
+    const result = await response.json();
+    
+    // Check for rate limit errors
+    if (result.status && GPS51_RATE_LIMIT.RATE_LIMIT_ERROR_CODES.includes(result.status)) {
+      // Handle rate limit error (no retry for login, just throw)
+      const backoffDelay = await handleRateLimitError(supabase, 0, result.status);
+      throw new Error(
+        `GPS51 API rate limit error during login: ${result.cause || "Unknown"} (status: ${result.status}). Please retry after ${Math.round(backoffDelay / 1000)} seconds.`
+      );
+    }
+    
+    return result;
+  } catch (error) {
+    // For login, don't retry automatically - let caller handle it
+    throw error;
+  }
+}
+
+/**
  * Get valid GPS51 token (shared utility)
  */
 export async function getValidGps51Token(supabase: any): Promise<{

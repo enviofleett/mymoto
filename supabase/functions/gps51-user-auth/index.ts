@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import blueimp_md5 from 'https://esm.sh/blueimp-md5@2.19.0';
+import { callGps51LoginWithRateLimit, callGps51WithRateLimit } from "../_shared/gps51-client.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -43,42 +44,39 @@ Deno.serve(async (req) => {
     const passwordHash = md5(password);
     console.log(`[gps51-user-auth] Password hashed`);
 
-    // Step 2: Verify credentials with GPS51 API via proxy
-    const loginPayload = {
-      targetUrl: 'https://api.gps51.com/openapi?action=login',
-      method: 'POST',
-      data: {
-        type: 'USER',
-        from: 'web',
-        username: username,
-        password: passwordHash,
-        browser: 'Chrome/120.0.0.0'
-      }
+    // Step 2: Verify credentials with GPS51 API via proxy (with rate limiting)
+    const loginDataPayload = {
+      type: 'USER',
+      from: 'web',
+      username: username,
+      password: passwordHash,
+      browser: 'Chrome/120.0.0.0'
     };
 
-    console.log(`[gps51-user-auth] Calling GPS51 login API`);
-    const loginResponse = await fetch(proxyUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(loginPayload)
-    });
-
-    const loginText = await loginResponse.text();
-    console.log(`[gps51-user-auth] Login response: ${loginText.substring(0, 200)}`);
-
+    console.log(`[gps51-user-auth] Calling GPS51 login API (with rate limiting)`);
+    
     let loginData;
     try {
-      loginData = JSON.parse(loginText);
-    } catch (e) {
-      console.error(`[gps51-user-auth] Failed to parse login response`);
+      loginData = await callGps51LoginWithRateLimit(supabaseAdmin, proxyUrl, loginDataPayload);
+    } catch (error) {
+      console.error(`[gps51-user-auth] Login error:`, error);
       // Log the error
       await supabaseAdmin.from('gps_api_logs').insert({
         action: 'gps51-user-auth-login',
-        request_body: loginPayload,
-        response_status: loginResponse.status,
-        response_body: { raw: loginText.substring(0, 500) },
-        error_message: 'Failed to parse response'
+        request_body: loginDataPayload,
+        response_status: 0,
+        response_body: { error: error instanceof Error ? error.message : 'Unknown error' },
+        error_message: error instanceof Error ? error.message : 'Login failed'
       });
+      
+      // Handle rate limit errors with user-friendly message
+      if (error instanceof Error && error.message.includes('rate limit')) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'GPS51 service is temporarily busy. Please try again in a few moments.' }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
       return new Response(
         JSON.stringify({ success: false, error: 'Unable to connect to GPS51. Please try again.' }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -189,36 +187,27 @@ Deno.serve(async (req) => {
       console.log(`[gps51-user-auth] Created new profile: ${profileId}`);
     }
 
-    // Step 6: Fetch user's vehicles from GPS51
-    const vehiclesPayload = {
-      targetUrl: `https://api.gps51.com/openapi?action=querymonitorlist&token=${gps51Token}&serverid=${serverId}`,
-      method: 'POST',
-      data: {
-        username: username
-      }
-    };
-
-    console.log(`[gps51-user-auth] Fetching vehicles for user`);
-    const vehiclesResponse = await fetch(proxyUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(vehiclesPayload)
-    });
-
-    const vehiclesText = await vehiclesResponse.text();
-    console.log(`[gps51-user-auth] Vehicles response: ${vehiclesText.substring(0, 300)}`);
-
+    // Step 6: Fetch user's vehicles from GPS51 (with rate limiting)
+    console.log(`[gps51-user-auth] Fetching vehicles for user (with rate limiting)`);
+    
     let vehiclesData;
     try {
-      vehiclesData = JSON.parse(vehiclesText);
-    } catch (e) {
-      console.error(`[gps51-user-auth] Failed to parse vehicles response`);
+      vehiclesData = await callGps51WithRateLimit(
+        supabaseAdmin,
+        proxyUrl,
+        'querymonitorlist',
+        gps51Token,
+        serverId,
+        { username: username }
+      );
+    } catch (error) {
+      console.error(`[gps51-user-auth] Failed to fetch vehicles:`, error);
       await supabaseAdmin.from('gps_api_logs').insert({
         action: 'gps51-user-auth-vehicles',
-        request_body: vehiclesPayload,
-        response_status: vehiclesResponse.status,
-        response_body: { raw: vehiclesText.substring(0, 500) },
-        error_message: 'Failed to parse response'
+        request_body: { username: username },
+        response_status: 0,
+        response_body: { error: error instanceof Error ? error.message : 'Unknown error' },
+        error_message: error instanceof Error ? error.message : 'Failed to fetch vehicles'
       });
       // Continue anyway - user is authenticated, just no vehicles synced
       return new Response(
