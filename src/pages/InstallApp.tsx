@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Download, Share, PlusSquare, Smartphone, CheckCircle2, Car } from "lucide-react";
+import { Download, Share, PlusSquare, Smartphone, CheckCircle2 } from "lucide-react";
+import myMotoLogo from "@/assets/mymoto-logo-new.png";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -80,13 +81,24 @@ const InstallApp = () => {
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-md space-y-8">
-        {/* App Logo & Branding */}
+        {/* App Logo & Branding - Neumorphic Design */}
         <div className="text-center space-y-4">
-          <div className="mx-auto w-24 h-24 rounded-3xl bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center shadow-lg shadow-primary/20">
-            <Car className="w-12 h-12 text-primary-foreground" />
+          <div className="mx-auto relative animate-fade-in">
+            {/* Neumorphic circle container */}
+            <div className="w-28 h-28 mx-auto rounded-full shadow-neumorphic bg-card flex items-center justify-center">
+              <img
+                src={myMotoLogo}
+                alt="MyMoto"
+                className="h-20 w-20 object-contain"
+              />
+            </div>
+            {/* Orange glow effect */}
+            <div className="absolute inset-0 -z-10 blur-3xl opacity-30 mx-auto">
+              <div className="h-32 w-32 mx-auto rounded-full bg-accent" />
+            </div>
           </div>
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">MyMoto</h1>
+          <div className="animate-fade-in [animation-delay:200ms]">
+            <h1 className="text-3xl font-bold text-foreground tracking-tight">MyMoto</h1>
             <p className="text-muted-foreground mt-1">Vehicle Companion</p>
           </div>
         </div>
