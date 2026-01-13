@@ -9,7 +9,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { PullToRefresh } from "@/components/ui/pull-to-refresh";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { TripPlaybackDialog } from "@/components/profile/TripPlaybackDialog";
+import { VehiclePersonaSettings } from "@/components/fleet/VehiclePersonaSettings";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { useVehicleLiveData } from "@/hooks/useVehicleLiveData";
 import { useAddress } from "@/hooks/useAddress";
@@ -47,6 +49,7 @@ export default function OwnerVehicleProfile() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [selectedTrip, setSelectedTrip] = useState<VehicleTrip | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // CRITICAL FIX #1: Check deviceId BEFORE initializing hooks
   if (!deviceId) {
@@ -343,7 +346,7 @@ export default function OwnerVehicleProfile() {
           status={status}
           lastUpdate={liveData?.lastUpdate ?? null}
           onBack={() => navigate("/owner/vehicles")}
-          onSettings={() => navigate(`/owner/chat/${deviceId}`)}
+          onSettings={() => setSettingsOpen(true)}
         />
 
         {/* Main Content */}
@@ -420,6 +423,28 @@ export default function OwnerVehicleProfile() {
           endTime={selectedTrip.end_time}
         />
       )}
+
+      {/* Vehicle Settings Dialog */}
+      <Dialog 
+        open={settingsOpen} 
+        onOpenChange={(open) => {
+          setSettingsOpen(open);
+          // Refetch profile data when dialog closes to get updated settings
+          if (!open) {
+            refetchProfile();
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Vehicle Settings</DialogTitle>
+          </DialogHeader>
+          <VehiclePersonaSettings 
+            deviceId={deviceId} 
+            vehicleName={displayName}
+          />
+        </DialogContent>
+      </Dialog>
     </OwnerLayout>
   );
 }
