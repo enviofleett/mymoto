@@ -2,8 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { MapPin, Navigation, Clock, TrendingUp, Loader2 } from "lucide-react";
 import { format } from "date-fns";
+import { useAddress } from "@/hooks/useAddress";
 
 interface Trip {
   id: string;
@@ -27,80 +29,37 @@ export function VehicleTrips({ deviceId }: VehicleTripsProps) {
   const { data: trips, isLoading } = useQuery({
     queryKey: ['vehicle-trips', deviceId],
     queryFn: async () => {
-      // Fetch position history to calculate trips
+      // Fetch trips from vehicle_trips table (synced from GPS51)
       const { data, error } = await (supabase as any)
-        .from('position_history')
-        .select('id, gps_time, latitude, longitude, speed, ignition_on')
+        .from('vehicle_trips')
+        .select('*')
         .eq('device_id', deviceId)
-        .order('gps_time', { ascending: false })
-        .limit(500);
+        .order('start_time', { ascending: false })
+        .limit(50);
 
       if (error) throw error;
       
-      // Group positions into trips based on ignition
-      const tripsList: Trip[] = [];
-      let currentTrip: any = null;
-      let tripDistance = 0;
-      let tripSpeeds: number[] = [];
-      let prevPos: any = null;
-      
-      const positions = (data || []).reverse(); // Oldest first
-      
-      positions.forEach((pos: any) => {
-        if (pos.ignition_on && !currentTrip) {
-          // Start new trip
-          currentTrip = {
-            start_time: pos.gps_time,
-            start_latitude: pos.latitude,
-            start_longitude: pos.longitude
-          };
-          tripDistance = 0;
-          tripSpeeds = [];
-        }
-        
-        if (currentTrip && pos.speed > 0 && prevPos) {
-          // Calculate distance
-          const R = 6371;
-          const dLat = (pos.latitude - prevPos.latitude) * Math.PI / 180;
-          const dLon = (pos.longitude - prevPos.longitude) * Math.PI / 180;
-          const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                    Math.cos(prevPos.latitude * Math.PI / 180) * Math.cos(pos.latitude * Math.PI / 180) *
-                    Math.sin(dLon/2) * Math.sin(dLon/2);
-          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-          const d = R * c;
-          
-          if (d < 5) {
-            tripDistance += d;
-            tripSpeeds.push(pos.speed);
-          }
-        }
-        
-        if (!pos.ignition_on && currentTrip && tripDistance > 0.5) {
-          // End trip
-          const durationMs = new Date(pos.gps_time).getTime() - new Date(currentTrip.start_time).getTime();
-          const durationMinutes = durationMs / 60000;
-          
-          tripsList.push({
-            id: `trip-${tripsList.length}`,
-            start_time: currentTrip.start_time,
-            end_time: pos.gps_time,
-            start_latitude: currentTrip.start_latitude,
-            start_longitude: currentTrip.start_longitude,
-            end_latitude: pos.latitude,
-            end_longitude: pos.longitude,
-            distance_km: Math.round(tripDistance * 10) / 10,
-            avg_speed_kmh: tripSpeeds.length > 0 ? Math.round(tripSpeeds.reduce((a, b) => a + b, 0) / tripSpeeds.length) : 0,
-            max_speed_kmh: tripSpeeds.length > 0 ? Math.max(...tripSpeeds) : 0,
-            duration_minutes: Math.round(durationMinutes)
-          });
-          
-          currentTrip = null;
-        }
-        
-        prevPos = pos;
-      });
+      // Map to Trip interface
+      return (data || []).map((trip: any): Trip => {
+        const startTime = new Date(trip.start_time);
+        const endTime = trip.end_time ? new Date(trip.end_time) : null;
+        const durationMs = endTime ? endTime.getTime() - startTime.getTime() : 0;
+        const durationMinutes = durationMs / 60000;
 
-      return tripsList.reverse().slice(0, 20); // Latest first
+        return {
+          id: trip.id,
+          start_time: trip.start_time,
+          end_time: trip.end_time,
+          start_latitude: trip.start_latitude,
+          start_longitude: trip.start_longitude,
+          end_latitude: trip.end_latitude,
+          end_longitude: trip.end_longitude,
+          distance_km: trip.distance_km || 0,
+          avg_speed_kmh: trip.avg_speed ? Math.round(trip.avg_speed) : 0,
+          max_speed_kmh: trip.max_speed ? Math.round(trip.max_speed) : 0,
+          duration_minutes: Math.round(durationMinutes)
+        };
+      });
     },
     enabled: !!deviceId,
     refetchInterval: 60000
@@ -204,29 +163,13 @@ export function VehicleTrips({ deviceId }: VehicleTripsProps) {
               </div>
             </div>
 
-            {/* Location Coordinates */}
-            <div className="mt-3 pt-3 border-t border-border space-y-2">
-              <div className="flex items-start gap-2">
-                <MapPin className="h-3 w-3 text-green-500 mt-0.5" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs text-muted-foreground">Start</p>
-                  <p className="text-xs font-mono">
-                    {trip.start_latitude.toFixed(5)}, {trip.start_longitude.toFixed(5)}
-                  </p>
-                </div>
-              </div>
-              {trip.end_latitude && trip.end_longitude && (
-                <div className="flex items-start gap-2">
-                  <MapPin className="h-3 w-3 text-red-500 mt-0.5" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-muted-foreground">End</p>
-                    <p className="text-xs font-mono">
-                      {trip.end_latitude.toFixed(5)}, {trip.end_longitude.toFixed(5)}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
+            {/* Location Addresses */}
+            <TripAddresses 
+              startLat={trip.start_latitude}
+              startLon={trip.start_longitude}
+              endLat={trip.end_latitude}
+              endLon={trip.end_longitude}
+            />
 
             {/* Max Speed Alert */}
             {trip.max_speed_kmh > 100 && (
@@ -239,5 +182,54 @@ export function VehicleTrips({ deviceId }: VehicleTripsProps) {
         ))}
       </div>
     </ScrollArea>
+  );
+}
+
+// Component to display trip start and end addresses
+function TripAddresses({ 
+  startLat, 
+  startLon, 
+  endLat, 
+  endLon 
+}: { 
+  startLat: number; 
+  startLon: number; 
+  endLat: number | null; 
+  endLon: number | null; 
+}) {
+  const { address: startAddress, isLoading: startLoading } = useAddress(startLat, startLon);
+  const { address: endAddress, isLoading: endLoading } = useAddress(endLat, endLon);
+
+  return (
+    <div className="mt-3 pt-3 border-t border-border space-y-2">
+      <div className="flex items-start gap-2">
+        <MapPin className="h-3 w-3 text-green-500 mt-0.5 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs text-muted-foreground mb-0.5">Start Location</p>
+          {startLoading ? (
+            <Skeleton className="h-3 w-full" />
+          ) : (
+            <p className="text-xs text-foreground line-clamp-2">
+              {startAddress || `${startLat.toFixed(5)}, ${startLon.toFixed(5)}`}
+            </p>
+          )}
+        </div>
+      </div>
+      {endLat && endLon && (
+        <div className="flex items-start gap-2">
+          <MapPin className="h-3 w-3 text-red-500 mt-0.5 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-muted-foreground mb-0.5">End Location</p>
+            {endLoading ? (
+              <Skeleton className="h-3 w-full" />
+            ) : (
+              <p className="text-xs text-foreground line-clamp-2">
+                {endAddress || `${endLat.toFixed(5)}, ${endLon.toFixed(5)}`}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

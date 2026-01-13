@@ -28,12 +28,14 @@ import {
   RefreshCw,
   CheckCircle2,
   Radio,
+  ArrowRight,
 } from "lucide-react";
 import { format, parseISO, isSameDay, differenceInMinutes, formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 import type { DateRange } from "react-day-picker";
 import type { VehicleTrip, VehicleEvent } from "@/hooks/useVehicleProfile";
 import type { TripSyncStatus } from "@/hooks/useTripSync";
+import { useAddress } from "@/hooks/useAddress";
 
 interface ReportsSectionProps {
   deviceId: string;
@@ -283,44 +285,12 @@ export function ReportsSection({
                       {group.label}
                     </div>
                     {group.trips.map((trip, index) => (
-                      <div key={trip.id} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-                        <MapPin className="h-4 w-4 text-primary shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium">Trip {index + 1}</span>
-                            <a
-                              href={getGoogleMapsLink(trip.end_latitude, trip.end_longitude)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-500 hover:text-blue-600"
-                            >
-                              <ExternalLink className="h-3 w-3" />
-                            </a>
-                          </div>
-                          <div className="text-xs text-muted-foreground mt-0.5">
-                            {format(parseISO(trip.start_time), 'h:mm a')} - {format(parseISO(trip.end_time), 'h:mm a')}
-                          </div>
-                        </div>
-                        <div className="text-right shrink-0 flex items-center gap-2">
-                          <div>
-                            <div className="text-sm">{trip.distance_km.toFixed(1)} km</div>
-                            <div className="text-xs text-green-500">
-                              {trip.duration_seconds 
-                                ? Math.round(trip.duration_seconds / 60) 
-                                : differenceInMinutes(parseISO(trip.end_time), parseISO(trip.start_time))
-                              } min
-                            </div>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => onPlayTrip(trip)}
-                          >
-                            <Play className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
+                      <TripCard
+                        key={trip.id}
+                        trip={trip}
+                        index={index}
+                        onPlayTrip={onPlayTrip}
+                      />
                     ))}
                   </div>
                 ))
@@ -400,5 +370,95 @@ export function ReportsSection({
         </Tabs>
       </CardContent>
     </Card>
+  );
+}
+
+// Trip card component with address display
+function TripCard({ 
+  trip, 
+  index, 
+  onPlayTrip 
+}: { 
+  trip: VehicleTrip; 
+  index: number; 
+  onPlayTrip: (trip: VehicleTrip) => void;
+}) {
+  const { address: startAddress, isLoading: startLoading } = useAddress(trip.start_latitude, trip.start_longitude);
+  const { address: endAddress, isLoading: endLoading } = useAddress(trip.end_latitude, trip.end_longitude);
+
+  const getGoogleMapsLink = (lat: number, lon: number) => {
+    return `https://www.google.com/maps?q=${lat},${lon}`;
+  };
+
+  return (
+    <div className="p-3 rounded-lg bg-muted/50 border border-border hover:bg-muted transition-colors">
+      <div className="flex items-start justify-between gap-3 mb-2">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-sm font-medium">Trip {index + 1}</span>
+            <a
+              href={getGoogleMapsLink(trip.end_latitude, trip.end_longitude)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-500 hover:text-blue-600"
+            >
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {format(parseISO(trip.start_time), 'h:mm a')} - {format(parseISO(trip.end_time), 'h:mm a')}
+          </div>
+        </div>
+        <div className="text-right shrink-0 flex items-center gap-2">
+          <div>
+            <div className="text-sm font-medium">{trip.distance_km.toFixed(1)} km</div>
+            <div className="text-xs text-green-500">
+              {trip.duration_seconds 
+                ? Math.round(trip.duration_seconds / 60) 
+                : differenceInMinutes(parseISO(trip.end_time), parseISO(trip.start_time))
+              } min
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => onPlayTrip(trip)}
+          >
+            <Play className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Start and End Addresses */}
+      <div className="mt-2 pt-2 border-t border-border space-y-2">
+        <div className="flex items-start gap-2">
+          <MapPin className="h-3 w-3 text-green-500 mt-0.5 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-muted-foreground mb-0.5">From</p>
+            {startLoading ? (
+              <Skeleton className="h-3 w-full" />
+            ) : (
+              <p className="text-xs text-foreground line-clamp-2">
+                {startAddress || `${trip.start_latitude.toFixed(5)}, ${trip.start_longitude.toFixed(5)}`}
+              </p>
+            )}
+          </div>
+        </div>
+        <div className="flex items-start gap-2">
+          <ArrowRight className="h-3 w-3 text-muted-foreground mt-0.5 shrink-0 ml-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-muted-foreground mb-0.5">To</p>
+            {endLoading ? (
+              <Skeleton className="h-3 w-full" />
+            ) : (
+              <p className="text-xs text-foreground line-clamp-2">
+                {endAddress || `${trip.end_latitude.toFixed(5)}, ${trip.end_longitude.toFixed(5)}`}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
