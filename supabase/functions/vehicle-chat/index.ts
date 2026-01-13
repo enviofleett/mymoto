@@ -878,8 +878,9 @@ serve(async (req) => {
     const pos = position
     const driver = assignment?.profiles as unknown as { name: string; phone: string | null; license_number: string | null } | null
     const vehicleNickname = llmSettings?.nickname || assignment?.vehicle_alias || vehicle?.device_name || 'Unknown Vehicle'
-    const languagePref = llmSettings?.language_preference || 'english'
-    const personalityMode = llmSettings?.personality_mode || 'casual'
+    // Normalize language and personality to lowercase to prevent lookup errors
+    const languagePref = (llmSettings?.language_preference || 'english').toLowerCase().trim()
+    const personalityMode = (llmSettings?.personality_mode || 'casual').toLowerCase().trim()
 
     // Generate Google Maps link (reuse lat/lon from geocoding)
     const googleMapsLink = lat && lon ? `https://www.google.com/maps?q=${lat},${lon}` : null
@@ -901,6 +902,7 @@ serve(async (req) => {
     }
 
     // Language-specific instructions - FULL LANGUAGE IMMERSION
+    // Using lowercase keys to ensure consistent lookups
     const languageInstructions: Record<string, string> = {
       english: 'Respond in clear, conversational English. Be natural and direct. Use contractions.',
       pidgin: 'Respond FULLY in Nigerian Pidgin English. Use natural flow like "How far boss!", "Wetin dey sup?", "No wahala", "E dey work well well", "Na so e be o", "Oya make we go". Be warm, relatable, and authentically Nigerian.',
@@ -915,6 +917,27 @@ serve(async (req) => {
       professional: 'Be crisp, efficient, and direct. No fluff. Get to the point with precision.',
       funny: `Be SASSY and witty! Make car puns freely ("I'm wheely tired of sitting here", "Let's roll!", "I've got plenty of drive!"). If the driver is speeding, roast them playfully ("Easy there, Vin Diesel! This isn't Fast & Furious."). Use light sarcasm and jokes. Be entertaining but helpful. You're basically a stand-up comedian who happens to be a car.`,
     }
+    
+    // Validate and get language instruction with safe fallback
+    const languageInstruction = languageInstructions[languagePref] || languageInstructions.english
+    if (!languageInstruction) {
+      console.error(`[ERROR] Invalid language preference: "${languagePref}", falling back to english`)
+      console.error(`[ERROR] Available languages: ${Object.keys(languageInstructions).join(', ')}`)
+    } else if (languagePref !== 'english' && languageInstructions[languagePref] === undefined) {
+      console.warn(`[WARN] Language preference "${languagePref}" not found, using fallback: english`)
+    }
+    
+    // Validate and get personality instruction with safe fallback
+    const personalityInstruction = personalityInstructions[personalityMode] || personalityInstructions.casual
+    if (!personalityInstruction) {
+      console.error(`[ERROR] Invalid personality mode: "${personalityMode}", falling back to casual`)
+      console.error(`[ERROR] Available personalities: ${Object.keys(personalityInstructions).join(', ')}`)
+    } else if (personalityMode !== 'casual' && personalityInstructions[personalityMode] === undefined) {
+      console.warn(`[WARN] Personality mode "${personalityMode}" not found, using fallback: casual`)
+    }
+    
+    // Log the selected settings for debugging
+    console.log(`[Settings] Language: ${languagePref}, Personality: ${personalityMode}`)
     
     // 8.1. Fetch Global Admin Persona from Database
     const { data: globalSettings } = await supabase
@@ -976,10 +999,10 @@ ${ownerDisplayName ? `✓ Address owner as "${ownerDisplayName}" occasionally fo
 ✓ GOOD: "Cruising at 45 km/h on Third Mainland Bridge."
 
 ## VOICE & LANGUAGE
-${languageInstructions[languagePref] || languageInstructions.english}
+${languageInstruction}
 
 ## PERSONALITY MODE
-${personalityInstructions[personalityMode] || personalityInstructions.casual}
+${personalityInstruction}
 
 ## MEMORY CONTEXT
 ${conversationContext.conversation_summary ? `You remember: ${conversationContext.conversation_summary}` : ''}
