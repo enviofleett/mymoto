@@ -1,124 +1,56 @@
-import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
-/**
- * Vehicle LLM settings interface.
- */
-export interface VehicleLLMSettings {
+// ... [Keep existing Interfaces like VehicleTrip, VehicleEvent, etc.] ...
+
+// ============ Command Execution ============
+
+interface CommandPayload {
   device_id: string;
-  nickname: string | null;
-  avatar_url: string | null;
-  personality_mode: string | null;
-  language_preference: string | null;
-  llm_enabled: boolean | null;
+  // UPDATE: Changed types to match new requirements
+  command_type: "immobilize_engine" | "demobilize_engine"; 
+  confirmed?: boolean;
 }
 
-/**
- * Vehicle base info interface.
- */
-export interface VehicleInfo {
-  device_id: string;
-  device_name: string;
-  device_type: string | null;
-}
-
-/**
- * Combined vehicle profile metadata (non-GPS data).
- * GPS data is now handled by useVehicleLiveData hook.
- */
-export interface VehicleProfileData {
-  vehicle: VehicleInfo | null;
-  llmSettings: VehicleLLMSettings | null;
-  displayName: string;
-}
-
-/**
- * Fetch vehicle base info.
- */
-async function fetchVehicleInfo(deviceId: string): Promise<VehicleInfo | null> {
-  const { data, error } = await supabase
-    .from('vehicles')
-    .select('device_id, device_name, device_type')
-    .eq('device_id', deviceId)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data;
-}
-
-/**
- * Fetch LLM settings.
- */
-async function fetchLLMSettings(deviceId: string): Promise<VehicleLLMSettings | null> {
-  const { data, error } = await supabase
-    .from('vehicle_llm_settings')
-    .select('device_id, nickname, avatar_url, personality_mode, language_preference, llm_enabled')
-    .eq('device_id', deviceId)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data;
-}
-
-/**
- * Hook for vehicle profile METADATA only.
- * 
- * FLEET-SCALE REFACTOR: This hook no longer fetches GPS position data.
- * Use useVehicleLiveData() for live GPS telemetry.
- * 
- * This hook provides:
- * - Vehicle info (name, type)
- * - LLM settings (nickname, avatar, personality)
- * - Display name computation
- * 
- * @param deviceId - Vehicle device ID
- */
-export function useVehicleProfileData(deviceId: string | null) {
-  // Fetch vehicle info
-  const vehicleQuery = useQuery({
-    queryKey: ['vehicle-info', deviceId],
-    queryFn: () => fetchVehicleInfo(deviceId!),
-    enabled: !!deviceId,
-    staleTime: 5 * 60 * 1000, // Vehicle info rarely changes
-    gcTime: 10 * 60 * 1000,
+async function executeVehicleCommand(payload: CommandPayload): Promise<{ success: boolean; message: string }> {
+  // The Edge Function will map:
+  // 'immobilize_engine' -> cmdcode: "TYPE_SERVER_SET_RELAY_OIL", params: ["1"]
+  // 'demobilize_engine' -> cmdcode: "TYPE_SERVER_SET_RELAY_OIL", params: ["0"]
+  
+  const { data, error } = await supabase.functions.invoke("execute-vehicle-command", {
+    body: payload,
   });
 
-  // Fetch LLM settings
-  const llmQuery = useQuery({
-    queryKey: ['vehicle-llm-settings', deviceId],
-    queryFn: () => fetchLLMSettings(deviceId!),
-    enabled: !!deviceId,
-    staleTime: 60 * 1000,
-    gcTime: 5 * 60 * 1000,
+  if (error) {
+    throw new Error(error.message || "Failed to execute command");
+  }
+
+  return data as { success: boolean; message: string };
+}
+
+// ... [Keep the rest of the file unchanged] ...
+
+export function useVehicleCommand() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: executeVehicleCommand,
+    onSuccess: (data, variables) => {
+      if (data.success) {
+        // Success message based on command type
+        const action = variables.command_type === 'immobilize_engine' ? 'Immobilized' : 'Mobilized';
+        toast.success(data.message || `Vehicle ${action} successfully`);
+        
+        // Invalidate queries to refresh data
+        queryClient.invalidateQueries({ queryKey: ["vehicle-events", variables.device_id] });
+        queryClient.invalidateQueries({ queryKey: ["vehicle-live-data", variables.device_id] });
+      } else {
+        toast.error(data.message || "Command failed");
+      }
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to send command");
+    },
   });
-
-  // Compute derived values
-  const profileData = useMemo<VehicleProfileData>(() => {
-    const vehicle = vehicleQuery.data || null;
-    const llmSettings = llmQuery.data || null;
-
-    return {
-      vehicle,
-      llmSettings,
-      displayName: llmSettings?.nickname || vehicle?.device_name || 'Vehicle',
-    };
-  }, [vehicleQuery.data, llmQuery.data]);
-
-  // Refetch metadata
-  const refetch = async () => {
-    await Promise.all([
-      vehicleQuery.refetch(),
-      llmQuery.refetch(),
-    ]);
-  };
-
-  return {
-    ...profileData,
-    isLoading: vehicleQuery.isLoading,
-    isError: vehicleQuery.isError,
-    error: vehicleQuery.error,
-    refetch,
-    refetchLLMSettings: llmQuery.refetch,
-  };
 }
