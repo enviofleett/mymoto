@@ -109,8 +109,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error('Sign out error:', error);
+    }
+    
+    // Clear all auth state
+    setUser(null);
+    setSession(null);
     setIsAdmin(false);
+    setIsRoleLoaded(true);
+    
+    // Clear any cached auth data for PWA
+    try {
+      localStorage.removeItem('sb-' + import.meta.env.VITE_SUPABASE_PROJECT_ID + '-auth-token');
+    } catch (e) {
+      // Ignore storage errors
+    }
   };
 
   return (

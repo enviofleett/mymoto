@@ -49,8 +49,15 @@ export default function OwnerProfile() {
 
   const handleLogout = async () => {
     setLoggingOut(true);
-    await signOut();
-    navigate("/auth");
+    try {
+      await signOut();
+      // Force navigation after signOut completes
+      window.location.href = '/auth';
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Navigate anyway to clear the UI
+      window.location.href = '/auth';
+    }
   };
 
   const menuItems = [
