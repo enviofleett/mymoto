@@ -1,12 +1,14 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import type { DateRange } from "react-day-picker";
+import { toast } from "sonner";
 
 import { OwnerLayout } from "@/components/layouts/OwnerLayout";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { PullToRefresh } from "@/components/ui/pull-to-refresh";
+import { Button } from "@/components/ui/button";
 import { TripPlaybackDialog } from "@/components/profile/TripPlaybackDialog";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { useVehicleLiveData } from "@/hooks/useVehicleLiveData";
@@ -46,47 +48,84 @@ export default function OwnerVehicleProfile() {
   const [selectedTrip, setSelectedTrip] = useState<VehicleTrip | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Data hooks
+  // CRITICAL FIX #1: Check deviceId BEFORE initializing hooks
+  if (!deviceId) {
+    return (
+      <OwnerLayout>
+        <div className="flex items-center justify-center h-full">
+          <div className="text-center">
+            <p className="text-muted-foreground mb-4">Vehicle not found</p>
+            <Button variant="outline" onClick={() => navigate("/owner/vehicles")}>
+              Back to Vehicles
+            </Button>
+          </div>
+        </div>
+      </OwnerLayout>
+    );
+  }
+
+  // Data hooks - now safe to use deviceId
   const {
     data: liveData,
     isLoading: liveLoading,
+    error: liveError,
     refetch: refetchLive,
-  } = useVehicleLiveData(deviceId ?? null);
+  } = useVehicleLiveData(deviceId);
 
-  const { data: llmSettings, refetch: refetchProfile } = useVehicleLLMSettings(deviceId!, !!deviceId);
+  const { 
+    data: llmSettings, 
+    error: llmError,
+    refetch: refetchProfile 
+  } = useVehicleLLMSettings(deviceId, true);
 
   const {
     data: trips,
     isLoading: tripsLoading,
+    error: tripsError,
     refetch: refetchTrips,
   } = useVehicleTrips(
-    deviceId!,
+    deviceId,
     dateRange?.from
       ? { dateRange: { from: dateRange.from, to: dateRange.to ?? dateRange.from } }
       : { limit: 50 },
-    !!deviceId
+    true
   );
 
   const {
     data: events,
     isLoading: eventsLoading,
+    error: eventsError,
     refetch: refetchEvents,
   } = useVehicleEvents(
-    deviceId!,
+    deviceId,
     dateRange?.from
       ? { dateRange: { from: dateRange.from, to: dateRange.to ?? dateRange.from } }
       : { limit: 50 },
-    !!deviceId
+    true
   );
 
-  const { data: mileageStats, refetch: refetchMileage } = useMileageStats(deviceId!, !!deviceId);
-  const { data: dailyMileage, refetch: refetchDaily } = useDailyMileage(deviceId!, !!deviceId);
-  const { data: dailyStats, refetch: refetchDailyStats } = useVehicleDailyStats(deviceId!, 30, !!deviceId);
+  const { 
+    data: mileageStats, 
+    error: mileageError,
+    refetch: refetchMileage 
+  } = useMileageStats(deviceId, true);
+  
+  const { 
+    data: dailyMileage, 
+    error: dailyMileageError,
+    refetch: refetchDaily 
+  } = useDailyMileage(deviceId, true);
+  
+  const { 
+    data: dailyStats, 
+    error: dailyStatsError,
+    refetch: refetchDailyStats 
+  } = useVehicleDailyStats(deviceId, 30, true);
 
   // Trip sync management
-  const { data: syncStatus } = useTripSyncStatus(deviceId!, !!deviceId);
+  const { data: syncStatus } = useTripSyncStatus(deviceId, true);
   const { mutate: triggerSync, isPending: isSyncing } = useTriggerTripSync();
-  const { isSubscribed } = useRealtimeTripUpdates(deviceId!, !!deviceId);
+  const { isSubscribed } = useRealtimeTripUpdates(deviceId, true);
 
   // Address lookup
   const { address, isLoading: addressLoading } = useAddress(
@@ -94,67 +133,146 @@ export default function OwnerVehicleProfile() {
     liveData?.longitude ?? null
   );
 
-  // Derive status
+  // CRITICAL FIX #2: Complete status derivation with charging detection
   const isOnline = liveData?.isOnline ?? false;
-  const status: "online" | "charging" | "offline" = liveData?.isOnline
-    ? "online"
-    : "offline";
+  const status: "online" | "charging" | "offline" = useMemo(() => {
+    if (!liveData?.isOnline) {
+      return "offline";
+    }
+    
+    // Detect charging: vehicle is online, ignition is off, and battery is present
+    // This is a heuristic - adjust based on your actual charging detection logic
+    const isCharging = 
+      liveData.batteryPercent !== null && 
+      liveData.ignitionOn === false && 
+      liveData.speed === 0;
+    
+    return isCharging ? "charging" : "online";
+  }, [liveData?.isOnline, liveData?.batteryPercent, liveData?.ignitionOn, liveData?.speed]);
+
+  // CRITICAL FIX #3: Unified loading and error states
+  const isInitialLoading = liveLoading && !liveData;
+  const hasCriticalError = liveError !== null && liveError !== undefined;
+  
+  // Show error state for critical data failures
+  if (hasCriticalError) {
+    return (
+      <OwnerLayout>
+        <div className="flex items-center justify-center h-full">
+          <div className="text-center max-w-md px-4">
+            <p className="text-destructive font-medium mb-2">Failed to load vehicle data</p>
+            <p className="text-sm text-muted-foreground mb-4">
+              {liveError instanceof Error ? liveError.message : "An unexpected error occurred"}
+            </p>
+            <Button onClick={() => refetchLive()}>Retry</Button>
+          </div>
+        </div>
+      </OwnerLayout>
+    );
+  }
+
+  // Show loading skeleton during initial load
+  if (isInitialLoading) {
+    return (
+      <OwnerLayout>
+        <div className="flex flex-col h-full">
+          <div className="px-4 py-6 space-y-4">
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-80 w-full" />
+            <Skeleton className="h-32 w-full" />
+            <Skeleton className="h-48 w-full" />
+          </div>
+        </OwnerLayout>
+      </OwnerLayout>
+    );
+  }
 
   // Force sync handler - processes last 7 days with full sync
   const handleForceSync = useCallback(() => {
     if (!deviceId) return;
-    console.log("[Force Sync] Triggering full trip sync...");
     triggerSync({ deviceId, forceFullSync: true });
   }, [deviceId, triggerSync]);
 
-  // Pull to refresh handler with cache invalidation
+  // HIGH PRIORITY FIX #4: Pull to refresh handler with proper error handling and sync coordination
   const handleRefresh = useCallback(async () => {
     if (!deviceId) return;
 
-    console.log("[Pull-to-Refresh] Invalidating all vehicle profile caches...");
-
-    // 1. Trigger incremental trip sync (fire-and-forget for faster response)
-    supabase.functions
-      .invoke("sync-trips-incremental", {
+    setIsRefreshing(true);
+    
+    try {
+      // Trigger incremental trip sync and wait briefly for it to start
+      // We don't wait for full completion to keep UI responsive, but we give it a moment
+      const syncPromise = supabase.functions.invoke("sync-trips-incremental", {
         body: { device_ids: [deviceId], force_full_sync: false },
-      })
-      .catch((err) => console.log("Background trip sync:", err));
+      });
 
-    // 2. Invalidate all cached queries for this device
-    await queryClient.invalidateQueries({
-      predicate: (query) => {
-        const key = query.queryKey;
-        return (
-          Array.isArray(key) &&
-          (key[0] === "vehicle-live-data" ||
-            key[0] === "vehicle-trips" ||
-            key[0] === "vehicle-events" ||
-            key[0] === "mileage-stats" ||
-            key[0] === "daily-mileage" ||
-            key[0] === "vehicle-daily-stats" ||
-            key[0] === "vehicle-info" ||
-            key[0] === "vehicle-llm-settings" ||
-            key[0] === "trip-sync-status" ||
-            key[0] === "driver-score") &&
-          key[1] === deviceId
-        );
-      },
-    });
+      // Invalidate all cached queries for this device
+      await queryClient.invalidateQueries({
+        predicate: (query) => {
+          const key = query.queryKey;
+          return (
+            Array.isArray(key) &&
+            (key[0] === "vehicle-live-data" ||
+              key[0] === "vehicle-trips" ||
+              key[0] === "vehicle-events" ||
+              key[0] === "mileage-stats" ||
+              key[0] === "daily-mileage" ||
+              key[0] === "vehicle-daily-stats" ||
+              key[0] === "vehicle-info" ||
+              key[0] === "vehicle-llm-settings" ||
+              key[0] === "trip-sync-status" ||
+              key[0] === "driver-score") &&
+            key[1] === deviceId
+          );
+        },
+      });
 
-    console.log("[Pull-to-Refresh] Cache invalidated, refetching all data...");
+      // Refetch all queries in parallel
+      const refetchResults = await Promise.allSettled([
+        refetchProfile(),
+        refetchLive(),
+        refetchTrips(),
+        refetchEvents(),
+        refetchMileage(),
+        refetchDaily(),
+        refetchDailyStats(),
+      ]);
 
-    // 3. Refetch all queries
-    await Promise.all([
-      refetchProfile(),
-      refetchLive(),
-      refetchTrips(),
-      refetchEvents(),
-      refetchMileage(),
-      refetchDaily(),
-      refetchDailyStats(),
-    ]);
+      // Check for any failures
+      const failures = refetchResults.filter(r => r.status === 'rejected');
+      if (failures.length > 0) {
+        // Log errors but don't fail the entire refresh
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('Some data failed to refresh:', failures);
+        }
+      }
 
-    console.log("[Pull-to-Refresh] Complete - all data refreshed from server");
+      // Wait for sync to complete (with timeout to prevent hanging)
+      try {
+        await Promise.race([
+          syncPromise,
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Sync timeout')), 10000)
+          ),
+        ]);
+      } catch (syncError) {
+        // Sync errors are non-critical - data will sync eventually
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('Background sync warning:', syncError);
+        }
+      }
+    } catch (error) {
+      // Show user-friendly error message
+      toast.error("Failed to refresh some data", {
+        description: "Some information may be outdated. Please try again.",
+      });
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Refresh error:', error);
+      }
+    } finally {
+      setIsRefreshing(false);
+    }
   }, [
     deviceId,
     queryClient,
@@ -169,25 +287,10 @@ export default function OwnerVehicleProfile() {
 
   // Pull-to-refresh setup
   const { pullDistance, isPulling, handlers: pullHandlers } = usePullToRefresh({
-    onRefresh: async () => {
-      setIsRefreshing(true);
-      await handleRefresh();
-      setIsRefreshing(false);
-    },
+    onRefresh: handleRefresh,
   });
 
-  // Loading state
-  if (!deviceId) {
-    return (
-      <OwnerLayout>
-        <div className="flex items-center justify-center h-full">
-          <p className="text-muted-foreground">Vehicle not found</p>
-        </div>
-      </OwnerLayout>
-    );
-  }
-
-  // Display values
+  // Display values with safe fallbacks
   const displayName = llmSettings?.nickname || deviceId;
   const vehicleName = deviceId;
   const avatarUrl = llmSettings?.avatar_url || null;

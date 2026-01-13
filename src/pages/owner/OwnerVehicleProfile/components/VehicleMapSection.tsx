@@ -77,8 +77,6 @@ export function VehicleMapSection({
     );
   }
 
-  console.log('[VehicleMapSection] Rendering map with:', { latitude, longitude, heading, speed, isOnline });
-
   return (
     <div className="relative">
       {/* Neumorphic map container */}
