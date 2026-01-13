@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { mapToVehicleLiveData } from './useVehicleLiveData';
 
 /**
  * Real-time vehicle updates hook
@@ -26,10 +27,12 @@ export function useRealtimeVehicleUpdates(deviceId: string | null) {
           filter: `device_id=eq.${deviceId}` 
         },
         (payload) => {
+          // Map raw DB data to the VehicleLiveData interface
+          const mappedData = mapToVehicleLiveData(payload.new);
+          
           // Update vehicle position cache directly
-          queryClient.setQueryData(['vehicle-position', deviceId], payload.new);
-          // Invalidate related queries
-          queryClient.invalidateQueries({ queryKey: ['vehicle-details', deviceId] });
+          // This matches the key used in useVehicleLiveData
+          queryClient.setQueryData(['vehicle-live-data', deviceId], mappedData);
         }
       )
       // New events (alerts) - show toast notification
