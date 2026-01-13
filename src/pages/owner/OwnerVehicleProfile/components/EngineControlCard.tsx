@@ -11,7 +11,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Power, Loader2, ShieldCheck } from "lucide-react";
+import { ShieldAlert, ShieldCheck, Loader2, Power } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useVehicleCommand } from "@/hooks/useVehicleProfile";
 
@@ -27,17 +27,14 @@ export function EngineControlCard({
   isOnline 
 }: EngineControlCardProps) {
   const [showConfirm, setShowConfirm] = useState(false);
-  const [pendingCommand, setPendingCommand] = useState<"start_engine" | "stop_engine" | null>(null);
+  const [pendingCommand, setPendingCommand] = useState<"immobilize_engine" | "demobilize_engine" | null>(null);
   const { mutate: executeCommand, isPending: isCommandPending } = useVehicleCommand();
 
+  // Note: True relay status is not always available in basic GPS heartbeat.
+  // We use ignition status only as a safety warning.
   const isEngineRunning = ignitionOn === true;
-  
-  const engineStatus = isEngineRunning 
-    ? { label: "Engine Running", color: "text-status-active", icon: Power }
-    : { label: "Engine Secured", color: "text-status-active", icon: ShieldCheck };
 
-  const handleToggle = () => {
-    const command = isEngineRunning ? "stop_engine" : "start_engine";
+  const handleCommandRequest = (command: "immobilize_engine" | "demobilize_engine") => {
     setPendingCommand(command);
     setShowConfirm(true);
   };
@@ -60,71 +57,56 @@ export function EngineControlCard({
       <Card className="border-0 bg-card shadow-neumorphic rounded-xl">
         <CardContent className="p-4">
           <div className="flex items-center gap-3 mb-4">
-            {/* Neumorphic icon container */}
-            <div className={cn(
-              "w-10 h-10 rounded-full shadow-neumorphic-sm bg-card flex items-center justify-center",
-              isEngineRunning && "ring-2 ring-status-active/50"
-            )}>
-              <engineStatus.icon className={cn("h-5 w-5", engineStatus.color)} />
+            <div className="w-10 h-10 rounded-full shadow-neumorphic-sm bg-card flex items-center justify-center">
+              <ShieldCheck className="h-5 w-5 text-primary" />
             </div>
-            <span className="font-medium text-foreground">Engine Control</span>
+            <span className="font-medium text-foreground">Security Control</span>
           </div>
 
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <div className="text-sm text-muted-foreground">Status</div>
-              <div className="flex items-center gap-2 mt-1">
-                {isEngineRunning ? (
-                  <Power className="h-4 w-4 text-status-active" />
-                ) : (
-                  <ShieldCheck className="h-4 w-4 text-status-active" />
-                )}
-                <span className={cn("text-sm font-medium", engineStatus.color)}>
-                  {engineStatus.label}
-                </span>
-              </div>
-            </div>
-            <Badge
-              variant="outline"
+          <div className="flex flex-col gap-3">
+            {/* Demobilize (Enable) Button */}
+            <button
+              onClick={() => handleCommandRequest("demobilize_engine")}
+              disabled={isCommandPending || !isOnline}
               className={cn(
-                "px-3 py-1 border-0 shadow-neumorphic-sm bg-card",
-                isEngineRunning
-                  ? "text-status-active"
-                  : "text-status-active"
+                "w-full py-3 rounded-xl font-medium transition-all duration-200 flex items-center justify-center",
+                "shadow-neumorphic-sm bg-card text-green-500",
+                "hover:shadow-neumorphic active:shadow-neumorphic-inset",
+                "disabled:opacity-50 disabled:cursor-not-allowed"
               )}
             >
-              <span className="mr-1.5">●</span>
-              {isEngineRunning ? "RUNNING" : "SECURED"}
-            </Badge>
+              {isCommandPending && pendingCommand === "demobilize_engine" ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Power className="h-4 w-4 mr-2" />
+              )}
+              Mobilize (Enable Engine)
+            </button>
+
+            {/* Immobilize (Disable) Button - Destructive Style */}
+            <button
+              onClick={() => handleCommandRequest("immobilize_engine")}
+              disabled={isCommandPending || !isOnline}
+              className={cn(
+                "w-full py-3 rounded-xl font-medium transition-all duration-200 flex items-center justify-center",
+                "shadow-neumorphic-sm bg-card text-destructive",
+                "hover:shadow-neumorphic active:shadow-neumorphic-inset",
+                "disabled:opacity-50 disabled:cursor-not-allowed"
+              )}
+            >
+              {isCommandPending && pendingCommand === "immobilize_engine" ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <ShieldAlert className="h-4 w-4 mr-2" />
+              )}
+              Immobilize (Cut Fuel)
+            </button>
           </div>
 
-          {/* Neumorphic action button */}
-          <button
-            onClick={handleToggle}
-            disabled={isCommandPending || !isOnline}
-            className={cn(
-              "w-full py-3 rounded-xl font-medium transition-all duration-200",
-              "shadow-neumorphic-sm bg-card",
-              "hover:shadow-neumorphic active:shadow-neumorphic-inset",
-              "disabled:opacity-50 disabled:cursor-not-allowed",
-              isEngineRunning
-                ? "text-destructive"
-                : "text-status-active"
-            )}
-          >
-            {isCommandPending ? (
-              <Loader2 className="h-4 w-4 mr-2 inline animate-spin" />
-            ) : (
-              <Power className="h-4 w-4 mr-2 inline" />
-            )}
-            {isEngineRunning ? "Stop Engine" : "Start Engine"}
-          </button>
-
-          <p className="text-xs text-muted-foreground text-center mt-3">
-            {!isOnline 
-              ? "Vehicle is offline - commands unavailable" 
-              : "Remote engine control requires verification"}
-          </p>
+          <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
+             <span>Status: {isOnline ? "Connected" : "Offline"}</span>
+             {isEngineRunning && <span className="text-yellow-500 font-medium">⚠ Ignition On</span>}
+          </div>
         </CardContent>
       </Card>
 
@@ -132,12 +114,14 @@ export function EngineControlCard({
         <AlertDialogContent className="bg-card border-border shadow-neumorphic">
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {pendingCommand === "stop_engine" ? "Stop Engine?" : "Start Engine?"}
+              {pendingCommand === "immobilize_engine" 
+                ? "Immobilize Vehicle?" 
+                : "Mobilize Vehicle?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {pendingCommand === "stop_engine" 
-                ? "This will remotely stop the engine. The vehicle will be secured."
-                : "This will remotely start the engine. Make sure the vehicle is in a safe location."
+              {pendingCommand === "immobilize_engine" 
+                ? "This will cut the fuel supply. If the vehicle is moving, it may stop abruptly or fail to accelerate. Ensure it is safe to do so."
+                : "This will restore the fuel supply, allowing the engine to start."
               }
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -152,9 +136,9 @@ export function EngineControlCard({
               onClick={handleConfirm}
               className={cn(
                 "shadow-neumorphic-sm border-0",
-                pendingCommand === "stop_engine"
+                pendingCommand === "immobilize_engine"
                   ? "bg-destructive hover:bg-destructive/90"
-                  : "bg-status-active hover:bg-status-active/90 text-primary-foreground"
+                  : "bg-green-600 hover:bg-green-700 text-white"
               )}
             >
               {isCommandPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
