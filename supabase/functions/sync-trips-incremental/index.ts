@@ -53,108 +53,207 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * c;
 }
 
-// Extract trips from position history (same logic as process-trips)
+// Extract trips from position history
+// Uses ignition-based detection (like GPS51) with speed-based fallback
 function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
-  if (positions.length < 3) return [];
+  if (positions.length < 2) return [];
 
   const trips: TripData[] = [];
   let currentTrip: { points: PositionPoint[] } | null = null;
-  const SPEED_THRESHOLD = 2; // km/h - consider moving if speed > 2
-  const MIN_TRIP_DISTANCE = 0.3; // km - minimum trip distance to record
-  const STOP_DURATION_MS = 3 * 60 * 1000; // 3 minutes of no movement = trip end
+  const SPEED_THRESHOLD = 1; // km/h - lowered to catch slow starts
+  const MIN_TRIP_DISTANCE = 0.1; // km - lowered to catch short trips (GPS51 shows 0.56km trips)
+  const STOP_DURATION_MS = 5 * 60 * 1000; // 5 minutes of no movement = trip end (increased)
+  const MAX_TIME_GAP_MS = 30 * 60 * 1000; // 30 minutes - if gap is larger, end trip
+
+  // Check if we have ignition data
+  const hasIgnitionData = positions.some(p => p.ignitionOn !== null && p.ignitionOn !== undefined);
+  const useIgnitionDetection = hasIgnitionData;
+
+  console.log(`[extractTripsFromHistory] Using ${useIgnitionDetection ? 'ignition-based' : 'speed-based'} detection for ${positions.length} points`);
 
   for (let i = 0; i < positions.length; i++) {
     const point = positions[i];
     const prevPoint = i > 0 ? positions[i - 1] : null;
 
-    const isMoving = (point.speed ?? 0) > SPEED_THRESHOLD;
-    const wasMoving = prevPoint && (prevPoint.speed ?? 0) > SPEED_THRESHOLD;
+    // Normalize speed
+    const normalizedSpeed = point.speed !== null && point.speed > 0
+      ? (point.speed > 1000 ? point.speed / 1000 : point.speed)
+      : 0;
+    const prevNormalizedSpeed = prevPoint && prevPoint.speed !== null && prevPoint.speed > 0
+      ? (prevPoint.speed > 1000 ? prevPoint.speed / 1000 : prevPoint.speed)
+      : 0;
+
+    const isMoving = normalizedSpeed > SPEED_THRESHOLD;
+    const wasMoving = prevPoint && prevNormalizedSpeed > SPEED_THRESHOLD;
 
     // Check time gap between points
     const timeGap = prevPoint
       ? new Date(point.gps_time).getTime() - new Date(prevPoint.gps_time).getTime()
       : 0;
 
-    // Start new trip
-    if (isMoving && !currentTrip) {
-      currentTrip = { points: [point] };
-    }
+    // IGNITION-BASED DETECTION (Primary - matches GPS51)
+    if (useIgnitionDetection) {
+      const ignitionOn = point.ignitionOn === true;
+      const prevIgnitionOn = prevPoint ? prevPoint.ignitionOn === true : false;
 
-    // Continue trip
-    if (currentTrip && isMoving) {
-      currentTrip.points.push(point);
-    }
-
-    // End trip conditions
-    const shouldEndTrip =
-      currentTrip &&
-      ((wasMoving && !isMoving) ||
-        timeGap > STOP_DURATION_MS ||
-        i === positions.length - 1);
-
-    if (shouldEndTrip && currentTrip && currentTrip.points.length >= 3) {
-      const tripPoints = currentTrip.points;
-      const startPoint = tripPoints[0];
-      const endPoint = tripPoints[tripPoints.length - 1];
-
-      // Calculate total distance
-      let totalDistance = 0;
-      let maxSpeed = 0;
-      let totalSpeed = 0;
-      let speedCount = 0;
-
-      for (let j = 1; j < tripPoints.length; j++) {
-        const p1 = tripPoints[j - 1];
-        const p2 = tripPoints[j];
-        const dist = calculateDistance(p1.latitude, p1.longitude, p2.latitude, p2.longitude);
-
-        // Filter GPS jumps
-        if (dist < 10) {
-          totalDistance += dist;
-        }
-
-        // Normalize speed
-        const speed = p2.speed !== null && p2.speed > 0
-          ? (p2.speed > 1000 ? p2.speed / 1000 : p2.speed)
-          : 0;
-
-        if (speed > 0 && speed < 200) {
-          maxSpeed = Math.max(maxSpeed, speed);
-          totalSpeed += speed;
-          speedCount++;
-        }
+      // Trip START: Ignition turns ON (false -> true)
+      if (ignitionOn && !prevIgnitionOn && !currentTrip) {
+        currentTrip = { points: [point] };
+        console.log(`[extractTripsFromHistory] Trip START (ignition ON) at ${point.gps_time}`);
       }
 
-      // Only record meaningful trips
-      if (totalDistance >= MIN_TRIP_DISTANCE) {
-        const startTime = new Date(startPoint.gps_time);
-        const endTime = new Date(endPoint.gps_time);
-        const durationSeconds = Math.floor((endTime.getTime() - startTime.getTime()) / 1000);
-
-        trips.push({
-          device_id: startPoint.device_id,
-          start_time: startPoint.gps_time,
-          end_time: endPoint.gps_time,
-          start_latitude: startPoint.latitude,
-          start_longitude: startPoint.longitude,
-          end_latitude: endPoint.latitude,
-          end_longitude: endPoint.longitude,
-          distance_km: Math.round(totalDistance * 100) / 100,
-          max_speed: maxSpeed > 0 ? Math.round(maxSpeed * 10) / 10 : null,
-          avg_speed: speedCount > 0 ? Math.round((totalSpeed / speedCount) * 10) / 10 : null,
-          duration_seconds: durationSeconds,
-        });
+      // Continue trip while ignition is ON
+      if (currentTrip && ignitionOn) {
+        currentTrip.points.push(point);
       }
 
-      currentTrip = null;
-    }
+      // Trip END: Ignition turns OFF (true -> false) OR large time gap
+      const shouldEndTrip =
+        currentTrip &&
+        ((prevIgnitionOn && !ignitionOn) ||
+          (timeGap > MAX_TIME_GAP_MS) ||
+          (timeGap > STOP_DURATION_MS && !ignitionOn) ||
+          i === positions.length - 1);
 
-    // Reset trip if we weren't moving
-    if (!isMoving && !wasMoving && currentTrip) {
-      currentTrip = null;
+      if (shouldEndTrip && currentTrip && currentTrip.points.length >= 2) {
+        const tripPoints = currentTrip.points;
+        const startPoint = tripPoints[0];
+        const endPoint = tripPoints[tripPoints.length - 1];
+
+        // Calculate total distance
+        let totalDistance = 0;
+        let maxSpeed = 0;
+        let totalSpeed = 0;
+        let speedCount = 0;
+
+        for (let j = 1; j < tripPoints.length; j++) {
+          const p1 = tripPoints[j - 1];
+          const p2 = tripPoints[j];
+          const dist = calculateDistance(p1.latitude, p1.longitude, p2.latitude, p2.longitude);
+
+          // Filter GPS jumps (unrealistic > 10km between consecutive points)
+          if (dist < 10) {
+            totalDistance += dist;
+          }
+
+          const speed = p2.speed !== null && p2.speed > 0
+            ? (p2.speed > 1000 ? p2.speed / 1000 : p2.speed)
+            : 0;
+
+          if (speed > 0 && speed < 200) {
+            maxSpeed = Math.max(maxSpeed, speed);
+            totalSpeed += speed;
+            speedCount++;
+          }
+        }
+
+        // Record trip if it meets minimum distance (lowered threshold)
+        if (totalDistance >= MIN_TRIP_DISTANCE) {
+          const startTime = new Date(startPoint.gps_time);
+          const endTime = new Date(endPoint.gps_time);
+          const durationSeconds = Math.floor((endTime.getTime() - startTime.getTime()) / 1000);
+
+          trips.push({
+            device_id: startPoint.device_id,
+            start_time: startPoint.gps_time,
+            end_time: endPoint.gps_time,
+            start_latitude: startPoint.latitude,
+            start_longitude: startPoint.longitude,
+            end_latitude: endPoint.latitude,
+            end_longitude: endPoint.longitude,
+            distance_km: Math.round(totalDistance * 100) / 100,
+            max_speed: maxSpeed > 0 ? Math.round(maxSpeed * 10) / 10 : null,
+            avg_speed: speedCount > 0 ? Math.round((totalSpeed / speedCount) * 10) / 10 : null,
+            duration_seconds: durationSeconds,
+          });
+          console.log(`[extractTripsFromHistory] Trip recorded: ${startPoint.gps_time} to ${endPoint.gps_time}, distance: ${Math.round(totalDistance * 100) / 100}km`);
+        } else {
+          console.log(`[extractTripsFromHistory] Trip filtered (distance too short: ${Math.round(totalDistance * 100) / 100}km < ${MIN_TRIP_DISTANCE}km)`);
+        }
+
+        currentTrip = null;
+      }
+    } else {
+      // SPEED-BASED DETECTION (Fallback when no ignition data)
+      // Start new trip when movement begins
+      if (isMoving && !currentTrip) {
+        currentTrip = { points: [point] };
+      }
+
+      // Continue trip while moving
+      if (currentTrip && (isMoving || normalizedSpeed > 0)) {
+        currentTrip.points.push(point);
+      }
+
+      // End trip conditions
+      const shouldEndTrip =
+        currentTrip &&
+        ((wasMoving && !isMoving && timeGap > STOP_DURATION_MS) ||
+          (timeGap > MAX_TIME_GAP_MS) ||
+          i === positions.length - 1);
+
+      if (shouldEndTrip && currentTrip && currentTrip.points.length >= 2) {
+        const tripPoints = currentTrip.points;
+        const startPoint = tripPoints[0];
+        const endPoint = tripPoints[tripPoints.length - 1];
+
+        // Calculate total distance
+        let totalDistance = 0;
+        let maxSpeed = 0;
+        let totalSpeed = 0;
+        let speedCount = 0;
+
+        for (let j = 1; j < tripPoints.length; j++) {
+          const p1 = tripPoints[j - 1];
+          const p2 = tripPoints[j];
+          const dist = calculateDistance(p1.latitude, p1.longitude, p2.latitude, p2.longitude);
+
+          if (dist < 10) {
+            totalDistance += dist;
+          }
+
+          const speed = p2.speed !== null && p2.speed > 0
+            ? (p2.speed > 1000 ? p2.speed / 1000 : p2.speed)
+            : 0;
+
+          if (speed > 0 && speed < 200) {
+            maxSpeed = Math.max(maxSpeed, speed);
+            totalSpeed += speed;
+            speedCount++;
+          }
+        }
+
+        if (totalDistance >= MIN_TRIP_DISTANCE) {
+          const startTime = new Date(startPoint.gps_time);
+          const endTime = new Date(endPoint.gps_time);
+          const durationSeconds = Math.floor((endTime.getTime() - startTime.getTime()) / 1000);
+
+          trips.push({
+            device_id: startPoint.device_id,
+            start_time: startPoint.gps_time,
+            end_time: endPoint.gps_time,
+            start_latitude: startPoint.latitude,
+            start_longitude: startPoint.longitude,
+            end_latitude: endPoint.latitude,
+            end_longitude: endPoint.longitude,
+            distance_km: Math.round(totalDistance * 100) / 100,
+            max_speed: maxSpeed > 0 ? Math.round(maxSpeed * 10) / 10 : null,
+            avg_speed: speedCount > 0 ? Math.round((totalSpeed / speedCount) * 10) / 10 : null,
+            duration_seconds: durationSeconds,
+          });
+        }
+
+        currentTrip = null;
+      }
+
+      // Reset trip if we weren't moving
+      if (!isMoving && !wasMoving && currentTrip) {
+        currentTrip = null;
+      }
     }
   }
 
+  console.log(`[extractTripsFromHistory] Extracted ${trips.length} trips from ${positions.length} positions`);
   return trips;
 }
 
@@ -309,20 +408,27 @@ Deno.serve(async (req) => {
         let deviceTripsSkipped = 0;
 
         // Insert trips, checking for duplicates
+        // Use a wider time window and also check distance to avoid false duplicates
         for (const trip of trips) {
           const tripStartTime = new Date(trip.start_time);
-          const startWindowMin = new Date(tripStartTime.getTime() - 60000).toISOString();
-          const startWindowMax = new Date(tripStartTime.getTime() + 60000).toISOString();
+          // Wider window: 5 minutes before/after to catch trips that might have slight time differences
+          const startWindowMin = new Date(tripStartTime.getTime() - 5 * 60 * 1000).toISOString();
+          const startWindowMax = new Date(tripStartTime.getTime() + 5 * 60 * 1000).toISOString();
 
+          // Check for existing trip with similar start time AND similar distance
           const { data: existing } = await supabase
             .from("vehicle_trips")
-            .select("id")
+            .select("id, distance_km")
             .eq("device_id", trip.device_id)
             .gte("start_time", startWindowMin)
             .lte("start_time", startWindowMax)
+            // Also check if distance is similar (within 10% to account for calculation differences)
+            .gte("distance_km", trip.distance_km * 0.9)
+            .lte("distance_km", trip.distance_km * 1.1)
             .limit(1);
 
           if (existing && existing.length > 0) {
+            console.log(`[sync-trips-incremental] Skipping duplicate trip: ${trip.start_time} (existing: ${existing[0].id})`);
             deviceTripsSkipped++;
             totalTripsSkipped++;
             continue;
@@ -332,8 +438,10 @@ Deno.serve(async (req) => {
           const { error: insertError } = await supabase.from("vehicle_trips").insert(trip);
 
           if (insertError) {
+            console.error(`[sync-trips-incremental] Error inserting trip: ${insertError.message}`);
             errors.push(`Device ${deviceId} trip insert: ${insertError.message}`);
           } else {
+            console.log(`[sync-trips-incremental] Inserted trip: ${trip.start_time} to ${trip.end_time}, ${trip.distance_km}km`);
             deviceTripsCreated++;
             totalTripsCreated++;
           }
