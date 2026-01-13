@@ -95,7 +95,7 @@ export function CommandHistory({ deviceId }: CommandHistoryProps) {
     setLoading(true);
     try {
       // Fetch from actual vehicle_command_logs table
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('vehicle_command_logs')
         .select('id, device_id, command_type, status, created_at, result, error_message, user_id')
         .eq('device_id', deviceId)

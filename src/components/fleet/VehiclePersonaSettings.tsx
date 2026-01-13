@@ -58,7 +58,7 @@ export function VehiclePersonaSettings({ deviceId, vehicleName }: VehiclePersona
   const fetchSettings = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('vehicle_llm_settings')
         .select('*')
         .eq('device_id', deviceId)
@@ -67,12 +67,12 @@ export function VehiclePersonaSettings({ deviceId, vehicleName }: VehiclePersona
       if (error) throw error;
 
       if (data) {
-        setSettings(data);
-        setNickname(data.nickname || "");
-        setLanguage(data.language_preference);
-        setPersonality(data.personality_mode);
-        setLlmEnabled(data.llm_enabled);
-        setAvatarUrl(data.avatar_url);
+        setSettings(data as LlmSettings);
+        setNickname((data as any).nickname || "");
+        setLanguage((data as any).language_preference);
+        setPersonality((data as any).personality_mode);
+        setLlmEnabled((data as any).llm_enabled);
+        setAvatarUrl((data as any).avatar_url);
       } else {
         // Defaults for new settings
         setNickname("");
@@ -153,7 +153,7 @@ export function VehiclePersonaSettings({ deviceId, vehicleName }: VehiclePersona
     setSaving(true);
     try {
       // Step 1: Ensure vehicle exists in vehicles table
-      const { data: vehicleExists, error: vehicleCheckError } = await supabase
+      const { data: vehicleExists, error: vehicleCheckError } = await (supabase as any)
         .from('vehicles')
         .select('device_id')
         .eq('device_id', deviceId)
@@ -166,7 +166,7 @@ export function VehiclePersonaSettings({ deviceId, vehicleName }: VehiclePersona
 
       if (!vehicleExists) {
         // Create minimal vehicle entry to satisfy foreign key constraint
-        const { error: vehicleCreateError } = await supabase
+        const { error: vehicleCreateError } = await (supabase as any)
           .from('vehicles')
           .upsert({
             device_id: deviceId,
@@ -198,7 +198,7 @@ export function VehiclePersonaSettings({ deviceId, vehicleName }: VehiclePersona
       }
 
       // Step 2: Save LLM settings
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('vehicle_llm_settings')
         .upsert({
           device_id: deviceId,
