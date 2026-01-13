@@ -20,6 +20,11 @@ import {
   useVehicleDailyStats,
   VehicleTrip,
 } from "@/hooks/useVehicleProfile";
+import {
+  useTripSyncStatus,
+  useTriggerTripSync,
+  useRealtimeTripUpdates,
+} from "@/hooks/useTripSync";
 import { supabase } from "@/integrations/supabase/client";
 
 // Import sub-components
@@ -78,6 +83,11 @@ export default function OwnerVehicleProfile() {
   const { data: dailyMileage, refetch: refetchDaily } = useDailyMileage(deviceId!, !!deviceId);
   const { data: dailyStats, refetch: refetchDailyStats } = useVehicleDailyStats(deviceId!, 30, !!deviceId);
 
+  // Trip sync management
+  const { data: syncStatus } = useTripSyncStatus(deviceId!, !!deviceId);
+  const { mutate: triggerSync, isPending: isSyncing } = useTriggerTripSync();
+  const { isSubscribed } = useRealtimeTripUpdates(deviceId!, !!deviceId);
+
   // Address lookup
   const { address, isLoading: addressLoading } = useAddress(
     liveData?.latitude ?? null,
@@ -90,18 +100,25 @@ export default function OwnerVehicleProfile() {
     ? "online"
     : "offline";
 
+  // Force sync handler - processes last 7 days with full sync
+  const handleForceSync = useCallback(() => {
+    if (!deviceId) return;
+    console.log("[Force Sync] Triggering full trip sync...");
+    triggerSync({ deviceId, forceFullSync: true });
+  }, [deviceId, triggerSync]);
+
   // Pull to refresh handler with cache invalidation
   const handleRefresh = useCallback(async () => {
     if (!deviceId) return;
 
     console.log("[Pull-to-Refresh] Invalidating all vehicle profile caches...");
 
-    // 1. Trigger background trip processing (fire-and-forget)
+    // 1. Trigger incremental trip sync (fire-and-forget for faster response)
     supabase.functions
-      .invoke("process-trips", {
-        body: { device_ids: [deviceId], lookback_hours: 24 },
+      .invoke("sync-trips-incremental", {
+        body: { device_ids: [deviceId], force_full_sync: false },
       })
-      .catch((err) => console.log("Background trip processing:", err));
+      .catch((err) => console.log("Background trip sync:", err));
 
     // 2. Invalidate all cached queries for this device
     await queryClient.invalidateQueries({
@@ -117,6 +134,7 @@ export default function OwnerVehicleProfile() {
             key[0] === "vehicle-daily-stats" ||
             key[0] === "vehicle-info" ||
             key[0] === "vehicle-llm-settings" ||
+            key[0] === "trip-sync-status" ||
             key[0] === "driver-score") &&
           key[1] === deviceId
         );
@@ -253,6 +271,10 @@ export default function OwnerVehicleProfile() {
               dateRange={dateRange}
               onDateRangeChange={setDateRange}
               onPlayTrip={setSelectedTrip}
+              syncStatus={syncStatus}
+              isSyncing={isSyncing || syncStatus?.sync_status === "processing"}
+              onForceSync={handleForceSync}
+              isRealtimeActive={isSubscribed}
             />
           </div>
         </ScrollArea>
