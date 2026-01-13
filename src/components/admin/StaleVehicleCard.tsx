@@ -25,6 +25,16 @@ interface StaleVehicle {
   gps_time: string;
 }
 
+interface PositionRow {
+  device_id: string;
+  gps_time: string;
+}
+
+interface VehicleRow {
+  device_id: string;
+  device_name: string | null;
+}
+
 const STALE_DAYS = 30;
 
 export function StaleVehicleCard() {
@@ -42,32 +52,34 @@ export function StaleVehicleCard() {
       staleCutoff.setDate(staleCutoff.getDate() - STALE_DAYS);
 
       // Get vehicles with positions older than the cutoff
-      const { data: stalePositions, error: posError } = await (supabase
-        .from("vehicle_positions" as any)
+      const { data: stalePositions, error: posError } = await (supabase as any)
+        .from("vehicle_positions")
         .select("device_id, gps_time")
-        .lt("gps_time", staleCutoff.toISOString()) as any);
+        .lt("gps_time", staleCutoff.toISOString());
 
       if (posError) throw posError;
-      if (!stalePositions || stalePositions.length === 0) {
+      
+      const positionData = (stalePositions || []) as PositionRow[];
+      
+      if (positionData.length === 0) {
         setStaleVehicles([]);
         setLoading(false);
         return;
       }
 
-      const staleDeviceIds = stalePositions.map((v: any) => v.device_id);
+      const staleDeviceIds = positionData.map((v) => v.device_id);
 
       // Get vehicle names
-      const { data: vehicleData } = await (supabase
-        .from("vehicles" as any)
+      const { data: vehicleData } = await (supabase as any)
+        .from("vehicles")
         .select("device_id, device_name")
-        .in("device_id", staleDeviceIds) as any);
+        .in("device_id", staleDeviceIds);
 
-      const vehicleMap = new Map(
-        (vehicleData || []).map((v: any) => [v.device_id, v.device_name])
-      );
+      const vehicleRows = (vehicleData || []) as VehicleRow[];
+      const vehicleMap = new Map(vehicleRows.map((v) => [v.device_id, v.device_name]));
 
       // Combine data
-      const staleList: StaleVehicle[] = stalePositions.map((pos: any) => ({
+      const staleList: StaleVehicle[] = positionData.map((pos) => ({
         device_id: pos.device_id,
         device_name: vehicleMap.get(pos.device_id) || null,
         gps_time: pos.gps_time,
