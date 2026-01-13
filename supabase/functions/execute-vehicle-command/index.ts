@@ -294,12 +294,18 @@ serve(async (req) => {
     })
 
     if (!isAdmin) {
-      // Check if user has assignment
+      // Check if user has assignment via profiles table
+      // vehicle_assignments.profile_id references profiles.id, and profiles.user_id = auth.uid()
       const { data: assignment } = await supabase
         .from('vehicle_assignments')
-        .select('device_id')
+        .select(`
+          device_id,
+          profiles!inner (
+            user_id
+          )
+        `)
         .eq('device_id', device_id)
-        .eq('profile_id', effectiveUserId)
+        .eq('profiles.user_id', effectiveUserId)
         .maybeSingle()
 
       if (!assignment) {

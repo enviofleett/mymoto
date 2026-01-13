@@ -207,13 +207,13 @@ async function fetchVehicleDailyStats(
 
 interface CommandPayload {
   device_id: string;
-  command_type: "start_engine" | "stop_engine" | "lock_doors" | "unlock_doors";
+  command_type: "immobilize_engine" | "demobilize_engine" | "sound_alarm" | "silence_alarm";
   confirmed?: boolean;
 }
 
 async function executeVehicleCommand(payload: CommandPayload): Promise<{ success: boolean; message: string }> {
   const { data, error } = await supabase.functions.invoke("execute-vehicle-command", {
-    body: payload,
+    body: { ...payload, skip_confirmation: true },
   });
 
   if (error) {

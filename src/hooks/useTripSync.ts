@@ -17,7 +17,7 @@ export interface TripSyncStatus {
 
 // Fetch sync status for a device
 async function fetchTripSyncStatus(deviceId: string): Promise<TripSyncStatus | null> {
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from("trip_sync_status")
     .select("*")
     .eq("device_id", deviceId)

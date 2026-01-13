@@ -168,7 +168,7 @@ export function ReportsSection({
                   <AlertTriangle className="h-3 w-3 text-red-500" />
                 ) : null}
                 {isRealtimeActive && (
-                  <Radio className="h-3 w-3 text-green-500 animate-pulse" title="Realtime updates active" />
+                  <Radio className="h-3 w-3 text-green-500 animate-pulse" />
                 )}
               </div>
             )}

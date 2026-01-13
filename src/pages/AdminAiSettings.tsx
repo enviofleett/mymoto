@@ -38,7 +38,7 @@ export default function AdminAiSettings() {
   const fetchPrompt = async () => {
     setIsLoading(true);
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from("app_settings")
         .select("value")
         .eq("key", "global_ai_system_prompt")
@@ -46,7 +46,7 @@ export default function AdminAiSettings() {
 
       if (error) throw error;
 
-      const value = data?.value || DEFAULT_PERSONA;
+      const value = (data as any)?.value || DEFAULT_PERSONA;
       setPrompt(value);
       setOriginalPrompt(value);
     } catch (error) {
@@ -62,7 +62,7 @@ export default function AdminAiSettings() {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from("app_settings")
         .upsert({
           key: "global_ai_system_prompt",

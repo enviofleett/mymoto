@@ -168,13 +168,12 @@ export default function OwnerVehicleProfile() {
   ]);
 
   // Pull-to-refresh setup
-  const { containerRef, pullProgress, isPulling } = usePullToRefresh({
+  const { pullDistance, isPulling, handlers: pullHandlers } = usePullToRefresh({
     onRefresh: async () => {
       setIsRefreshing(true);
       await handleRefresh();
       setIsRefreshing(false);
     },
-    isEnabled: true,
   });
 
   // Loading state
@@ -189,20 +188,20 @@ export default function OwnerVehicleProfile() {
   }
 
   // Display values
-  const displayName = llmSettings?.vehicle_alias || llmSettings?.vehicle_name || deviceId;
-  const vehicleName = llmSettings?.vehicle_name || deviceId;
+  const displayName = llmSettings?.nickname || deviceId;
+  const vehicleName = deviceId;
   const avatarUrl = llmSettings?.avatar_url || null;
   const personalityMode = llmSettings?.personality_mode || null;
 
   return (
-    <OwnerLayout hideNavigation>
+    <OwnerLayout>
       <PullToRefresh
         isPulling={isPulling}
-        pullProgress={pullProgress}
+        pullProgress={pullDistance / 80}
         isRefreshing={isRefreshing}
       />
 
-      <div ref={containerRef} className="flex flex-col min-h-full overflow-y-auto">
+      <div {...pullHandlers} className="flex flex-col min-h-full overflow-y-auto">
         {/* Header */}
         <ProfileHeader
           displayName={displayName}
@@ -238,9 +237,7 @@ export default function OwnerVehicleProfile() {
             {/* Status Metrics */}
             <StatusMetricsRow
               battery={liveData?.batteryPercent ?? null}
-              ignitionOn={liveData?.ignitionOn ?? null}
-              speed={liveData?.speed ?? 0}
-              isOnline={isOnline}
+              totalMileage={liveData?.totalMileageKm ?? null}
             />
 
             {/* Engine Control */}
@@ -283,9 +280,12 @@ export default function OwnerVehicleProfile() {
       {/* Trip Playback Dialog */}
       {selectedTrip && (
         <TripPlaybackDialog
-          trip={selectedTrip}
           open={!!selectedTrip}
           onOpenChange={(open) => !open && setSelectedTrip(null)}
+          deviceId={deviceId}
+          deviceName={displayName}
+          startTime={selectedTrip.start_time}
+          endTime={selectedTrip.end_time}
         />
       )}
     </OwnerLayout>
