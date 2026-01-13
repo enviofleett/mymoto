@@ -65,9 +65,11 @@ function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
   const STOP_DURATION_MS = 5 * 60 * 1000; // 5 minutes of no movement = trip end (increased)
   const MAX_TIME_GAP_MS = 30 * 60 * 1000; // 30 minutes - if gap is larger, end trip
 
-  // Check if we have ignition data
+  // Check if we have USABLE ignition data (at least some true values)
+  // If all ignition values are false, we can't use ignition-based detection
+  const hasIgnitionTrue = positions.some(p => p.ignitionOn === true);
   const hasIgnitionData = positions.some(p => p.ignitionOn !== null && p.ignitionOn !== undefined);
-  const useIgnitionDetection = hasIgnitionData;
+  const useIgnitionDetection = hasIgnitionData && hasIgnitionTrue; // Only use if we have actual true values
 
   console.log(`[extractTripsFromHistory] Using ${useIgnitionDetection ? 'ignition-based' : 'speed-based'} detection for ${positions.length} points`);
 
@@ -174,30 +176,60 @@ function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
         currentTrip = null;
       }
     } else {
-      // SPEED-BASED DETECTION (Fallback when no ignition data)
-      // Start new trip when movement begins
-      if (isMoving && !currentTrip) {
-        currentTrip = { points: [point] };
+      // IMPROVED SPEED-BASED DETECTION (When no ignition data)
+      // Uses distance-based movement detection to catch all trips
+      const DISTANCE_THRESHOLD = 0.05; // 50 meters - significant movement
+      const MIN_MOVEMENT_SPEED = 0.5; // km/h - very low threshold
+      
+      // Calculate distance from previous point
+      let distanceFromPrev = 0;
+      if (prevPoint) {
+        distanceFromPrev = calculateDistance(
+          prevPoint.latitude, prevPoint.longitude,
+          point.latitude, point.longitude
+        );
       }
 
-      // Continue trip while moving
-      if (currentTrip && (isMoving || normalizedSpeed > 0)) {
+      // Detect movement: either speed > threshold OR significant distance change
+      const hasMovement = normalizedSpeed > MIN_MOVEMENT_SPEED || distanceFromPrev > DISTANCE_THRESHOLD;
+      const hadMovement = prevPoint && (
+        prevNormalizedSpeed > MIN_MOVEMENT_SPEED || 
+        (i > 1 && calculateDistance(
+          positions[i-2].latitude, positions[i-2].longitude,
+          prevPoint.latitude, prevPoint.longitude
+        ) > DISTANCE_THRESHOLD)
+      );
+
+      // Start new trip when movement begins
+      if (hasMovement && !currentTrip) {
+        currentTrip = { points: [point] };
+        console.log(`[extractTripsFromHistory] Trip START (movement detected) at ${point.gps_time}, speed: ${normalizedSpeed.toFixed(2)} km/h, dist: ${distanceFromPrev.toFixed(3)} km`);
+      }
+
+      // Continue trip while there's any movement or we're still in motion
+      if (currentTrip && (hasMovement || normalizedSpeed > 0 || distanceFromPrev > 0.01)) {
         currentTrip.points.push(point);
       }
 
-      // End trip conditions
+      // End trip conditions:
+      // 1. Was moving, now stopped for > STOP_DURATION
+      // 2. Large time gap (> MAX_TIME_GAP)
+      // 3. Last point in data
+      const isStopped = !hasMovement && normalizedSpeed <= 0.1 && distanceFromPrev < 0.01;
+      const wasStopped = prevPoint && !hadMovement && prevNormalizedSpeed <= 0.1;
+      
       const shouldEndTrip =
         currentTrip &&
-        ((wasMoving && !isMoving && timeGap > STOP_DURATION_MS) ||
+        ((hadMovement && isStopped && timeGap > STOP_DURATION_MS) ||
           (timeGap > MAX_TIME_GAP_MS) ||
-          i === positions.length - 1);
+          (i === positions.length - 1));
 
       if (shouldEndTrip && currentTrip && currentTrip.points.length >= 2) {
         const tripPoints = currentTrip.points;
         const startPoint = tripPoints[0];
         const endPoint = tripPoints[tripPoints.length - 1];
 
-        // Calculate total distance
+        // Calculate total distance traveled
         let totalDistance = 0;
         let maxSpeed = 0;
         let totalSpeed = 0;
@@ -208,6 +240,7 @@ function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
           const p2 = tripPoints[j];
           const dist = calculateDistance(p1.latitude, p1.longitude, p2.latitude, p2.longitude);
 
+          // Filter GPS jumps (unrealistic > 10km between consecutive points)
           if (dist < 10) {
             totalDistance += dist;
           }
@@ -223,6 +256,7 @@ function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
           }
         }
 
+        // Record trip if it meets minimum distance
         if (totalDistance >= MIN_TRIP_DISTANCE) {
           const startTime = new Date(startPoint.gps_time);
           const endTime = new Date(endPoint.gps_time);
@@ -241,14 +275,22 @@ function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
             avg_speed: speedCount > 0 ? Math.round((totalSpeed / speedCount) * 10) / 10 : null,
             duration_seconds: durationSeconds,
           });
+          console.log(`[extractTripsFromHistory] Trip recorded: ${startPoint.gps_time} to ${endPoint.gps_time}, distance: ${Math.round(totalDistance * 100) / 100}km, duration: ${durationSeconds}s`);
+        } else {
+          console.log(`[extractTripsFromHistory] Trip filtered (distance too short: ${Math.round(totalDistance * 100) / 100}km < ${MIN_TRIP_DISTANCE}km)`);
         }
 
         currentTrip = null;
       }
 
-      // Reset trip if we weren't moving
-      if (!isMoving && !wasMoving && currentTrip) {
-        currentTrip = null;
+      // Reset trip if we weren't moving and haven't started one
+      if (!hasMovement && !hadMovement && currentTrip && currentTrip.points.length === 1) {
+        // Only reset if trip just started and immediately stopped
+        const singlePointTime = new Date(currentTrip.points[0].gps_time).getTime();
+        const currentTime = new Date(point.gps_time).getTime();
+        if (currentTime - singlePointTime > STOP_DURATION_MS) {
+          currentTrip = null;
+        }
       }
     }
   }
