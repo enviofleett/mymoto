@@ -182,7 +182,7 @@ export default function OwnerVehicleProfile() {
             <Skeleton className="h-32 w-full" />
             <Skeleton className="h-48 w-full" />
           </div>
-        </OwnerLayout>
+        </div>
       </OwnerLayout>
     );
   }
