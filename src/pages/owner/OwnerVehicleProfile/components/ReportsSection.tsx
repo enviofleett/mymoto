@@ -69,15 +69,31 @@ export function ReportsSection({
   const [isDateFilterOpen, setIsDateFilterOpen] = useState(false);
   const isFilterActive = !!dateRange?.from;
 
-  // Group trips by date
+  // Group trips by date and sort within each day (earliest first = Trip 1)
   const groupedTrips = useMemo(() => {
     if (!trips || trips.length === 0) return [];
     
+    // Filter out trips with invalid coordinates or empty data
+    const validTrips = trips.filter(trip => 
+      trip.start_latitude && 
+      trip.start_longitude && 
+      trip.start_latitude !== 0 && 
+      trip.start_longitude !== 0 &&
+      trip.end_latitude &&
+      trip.end_longitude &&
+      trip.end_latitude !== 0 &&
+      trip.end_longitude !== 0 &&
+      trip.start_time &&
+      trip.end_time
+    );
+    
     const groups: { date: Date; label: string; trips: VehicleTrip[] }[] = [];
     const today = new Date();
+    today.setHours(0, 0, 0, 0);
     
-    trips.forEach(trip => {
+    validTrips.forEach(trip => {
       const tripDate = parseISO(trip.start_time);
+      tripDate.setHours(0, 0, 0, 0);
       const existingGroup = groups.find(g => isSameDay(g.date, tripDate));
       
       if (existingGroup) {
@@ -95,6 +111,14 @@ export function ReportsSection({
       }
     });
     
+    // Sort trips within each day by start_time ASC (earliest first = Trip 1)
+    groups.forEach(group => {
+      group.trips.sort((a, b) => 
+        new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
+      );
+    });
+    
+    // Sort days by date DESC (latest day first)
     return groups.sort((a, b) => b.date.getTime() - a.date.getTime());
   }, [trips]);
 
@@ -411,7 +435,9 @@ function TripCard({
         </div>
         <div className="text-right shrink-0 flex items-center gap-2">
           <div>
-            <div className="text-sm font-medium">{trip.distance_km.toFixed(1)} km</div>
+            <div className="text-sm font-medium">
+              {trip.distance_km > 0 ? trip.distance_km.toFixed(1) : '0.0'} km
+            </div>
             <div className="text-xs text-green-500">
               {trip.duration_seconds 
                 ? Math.round(trip.duration_seconds / 60) 

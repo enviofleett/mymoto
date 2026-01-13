@@ -76,6 +76,21 @@ export interface TripDateRange {
   to?: Date;
 }
 
+// Calculate distance between two coordinates (Haversine formula)
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // Earth's radius in km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
 async function fetchVehicleTrips(
   deviceId: string, 
   limit: number = 50,
@@ -84,7 +99,11 @@ async function fetchVehicleTrips(
   let query = (supabase as any)
     .from("vehicle_trips")
     .select("*")
-    .eq("device_id", deviceId);
+    .eq("device_id", deviceId)
+    .not("start_latitude", "is", null)
+    .not("start_longitude", "is", null)
+    .neq("start_latitude", 0)
+    .neq("start_longitude", 0);
 
   if (dateRange?.from) {
     query = query.gte("start_time", dateRange.from.toISOString());
@@ -101,7 +120,49 @@ async function fetchVehicleTrips(
     .limit(limit);
 
   if (error) throw error;
-  return ((data as any[]) || []) as VehicleTrip[];
+  
+  // Filter and process trips
+  return ((data as any[]) || [])
+    .filter((trip: any) => {
+      // Filter out trips with invalid coordinates
+      return trip.start_latitude && 
+             trip.start_longitude && 
+             trip.start_latitude !== 0 && 
+             trip.start_longitude !== 0 &&
+             trip.end_latitude &&
+             trip.end_longitude &&
+             trip.end_latitude !== 0 &&
+             trip.end_longitude !== 0 &&
+             trip.start_time &&
+             trip.end_time;
+    })
+    .map((trip: any): VehicleTrip => {
+      // Calculate distance if missing or 0
+      let distanceKm = trip.distance_km || 0;
+      if (distanceKm === 0 && trip.start_latitude && trip.start_longitude && trip.end_latitude && trip.end_longitude) {
+        distanceKm = calculateDistance(
+          trip.start_latitude,
+          trip.start_longitude,
+          trip.end_latitude,
+          trip.end_longitude
+        );
+      }
+
+      return {
+        id: trip.id,
+        device_id: trip.device_id,
+        start_time: trip.start_time,
+        end_time: trip.end_time,
+        start_latitude: trip.start_latitude,
+        start_longitude: trip.start_longitude,
+        end_latitude: trip.end_latitude,
+        end_longitude: trip.end_longitude,
+        distance_km: Math.round(distanceKm * 100) / 100, // Round to 2 decimal places
+        max_speed: trip.max_speed,
+        avg_speed: trip.avg_speed,
+        duration_seconds: trip.duration_seconds,
+      };
+    });
 }
 
 async function fetchVehicleEvents(

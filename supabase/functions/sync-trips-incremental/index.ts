@@ -158,53 +158,88 @@ async function fetchTripsFromGps51(
   console.log(`[fetchTripsFromGps51] Received ${trips.length} trips from GPS51`);
 
   // Map GPS51 trip format to our TripData format
-  return trips.map((trip: Gps51Trip): TripData => {
-    // GPS51 provides times as either timestamps (ms) or strings
-    let startTime: string;
-    let endTime: string;
+  return trips
+    .filter((trip: Gps51Trip) => {
+      // Filter out trips with missing essential data
+      const hasStartTime = trip.starttime || trip.starttime_str;
+      const hasEndTime = trip.endtime || trip.endtime_str;
+      const hasStartCoords = trip.startlat && trip.startlon && trip.startlat !== 0 && trip.startlon !== 0;
+      const hasEndCoords = trip.endlat && trip.endlon && trip.endlat !== 0 && trip.endlon !== 0;
+      
+      if (!hasStartTime || !hasEndTime || !hasStartCoords || !hasEndCoords) {
+        console.log(`[fetchTripsFromGps51] Filtering out trip with missing data:`, {
+          hasStartTime, hasEndTime, hasStartCoords, hasEndCoords,
+          startlat: trip.startlat, startlon: trip.startlon,
+          endlat: trip.endlat, endlon: trip.endlon
+        });
+        return false;
+      }
+      return true;
+    })
+    .map((trip: Gps51Trip): TripData => {
+      // GPS51 provides times as either timestamps (ms) or strings
+      let startTime: string;
+      let endTime: string;
 
-    if (trip.starttime) {
-      startTime = new Date(trip.starttime).toISOString();
-    } else if (trip.starttime_str) {
-      // Parse yyyy-MM-dd HH:mm:ss format
-      startTime = new Date(trip.starttime_str.replace(' ', 'T') + '+08:00').toISOString();
-    } else {
-      throw new Error('Trip missing start time');
-    }
+      if (trip.starttime) {
+        startTime = new Date(trip.starttime).toISOString();
+      } else if (trip.starttime_str) {
+        // Parse yyyy-MM-dd HH:mm:ss format
+        startTime = new Date(trip.starttime_str.replace(' ', 'T') + '+08:00').toISOString();
+      } else {
+        throw new Error('Trip missing start time');
+      }
 
-    if (trip.endtime) {
-      endTime = new Date(trip.endtime).toISOString();
-    } else if (trip.endtime_str) {
-      endTime = new Date(trip.endtime_str.replace(' ', 'T') + '+08:00').toISOString();
-    } else {
-      throw new Error('Trip missing end time');
-    }
+      if (trip.endtime) {
+        endTime = new Date(trip.endtime).toISOString();
+      } else if (trip.endtime_str) {
+        endTime = new Date(trip.endtime_str.replace(' ', 'T') + '+08:00').toISOString();
+      } else {
+        throw new Error('Trip missing end time');
+      }
 
-    // Distance is in meters, convert to km
-    const distanceKm = trip.distance ? trip.distance / 1000 : 0;
+      // GPS51 distance can be in different fields: distance, totaldistance, or calculated
+      // According to API docs, totaldistance is in meters
+      let distanceKm = 0;
+      if (trip.distance) {
+        // If distance is provided, it's in meters
+        distanceKm = trip.distance / 1000;
+      } else if ((trip as any).totaldistance) {
+        // Some API versions use totaldistance
+        distanceKm = (trip as any).totaldistance / 1000;
+      } else if (trip.startlat && trip.startlon && trip.endlat && trip.endlon) {
+        // Fallback: calculate distance from coordinates
+        distanceKm = calculateDistance(
+          trip.startlat,
+          trip.startlon,
+          trip.endlat,
+          trip.endlon
+        );
+        console.log(`[fetchTripsFromGps51] Calculated distance for trip: ${distanceKm.toFixed(2)}km`);
+      }
     
-    // Speed is in m/h, convert to km/h
-    const maxSpeedKmh = trip.maxspeed ? trip.maxspeed / 1000 : null;
-    const avgSpeedKmh = trip.avgspeed ? trip.avgspeed / 1000 : null;
+      // Speed is in m/h, convert to km/h
+      const maxSpeedKmh = trip.maxspeed ? trip.maxspeed / 1000 : null;
+      const avgSpeedKmh = trip.avgspeed ? trip.avgspeed / 1000 : null;
 
-    const startDateObj = new Date(startTime);
-    const endDateObj = new Date(endTime);
-    const durationSeconds = Math.floor((endDateObj.getTime() - startDateObj.getTime()) / 1000);
+      const startDateObj = new Date(startTime);
+      const endDateObj = new Date(endTime);
+      const durationSeconds = Math.floor((endDateObj.getTime() - startDateObj.getTime()) / 1000);
 
-    return {
-      device_id: deviceId,
-      start_time: startTime,
-      end_time: endTime,
-      start_latitude: trip.startlat || 0,
-      start_longitude: trip.startlon || 0,
-      end_latitude: trip.endlat || 0,
-      end_longitude: trip.endlon || 0,
-      distance_km: Math.round(distanceKm * 100) / 100,
-      max_speed: maxSpeedKmh ? Math.round(maxSpeedKmh * 10) / 10 : null,
-      avg_speed: avgSpeedKmh ? Math.round(avgSpeedKmh * 10) / 10 : null,
-      duration_seconds: durationSeconds,
-    };
-  });
+      return {
+        device_id: deviceId,
+        start_time: startTime,
+        end_time: endTime,
+        start_latitude: trip.startlat!,
+        start_longitude: trip.startlon!,
+        end_latitude: trip.endlat!,
+        end_longitude: trip.endlon!,
+        distance_km: Math.round(distanceKm * 100) / 100,
+        max_speed: maxSpeedKmh ? Math.round(maxSpeedKmh * 10) / 10 : null,
+        avg_speed: avgSpeedKmh ? Math.round(avgSpeedKmh * 10) / 10 : null,
+        duration_seconds: durationSeconds,
+      };
+    });
 }
 
 // Haversine formula to calculate distance between two GPS points
