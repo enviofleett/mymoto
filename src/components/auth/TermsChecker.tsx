@@ -58,8 +58,14 @@ export function TermsChecker({ children }: { children: React.ReactNode }) {
     setHasCheckedTerms(true);
   };
 
+  // Only check terms if user is logged in
+  // For unauthenticated users (like on /auth page), allow through immediately
+  if (!user) {
+    return <>{children}</>;
+  }
+
   // Show loading or terms dialog while checking
-  if (isLoading || (!hasCheckedTerms && user)) {
+  if (isLoading || !hasCheckedTerms) {
     return (
       <>
         {showTermsDialog && user && (
