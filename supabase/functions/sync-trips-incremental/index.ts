@@ -1,5 +1,4 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { callGps51WithRateLimit, getValidGps51Token } from "../_shared/gps51-client.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,6 +6,327 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Max-Age": "86400",
 };
+
+// ============================================================================
+// INLINED GPS51 CLIENT WITH RATE LIMITING (for Dashboard deployment)
+// ============================================================================
+
+// Rate limiting configuration
+const GPS51_RATE_LIMIT = {
+  // VERY Conservative limits to prevent IP blocking (8902 errors)
+  MAX_CALLS_PER_SECOND: 3, // Reduced from 5 to 3 for extra safety
+  MIN_DELAY_MS: 350, // 350ms = ~2.8 calls/second max (safer than 5/sec)
+  BURST_WINDOW_MS: 1000, // 1 second window
+  MAX_BURST_CALLS: 3, // Max 3 calls in 1 second (reduced from 5)
+  
+  // Retry configuration
+  MAX_RETRIES: 2, // Reduced from 3 to 2 to fail faster and avoid more calls
+  INITIAL_RETRY_DELAY_MS: 2000, // Increased from 1s to 2s
+  MAX_RETRY_DELAY_MS: 60000, // Increased from 30s to 60s (1 minute)
+  BACKOFF_MULTIPLIER: 3, // Increased from 2 to 3 for faster backoff
+  
+  // Rate limit error codes from GPS51
+  RATE_LIMIT_ERROR_CODES: [8902, 9903, 9904], // IP limit, token expired, parameter error
+  
+  // Extended backoff period after rate limit error (in milliseconds)
+  RATE_LIMIT_BACKOFF_MS: 60000, // 60 seconds (1 minute) - increased from default
+};
+
+interface RateLimitState {
+  last_call_time: number;
+  calls_in_window: number;
+  window_start: number;
+  backoff_until: number;
+}
+
+// In-memory cache for rate limit state (per function instance)
+let localRateLimitState: RateLimitState = {
+  last_call_time: 0,
+  calls_in_window: 0,
+  window_start: Date.now(),
+  backoff_until: 0,
+};
+
+/**
+ * Get or create rate limit state in database (coordinates across instances)
+ */
+async function getGlobalRateLimitState(
+  supabase: any
+): Promise<{ backoff_until: number; last_call_time: number }> {
+  try {
+    const { data, error } = await supabase
+      .from("app_settings")
+      .select("value, metadata")
+      .eq("key", "gps51_rate_limit_state")
+      .maybeSingle();
+
+    if (error && error.code !== "PGRST116") {
+      // PGRST116 = not found, which is OK
+      console.warn(`[GPS51 Client] Error fetching rate limit state: ${error.message}`);
+    }
+
+    if (data?.value) {
+      const state = JSON.parse(data.value);
+      return {
+        backoff_until: state.backoff_until || 0,
+        last_call_time: state.last_call_time || 0,
+      };
+    }
+
+    return { backoff_until: 0, last_call_time: 0 };
+  } catch (error) {
+    console.warn(`[GPS51 Client] Error parsing rate limit state: ${error}`);
+    return { backoff_until: 0, last_call_time: 0 };
+  }
+}
+
+/**
+ * Update global rate limit state in database
+ */
+async function updateGlobalRateLimitState(
+  supabase: any,
+  backoffUntil: number,
+  lastCallTime: number
+): Promise<void> {
+  try {
+    await supabase.from("app_settings").upsert({
+      key: "gps51_rate_limit_state",
+      value: JSON.stringify({
+        backoff_until: backoffUntil,
+        last_call_time: lastCallTime,
+        updated_at: new Date().toISOString(),
+      }),
+      metadata: {
+        updated_by: "gps51-client",
+      },
+    });
+  } catch (error) {
+    console.warn(`[GPS51 Client] Error updating rate limit state: ${error}`);
+  }
+}
+
+/**
+ * Check if we're in a backoff period (from rate limit error)
+ */
+async function checkBackoff(supabase: any): Promise<number> {
+  const globalState = await getGlobalRateLimitState(supabase);
+  const now = Date.now();
+  
+  // Check global backoff
+  if (globalState.backoff_until > now) {
+    const remaining = globalState.backoff_until - now;
+    console.log(`[GPS51 Client] In backoff period, waiting ${remaining}ms`);
+    return remaining;
+  }
+  
+  // Check local backoff
+  if (localRateLimitState.backoff_until > now) {
+    const remaining = localRateLimitState.backoff_until - now;
+    console.log(`[GPS51 Client] In local backoff period, waiting ${remaining}ms`);
+    return remaining;
+  }
+  
+  return 0;
+}
+
+/**
+ * Apply rate limiting delay
+ */
+async function applyRateLimit(supabase: any): Promise<void> {
+  const now = Date.now();
+  
+  // Check backoff first
+  const backoffMs = await checkBackoff(supabase);
+  if (backoffMs > 0) {
+    await new Promise((resolve) => setTimeout(resolve, backoffMs));
+    return;
+  }
+  
+  // Reset window if expired
+  if (now - localRateLimitState.window_start >= GPS51_RATE_LIMIT.BURST_WINDOW_MS) {
+    localRateLimitState.window_start = now;
+    localRateLimitState.calls_in_window = 0;
+  }
+  
+  // Check if we've exceeded burst limit
+  if (localRateLimitState.calls_in_window >= GPS51_RATE_LIMIT.MAX_BURST_CALLS) {
+    const waitTime = GPS51_RATE_LIMIT.BURST_WINDOW_MS - (now - localRateLimitState.window_start);
+    if (waitTime > 0) {
+      console.log(`[GPS51 Client] Burst limit reached, waiting ${waitTime}ms`);
+      await new Promise((resolve) => setTimeout(resolve, waitTime));
+      localRateLimitState.window_start = Date.now();
+      localRateLimitState.calls_in_window = 0;
+    }
+  }
+  
+  // Apply minimum delay between calls
+  const timeSinceLastCall = now - localRateLimitState.last_call_time;
+  if (timeSinceLastCall < GPS51_RATE_LIMIT.MIN_DELAY_MS) {
+    const delay = GPS51_RATE_LIMIT.MIN_DELAY_MS - timeSinceLastCall;
+    console.log(`[GPS51 Client] Rate limiting: waiting ${delay}ms`);
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
+  
+  // Update state
+  localRateLimitState.last_call_time = Date.now();
+  localRateLimitState.calls_in_window++;
+  
+  // Update global state (async, don't wait)
+  updateGlobalRateLimitState(supabase, 0, localRateLimitState.last_call_time).catch(
+    (err) => console.warn(`[GPS51 Client] Failed to update global state: ${err}`)
+  );
+}
+
+/**
+ * Handle rate limit error with exponential backoff
+ */
+async function handleRateLimitError(
+  supabase: any,
+  attempt: number,
+  errorCode: number
+): Promise<number> {
+  if (!GPS51_RATE_LIMIT.RATE_LIMIT_ERROR_CODES.includes(errorCode)) {
+    return 0; // Not a rate limit error
+  }
+  
+  // For IP limit errors (8902), use extended backoff period
+  const isIpLimitError = errorCode === 8902;
+  const baseBackoffDelay = isIpLimitError 
+    ? GPS51_RATE_LIMIT.RATE_LIMIT_BACKOFF_MS // Use extended backoff for IP limit
+    : GPS51_RATE_LIMIT.INITIAL_RETRY_DELAY_MS * Math.pow(GPS51_RATE_LIMIT.BACKOFF_MULTIPLIER, attempt);
+  
+  // Calculate backoff delay with exponential backoff
+  const backoffDelay = Math.min(
+    baseBackoffDelay,
+    GPS51_RATE_LIMIT.MAX_RETRY_DELAY_MS
+  );
+  
+  const backoffUntil = Date.now() + backoffDelay;
+  
+  // Set local backoff
+  localRateLimitState.backoff_until = backoffUntil;
+  
+  // Set global backoff (coordinates across all function instances)
+  await updateGlobalRateLimitState(supabase, backoffUntil, Date.now());
+  
+  console.warn(
+    `[GPS51 Client] Rate limit error ${errorCode} (IP limit: ${isIpLimitError}), backing off for ${Math.round(backoffDelay / 1000)}s (attempt ${attempt + 1})`
+  );
+  
+  return backoffDelay;
+}
+
+/**
+ * Call GPS51 API with centralized rate limiting and retry logic
+ */
+async function callGps51WithRateLimit(
+  supabase: any,
+  proxyUrl: string,
+  action: string,
+  token: string,
+  serverid: string,
+  body: any,
+  retryAttempt: number = 0
+): Promise<any> {
+  // Apply rate limiting
+  await applyRateLimit(supabase);
+  
+  const targetUrl = `https://api.gps51.com/openapi?action=${action}&token=${token}&serverid=${serverid}`;
+  
+  console.log(`[GPS51 Client] Calling ${action} (attempt ${retryAttempt + 1})`);
+  
+  try {
+    const response = await fetch(proxyUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        targetUrl,
+        method: "POST",
+        data: body,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`GPS51 API HTTP error: ${response.status}`);
+    }
+
+    const result = await response.json();
+    
+    // Check for rate limit errors
+    if (result.status && GPS51_RATE_LIMIT.RATE_LIMIT_ERROR_CODES.includes(result.status)) {
+      // Handle rate limit error
+      if (retryAttempt < GPS51_RATE_LIMIT.MAX_RETRIES) {
+        const backoffDelay = await handleRateLimitError(supabase, retryAttempt, result.status);
+        
+        // Wait for backoff period
+        await new Promise((resolve) => setTimeout(resolve, backoffDelay));
+        
+        // Retry with exponential backoff
+        console.log(`[GPS51 Client] Retrying ${action} after backoff`);
+        return callGps51WithRateLimit(supabase, proxyUrl, action, token, serverid, body, retryAttempt + 1);
+      } else {
+        throw new Error(
+          `GPS51 API rate limit error after ${GPS51_RATE_LIMIT.MAX_RETRIES} retries: ${result.cause || "Unknown"} (status: ${result.status})`
+        );
+      }
+    }
+    
+    // Success - reset backoff
+    localRateLimitState.backoff_until = 0;
+    await updateGlobalRateLimitState(supabase, 0, Date.now());
+    
+    return result;
+  } catch (error) {
+    // For network errors, retry with backoff
+    if (retryAttempt < GPS51_RATE_LIMIT.MAX_RETRIES && error instanceof Error) {
+      const backoffDelay =
+        GPS51_RATE_LIMIT.INITIAL_RETRY_DELAY_MS *
+        Math.pow(GPS51_RATE_LIMIT.BACKOFF_MULTIPLIER, retryAttempt);
+      
+      console.warn(`[GPS51 Client] Network error, retrying in ${backoffDelay}ms: ${error.message}`);
+      await new Promise((resolve) => setTimeout(resolve, backoffDelay));
+      
+      return callGps51WithRateLimit(supabase, proxyUrl, action, token, serverid, body, retryAttempt + 1);
+    }
+    
+    throw error;
+  }
+}
+
+/**
+ * Get valid GPS51 token (shared utility)
+ */
+async function getValidGps51Token(supabase: any): Promise<{
+  token: string;
+  username: string;
+  serverid: string;
+}> {
+  const { data: tokenData, error } = await supabase
+    .from("app_settings")
+    .select("value, expires_at, metadata")
+    .eq("key", "gps_token")
+    .maybeSingle();
+
+  if (error) throw new Error(`Token fetch error: ${error.message}`);
+  if (!tokenData?.value) throw new Error("No GPS token found. Admin login required.");
+
+  if (tokenData.expires_at) {
+    const expiresAt = new Date(tokenData.expires_at);
+    if (new Date() >= expiresAt) {
+      throw new Error("Token expired. Admin refresh required.");
+    }
+  }
+
+  return {
+    token: tokenData.value,
+    username: tokenData.metadata?.username || "",
+    serverid: tokenData.metadata?.serverid || "1",
+  };
+}
+
+// ============================================================================
+// END OF INLINED GPS51 CLIENT
+// ============================================================================
 
 interface PositionPoint {
   id: string;
@@ -104,21 +424,28 @@ async function fetchTripsFromGps51(
   console.log(`[fetchTripsFromGps51] Received ${trips.length} trips from GPS51`);
 
   // Map GPS51 trip format to our TripData format
+  // CRITICAL FIX: Don't filter out trips with missing coordinates - we'll backfill them from position_history
   return trips
     .filter((trip: Gps51Trip) => {
-      // Filter out trips with missing essential data
+      // Only require start and end times - coordinates can be missing and will be backfilled
       const hasStartTime = trip.starttime || trip.starttime_str;
       const hasEndTime = trip.endtime || trip.endtime_str;
+      
+      if (!hasStartTime || !hasEndTime) {
+        console.log(`[fetchTripsFromGps51] Filtering out trip with missing times:`, {
+          hasStartTime, hasEndTime
+        });
+        return false;
+      }
+      
+      // Log trips with missing coordinates but don't filter them out
       const hasStartCoords = trip.startlat && trip.startlon && trip.startlat !== 0 && trip.startlon !== 0;
       const hasEndCoords = trip.endlat && trip.endlon && trip.endlat !== 0 && trip.endlon !== 0;
-      
-      if (!hasStartTime || !hasEndTime || !hasStartCoords || !hasEndCoords) {
-        console.log(`[fetchTripsFromGps51] Filtering out trip with missing data:`, {
-          hasStartTime, hasEndTime, hasStartCoords, hasEndCoords,
+      if (!hasStartCoords || !hasEndCoords) {
+        console.log(`[fetchTripsFromGps51] Trip with missing coordinates (will backfill):`, {
           startlat: trip.startlat, startlon: trip.startlon,
           endlat: trip.endlat, endlon: trip.endlon
         });
-        return false;
       }
       return true;
     })
@@ -172,19 +499,38 @@ async function fetchTripsFromGps51(
       const endDateObj = new Date(endTime);
       const durationSeconds = Math.floor((endDateObj.getTime() - startDateObj.getTime()) / 1000);
 
+      // CRITICAL FIX: Handle missing coordinates from GPS51
+      // If GPS51 doesn't provide coordinates, they'll be undefined/null, which becomes 0 in DB
+      // We'll use 0 as a marker that coordinates need to be backfilled from position_history
+      const startLat = trip.startlat && trip.startlat !== 0 ? trip.startlat : 0;
+      const startLon = trip.startlon && trip.startlon !== 0 ? trip.startlon : 0;
+      const endLat = trip.endlat && trip.endlat !== 0 ? trip.endlat : 0;
+      const endLon = trip.endlon && trip.endlon !== 0 ? trip.endlon : 0;
+
       return {
         device_id: deviceId,
         start_time: startTime,
         end_time: endTime,
-        start_latitude: trip.startlat!,
-        start_longitude: trip.startlon!,
-        end_latitude: trip.endlat!,
-        end_longitude: trip.endlon!,
+        start_latitude: startLat,
+        start_longitude: startLon,
+        end_latitude: endLat,
+        end_longitude: endLon,
         distance_km: Math.round(distanceKm * 100) / 100,
         max_speed: maxSpeedKmh ? Math.round(maxSpeedKmh * 10) / 10 : null,
         avg_speed: avgSpeedKmh ? Math.round(avgSpeedKmh * 10) / 10 : null,
         duration_seconds: durationSeconds,
       };
+    })
+    .filter((trip: TripData) => {
+      // Log trips with missing coordinates for debugging
+      if (trip.start_latitude === 0 || trip.start_longitude === 0) {
+        console.warn(`[fetchTripsFromGps51] Trip missing start coordinates: ${trip.start_time}`);
+      }
+      if (trip.end_latitude === 0 || trip.end_longitude === 0) {
+        console.warn(`[fetchTripsFromGps51] Trip missing end coordinates: ${trip.end_time}`);
+      }
+      // Still include trips even if coordinates are missing - we'll backfill them
+      return true;
     });
 }
 
@@ -217,8 +563,8 @@ function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
 
   // Check if we have USABLE ignition data (at least some true values)
   // If all ignition values are false, we can't use ignition-based detection
-  const hasIgnitionTrue = positions.some(p => p.ignitionOn === true);
-  const hasIgnitionData = positions.some(p => p.ignitionOn !== null && p.ignitionOn !== undefined);
+  const hasIgnitionTrue = positions.some(p => p.ignition_on === true);
+  const hasIgnitionData = positions.some(p => p.ignition_on !== null && p.ignition_on !== undefined);
   const useIgnitionDetection = hasIgnitionData && hasIgnitionTrue; // Only use if we have actual true values
 
   console.log(`[extractTripsFromHistory] Using ${useIgnitionDetection ? 'ignition-based' : 'speed-based'} detection for ${positions.length} points`);
@@ -245,8 +591,8 @@ function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
 
     // IGNITION-BASED DETECTION (Primary - matches GPS51)
     if (useIgnitionDetection) {
-      const ignitionOn = point.ignitionOn === true;
-      const prevIgnitionOn = prevPoint ? prevPoint.ignitionOn === true : false;
+      const ignitionOn = point.ignition_on === true;
+      const prevIgnitionOn = prevPoint ? prevPoint.ignition_on === true : false;
 
       // Trip START: Ignition turns ON (false -> true)
       if (ignitionOn && !prevIgnitionOn && !currentTrip) {
@@ -523,12 +869,16 @@ Deno.serve(async (req) => {
     const errors: string[] = [];
     const deviceResults: Record<string, any> = {};
 
-    // Process each device with rate limiting to avoid spikes
+    // SAFETY: Process devices one at a time with delays to prevent rate limit spikes
     for (let i = 0; i < uniqueDevices.length; i++) {
       const deviceId = uniqueDevices[i];
       
-      // Rate limiting is handled by shared GPS51 client
-      // No need for manual delays here
+      // Add delay between devices to prevent rate limit spikes
+      if (i > 0) {
+        const delayMs = 2000; // 2 second delay between devices (increased for safety)
+        console.log(`[sync-trips-incremental] Waiting ${delayMs}ms before processing next device...`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
 
       try {
         console.log(`[sync-trips-incremental] Processing device ${i + 1}/${uniqueDevices.length}: ${deviceId}`);
@@ -545,9 +895,10 @@ Deno.serve(async (req) => {
         let endDate: Date = new Date(); // End at now
 
         if (!syncStatus || forceFullSync) {
-          // First sync or force full sync: look back 7 days
-          startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-          console.log(`[sync-trips-incremental] Full sync for ${deviceId}, processing last 7 days`);
+          // SAFETY: Reduced from 7 days to 3 days to prevent too many API calls
+          // First sync or force full sync: look back 3 days
+          startDate = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+          console.log(`[sync-trips-incremental] Full sync for ${deviceId}, processing last 3 days (reduced from 7 for rate limit safety)`);
 
           // Initialize sync status
           await supabase
@@ -622,8 +973,79 @@ Deno.serve(async (req) => {
               continue;
             }
 
+            // CRITICAL FIX: Backfill missing coordinates from position_history before inserting
+            let tripToInsert = { ...trip };
+            if (trip.start_latitude === 0 || trip.start_longitude === 0 || 
+                trip.end_latitude === 0 || trip.end_longitude === 0) {
+              console.log(`[sync-trips-incremental] Backfilling coordinates for trip: ${trip.start_time}`);
+              
+              // Get first GPS point near start time (within 5 minutes)
+              const startTimeMin = new Date(trip.start_time);
+              startTimeMin.setMinutes(startTimeMin.getMinutes() - 5);
+              const startTimeMax = new Date(trip.start_time);
+              startTimeMax.setMinutes(startTimeMax.getMinutes() + 5);
+              
+              const { data: startPoint } = await supabase
+                .from("position_history")
+                .select("latitude, longitude")
+                .eq("device_id", trip.device_id)
+                .gte("gps_time", startTimeMin.toISOString())
+                .lte("gps_time", startTimeMax.toISOString())
+                .not("latitude", "is", null)
+                .not("longitude", "is", null)
+                .neq("latitude", 0)
+                .neq("longitude", 0)
+                .order("gps_time", { ascending: true })
+                .limit(1)
+                .maybeSingle();
+              
+              // Get last GPS point near end time (within 5 minutes)
+              const endTimeMin = new Date(trip.end_time);
+              endTimeMin.setMinutes(endTimeMin.getMinutes() - 5);
+              const endTimeMax = new Date(trip.end_time);
+              endTimeMax.setMinutes(endTimeMax.getMinutes() + 5);
+              
+              const { data: endPoint } = await supabase
+                .from("position_history")
+                .select("latitude, longitude")
+                .eq("device_id", trip.device_id)
+                .gte("gps_time", endTimeMin.toISOString())
+                .lte("gps_time", endTimeMax.toISOString())
+                .not("latitude", "is", null)
+                .not("longitude", "is", null)
+                .neq("latitude", 0)
+                .neq("longitude", 0)
+                .order("gps_time", { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              
+              // Update coordinates if found
+              if (startPoint && (trip.start_latitude === 0 || trip.start_longitude === 0)) {
+                tripToInsert.start_latitude = startPoint.latitude;
+                tripToInsert.start_longitude = startPoint.longitude;
+                console.log(`[sync-trips-incremental] Backfilled start coordinates: ${startPoint.latitude}, ${startPoint.longitude}`);
+              }
+              
+              if (endPoint && (trip.end_latitude === 0 || trip.end_longitude === 0)) {
+                tripToInsert.end_latitude = endPoint.latitude;
+                tripToInsert.end_longitude = endPoint.longitude;
+                console.log(`[sync-trips-incremental] Backfilled end coordinates: ${endPoint.latitude}, ${endPoint.longitude}`);
+              }
+              
+              // Recalculate distance if we got new coordinates
+              if (startPoint && endPoint && tripToInsert.distance_km === 0) {
+                tripToInsert.distance_km = Math.round(calculateDistance(
+                  tripToInsert.start_latitude,
+                  tripToInsert.start_longitude,
+                  tripToInsert.end_latitude,
+                  tripToInsert.end_longitude
+                ) * 100) / 100;
+                console.log(`[sync-trips-incremental] Recalculated distance: ${tripToInsert.distance_km}km`);
+              }
+            }
+
             // Insert new trip
-            const { error: insertError } = await supabase.from("vehicle_trips").insert(trip);
+            const { error: insertError } = await supabase.from("vehicle_trips").insert(tripToInsert);
 
             if (insertError) {
               console.error(`[sync-trips-incremental] Error inserting trip: ${insertError.message}`);

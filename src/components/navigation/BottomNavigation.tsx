@@ -37,6 +37,19 @@ export function BottomNavigation() {
   const { signOut, isAdmin } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
 
+  const handleLogout = async () => {
+    try {
+      setMenuOpen(false);
+      await signOut();
+      // Use window.location for a hard redirect (more reliable for logout)
+      window.location.href = "/auth";
+    } catch (error) {
+      console.error("Logout error:", error);
+      // Still redirect even if signOut fails
+      window.location.href = "/auth";
+    }
+  };
+
   return (
     <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 safe-area-pb">
       <div className="flex items-center justify-around h-16">
@@ -90,10 +103,7 @@ export function BottomNavigation() {
                 <Button
                   variant="ghost"
                   className="w-full justify-start gap-3 text-destructive hover:text-destructive hover:bg-destructive/10"
-                  onClick={() => {
-                    signOut();
-                    setMenuOpen(false);
-                  }}
+                  onClick={handleLogout}
                 >
                   <LogOut className="h-5 w-5" />
                   <span className="font-medium">Logout</span>

@@ -12,7 +12,8 @@ import {
   Database,
   Bell,
   BellRing,
-  Link2
+  Link2,
+  Shield
 } from "lucide-react";
 import { ConnectionStatus } from "@/hooks/useFleetData";
 
@@ -31,6 +32,18 @@ const navItems = [
 
 export function TopNavigation({ connectionStatus }: TopNavigationProps) {
   const { signOut, isAdmin } = useAuth();
+
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      // Use window.location for a hard redirect (more reliable for logout)
+      window.location.href = "/auth";
+    } catch (error) {
+      console.error("Logout error:", error);
+      // Still redirect even if signOut fails
+      window.location.href = "/auth";
+    }
+  };
 
   const getStatusIndicator = () => {
     switch (connectionStatus) {
@@ -127,6 +140,14 @@ export function TopNavigation({ connectionStatus }: TopNavigationProps) {
                 <Link2 className="h-4 w-4" />
                 <span>Assign</span>
               </NavLink>
+              <NavLink
+                to="/admin/privacy-settings"
+                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground rounded-md transition-colors hover:text-foreground hover:bg-muted"
+                activeClassName="text-primary bg-primary/10"
+              >
+                <Shield className="h-4 w-4" />
+                <span>Privacy & Terms</span>
+              </NavLink>
             </>
           )}
         </nav>
@@ -137,7 +158,7 @@ export function TopNavigation({ connectionStatus }: TopNavigationProps) {
           <Button
             variant="ghost"
             size="sm"
-            onClick={signOut}
+            onClick={handleLogout}
             className="text-muted-foreground hover:text-destructive"
           >
             <LogOut className="h-4 w-4 mr-2" />

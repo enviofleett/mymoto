@@ -133,8 +133,21 @@ export function useTriggerTripSync() {
         );
       }
 
-      toast.error("Failed to sync trips", {
-        description: error.message,
+      // Provide user-friendly error messages for rate limit errors
+      let errorMessage = "Failed to sync trips";
+      let errorDescription = error.message;
+      
+      if (error.message?.includes("8902") || error.message?.includes("ip limit")) {
+        errorMessage = "Rate limit reached";
+        errorDescription = "GPS51 API rate limit exceeded. Please wait 1-2 minutes before syncing again.";
+      } else if (error.message?.includes("rate limit")) {
+        errorMessage = "Too many requests";
+        errorDescription = "Please wait a moment before syncing again.";
+      }
+
+      toast.error(errorMessage, {
+        description: errorDescription,
+        duration: 5000, // Show for 5 seconds
       });
     },
   });

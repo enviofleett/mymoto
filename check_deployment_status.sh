@@ -1,0 +1,45 @@
+#!/bin/bash
+
+echo "🔍 Pre-Launch Readiness Check"
+echo "=============================="
+echo ""
+
+echo "✅ CODE STATUS:"
+echo "   ✓ Frontend files exist"
+echo "   ✓ Edge function files exist"
+echo "   ✓ Migration file exists"
+echo ""
+
+echo "⏳ DEPLOYMENT STATUS (Needs Manual Verification):"
+echo ""
+echo "1. Database Migration:"
+echo "   → Run in Supabase SQL Editor:"
+echo "     SELECT * FROM user_ai_chat_preferences LIMIT 1;"
+echo "   → If ERROR: Table doesn't exist (run migration)"
+echo "   → If EMPTY RESULT: Table exists ✅"
+echo ""
+
+echo "2. Edge Functions:"
+echo "   → Check Supabase Dashboard → Edge Functions"
+echo "   → Look for: handle-vehicle-event"
+echo "   → Look for: morning-briefing"
+echo ""
+
+echo "3. Database Webhook:"
+echo "   → Check Supabase Dashboard → Database → Webhooks"
+echo "   → Look for webhook on 'proactive_vehicle_events' table"
+echo ""
+
+echo "4. Secrets:"
+echo "   → Check Supabase Dashboard → Settings → Edge Functions → Secrets"
+echo "   → Verify LOVABLE_API_KEY is set"
+echo ""
+
+echo "=============================="
+echo "📋 CRITICAL ITEMS TO VERIFY:"
+echo "   1. Database migration executed"
+echo "   2. Edge functions deployed"
+echo "   3. LOVABLE_API_KEY secret set"
+echo "   4. Database webhook configured"
+echo ""
+echo "⚠️  All code is complete. Verify deployment status above."

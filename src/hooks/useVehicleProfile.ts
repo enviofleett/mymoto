@@ -93,49 +93,90 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 
 async function fetchVehicleTrips(
   deviceId: string, 
-  limit: number = 50,
+  limit: number = 200,
   dateRange?: TripDateRange
 ): Promise<VehicleTrip[]> {
+  console.log('[fetchVehicleTrips] Fetching trips for device:', deviceId, 'limit:', limit, 'dateRange:', dateRange);
+  
   let query = (supabase as any)
     .from("vehicle_trips")
     .select("*")
     .eq("device_id", deviceId)
-    .not("start_latitude", "is", null)
-    .not("start_longitude", "is", null)
-    .neq("start_latitude", 0)
-    .neq("start_longitude", 0);
+    // Only require start_time and end_time - coordinates might be missing (0,0) for some trips
+    .not("start_time", "is", null)
+    .not("end_time", "is", null);
 
+  // Only apply date filtering if explicitly provided (no automatic date filter)
   if (dateRange?.from) {
-    query = query.gte("start_time", dateRange.from.toISOString());
+    const fromDate = new Date(dateRange.from);
+    fromDate.setHours(0, 0, 0, 0);
+    query = query.gte("start_time", fromDate.toISOString());
+    console.log('[fetchVehicleTrips] Date filter FROM:', fromDate.toISOString());
   }
+  
   if (dateRange?.to) {
-    // Add a day to include the entire "to" date
+    // Include entire "to" date by setting to end of day
     const endDate = new Date(dateRange.to);
     endDate.setDate(endDate.getDate() + 1);
+    endDate.setHours(0, 0, 0, 0);
     query = query.lt("start_time", endDate.toISOString());
+    console.log('[fetchVehicleTrips] Date filter TO:', endDate.toISOString());
+  } else {
+    console.log('[fetchVehicleTrips] No date filter - fetching latest', limit, 'trips');
   }
 
+  // Always order by start_time DESC to get newest first, then limit
   const { data, error } = await query
     .order("start_time", { ascending: false })
     .limit(limit);
 
-  if (error) throw error;
+  if (error) {
+    console.error('[fetchVehicleTrips] Query error:', error);
+    throw error;
+  }
+  
+  console.log('[fetchVehicleTrips] Received', data?.length || 0, 'trips from database');
+  
+  if (data && data.length > 0) {
+    const dates = data.map((t: any) => new Date(t.start_time).toISOString().split('T')[0]);
+    const uniqueDates = [...new Set(dates)];
+    console.log('[fetchVehicleTrips] Trip date range:', dates[dates.length - 1], 'to', dates[0]);
+    console.log('[fetchVehicleTrips] Unique dates found:', uniqueDates.sort().reverse());
+    console.log('[fetchVehicleTrips] First trip:', data[0]?.start_time, 'Last trip:', data[data.length - 1]?.start_time);
+    
+    // CRITICAL DEBUG: Check if we're missing recent trips
+    const today = new Date().toISOString().split('T')[0];
+    const tripsToday = dates.filter(d => d === today).length;
+    const tripsYesterday = dates.filter(d => {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      return d === yesterday.toISOString().split('T')[0];
+    }).length;
+    console.log('[fetchVehicleTrips] Trips today:', tripsToday, 'Trips yesterday:', tripsYesterday);
+    
+    if (tripsToday === 0 && tripsYesterday === 0 && dates.length > 0) {
+      console.warn('[fetchVehicleTrips] WARNING: No trips from today or yesterday, but have trips from:', uniqueDates[0]);
+    }
+  } else {
+    console.warn('[fetchVehicleTrips] No trips returned from query!');
+  }
   
   // Filter and process trips
-  return ((data as any[]) || [])
+  // CRITICAL FIX: Include ALL trips that have start_time and end_time, even if coordinates are 0
+  // This allows trips with missing GPS data to still be displayed
+  const filteredTrips = ((data as any[]) || [])
     .filter((trip: any) => {
-      // Filter out trips with invalid coordinates
-      return trip.start_latitude && 
-             trip.start_longitude && 
-             trip.start_latitude !== 0 && 
-             trip.start_longitude !== 0 &&
-             trip.end_latitude &&
-             trip.end_longitude &&
-             trip.end_latitude !== 0 &&
-             trip.end_longitude !== 0 &&
-             trip.start_time &&
-             trip.end_time;
-    })
+      // Only require start_time and end_time - coordinates can be 0 (missing GPS data)
+      return trip.start_time && trip.end_time;
+    });
+  
+  console.log('[fetchVehicleTrips] After filtering:', {
+    before: data?.length || 0,
+    after: filteredTrips.length,
+    filteredOut: (data?.length || 0) - filteredTrips.length
+  });
+  
+  return filteredTrips
     .map((trip: any): VehicleTrip => {
       // Calculate distance if missing or 0
       let distanceKm = trip.distance_km || 0;
@@ -296,14 +337,18 @@ export function useVehicleTrips(
   options: TripFilterOptions = {},
   enabled: boolean = true
 ) {
-  const { dateRange, limit = 50 } = options;
+  const { dateRange, limit = 200 } = options; // Increased default limit from 50 to 200
   
   return useQuery({
     queryKey: ["vehicle-trips", deviceId, dateRange?.from?.toISOString(), dateRange?.to?.toISOString(), limit],
     queryFn: () => fetchVehicleTrips(deviceId!, limit, dateRange),
     enabled: enabled && !!deviceId,
-    staleTime: 60 * 1000, // Fresh for 1 minute
+    staleTime: 30 * 1000, // Fresh for 30 seconds (reduced from 1 minute)
     gcTime: 5 * 60 * 1000,
+    // Refetch on window focus to ensure latest trips are shown
+    refetchOnWindowFocus: true,
+    // Refetch on reconnect to get latest trips
+    refetchOnReconnect: true,
   });
 }
 

@@ -1,8 +1,10 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useNotificationPreferences, type AlertType, type SeverityLevel } from "@/hooks/useNotificationPreferences";
+import { useAuth } from "@/contexts/AuthContext";
+import { useOwnerVehicles } from "@/hooks/useOwnerVehicles";
 
 interface ProactiveEvent {
   id: string;
@@ -32,6 +34,11 @@ export function GlobalAlertListener() {
   const { toast } = useToast();
   const { showNotification, playAlertSound, permission } = useNotifications();
   const { shouldPlaySound, shouldShowPush, preferences } = useNotificationPreferences();
+  const { user, isAdmin } = useAuth();
+  const { data: ownerVehicles } = useOwnerVehicles();
+  
+  // Get list of device IDs for user's assigned vehicles
+  const userDeviceIds = ownerVehicles?.map(v => v.deviceId) || [];
 
   // Send email notification for critical/error events
   const sendEmailNotification = useCallback(async (event: ProactiveEvent) => {
@@ -60,7 +67,14 @@ export function GlobalAlertListener() {
 
   // Handle new event from realtime subscription
   const handleNewEvent = useCallback((event: ProactiveEvent) => {
-    console.log('[GlobalAlertListener] New alert:', event.event_type, event.severity);
+    // CRITICAL: Filter by user's vehicle assignments
+    // Admins see all events, regular users only see events for their vehicles
+    if (!isAdmin && !userDeviceIds.includes(event.device_id)) {
+      console.log('[GlobalAlertListener] Ignoring alert for unassigned vehicle:', event.device_id);
+      return;
+    }
+
+    console.log('[GlobalAlertListener] New alert for user vehicle:', event.event_type, event.severity, event.device_id);
 
     const alertType = event.event_type as AlertType;
     const severity = event.severity as SeverityLevel;
@@ -101,7 +115,7 @@ export function GlobalAlertListener() {
         }
       });
     }
-  }, [toast, playAlertSound, showNotification, permission, shouldPlaySound, shouldShowPush, preferences.soundVolume, sendEmailNotification]);
+  }, [toast, playAlertSound, showNotification, permission, shouldPlaySound, shouldShowPush, preferences.soundVolume, sendEmailNotification, isAdmin, userDeviceIds]);
 
   useEffect(() => {
     console.log('[GlobalAlertListener] Setting up realtime subscription');

@@ -27,7 +27,6 @@ import { TripHistoryTable } from "@/components/profile/TripHistoryTable";
 import { AlarmReport } from "@/components/profile/AlarmReport";
 import { TripPlayback } from "@/components/profile/TripPlayback";
 import { WalletSection } from "@/components/wallet/WalletSection";
-import { SmartBriefingCard } from "@/components/profile/SmartBriefingCard";
 import { useRealtimeFleetUpdates } from "@/hooks/useRealtimeVehicleUpdates";
 
 interface UserProfile {
@@ -250,11 +249,6 @@ const Profile = () => {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        {/* AI Insight Card */}
-        {primaryVehicleId && (
-          <SmartBriefingCard deviceId={primaryVehicleId} />
-        )}
-
         {/* Profile Header */}
         <Card className="border-border bg-gradient-to-br from-card to-card/80">
           <CardContent className="p-6">
@@ -297,6 +291,8 @@ const Profile = () => {
                     <span>Since {format(new Date(profile.created_at), "MMM yyyy")}</span>
                   </div>
                 </div>
+                {/* Terms Agreement Date */}
+                <TermsAgreementDate userId={user?.id} />
               </div>
 
               {/* Status Badge */}

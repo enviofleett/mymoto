@@ -20,20 +20,23 @@
 
 // Rate limiting configuration
 const GPS51_RATE_LIMIT = {
-  // Conservative limits to prevent IP blocking
-  MAX_CALLS_PER_SECOND: 5, // Reduced from 10 to 5 for safety
-  MIN_DELAY_MS: 200, // 200ms = 5 calls/second max
+  // VERY Conservative limits to prevent IP blocking (8902 errors)
+  MAX_CALLS_PER_SECOND: 3, // Reduced from 5 to 3 for extra safety
+  MIN_DELAY_MS: 350, // 350ms = ~2.8 calls/second max (safer than 5/sec)
   BURST_WINDOW_MS: 1000, // 1 second window
-  MAX_BURST_CALLS: 5, // Max 5 calls in 1 second
+  MAX_BURST_CALLS: 3, // Max 3 calls in 1 second (reduced from 5)
   
   // Retry configuration
-  MAX_RETRIES: 3,
-  INITIAL_RETRY_DELAY_MS: 1000, // 1 second
-  MAX_RETRY_DELAY_MS: 30000, // 30 seconds max
-  BACKOFF_MULTIPLIER: 2,
+  MAX_RETRIES: 2, // Reduced from 3 to 2 to fail faster and avoid more calls
+  INITIAL_RETRY_DELAY_MS: 2000, // Increased from 1s to 2s
+  MAX_RETRY_DELAY_MS: 60000, // Increased from 30s to 60s (1 minute)
+  BACKOFF_MULTIPLIER: 3, // Increased from 2 to 3 for faster backoff
   
   // Rate limit error codes from GPS51
   RATE_LIMIT_ERROR_CODES: [8902, 9903, 9904], // IP limit, token expired, parameter error
+  
+  // Extended backoff period after rate limit error (in milliseconds)
+  RATE_LIMIT_BACKOFF_MS: 60000, // 60 seconds (1 minute) - increased from default
 };
 
 interface RateLimitState {
@@ -193,10 +196,15 @@ async function handleRateLimitError(
     return 0; // Not a rate limit error
   }
   
+  // For IP limit errors (8902), use extended backoff period
+  const isIpLimitError = errorCode === 8902;
+  const baseBackoffDelay = isIpLimitError 
+    ? GPS51_RATE_LIMIT.RATE_LIMIT_BACKOFF_MS // Use extended backoff for IP limit
+    : GPS51_RATE_LIMIT.INITIAL_RETRY_DELAY_MS * Math.pow(GPS51_RATE_LIMIT.BACKOFF_MULTIPLIER, attempt);
+  
   // Calculate backoff delay with exponential backoff
   const backoffDelay = Math.min(
-    GPS51_RATE_LIMIT.INITIAL_RETRY_DELAY_MS *
-      Math.pow(GPS51_RATE_LIMIT.BACKOFF_MULTIPLIER, attempt),
+    baseBackoffDelay,
     GPS51_RATE_LIMIT.MAX_RETRY_DELAY_MS
   );
   
@@ -209,7 +217,7 @@ async function handleRateLimitError(
   await updateGlobalRateLimitState(supabase, backoffUntil, Date.now());
   
   console.warn(
-    `[GPS51 Client] Rate limit error ${errorCode}, backing off for ${backoffDelay}ms (attempt ${attempt + 1})`
+    `[GPS51 Client] Rate limit error ${errorCode} (IP limit: ${isIpLimitError}), backing off for ${Math.round(backoffDelay / 1000)}s (attempt ${attempt + 1})`
   );
   
   return backoffDelay;

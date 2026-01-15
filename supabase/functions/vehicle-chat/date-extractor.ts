@@ -133,8 +133,24 @@ export function extractDateContext(message: string, clientTimestamp?: string): D
     }
   }
   
-  // Last week
-  if (/\b(last\s+week)\b/i.test(lowerMessage)) {
+  // Last week - improved pattern matching
+  if (/\b(last\s+week|previous\s+week|week\s+before)\b/i.test(lowerMessage)) {
+    const dayOfWeek = now.getDay()
+    // Last week: from 7 days ago to 1 day ago (Monday to Sunday of previous week)
+    const startOfLastWeek = subDays(now, dayOfWeek + 7)
+    const endOfLastWeek = subDays(now, dayOfWeek + 1)
+    return {
+      hasDateReference: true,
+      period: 'last_week',
+      startDate: startOfDay(startOfLastWeek).toISOString(),
+      endDate: endOfDay(endOfLastWeek).toISOString(),
+      humanReadable: 'last week'
+    }
+  }
+  
+  // "How many trips last week" or "trips last week" - catch variations
+  if (/\b(trips?|journeys?|drives?|travels?)\s+(last|previous|past)\s+week\b/i.test(lowerMessage) ||
+      /\b(last|previous|past)\s+week.*\b(trips?|journeys?|drives?|travels?)\b/i.test(lowerMessage)) {
     const dayOfWeek = now.getDay()
     const startOfLastWeek = subDays(now, dayOfWeek + 7)
     const endOfLastWeek = subDays(now, dayOfWeek + 1)

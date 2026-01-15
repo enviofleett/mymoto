@@ -3,6 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { X, AlertTriangle, AlertCircle, Info, MapPin, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
+import { useOwnerVehicles } from "@/hooks/useOwnerVehicles";
 
 interface ProactiveEvent {
   id: string;
@@ -18,24 +20,32 @@ interface ProactiveEvent {
 
 const SEVERITY_CONFIG = {
   critical: {
-    bg: "bg-destructive",
-    text: "text-destructive-foreground",
+    bg: "bg-destructive/20",
+    border: "border-destructive/50",
+    text: "text-destructive",
     icon: AlertCircle,
+    iconBg: "bg-destructive",
   },
   error: {
-    bg: "bg-destructive/90",
-    text: "text-destructive-foreground",
+    bg: "bg-destructive/15",
+    border: "border-destructive/40",
+    text: "text-destructive",
     icon: AlertCircle,
+    iconBg: "bg-destructive/90",
   },
   warning: {
-    bg: "bg-yellow-500",
-    text: "text-yellow-950",
+    bg: "bg-orange-500/20",
+    border: "border-orange-500/50",
+    text: "text-orange-500",
     icon: AlertTriangle,
+    iconBg: "bg-orange-500",
   },
   info: {
-    bg: "bg-blue-500",
-    text: "text-white",
+    bg: "bg-blue-500/20",
+    border: "border-blue-500/50",
+    text: "text-blue-500",
     icon: Info,
+    iconBg: "bg-blue-500",
   },
 };
 
@@ -43,6 +53,11 @@ export function StickyAlertBanner() {
   const [alerts, setAlerts] = useState<ProactiveEvent[]>([]);
   const [expanded, setExpanded] = useState(false);
   const navigate = useNavigate();
+  const { isAdmin } = useAuth();
+  const { data: ownerVehicles } = useOwnerVehicles();
+  
+  // Get list of device IDs for user's assigned vehicles
+  const userDeviceIds = ownerVehicles?.map(v => v.deviceId) || [];
 
   const dismissAlert = useCallback(async (alertId: string) => {
     // Mark as acknowledged in database
@@ -70,6 +85,13 @@ export function StickyAlertBanner() {
         },
         (payload) => {
           const newEvent = payload.new as ProactiveEvent;
+          
+          // CRITICAL: Filter by user's vehicle assignments
+          // Admins see all events, regular users only see events for their vehicles
+          if (!isAdmin && !userDeviceIds.includes(newEvent.device_id)) {
+            return; // Ignore alerts for unassigned vehicles
+          }
+          
           // Only show warning, error, critical alerts in the sticky banner
           if (['warning', 'error', 'critical'].includes(newEvent.severity)) {
             setAlerts((prev) => {
@@ -86,7 +108,7 @@ export function StickyAlertBanner() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [isAdmin, userDeviceIds]);
 
   if (alerts.length === 0) return null;
 
@@ -97,20 +119,27 @@ export function StickyAlertBanner() {
 
   return (
     <div className="fixed top-0 left-0 right-0 z-[100] safe-area-inset-top">
-      {/* Main Banner */}
+      {/* Main Banner - Neumorphic PWA Design */}
       <div
         className={cn(
-          "flex items-center gap-3 px-4 py-3 shadow-lg cursor-pointer transition-all",
-          config.bg,
-          config.text
+          "flex items-center gap-3 px-4 py-3 cursor-pointer transition-all",
+          "bg-card shadow-neumorphic rounded-b-2xl border-0",
+          "border-l-4", // Left border for severity indicator
+          config.border
         )}
         onClick={() => alerts.length > 1 ? setExpanded(!expanded) : handleAlertClick(latestAlert)}
       >
-        <Icon className="h-5 w-5 shrink-0" />
+        <div className={cn(
+          "w-10 h-10 rounded-full flex items-center justify-center shrink-0",
+          "shadow-neumorphic-sm",
+          config.iconBg
+        )}>
+          <Icon className="h-5 w-5 text-white" />
+        </div>
         
         <div className="flex-1 min-w-0">
-          <p className="font-semibold text-sm truncate">{latestAlert.title}</p>
-          <p className="text-xs opacity-90 truncate">{latestAlert.message}</p>
+          <p className={cn("font-semibold text-sm truncate", config.text)}>{latestAlert.title}</p>
+          <p className="text-xs text-muted-foreground truncate">{latestAlert.message}</p>
         </div>
 
         {hasLocation && (
@@ -134,16 +163,16 @@ export function StickyAlertBanner() {
             e.stopPropagation();
             dismissAlert(latestAlert.id);
           }}
-          className="p-1.5 hover:bg-white/20 rounded-full transition-colors shrink-0"
+          className="w-8 h-8 rounded-full bg-card shadow-neumorphic-sm flex items-center justify-center transition-all duration-200 active:shadow-neumorphic-inset shrink-0"
           aria-label="Dismiss alert"
         >
-          <X className="h-4 w-4" />
+          <X className="h-4 w-4 text-foreground" />
         </button>
       </div>
 
-      {/* Expanded Alert List */}
+      {/* Expanded Alert List - Neumorphic Design */}
       {expanded && alerts.length > 1 && (
-        <div className="bg-card border-b border-border shadow-lg max-h-64 overflow-y-auto">
+        <div className="bg-card shadow-neumorphic rounded-b-2xl max-h-64 overflow-y-auto border-0">
           {alerts.slice(1).map((alert) => {
             const alertConfig = SEVERITY_CONFIG[alert.severity];
             const AlertIcon = alertConfig.icon;
@@ -152,18 +181,19 @@ export function StickyAlertBanner() {
             return (
               <div
                 key={alert.id}
-                className="flex items-center gap-3 px-4 py-2.5 border-b border-border/50 last:border-b-0 cursor-pointer hover:bg-muted/50 transition-colors"
+                className="flex items-center gap-3 px-4 py-2.5 border-b border-border/30 last:border-b-0 cursor-pointer hover:bg-muted/30 transition-all duration-200 active:bg-muted/50"
                 onClick={() => handleAlertClick(alert)}
               >
                 <div className={cn(
-                  "p-1.5 rounded-full",
-                  alertConfig.bg
+                  "w-9 h-9 rounded-full flex items-center justify-center",
+                  "shadow-neumorphic-sm",
+                  alertConfig.iconBg
                 )}>
-                  <AlertIcon className={cn("h-3.5 w-3.5", alertConfig.text)} />
+                  <AlertIcon className="h-4 w-4 text-white" />
                 </div>
                 
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm text-foreground truncate">{alert.title}</p>
+                  <p className={cn("font-medium text-sm truncate", alertConfig.text)}>{alert.title}</p>
                   <p className="text-xs text-muted-foreground truncate">{alert.message}</p>
                 </div>
 
@@ -176,7 +206,7 @@ export function StickyAlertBanner() {
                     e.stopPropagation();
                     dismissAlert(alert.id);
                   }}
-                  className="p-1 hover:bg-muted rounded-full transition-colors shrink-0"
+                  className="w-7 h-7 rounded-full bg-card shadow-neumorphic-sm flex items-center justify-center transition-all duration-200 active:shadow-neumorphic-inset shrink-0"
                   aria-label="Dismiss alert"
                 >
                   <X className="h-3.5 w-3.5 text-muted-foreground" />

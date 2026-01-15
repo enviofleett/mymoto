@@ -9,20 +9,17 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useOwnerVehicles } from "@/hooks/useOwnerVehicles";
 import { useOwnerProfile } from "@/hooks/useOwnerProfile";
 import { useRealtimeFleetUpdates } from "@/hooks/useRealtimeVehicleUpdates";
-import { SmartBriefingCard } from "@/components/profile/SmartBriefingCard";
 import { EditProfileDialog } from "@/components/owner/EditProfileDialog";
+import { TermsAgreementDate } from "@/components/profile/TermsAgreementDate";
 import {
   LogOut,
   Mail,
   Car,
-  Settings,
   HelpCircle,
   ChevronRight,
   Bell,
   Shield,
-  CreditCard,
   User,
-  Download,
   Phone,
   Pencil,
 } from "lucide-react";
@@ -56,10 +53,7 @@ export default function OwnerProfile() {
   const menuItems = [
     { icon: Bell, label: "Notifications", path: "/owner/notifications" },
     { icon: Shield, label: "Privacy & Security", path: "/owner/privacy" },
-    { icon: CreditCard, label: "Payment Methods", path: "/owner/payments" },
     { icon: HelpCircle, label: "Help & Support", path: "/owner/help" },
-    { icon: Settings, label: "App Settings", path: "/owner/settings" },
-    { icon: Download, label: "Install App", path: "/app" },
   ];
 
   return (
@@ -74,52 +68,61 @@ export default function OwnerProfile() {
 
         {/* Content */}
         <div className="flex-1 p-4 space-y-4">
-          {/* AI Briefing Card */}
-          {primaryVehicleId && <SmartBriefingCard deviceId={primaryVehicleId} />}
-
-          {/* User Card - Neumorphic style */}
-          <Card className="border-0 bg-card shadow-neumorphic rounded-xl">
-            <CardContent className="p-4">
-              <button 
-                className="w-full flex items-center gap-4 text-left transition-all duration-200 active:scale-[0.99]"
-                onClick={() => setEditProfileOpen(true)}
-              >
-                {/* Neumorphic avatar container */}
-                <div className="w-16 h-16 rounded-full shadow-neumorphic-sm bg-card p-0.5 shrink-0">
-                  <div className="w-full h-full rounded-full bg-secondary flex items-center justify-center">
-                    <User className="h-7 w-7 text-muted-foreground" />
+          {/* User Profile Card - Social Media Style */}
+          <Card className="border-0 bg-card shadow-neumorphic rounded-xl overflow-hidden">
+            <CardContent className="p-6">
+              {/* Centered Profile Section */}
+              <div className="flex flex-col items-center text-center space-y-4">
+                {/* Avatar */}
+                <button
+                  onClick={() => setEditProfileOpen(true)}
+                  className="relative group transition-all duration-200 active:scale-[0.98]"
+                >
+                  <div className="w-24 h-24 rounded-full shadow-neumorphic-sm bg-card p-1">
+                    <div className="w-full h-full rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
+                      <User className="h-12 w-12 text-primary" />
+                    </div>
                   </div>
-                </div>
-                <div className="flex-1 min-w-0">
-                  {profileLoading ? (
-                    <>
-                      <Skeleton className="h-5 w-24 mb-1" />
-                      <Skeleton className="h-3 w-32" />
-                    </>
-                  ) : (
-                    <>
-                      <h2 className="text-base font-medium text-foreground truncate">
-                        {profile?.name || user?.email?.split("@")[0] || "User"}
-                      </h2>
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
-                        <Mail className="h-3 w-3" />
-                        <span className="truncate">{user?.email}</span>
-                      </div>
-                      {profile?.phone && (
-                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
-                          <Phone className="h-3 w-3" />
-                          <span className="truncate">{profile.phone}</span>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <div className="w-8 h-8 rounded-full shadow-neumorphic-sm bg-card flex items-center justify-center">
+                  {/* Edit indicator */}
+                  <div className="absolute bottom-0 right-0 w-8 h-8 rounded-full shadow-neumorphic-sm bg-card flex items-center justify-center border-2 border-background">
                     <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
                   </div>
-                </div>
-              </button>
+                </button>
+
+                {/* User Info - Centered */}
+                {profileLoading ? (
+                  <div className="space-y-2 w-full">
+                    <Skeleton className="h-6 w-32 mx-auto" />
+                    <Skeleton className="h-4 w-48 mx-auto" />
+                    <Skeleton className="h-4 w-40 mx-auto" />
+                  </div>
+                ) : (
+                  <div className="space-y-3 w-full">
+                    {/* Name */}
+                    <h2 className="text-2xl font-bold text-foreground">
+                      {profile?.name || user?.email?.split("@")[0] || "User"}
+                    </h2>
+
+                    {/* Contact Info - Centered */}
+                    <div className="flex flex-col items-center gap-2 text-sm text-muted-foreground">
+                      {user?.email && (
+                        <div className="flex items-center gap-2">
+                          <Mail className="h-4 w-4" />
+                          <span>{user.email}</span>
+                        </div>
+                      )}
+                      {profile?.phone && (
+                        <div className="flex items-center gap-2">
+                          <Phone className="h-4 w-4" />
+                          <span>{profile.phone}</span>
+                        </div>
+                      )}
+                    </div>
+                    {/* Terms Agreement Date */}
+                    <TermsAgreementDate userId={user?.id} />
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
 

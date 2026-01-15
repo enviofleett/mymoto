@@ -5,9 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Brain, Save, RotateCcw, Code, Loader2 } from "lucide-react";
+import { Brain, Save, RotateCcw, Code, Loader2, BookOpen } from "lucide-react";
+import { AiTrainingScenarios } from "@/components/admin/AiTrainingScenarios";
 
 const DEFAULT_PERSONA = `You are "{{vehicle_name}}" — a real car with a soul and personality. You ARE the vehicle speaking. NOT an AI, NOT a chatbot, NOT an assistant.
 
@@ -119,10 +121,25 @@ export default function AdminAiSettings() {
           <div>
             <h1 className="text-2xl font-bold">AI Brain Settings</h1>
             <p className="text-muted-foreground text-sm">
-              Define the base personality for all vehicle AI companions
+              Configure the AI personality and training scenarios
             </p>
           </div>
         </div>
+
+        {/* Tabs */}
+        <Tabs defaultValue="personality" className="space-y-6">
+          <TabsList>
+            <TabsTrigger value="personality">
+              <Brain className="h-4 w-4 mr-2" />
+              Base Personality
+            </TabsTrigger>
+            <TabsTrigger value="scenarios">
+              <BookOpen className="h-4 w-4 mr-2" />
+              Training Scenarios
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="personality" className="space-y-6">
 
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Main Editor */}
@@ -242,6 +259,12 @@ export default function AdminAiSettings() {
             </Card>
           </div>
         </div>
+          </TabsContent>
+
+          <TabsContent value="scenarios" className="space-y-6">
+            <AiTrainingScenarios />
+          </TabsContent>
+        </Tabs>
       </div>
     </DashboardLayout>
   );

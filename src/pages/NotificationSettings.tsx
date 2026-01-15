@@ -24,7 +24,8 @@ import {
   Radio,
   Clock,
   ChevronRight,
-  Navigation
+  Navigation,
+  MessageSquare
 } from "lucide-react";
 import { 
   useNotificationPreferences, 
@@ -101,6 +102,7 @@ const NotificationSettings = () => {
     setPreferences, 
     updateSeveritySettings,
     updateAlertTypeSettings,
+    updateAIChatPreferences,
     resetToDefaults,
     isInQuietHours
   } = useNotificationPreferences();
@@ -461,6 +463,42 @@ const NotificationSettings = () => {
                 );
               })}
             </Accordion>
+          </CardContent>
+        </Card>
+
+        {/* AI Companion Triggers */}
+        <Card className="border-border bg-card">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <MessageSquare className="h-5 w-5" />
+              AI Companion Triggers
+            </CardTitle>
+            <CardDescription>
+              Allow your vehicle to start a conversation when these events occur
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {[
+              { key: 'ignition_start' as const, label: 'Ignition Start', description: 'Vehicle starts up', icon: Power },
+              { key: 'geofence_event' as const, label: 'Geofence Events', description: 'Entering or leaving geofence zones', icon: MapPin },
+              { key: 'overspeeding' as const, label: 'Overspeeding', description: 'Vehicle exceeds speed limit', icon: Gauge },
+              { key: 'low_battery' as const, label: 'Low Battery', description: 'Battery level drops below threshold', icon: Battery },
+              { key: 'power_off' as const, label: 'Power Off', description: 'Vehicle ignition turns off', icon: Power }
+            ].map(({ key, label, description, icon: Icon }) => (
+              <div key={key} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                <div className="flex items-center gap-3">
+                  <Icon className="h-5 w-5 text-muted-foreground" />
+                  <div>
+                    <p className="font-medium">{label}</p>
+                    <p className="text-xs text-muted-foreground">{description}</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={preferences.aiChatPreferences[key]}
+                  onCheckedChange={(checked) => updateAIChatPreferences(key, checked)}
+                />
+              </div>
+            ))}
           </CardContent>
         </Card>
       </div>

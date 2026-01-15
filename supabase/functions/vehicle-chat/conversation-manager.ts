@@ -1,6 +1,60 @@
 // Conversation Memory Management System
 // Handles conversation context with sliding window + summarization
 
+// Lovable AI Gateway Client (non-streaming, for summarization)
+interface LLMResponse {
+  text: string;
+  error?: string;
+}
+
+async function callLovableAPI(
+  systemPrompt: string,
+  userPrompt: string,
+  config: { maxOutputTokens?: number; temperature?: number; model?: string } = {}
+): Promise<LLMResponse> {
+  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+
+  if (!LOVABLE_API_KEY) {
+    throw new Error('LOVABLE_API_KEY must be configured in Supabase secrets');
+  }
+
+  const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: config.model || 'google/gemini-2.5-flash',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      max_tokens: config.maxOutputTokens || 150,
+      temperature: config.temperature ?? 0.3,
+      stream: false,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[LLM Client] Lovable API error:', {
+      status: response.status,
+      body: errorText.substring(0, 200),
+    });
+    throw new Error(`Lovable API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const text = data.choices?.[0]?.message?.content?.trim() || '';
+
+  if (!text) {
+    throw new Error('Empty response from Lovable API');
+  }
+
+  return { text };
+}
+
 interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
@@ -24,19 +78,26 @@ export async function buildConversationContext(
   deviceId: string,
   userId: string
 ): Promise<ConversationContext> {
-  // Fetch total message count
+  // Calculate 30-day cutoff for memory window
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const cutoffDate = thirtyDaysAgo.toISOString();
+
+  // Fetch total message count in last 30 days
   const { count } = await supabase
     .from('vehicle_chat_history')
     .select('*', { count: 'exact', head: true })
-    .eq('device_id', deviceId);
+    .eq('device_id', deviceId)
+    .gte('created_at', cutoffDate);
 
-  console.log(`Total messages for device ${deviceId}: ${count}`);
+  console.log(`Total messages in last 30 days for device ${deviceId}: ${count}`);
 
-  // Get recent 20 messages
+  // Get recent 20 messages from last 30 days
   const { data: recentMessages, error: recentError } = await supabase
     .from('vehicle_chat_history')
     .select('role, content, created_at')
     .eq('device_id', deviceId)
+    .gte('created_at', cutoffDate)
     .order('created_at', { ascending: false })
     .limit(20);
 
@@ -50,18 +111,19 @@ export async function buildConversationContext(
     };
   }
 
-  // If more than 30 messages total, summarize older ones
+  // If more than 30 messages in last 30 days, summarize older ones within that period
   let summary: string | null = null;
   let facts: string[] = [];
 
   if (count && count > 30) {
-    console.log('Conversation exceeds 30 messages, creating summary...');
+    console.log('Conversation exceeds 30 messages in last 30 days, creating summary...');
 
-    // Get older messages (31st to 100th for context)
+    // Get older messages (31st to 100th) from last 30 days for context
     const { data: olderMessages, error: olderError } = await supabase
       .from('vehicle_chat_history')
       .select('role, content')
       .eq('device_id', deviceId)
+      .gte('created_at', cutoffDate)
       .order('created_at', { ascending: false })
       .range(30, 100);
 
@@ -102,39 +164,21 @@ ${conversationText}
 Summary (2-3 sentences):`;
 
   try {
-    // Call Lovable AI Gateway with lightweight model
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      console.warn('LOVABLE_API_KEY not set, skipping summarization');
-      return 'Previous conversation covered vehicle status and location queries.';
-    }
+    // Use Lovable AI Gateway for summarization
+    const result = await callLovableAPI(
+      'You are a conversation summarizer. Create concise 2-3 sentence summaries focusing on key topics and decisions.',
+      summaryPrompt,
+      {
+        maxOutputTokens: 150,
+        temperature: 0.3, // Low temperature for factual summaries
+        model: 'google/gemini-2.5-flash',
+      }
+    );
 
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.0-flash-lite',  // Lightweight model for summaries
-        messages: [{ role: 'user', content: summaryPrompt }],
-        max_tokens: 150,
-        temperature: 0.3  // Low temperature for factual summaries
-      })
-    });
-
-    if (!response.ok) {
-      console.error('Summary API error:', response.status);
-      return 'Previous conversation covered vehicle status and location queries.';
-    }
-
-    const data = await response.json();
-    const summary = data.choices?.[0]?.message?.content?.trim() ||
-                   'Previous conversation covered vehicle status and location queries.';
-
-    return summary;
-  } catch (error) {
-    console.error('Error creating summary:', error);
+    return result.text || 'Previous conversation covered vehicle status and location queries.';
+  } catch (apiError: any) {
+    // If API error (400, 429, etc.), return default summary
+    console.error('Summary API error:', apiError?.status || apiError?.message || 'Unknown');
     return 'Previous conversation covered vehicle status and location queries.';
   }
 }

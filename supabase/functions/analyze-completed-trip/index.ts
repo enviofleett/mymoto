@@ -10,7 +10,67 @@ const corsHeaders = {
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY')!;
+// Lovable AI Gateway Client (using only LOVABLE_API_KEY from secrets)
+interface LLMConfig {
+  maxOutputTokens?: number;
+  temperature?: number;
+  model?: string;
+}
+
+interface LLMResponse {
+  text: string;
+  error?: string;
+}
+
+async function callGeminiAPI(
+  systemPrompt: string,
+  userPrompt: string,
+  config: LLMConfig = {}
+): Promise<LLMResponse> {
+  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+
+  if (!LOVABLE_API_KEY) {
+    throw new Error('LOVABLE_API_KEY must be configured in Supabase secrets');
+  }
+
+  console.log('[LLM Client] Using Lovable AI Gateway');
+
+  const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: config.model || 'google/gemini-2.5-flash',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      max_tokens: config.maxOutputTokens || 150,
+      temperature: config.temperature ?? 0.5,
+      stream: false,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[LLM Client] Lovable API error:', {
+      status: response.status,
+      body: errorText.substring(0, 200),
+    });
+    throw new Error(`Lovable API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const text = data.choices?.[0]?.message?.content?.trim() || '';
+
+  if (!text) {
+    throw new Error('Empty response from Lovable API');
+  }
+
+  return { text };
+}
 
 interface PositionPoint {
   latitude: number;
@@ -159,26 +219,18 @@ Harsh Events:
 Write a concise 2-sentence summary focusing on driving safety and behavior patterns.`;
 
   try {
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
+    // Use shared Gemini client
+    const result = await callGeminiAPI(
+      'You are a driving safety analyst. Analyze driving telemetry and provide concise summaries.',
+      prompt,
+      {
+        maxOutputTokens: 150,
+        temperature: 0.5,
         model: 'google/gemini-2.5-flash',
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 150,
-      }),
-    });
+      }
+    );
     
-    if (!response.ok) {
-      console.error('[Trip Analyzer] AI summary failed:', await response.text());
-      return generateFallbackSummary(harshEvents, driverScore);
-    }
-    
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content || generateFallbackSummary(harshEvents, driverScore);
+    return result.text || generateFallbackSummary(harshEvents, driverScore);
   } catch (error) {
     console.error('[Trip Analyzer] Error generating summary:', error);
     return generateFallbackSummary(harshEvents, driverScore);

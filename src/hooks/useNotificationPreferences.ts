@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 export type AlertType = 
   | 'low_battery'
@@ -16,6 +17,14 @@ export type AlertType =
   | 'predictive_briefing';
 
 export type SeverityLevel = 'info' | 'warning' | 'error' | 'critical';
+
+export interface AIChatPreferences {
+  ignition_start: boolean;
+  geofence_event: boolean;
+  overspeeding: boolean;
+  low_battery: boolean;
+  power_off: boolean;
+}
 
 export interface NotificationPreferences {
   // Master toggles
@@ -38,6 +47,9 @@ export interface NotificationPreferences {
     };
   };
   
+  // AI Chat preferences (opt-in, default false)
+  aiChatPreferences: AIChatPreferences;
+  
   // Sound volume (0-1)
   soundVolume: number;
   
@@ -57,6 +69,13 @@ const DEFAULT_PREFERENCES: NotificationPreferences = {
     info: { sound: false, push: false }
   },
   alertTypeSettings: {},
+  aiChatPreferences: {
+    ignition_start: false,
+    geofence_event: false,
+    overspeeding: false,
+    low_battery: false,
+    power_off: false
+  },
   soundVolume: 0.5,
   quietHoursEnabled: false,
   quietHoursStart: "22:00",
@@ -69,29 +88,93 @@ export function useNotificationPreferences() {
   const [preferences, setPreferencesState] = useState<NotificationPreferences>(DEFAULT_PREFERENCES);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Load preferences from localStorage on mount
+  // Load preferences from localStorage and database on mount
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        // Merge with defaults to handle new properties
-        setPreferencesState({
-          ...DEFAULT_PREFERENCES,
-          ...parsed,
-          severitySettings: {
-            ...DEFAULT_PREFERENCES.severitySettings,
-            ...parsed.severitySettings
+    const loadPreferences = async () => {
+      try {
+        // Load from localStorage first
+        const stored = localStorage.getItem(STORAGE_KEY);
+        let loadedPrefs = DEFAULT_PREFERENCES;
+        
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          loadedPrefs = {
+            ...DEFAULT_PREFERENCES,
+            ...parsed,
+            severitySettings: {
+              ...DEFAULT_PREFERENCES.severitySettings,
+              ...parsed.severitySettings
+            },
+            aiChatPreferences: {
+              ...DEFAULT_PREFERENCES.aiChatPreferences,
+              ...(parsed.aiChatPreferences || {})
+            }
+          };
+        }
+        
+        // Try to load AI chat preferences from database
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            const { data: dbPrefs } = await supabase
+              .from('user_ai_chat_preferences')
+              .select('*')
+              .eq('user_id', user.id)
+              .maybeSingle();
+            
+            if (dbPrefs) {
+              loadedPrefs.aiChatPreferences = {
+                ignition_start: dbPrefs.ignition_start || false,
+                geofence_event: dbPrefs.geofence_event || false,
+                overspeeding: dbPrefs.overspeeding || false,
+                low_battery: dbPrefs.low_battery || false,
+                power_off: dbPrefs.power_off || false,
+              };
+              
+              // Update localStorage with database values
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(loadedPrefs));
+            }
           }
-        });
+        } catch (dbError) {
+          console.error('Error loading AI chat preferences from database:', dbError);
+          // Continue with localStorage values
+        }
+        
+        setPreferencesState(loadedPrefs);
+      } catch (e) {
+        console.error('Error loading notification preferences:', e);
       }
-    } catch (e) {
-      console.error('Error loading notification preferences:', e);
-    }
-    setIsLoaded(true);
+      setIsLoaded(true);
+    };
+    
+    loadPreferences();
   }, []);
 
-  // Save preferences to localStorage
+  // Sync AI chat preferences to database
+  const syncAIChatPreferencesToDB = useCallback(async (prefs: AIChatPreferences) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      
+      const { error } = await supabase
+        .from('user_ai_chat_preferences')
+        .upsert({
+          user_id: user.id,
+          ...prefs,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'user_id'
+        });
+      
+      if (error) {
+        console.error('Error syncing AI chat preferences:', error);
+      }
+    } catch (e) {
+      console.error('Error in syncAIChatPreferencesToDB:', e);
+    }
+  }, []);
+  
+  // Save preferences to localStorage and sync AI chat preferences to database
   const setPreferences = useCallback((newPrefs: Partial<NotificationPreferences>) => {
     setPreferencesState(prev => {
       const updated = { ...prev, ...newPrefs };
@@ -100,9 +183,17 @@ export function useNotificationPreferences() {
       } catch (e) {
         console.error('Error saving notification preferences:', e);
       }
+      
+      // Sync AI chat preferences to database (fire and forget)
+      if (newPrefs.aiChatPreferences) {
+        syncAIChatPreferencesToDB(updated.aiChatPreferences).catch(err => {
+          console.error('Error syncing AI chat preferences to database:', err);
+        });
+      }
+      
       return updated;
     });
-  }, []);
+  }, [syncAIChatPreferencesToDB]);
 
   // Check if currently in quiet hours
   const isInQuietHours = useCallback((): boolean => {
@@ -185,6 +276,21 @@ export function useNotificationPreferences() {
     setPreferences({ alertTypeSettings: newAlertSettings });
   }, [preferences.alertTypeSettings, setPreferences]);
 
+  // Update AI chat preferences
+  const updateAIChatPreferences = useCallback((
+    key: keyof AIChatPreferences,
+    value: boolean
+  ) => {
+    const updatedPrefs = {
+      ...preferences.aiChatPreferences,
+      [key]: value
+    };
+    
+    setPreferences({
+      aiChatPreferences: updatedPrefs
+    });
+  }, [preferences.aiChatPreferences, setPreferences]);
+
   // Reset to defaults
   const resetToDefaults = useCallback(() => {
     setPreferencesState(DEFAULT_PREFERENCES);
@@ -203,6 +309,7 @@ export function useNotificationPreferences() {
     shouldShowPush,
     updateSeveritySettings,
     updateAlertTypeSettings,
+    updateAIChatPreferences,
     resetToDefaults,
     isInQuietHours
   };

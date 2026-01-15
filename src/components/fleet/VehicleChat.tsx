@@ -63,9 +63,14 @@ function LocationCard({ lat, lon, address }: LocationData) {
   );
 }
 
-// Parse message content and extract location tags
-function parseMessageContent(content: string): { text: string; locations: LocationData[] } {
+// Parse message content and extract location tags and trip tables
+function parseMessageContent(content: string): { 
+  text: string; 
+  locations: LocationData[];
+  tripTables: string[];
+} {
   const locations: LocationData[] = [];
+  const tripTables: string[] = [];
   let text = content;
 
   // Match [LOCATION: lat, lng, "address"] pattern
@@ -80,12 +85,83 @@ function parseMessageContent(content: string): { text: string; locations: Locati
     return ''; // Remove the tag from text
   });
 
-  return { text: text.trim(), locations };
+  // Match [TRIP_TABLE: ...] pattern
+  const tripTableRegex = /\[TRIP_TABLE:(.*?)\]/gs;
+  let tripTableMatch;
+  while ((tripTableMatch = tripTableRegex.exec(text)) !== null) {
+    tripTables.push(tripTableMatch[1].trim());
+    text = text.replace(tripTableMatch[0], ''); // Remove the tag from text
+  }
+
+  return { text: text.trim(), locations, tripTables };
+}
+
+// Render trip table from markdown
+function TripTable({ markdown }: { markdown: string }) {
+  // Parse markdown table
+  const lines = markdown.split('\n').filter(line => line.trim());
+  const tableRows: string[][] = [];
+  
+  lines.forEach(line => {
+    if (line.startsWith('|') && line.endsWith('|')) {
+      const cells = line
+        .split('|')
+        .map(cell => cell.trim())
+        .filter(cell => cell.length > 0);
+      if (cells.length > 0) {
+        tableRows.push(cells);
+      }
+    }
+  });
+
+  if (tableRows.length === 0) {
+    return null;
+  }
+
+  // First row is header, second is separator, rest are data
+  const headers = tableRows[0] || [];
+  const dataRows = tableRows.slice(2);
+
+  return (
+    <div className="mt-4 overflow-x-auto rounded-lg border border-border bg-card">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-border bg-muted/50">
+            {headers.map((header, index) => (
+              <th
+                key={index}
+                className="px-4 py-3 text-left font-semibold text-foreground"
+              >
+                {header}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {dataRows.map((row, rowIndex) => (
+            <tr
+              key={rowIndex}
+              className="border-b border-border/50 hover:bg-muted/30 transition-colors"
+            >
+              {row.map((cell, cellIndex) => (
+                <td
+                  key={cellIndex}
+                  className="px-4 py-2.5 text-foreground/90"
+                >
+                  {cell}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 // Render chat message with rich elements
 function ChatMessageContent({ content, isUser }: { content: string; isUser: boolean }) {
-  const { text, locations } = parseMessageContent(content);
+  const { text, locations, tripTables } = parseMessageContent(content);
 
   // Parse markdown links from remaining text
   const parts: (string | { text: string; url: string })[] = [];
@@ -147,6 +223,11 @@ function ChatMessageContent({ content, isUser }: { content: string; isUser: bool
       {locations.map((location, index) => (
         <LocationCard key={index} {...location} />
       ))}
+
+      {/* Trip tables */}
+      {tripTables.map((tableMarkdown, index) => (
+        <TripTable key={index} markdown={tableMarkdown} />
+      ))}
     </div>
   );
 }
@@ -171,20 +252,26 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
   const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vehicle-chat`;
 
   // Fetch chat history with React Query
-  const { data: historyData, isLoading: historyLoading } = useQuery({
-    queryKey: ['vehicle-chat-history', deviceId],
+  const { data: historyData, isLoading: historyLoading, refetch: refetchHistory } = useQuery({
+    queryKey: ['vehicle-chat-history', deviceId, user?.id],
     queryFn: async () => {
+      if (!user?.id) return [];
+      
       const { data, error } = await (supabase as any)
         .from('vehicle_chat_history')
         .select('*')
         .eq('device_id', deviceId)
+        .eq('user_id', user.id) // Filter by user_id so users only see their own messages
         .order('created_at', { ascending: true })
-        .limit(50);
+        .limit(100); // Increased limit to show more history
 
       if (error) throw error;
       return (data as ChatMessage[]) || [];
     },
-    enabled: !!deviceId
+    enabled: !!deviceId && !!user?.id,
+    staleTime: 0, // Always consider data stale to refetch on mount
+    refetchOnMount: true, // Refetch when component mounts
+    refetchOnWindowFocus: true, // Refetch when window regains focus
   });
 
   // Fetch current vehicle telemetry for context
@@ -213,8 +300,10 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
 
   // Set up realtime subscription for new messages
   useEffect(() => {
+    if (!user?.id || !deviceId) return;
+    
     const channel = supabase
-      .channel(`vehicle_chat:${deviceId}`)
+      .channel(`vehicle_chat:${deviceId}:${user.id}`)
       .on(
         'postgres_changes',
         {
@@ -225,11 +314,16 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
         },
         (payload) => {
           const newMessage = payload.new as ChatMessage;
-          setMessages(prev => {
-            // Avoid duplicates
-            if (prev.some(m => m.id === newMessage.id)) return prev;
-            return [...prev, newMessage];
-          });
+          // Only add messages for this user
+          if (newMessage.user_id === user.id) {
+            setMessages(prev => {
+              // Avoid duplicates
+              if (prev.some(m => m.id === newMessage.id)) return prev;
+              return [...prev, newMessage];
+            });
+            // Refetch history to ensure we have the latest
+            refetchHistory();
+          }
         }
       )
       .subscribe();
@@ -237,7 +331,7 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [deviceId]);
+  }, [deviceId, user?.id, refetchHistory]);
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -326,6 +420,9 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
 
       // Clear streaming content (message will come via realtime subscription)
       setStreamingContent("");
+      
+      // Invalidate and refetch chat history to ensure messages are loaded
+      await refetchHistory();
 
     } catch (err) {
       console.error('Chat error:', err);

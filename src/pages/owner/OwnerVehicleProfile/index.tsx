@@ -90,9 +90,23 @@ export default function OwnerVehicleProfile() {
     deviceId,
     dateRange?.from
       ? { dateRange: { from: dateRange.from, to: dateRange.to ?? dateRange.from } }
-      : { limit: 50 },
+      : { limit: 200 }, // Increased from 50 to 200 to ensure we get all recent trips
     true
   );
+  
+  // DEBUG: Log trips when they change
+  console.log('[OwnerVehicleProfile] Trips data:', {
+    count: trips?.length || 0,
+    loading: tripsLoading,
+    error: tripsError,
+    hasDateRange: !!dateRange?.from
+  });
+  
+  if (trips && trips.length > 0) {
+    const tripDates = trips.map(t => t.start_time.split('T')[0]);
+    const uniqueDates = [...new Set(tripDates)];
+    console.log('[OwnerVehicleProfile] Unique trip dates:', uniqueDates.sort().reverse());
+  }
 
   const {
     data: events,
@@ -173,7 +187,7 @@ export default function OwnerVehicleProfile() {
         body: { device_ids: [deviceId], force_full_sync: false },
       });
 
-      // Invalidate all cached queries for this device
+      // Invalidate all cached queries for this device (especially trips to get latest data)
       await queryClient.invalidateQueries({
         predicate: (query) => {
           const key = query.queryKey;
@@ -193,6 +207,21 @@ export default function OwnerVehicleProfile() {
           );
         },
       });
+      
+      // Explicitly invalidate trips query to force fresh fetch
+      queryClient.invalidateQueries({ 
+        queryKey: ["vehicle-trips", deviceId],
+        exact: false // Invalidate all trip queries for this device
+      });
+      
+      // Also remove cached trips data to force a fresh fetch
+      queryClient.removeQueries({
+        queryKey: ["vehicle-trips", deviceId],
+        exact: false
+      });
+      
+      // Force a fresh refetch after clearing cache
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       // Refetch all queries in parallel
       const refetchResults = await Promise.allSettled([
@@ -435,10 +464,13 @@ export default function OwnerVehicleProfile() {
           }
         }}
       >
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" aria-describedby="vehicle-settings-description">
           <DialogHeader>
             <DialogTitle>Vehicle Settings</DialogTitle>
           </DialogHeader>
+          <p id="vehicle-settings-description" className="sr-only">
+            Configure vehicle persona settings including nickname, language preference, personality mode, and avatar
+          </p>
           <VehiclePersonaSettings 
             deviceId={deviceId} 
             vehicleName={displayName}

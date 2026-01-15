@@ -9,6 +9,8 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import SplashScreen from "@/components/SplashScreen";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 import Fleet from "./pages/Fleet";
 import LiveMap from "./pages/LiveMap";
 import Insights from "./pages/Insights";
@@ -18,6 +20,7 @@ import AdminStorage from "./pages/AdminStorage";
 import AdminAlerts from "./pages/AdminAlerts";
 import AdminAiSettings from "./pages/AdminAiSettings";
 import AdminAssignments from "./pages/AdminAssignments";
+import AdminPrivacySettings from "./pages/AdminPrivacySettings";
 import NotificationSettings from "./pages/NotificationSettings";
 import NotFound from "./pages/NotFound";
 import InstallApp from "./pages/InstallApp";
@@ -30,6 +33,7 @@ import OwnerVehicles from "./pages/owner/OwnerVehicles";
 import OwnerVehicleProfile from "./pages/owner/OwnerVehicleProfile";
 import OwnerWallet from "./pages/owner/OwnerWallet";
 import OwnerProfile from "./pages/owner/OwnerProfile";
+import OwnerNotificationSettings from "./pages/owner/OwnerNotificationSettings";
 
 const queryClient = new QueryClient();
 
@@ -48,8 +52,11 @@ const App = () => {
         <Sonner />
         <BrowserRouter>
           <AuthProvider>
+            <TermsChecker>
             <Routes>
               <Route path="/auth" element={<Auth />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/login" element={<PwaLogin />} />
               <Route path="/app" element={<InstallApp />} />
               
@@ -66,6 +73,7 @@ const App = () => {
               <Route path="/admin/alerts" element={<ProtectedRoute><AdminAlerts /></ProtectedRoute>} />
               <Route path="/admin/ai-settings" element={<ProtectedRoute><AdminAiSettings /></ProtectedRoute>} />
               <Route path="/admin/assignments" element={<ProtectedRoute><AdminAssignments /></ProtectedRoute>} />
+              <Route path="/admin/privacy-settings" element={<ProtectedRoute><AdminPrivacySettings /></ProtectedRoute>} />
               
               {/* Owner PWA Routes */}
               <Route path="/owner" element={<ProtectedRoute><OwnerChat /></ProtectedRoute>} />
@@ -74,9 +82,11 @@ const App = () => {
               <Route path="/owner/vehicle/:deviceId" element={<ProtectedRoute><OwnerVehicleProfile /></ProtectedRoute>} />
               <Route path="/owner/wallet" element={<ProtectedRoute><OwnerWallet /></ProtectedRoute>} />
               <Route path="/owner/profile" element={<ProtectedRoute><OwnerProfile /></ProtectedRoute>} />
+              <Route path="/owner/notifications" element={<ProtectedRoute><OwnerNotificationSettings /></ProtectedRoute>} />
               
               <Route path="*" element={<NotFound />} />
             </Routes>
+            </TermsChecker>
           </AuthProvider>
         </BrowserRouter>
       </TooltipProvider>
