@@ -1,80 +1,79 @@
-# GPS51 Rate Limiting Implementation Checklist
+# Implementation Checklist for Cursor AI
 
-## ✅ Completed
+## 📁 Files That Need Changes
 
-1. ✅ Created shared GPS51 client (`_shared/gps51-client.ts`)
-   - Database-backed rate limiting
-   - Retry logic with exponential backoff
-   - Global coordination across function instances
+### Existing Files to Modify
 
-2. ✅ Updated `sync-trips-incremental` function
-   - Uses shared GPS51 client
-   - Removed local rate limiting code
+1. **`supabase/functions/gps-data/index.ts`**
+   - Line 43-47: Replace `parseIgnition()` function
+   - Line 143: Update usage to use new function with confidence scoring
+   - Status: ⏳ PENDING
 
-3. ✅ Updated `gps-data` function
-   - Uses shared GPS51 client
-   - Removed local rate limiting code
+2. **`supabase/functions/gps-history-backfill/index.ts`**
+   - Line 33-36: Replace `parseIgnition()` function
+   - Line 89: Update usage to use new function
+   - Status: ⏳ PENDING
 
-4. ✅ Created migration to reduce cron frequency
-   - GPS data sync: 1 min → 5 min (80% reduction)
-   - Trip sync: 15 min → 30 min (50% reduction)
+3. **`supabase/functions/vehicle-chat/index.ts`**
+   - Line 1157: Replace inline ignition parsing
+   - Status: ⏳ PENDING
 
-## ⏳ Remaining Tasks
+### New Files to Create
 
-### High Priority
+4. **`supabase/functions/gps-acc-report/index.ts`**
+   - New edge function for ACC Report API
+   - Implements GPS51 `reportaccsbytime` endpoint
+   - Status: ⏳ TO CREATE
 
-1. ⏳ Update `gps-history-backfill` function
-   - Replace `callGps51` with shared client
-   - Add rate limiting
+5. **`supabase/migrations/YYYYMMDDHHMMSS_create_acc_state_history.sql`**
+   - Create `acc_state_history` table
+   - Indexes and RLS policies
+   - Status: ⏳ TO CREATE
 
-2. ⏳ Update `gps-auth` function
-   - Add rate limiting for login calls
-   - Use shared client if possible
+6. **`supabase/migrations/YYYYMMDDHHMMSS_add_ignition_confidence.sql`**
+   - Add confidence columns to existing tables
+   - Status: ⏳ TO CREATE
 
-3. ⏳ Update `gps51-user-auth` function
-   - Add rate limiting for login and querymonitorlist calls
+7. **`supabase/migrations/YYYYMMDDHHMMSS_monitoring_functions.sql`**
+   - Create monitoring function and view
+   - Status: ⏳ TO CREATE
 
-4. ⏳ Update `execute-vehicle-command` function
-   - Add rate limiting for command calls
+8. **`TEST_IGNITION_FIX.sql`**
+   - Test queries to validate fixes
+   - Status: ⏳ TO CREATE
 
-### Medium Priority
+---
 
-5. ⏳ Add monitoring/alerting
-   - Log rate limit errors (8902)
-   - Alert on persistent rate limiting
-   - Track API call frequency
+## Quick Start for Cursor AI
 
-6. ⏳ Test rate limiting
-   - Test with multiple concurrent calls
-   - Verify backoff works correctly
-   - Test retry logic
+Copy this exact prompt into Cursor Composer:
 
-### Low Priority
+```
+I need to fix ignition detection and trip accuracy in my GPS fleet management system.
 
-7. ⏳ Add request queuing (if needed)
-   - Only if rate limiting isn't sufficient
-   - Queue requests when rate limit is hit
+Read and understand:
+1. CURSOR_FIX_PROMPT.md - Main implementation guide
+2. API_REFERENCE_IGNITION.md - GPS51 API reference
+3. IMPLEMENTATION_CHECKLIST.md - This file
 
-## Rate Limiting Configuration
+Then implement in this order:
+1. Task 1: Fix parseIgnition() function in 3 files
+2. Task 2: Create acc_state_history database table
+3. Task 3: Add confidence tracking columns
+4. Task 4: Create gps-acc-report edge function
+5. Task 5: Create monitoring functions
+6. Task 6: Create test queries
 
-Current settings (conservative):
-- Max 5 calls/second
-- 200ms minimum delay
-- Max 5 calls per 1-second window
-- 3 retries with exponential backoff
-- Max 30s backoff delay
+After each task, show me what changed and ask if I want to proceed.
+```
 
-## Testing
+---
 
-After deployment, monitor:
-1. GPS51 API logs for rate limit errors
-2. Backoff periods in app_settings
-3. Function execution times
-4. API call frequency
+## Success Criteria
 
-## Rollback Plan
-
-If issues occur:
-1. Revert to local rate limiting in each function
-2. Increase cron frequency back to original
-3. Increase rate limit delays
+You'll know it's working when:
+- [ ] Confidence scores average > 0.8
+- [ ] Detection method is primarily 'status_bit'
+- [ ] Ignition shows mix of ON/OFF (not 100% OFF)
+- [ ] Trip count increases by 50-200%
+- [ ] All tests pass
