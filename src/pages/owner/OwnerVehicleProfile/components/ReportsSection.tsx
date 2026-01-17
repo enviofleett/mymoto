@@ -39,6 +39,7 @@ import type { TripSyncStatus } from "@/hooks/useTripSync";
 import { useAddress } from "@/hooks/useAddress";
 import { useAuth } from "@/contexts/AuthContext";
 import { VehicleNotificationSettings } from "@/components/fleet/VehicleNotificationSettings";
+import { TripSyncProgress } from "@/components/fleet/TripSyncProgress";
 
 interface ReportsSectionProps {
   deviceId: string;
@@ -246,6 +247,9 @@ export function ReportsSection({
   return (
     <Card className="border-border bg-card/50">
       <CardContent className="p-4">
+        {/* Trip Sync Progress */}
+        <TripSyncProgress deviceId={deviceId} />
+
         {/* Date Filter and Sync Controls */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">

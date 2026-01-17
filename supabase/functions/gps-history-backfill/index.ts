@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { callGps51WithRateLimit, getValidGps51Token } from "../_shared/gps51-client.ts"
+import { normalizeVehicleTelemetry, type Gps51RawData } from "../_shared/telemetry-normalizer.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -28,12 +29,7 @@ interface TrackRecord {
 }
 
 // Using shared GPS51 client for rate limiting
-
-// Parse ignition status from strstatus
-function parseIgnition(strstatus: string | null): boolean {
-  if (!strstatus) return false
-  return strstatus.toUpperCase().includes('ACC ON')
-}
+// Note: parseIgnition is now handled by telemetry-normalizer
 
 // Format date for GPS51 API (YYYY-MM-DD HH:MM:SS)
 function formatDateForGps51(date: Date): string {
@@ -71,24 +67,38 @@ async function fetchTrackHistory(
   const records = result?.data?.records || result?.records || []
   console.log(`Received ${records.length} track records from GPS51`)
   
-  // Map GPS51 track data to our format
-  return records.map((record: any) => {
-    // GPS51 track records have various field names depending on API version
-    const lat = record.callat || record.lat || record.latitude
-    const lon = record.callon || record.lon || record.lng || record.longitude
-    const gpsTime = record.gpstime || record.updatetime || record.time
-    
-    return {
-      latitude: parseFloat(lat),
-      longitude: parseFloat(lon),
-      speed: parseFloat(record.speed || 0),
-      heading: parseFloat(record.heading || record.direction || 0),
-      altitude: parseFloat(record.altitude || 0),
-      gps_time: new Date(gpsTime).toISOString(),
-      battery_percent: record.voltagepercent > 0 ? record.voltagepercent : null,
-      ignition_on: parseIgnition(record.strstatus || record.status)
-    }
-  }).filter((r: TrackRecord) => r.latitude && r.longitude && !isNaN(r.latitude) && !isNaN(r.longitude))
+  // Normalize GPS51 track data using centralized normalizer
+  return records
+    .map((record: any) => {
+      // Add deviceid if missing (needed for normalizer)
+      const rawData: Gps51RawData = {
+        ...record,
+        deviceid: record.deviceid || deviceId,
+      };
+      
+      // Normalize telemetry
+      const normalized = normalizeVehicleTelemetry(rawData);
+      
+      // Map to TrackRecord format (for backward compatibility)
+      return {
+        latitude: normalized.lat || 0,
+        longitude: normalized.lon || 0,
+        speed: normalized.speed_kmh, // Already normalized to km/h
+        heading: normalized.heading || 0,
+        altitude: normalized.altitude || 0,
+        gps_time: normalized.last_updated_at,
+        battery_percent: normalized.battery_level,
+        ignition_on: normalized.ignition_on,
+      };
+    })
+    .filter((r: TrackRecord) => 
+      r.latitude !== null && 
+      r.longitude !== null && 
+      r.latitude !== 0 && 
+      r.longitude !== 0 &&
+      !isNaN(r.latitude) && 
+      !isNaN(r.longitude)
+    )
 }
 
 // Insert track records into position_history
@@ -207,7 +217,8 @@ async function detectAndInsertTrips(
   
   for (let i = 0; i < positions.length; i++) {
     const pos = positions[i]
-    const isMoving = pos.speed > 0 || pos.ignition_on
+    // Note: pos.speed is now in km/h (normalized), and ignition_on uses confidence scoring
+    const isMoving = pos.speed > 3 || pos.ignition_on
     
     if (isMoving && !tripStart) {
       // Trip started

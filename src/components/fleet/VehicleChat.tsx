@@ -421,8 +421,32 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
       // Clear streaming content (message will come via realtime subscription)
       setStreamingContent("");
       
+      // Wait a moment for database save to complete, then refetch
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
       // Invalidate and refetch chat history to ensure messages are loaded
       await refetchHistory();
+      
+      // Verify messages were saved (check if our optimistic message was replaced with real one)
+      const { data: verifyData } = await (supabase as any)
+        .from('vehicle_chat_history')
+        .select('id, content, created_at')
+        .eq('device_id', deviceId)
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(2);
+      
+      if (verifyData && verifyData.length >= 2) {
+        // Messages were saved successfully
+        console.log('Chat messages verified in database');
+      } else {
+        console.warn('Warning: Chat messages may not have been saved to database');
+        toast({
+          title: "Warning",
+          description: "Your message was sent but may not have been saved. Please refresh the page.",
+          variant: "default"
+        });
+      }
 
     } catch (err) {
       console.error('Chat error:', err);

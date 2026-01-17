@@ -415,6 +415,7 @@ export default function OwnerVehicleProfile() {
 
             {/* Mileage Section */}
             <MileageSection
+              deviceId={deviceId}
               totalMileage={liveData?.totalMileageKm ?? null}
               dailyStats={dailyStats}
               mileageStats={mileageStats}

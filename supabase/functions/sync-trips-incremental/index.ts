@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { normalizeSpeed } from "../_shared/telemetry-normalizer.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -491,9 +492,9 @@ async function fetchTripsFromGps51(
         console.log(`[fetchTripsFromGps51] Calculated distance for trip: ${distanceKm.toFixed(2)}km`);
       }
     
-      // Speed is in m/h, convert to km/h
-      const maxSpeedKmh = trip.maxspeed ? trip.maxspeed / 1000 : null;
-      const avgSpeedKmh = trip.avgspeed ? trip.avgspeed / 1000 : null;
+      // Speed is in m/h, normalize using centralized normalizer
+      const maxSpeedKmh = trip.maxspeed ? normalizeSpeed(trip.maxspeed) : null;
+      const avgSpeedKmh = trip.avgspeed ? normalizeSpeed(trip.avgspeed) : null;
 
       const startDateObj = new Date(startTime);
       const endDateObj = new Date(endTime);
@@ -573,13 +574,10 @@ function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
     const point = positions[i];
     const prevPoint = i > 0 ? positions[i - 1] : null;
 
-    // Normalize speed
-    const normalizedSpeed = point.speed !== null && point.speed > 0
-      ? (point.speed > 1000 ? point.speed / 1000 : point.speed)
-      : 0;
-    const prevNormalizedSpeed = prevPoint && prevPoint.speed !== null && prevPoint.speed > 0
-      ? (prevPoint.speed > 1000 ? prevPoint.speed / 1000 : prevPoint.speed)
-      : 0;
+    // Normalize speed using centralized normalizer
+    // Note: Speed in database may be in m/h or km/h, normalizer handles detection
+    const normalizedSpeed = normalizeSpeed(point.speed);
+    const prevNormalizedSpeed = prevPoint ? normalizeSpeed(prevPoint.speed) : 0;
 
     const isMoving = normalizedSpeed > SPEED_THRESHOLD;
     const wasMoving = prevPoint && prevNormalizedSpeed > SPEED_THRESHOLD;
@@ -634,9 +632,8 @@ function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
             totalDistance += dist;
           }
 
-          const speed = p2.speed !== null && p2.speed > 0
-            ? (p2.speed > 1000 ? p2.speed / 1000 : p2.speed)
-            : 0;
+          // Normalize speed using centralized normalizer
+          const speed = normalizeSpeed(p2.speed);
 
           if (speed > 0 && speed < 200) {
             maxSpeed = Math.max(maxSpeed, speed);
@@ -645,8 +642,37 @@ function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
           }
         }
 
-        // Record trip if it meets minimum distance (lowered threshold)
-        if (totalDistance >= MIN_TRIP_DISTANCE) {
+        // CRITICAL FIX: Filter trips with same start/end coordinates
+        // Calculate distance between start and end points
+        const startEndDistance = calculateDistance(
+          startPoint.latitude,
+          startPoint.longitude,
+          endPoint.latitude,
+          endPoint.longitude
+        );
+
+        // Minimum distance threshold for valid trip (100 meters)
+        const MIN_START_END_DISTANCE = 0.1; // km
+
+        // Also check if all points are within small radius (GPS drift detection)
+        let maxPointDistance = 0;
+        for (let k = 1; k < tripPoints.length; k++) {
+          const dist = calculateDistance(
+            tripPoints[0].latitude,
+            tripPoints[0].longitude,
+            tripPoints[k].latitude,
+            tripPoints[k].longitude
+          );
+          maxPointDistance = Math.max(maxPointDistance, dist);
+        }
+
+        // Record trip only if:
+        // 1. Total distance >= minimum (existing check)
+        // 2. Start-to-end distance >= minimum (NEW - prevents same-location trips)
+        // 3. Points are not all clustered in same location (NEW - prevents GPS drift)
+        if (totalDistance >= MIN_TRIP_DISTANCE && 
+            startEndDistance >= MIN_START_END_DISTANCE &&
+            maxPointDistance >= MIN_START_END_DISTANCE) {
           const startTime = new Date(startPoint.gps_time);
           const endTime = new Date(endPoint.gps_time);
           const durationSeconds = Math.floor((endTime.getTime() - startTime.getTime()) / 1000);
@@ -666,7 +692,7 @@ function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
           });
           console.log(`[extractTripsFromHistory] Trip recorded: ${startPoint.gps_time} to ${endPoint.gps_time}, distance: ${Math.round(totalDistance * 100) / 100}km`);
         } else {
-          console.log(`[extractTripsFromHistory] Trip filtered (distance too short: ${Math.round(totalDistance * 100) / 100}km < ${MIN_TRIP_DISTANCE}km)`);
+          console.log(`[extractTripsFromHistory] Trip filtered: distance=${Math.round(totalDistance * 100) / 100}km, start-end=${Math.round(startEndDistance * 100) / 100}km, max-point=${Math.round(maxPointDistance * 100) / 100}km`);
         }
 
         currentTrip = null;
@@ -741,9 +767,8 @@ function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
             totalDistance += dist;
           }
 
-          const speed = p2.speed !== null && p2.speed > 0
-            ? (p2.speed > 1000 ? p2.speed / 1000 : p2.speed)
-            : 0;
+          // Normalize speed using centralized normalizer
+          const speed = normalizeSpeed(p2.speed);
 
           if (speed > 0 && speed < 200) {
             maxSpeed = Math.max(maxSpeed, speed);
@@ -752,8 +777,32 @@ function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
           }
         }
 
-        // Record trip if it meets minimum distance
-        if (totalDistance >= MIN_TRIP_DISTANCE) {
+        // CRITICAL FIX: Filter trips with same start/end coordinates
+        const startEndDistance = calculateDistance(
+          startPoint.latitude,
+          startPoint.longitude,
+          endPoint.latitude,
+          endPoint.longitude
+        );
+
+        const MIN_START_END_DISTANCE = 0.1; // km
+
+        // Check if all points are within small radius (GPS drift detection)
+        let maxPointDistance = 0;
+        for (let k = 1; k < tripPoints.length; k++) {
+          const dist = calculateDistance(
+            tripPoints[0].latitude,
+            tripPoints[0].longitude,
+            tripPoints[k].latitude,
+            tripPoints[k].longitude
+          );
+          maxPointDistance = Math.max(maxPointDistance, dist);
+        }
+
+        // Record trip only if all validation checks pass
+        if (totalDistance >= MIN_TRIP_DISTANCE && 
+            startEndDistance >= MIN_START_END_DISTANCE &&
+            maxPointDistance >= MIN_START_END_DISTANCE) {
           const startTime = new Date(startPoint.gps_time);
           const endTime = new Date(endPoint.gps_time);
           const durationSeconds = Math.floor((endTime.getTime() - startTime.getTime()) / 1000);
@@ -773,7 +822,7 @@ function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
           });
           console.log(`[extractTripsFromHistory] Trip recorded: ${startPoint.gps_time} to ${endPoint.gps_time}, distance: ${Math.round(totalDistance * 100) / 100}km, duration: ${durationSeconds}s`);
         } else {
-          console.log(`[extractTripsFromHistory] Trip filtered (distance too short: ${Math.round(totalDistance * 100) / 100}km < ${MIN_TRIP_DISTANCE}km)`);
+          console.log(`[extractTripsFromHistory] Trip filtered: distance=${Math.round(totalDistance * 100) / 100}km, start-end=${Math.round(startEndDistance * 100) / 100}km, max-point=${Math.round(maxPointDistance * 100) / 100}km`);
         }
 
         currentTrip = null;
@@ -936,11 +985,38 @@ Deno.serve(async (req) => {
 
         console.log(`[sync-trips-incremental] Device ${deviceId}: received ${trips.length} trips from GPS51`);
 
+        // Update progress: Set total trips to process
+        // Include new progress fields - Supabase will ignore columns that don't exist
+        const progressUpdate: any = {
+          sync_status: "processing",
+          trips_total: trips.length,
+          sync_progress_percent: 0,
+          current_operation: `Processing ${trips.length} trips from GPS51`,
+        };
+        
+        const { error: updateError } = await supabase
+          .from("trip_sync_status")
+          .update(progressUpdate)
+          .eq("device_id", deviceId);
+        
+        // If update fails due to missing columns, try without new fields (graceful degradation)
+        if (updateError && updateError.message?.includes('column') && updateError.message?.includes('does not exist')) {
+          console.warn('[sync-trips-incremental] Progress columns not available, updating without them');
+          await supabase
+            .from("trip_sync_status")
+            .update({ sync_status: "processing" })
+            .eq("device_id", deviceId);
+        } else if (updateError) {
+          console.warn('[sync-trips-incremental] Error updating progress:', updateError.message);
+        }
+
         let deviceTripsCreated = 0;
         let deviceTripsSkipped = 0;
 
         // Insert trips, checking for duplicates (batch process to avoid DB spikes)
         const BATCH_SIZE = 5; // Process 5 trips at a time
+        const PROGRESS_UPDATE_INTERVAL = 10; // Update progress every 10 trips
+        
         for (let j = 0; j < trips.length; j += BATCH_SIZE) {
           const batch = trips.slice(j, j + BATCH_SIZE);
           
@@ -971,6 +1047,27 @@ Deno.serve(async (req) => {
               deviceTripsSkipped++;
               totalTripsSkipped++;
               continue;
+            }
+
+            // CRITICAL FIX: Validate trip coordinates before processing
+            // Filter trips with same start/end coordinates (within 100m)
+            if (trip.start_latitude && trip.start_longitude && 
+                trip.end_latitude && trip.end_longitude) {
+              const startEndDistance = calculateDistance(
+                trip.start_latitude,
+                trip.start_longitude,
+                trip.end_latitude,
+                trip.end_longitude
+              );
+              
+              const MIN_START_END_DISTANCE = 0.1; // 100 meters
+              
+              if (startEndDistance < MIN_START_END_DISTANCE) {
+                console.log(`[sync-trips-incremental] Skipping trip with same start/end coordinates: ${startEndDistance.toFixed(3)}km`);
+                deviceTripsSkipped++;
+                totalTripsSkipped++;
+                continue;
+              }
             }
 
             // CRITICAL FIX: Backfill missing coordinates from position_history before inserting
@@ -1056,6 +1153,33 @@ Deno.serve(async (req) => {
               totalTripsCreated++;
             }
           }
+          
+          // Update progress periodically
+          const tripsProcessed = j + batch.length;
+          if (tripsProcessed % PROGRESS_UPDATE_INTERVAL === 0 || tripsProcessed >= trips.length) {
+            const progressPercent = trips.length > 0 
+              ? Math.round((tripsProcessed / trips.length) * 100)
+              : 100;
+            
+            const progressUpdate: any = {
+              trips_processed: tripsProcessed,
+              sync_progress_percent: progressPercent,
+              current_operation: `Processing trip ${Math.min(tripsProcessed, trips.length)} of ${trips.length}`,
+            };
+            
+            const { error: progressError } = await supabase
+              .from("trip_sync_status")
+              .update(progressUpdate)
+              .eq("device_id", deviceId);
+            
+            // If columns don't exist, just update trips_processed (graceful degradation)
+            if (progressError && progressError.message?.includes('column') && progressError.message?.includes('does not exist')) {
+              await supabase
+                .from("trip_sync_status")
+                .update({ trips_processed: tripsProcessed })
+                .eq("device_id", deviceId);
+            }
+          }
         }
 
         // Update sync status
@@ -1063,16 +1187,38 @@ Deno.serve(async (req) => {
           ? trips[trips.length - 1].end_time 
           : endDate.toISOString();
 
-        await supabase
+        // Update sync status - gracefully handle missing progress columns
+        const completionUpdate: any = {
+          sync_status: "completed",
+          last_sync_at: new Date().toISOString(),
+          last_position_processed: latestTripTime,
+          trips_processed: deviceTripsCreated,
+          trips_total: trips.length,
+          sync_progress_percent: 100,
+          current_operation: `Completed: ${deviceTripsCreated} trips synced`,
+          error_message: null,
+        };
+        
+        const { error: completionError } = await supabase
           .from("trip_sync_status")
-          .update({
-            sync_status: "completed",
-            last_sync_at: new Date().toISOString(),
-            last_position_processed: latestTripTime,
-            trips_processed: deviceTripsCreated,
-            error_message: null,
-          })
+          .update(completionUpdate)
           .eq("device_id", deviceId);
+        
+        // If columns don't exist, update without them (graceful degradation)
+        if (completionError && completionError.message?.includes('column') && completionError.message?.includes('does not exist')) {
+          await supabase
+            .from("trip_sync_status")
+            .update({
+              sync_status: "completed",
+              last_sync_at: new Date().toISOString(),
+              last_position_processed: latestTripTime,
+              trips_processed: deviceTripsCreated,
+              error_message: null,
+            })
+            .eq("device_id", deviceId);
+        } else if (completionError) {
+          console.warn('[sync-trips-incremental] Error updating completion status:', completionError.message);
+        }
 
         deviceResults[deviceId] = {
           trips: deviceTripsCreated,
@@ -1084,13 +1230,31 @@ Deno.serve(async (req) => {
         console.error(`[sync-trips-incremental] Error processing device ${deviceId}:`, errorMsg);
         errors.push(`Device ${deviceId}: ${errorMsg}`);
 
-        await supabase
+        // Update error status - gracefully handle missing progress columns
+        const errorUpdate: any = {
+          sync_status: "error",
+          error_message: errorMsg,
+          sync_progress_percent: null,
+          current_operation: `Error: ${errorMsg.substring(0, 50)}`,
+        };
+        
+        const { error: errorUpdateErr } = await supabase
           .from("trip_sync_status")
-          .update({
-            sync_status: "error",
-            error_message: errorMsg,
-          })
+          .update(errorUpdate)
           .eq("device_id", deviceId);
+        
+        // If columns don't exist, update without them (graceful degradation)
+        if (errorUpdateErr && errorUpdateErr.message?.includes('column') && errorUpdateErr.message?.includes('does not exist')) {
+          await supabase
+            .from("trip_sync_status")
+            .update({
+              sync_status: "error",
+              error_message: errorMsg,
+            })
+            .eq("device_id", deviceId);
+        } else if (errorUpdateErr) {
+          console.warn('[sync-trips-incremental] Error updating error status:', errorUpdateErr.message);
+        }
       }
     }
 
@@ -1113,12 +1277,21 @@ Deno.serve(async (req) => {
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    console.error(`[sync-trips-incremental] Fatal error: ${errorMessage}`);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    console.error(`[sync-trips-incremental] Fatal error: ${errorMessage}`, errorStack);
+
+    // Log full error details for debugging
+    console.error(`[sync-trips-incremental] Error details:`, {
+      message: errorMessage,
+      stack: errorStack,
+      error: error,
+    });
 
     return new Response(
       JSON.stringify({
         success: false,
         error: errorMessage,
+        details: process.env.NODE_ENV === 'development' ? errorStack : undefined,
       }),
       {
         status: 500,

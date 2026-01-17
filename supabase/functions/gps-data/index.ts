@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { callGps51WithRateLimit, getValidGps51Token } from "../_shared/gps51-client.ts"
+import { normalizeVehicleTelemetry, type Gps51RawData } from "../_shared/telemetry-normalizer.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -40,13 +41,8 @@ async function getCachedPositions(supabase: any): Promise<any[] | null> {
   return allPositions
 }
 
-// Parse ignition status from strstatus
-function parseIgnition(strstatus: string | null): boolean {
-  if (!strstatus) return false
-  return strstatus.toUpperCase().includes('ACC ON')
-}
-
-// Determine if vehicle is online based on updatetime
+// Note: parseIgnition and isOnline are now handled by telemetry-normalizer
+// Keeping isOnline for backward compatibility in event detection
 function isOnline(updateTime: number | null): boolean {
   if (!updateTime) return false
   const lastUpdate = new Date(updateTime)
@@ -122,30 +118,43 @@ async function syncPositions(supabase: any, records: any[]) {
   const now = new Date().toISOString()
   
   const positions = records.map(record => {
-    // Battery: 0 means "no data" for hardwired devices, treat as null
-    const rawBattery = record.voltagepercent;
-    const battery = (rawBattery && rawBattery > 0) ? rawBattery : null;
+    // Normalize telemetry using centralized normalizer
+    const normalized = normalizeVehicleTelemetry(record as Gps51RawData, {
+      offlineThresholdMs: OFFLINE_THRESHOLD_MS,
+    });
+    
+    // Debug: Log if speed > 200 after normalization (shouldn't happen unless raw was > 200000)
+    if (normalized.speed_kmh > 200) {
+      console.log(`[syncPositions] High speed detected: device=${record.deviceid}, raw_speed=${record.speed}, normalized=${normalized.speed_kmh} km/h`);
+    }
+    
+    // Safety check: If normalized speed is between 200-1000, this is definitely wrong
+    if (normalized.speed_kmh > 200 && normalized.speed_kmh < 1000) {
+      console.error(`[syncPositions] ERROR: Device ${record.deviceid} has unnormalized speed ${normalized.speed_kmh}! Raw speed was ${record.speed}. Forcing correction...`);
+      // Force normalize: divide by 1000 and apply threshold
+      const correctedSpeed = normalized.speed_kmh / 1000;
+      normalized.speed_kmh = correctedSpeed < 3 ? 0 : Math.min(correctedSpeed, 300);
+      console.log(`[syncPositions] Corrected speed for ${record.deviceid}: ${normalized.speed_kmh} km/h`);
+    }
     
     // FLEET-SCALE: Determine sync priority based on vehicle movement
-    // Moving vehicles (>2 km/h) get high priority for more frequent syncs
-    const speed = record.speed || 0;
-    const isMoving = speed > 2;
-    const syncPriority = isMoving ? 'high' : 'normal';
+    // Moving vehicles (>3 km/h) get high priority for more frequent syncs
+    const syncPriority = normalized.is_moving ? 'high' : 'normal';
     
     return {
-      device_id: record.deviceid,
-      latitude: record.callat && record.callat !== 0 ? record.callat : null,
-      longitude: record.callon && record.callon !== 0 ? record.callon : null,
-      speed,
-      heading: record.heading,
-      altitude: record.altitude,
-      battery_percent: battery,
-      ignition_on: parseIgnition(record.strstatus),
-      is_online: isOnline(record.updatetime),
+      device_id: normalized.vehicle_id,
+      latitude: normalized.lat,
+      longitude: normalized.lon,
+      speed: normalized.speed_kmh, // Already normalized to km/h
+      heading: normalized.heading,
+      altitude: normalized.altitude,
+      battery_percent: normalized.battery_level,
+      ignition_on: normalized.ignition_on,
+      is_online: normalized.is_online,
       is_overspeeding: record.currentoverspeedstate === 1,
       total_mileage: record.totaldistance,
-      status_text: record.strstatus,
-      gps_time: record.updatetime ? new Date(record.updatetime).toISOString() : null,
+      status_text: record.strstatus, // Keep raw status_text for debugging (not exposed to frontend)
+      gps_time: normalized.last_updated_at,
       cached_at: now,
       last_synced_at: now,
       sync_priority: syncPriority
@@ -249,6 +258,7 @@ async function syncPositions(supabase: any, records: any[]) {
 
   for (const pos of positions) {
     // 1. OVERSPEEDING DETECTION (speed > 120 km/h)
+    // Note: pos.speed is now in km/h (normalized)
     if (pos.speed > 120 && pos.is_overspeeding) {
       eventsToInsert.push({
         device_id: pos.device_id,

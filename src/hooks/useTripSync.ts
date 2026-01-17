@@ -10,6 +10,9 @@ export interface TripSyncStatus {
   last_position_processed: string | null;
   sync_status: "idle" | "processing" | "completed" | "error";
   trips_processed: number;
+  trips_total: number | null;
+  sync_progress_percent: number | null;
+  current_operation: string | null;
   error_message: string | null;
   created_at: string;
   updated_at: string;

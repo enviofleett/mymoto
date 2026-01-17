@@ -96,22 +96,38 @@ export function VehicleLocationMap({
     // Remove existing marker
     marker.current?.remove();
 
+    // Determine vehicle status: parked, moving, or offline
+    const currentSpeed = speed || 0;
+    const isParked = isOnline && currentSpeed < 3; // Parked if online and speed < 3 km/h
+    const isMoving = isOnline && currentSpeed >= 3; // Moving if online and speed >= 3 km/h
+    const isOffline = !isOnline; // Offline if not online
+
+    // Determine status class
+    let statusClass = 'offline';
+    if (isParked) statusClass = 'parked';
+    else if (isMoving) statusClass = 'moving';
+    else if (isOffline) statusClass = 'offline';
+
     // Create custom car marker element with rotation based on heading
     const el = document.createElement('div');
     el.className = 'vehicle-car-marker';
     
-    // Rotate based on heading
-    const rotation = heading || 0;
+    // Rotate based on heading (only rotate if moving)
+    const rotation = isMoving ? (heading || 0) : 0;
     
     el.innerHTML = `
       <div class="car-marker-container" style="transform: rotate(${rotation}deg)">
-        <div class="car-pulse ${isOnline ? 'online' : 'offline'}"></div>
-        <div class="car-icon ${isOnline ? 'online' : 'offline'}">
-          <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
-            <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/>
-          </svg>
+        <div class="car-pulse ${statusClass}"></div>
+        <div class="car-icon ${statusClass}">
+          ${isParked || isOffline ? `
+            <div class="status-dot"></div>
+          ` : `
+            <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
+              <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/>
+            </svg>
+          `}
         </div>
-        ${(speed || 0) > 0 ? `<div class="speed-badge">${Math.round(speed || 0)}</div>` : ''}
+        ${isMoving && currentSpeed > 0 ? `<div class="speed-badge">${Math.round(currentSpeed)}</div>` : ''}
       </div>
     `;
 
@@ -167,11 +183,14 @@ export function VehicleLocationMap({
           border-radius: 50%;
           animation: carPulse 2s infinite;
         }
-        .car-pulse.online {
+        .car-pulse.parked {
           background: radial-gradient(circle, rgba(34, 197, 94, 0.4) 0%, rgba(34, 197, 94, 0) 70%);
         }
+        .car-pulse.moving {
+          background: radial-gradient(circle, rgba(59, 130, 246, 0.4) 0%, rgba(59, 130, 246, 0) 70%);
+        }
         .car-pulse.offline {
-          background: radial-gradient(circle, rgba(239, 68, 68, 0.4) 0%, rgba(239, 68, 68, 0) 70%);
+          background: radial-gradient(circle, rgba(107, 114, 128, 0.4) 0%, rgba(107, 114, 128, 0) 70%);
         }
         .car-icon {
           width: 40px;
@@ -183,13 +202,24 @@ export function VehicleLocationMap({
           box-shadow: 0 4px 12px rgba(0,0,0,0.4);
           z-index: 1;
         }
-        .car-icon.online {
+        .car-icon.parked {
           background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
           color: white;
         }
-        .car-icon.offline {
-          background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        .car-icon.moving {
+          background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
           color: white;
+        }
+        .car-icon.offline {
+          background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+          color: white;
+        }
+        .status-dot {
+          width: 20px;
+          height: 20px;
+          border-radius: 50%;
+          background: white;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
         .speed-badge {
           position: absolute;
@@ -257,17 +287,21 @@ export function VehicleLocationMap({
             <div className="flex items-start gap-3">
               <div className={cn(
                 "p-2 rounded-lg shrink-0",
-                isOnline ? "bg-green-500/10" : "bg-red-500/10"
+                !isOnline ? "bg-gray-500/10" : (speed || 0) >= 3 ? "bg-blue-500/10" : "bg-green-500/10"
               )}>
                 <Navigation className={cn(
                   "h-4 w-4",
-                  isOnline ? "text-green-500" : "text-red-500"
+                  !isOnline ? "text-gray-500" : (speed || 0) >= 3 ? "text-blue-500" : "text-green-500"
                 )} />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-xs font-medium text-muted-foreground">
-                    {vehicleName || 'Vehicle'} • {isOnline ? 'Live' : 'Last Known'}
+                    {vehicleName || 'Vehicle'} • {
+                      !isOnline ? 'Offline' : 
+                      (speed || 0) >= 3 ? 'Moving' : 
+                      'Parked'
+                    }
                   </span>
                   {(speed || 0) > 0 && (
                     <span className="text-xs font-bold text-primary">

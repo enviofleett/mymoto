@@ -24,7 +24,7 @@ interface TermsData {
 }
 
 export default function AdminPrivacySettings() {
-  const { user } = useAuth();
+  const { user, isAdmin, isLoading: authLoading } = useAuth();
   const [terms, setTerms] = useState("");
   const [version, setVersion] = useState("1.0");
   const [originalTerms, setOriginalTerms] = useState("");
@@ -32,40 +32,154 @@ export default function AdminPrivacySettings() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [termsData, setTermsData] = useState<TermsData | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchTerms();
-  }, []);
+    if (!authLoading) {
+      if (!isAdmin) {
+        setError("You must be an administrator to access this page.");
+        setIsLoading(false);
+        return;
+      }
+      fetchTerms();
+    }
+  }, [isAdmin, authLoading]);
 
   const fetchTerms = async () => {
     setIsLoading(true);
+    setError(null);
     try {
-      const { data, error } = await (supabase as any)
+      const { data, error: queryError } = await (supabase as any)
         .from("privacy_security_terms")
         .select("*")
         .eq("is_active", true)
         .maybeSingle();
 
-      if (error && error.code !== 'PGRST116') {
-        throw error;
+      if (queryError) {
+        // Handle specific error codes
+        if (queryError.code === 'PGRST116') {
+          // No rows found - this is okay, means no terms exist yet
+          setTerms("");
+          setVersion("1.0");
+          setOriginalTerms("");
+          setOriginalVersion("1.0");
+          setTermsData(null);
+        } else if (queryError.code === '42P01') {
+          // Table doesn't exist
+          setError("The privacy_security_terms table does not exist. Please run the database migration first.");
+          console.error("Table not found:", queryError);
+        } else if (queryError.code === '42501') {
+          // Permission denied
+          setError("You don't have permission to access privacy & security terms. Please ensure you have admin role.");
+          console.error("Permission denied:", queryError);
+        } else {
+          throw queryError;
+        }
+        return;
       }
 
       if (data) {
-        setTerms(data.terms_content);
-        setVersion(data.version);
-        setOriginalTerms(data.terms_content);
-        setOriginalVersion(data.version);
+        setTerms(data.terms_content || "");
+        setVersion(data.version || "1.0");
+        setOriginalTerms(data.terms_content || "");
+        setOriginalVersion(data.version || "1.0");
         setTermsData(data);
       } else {
-        // No terms exist, use empty
-        setTerms("");
+        // No terms exist, use default template
+        const defaultTerms = `PRIVACY & SECURITY TERMS
+
+Last Updated: ${new Date().toLocaleDateString()}
+
+1. DATA COLLECTION AND USAGE
+
+MyMoto collects and processes the following information to provide our vehicle tracking and management services:
+
+• Vehicle Location Data: GPS coordinates, speed, heading, and movement patterns
+• Vehicle Status: Battery level, ignition status, mileage, and diagnostic information
+• User Account Information: Name, email, phone number, and profile preferences
+• Usage Data: App interactions, feature usage, and communication logs
+
+We use this data to:
+• Provide real-time vehicle tracking and monitoring
+• Generate trip reports and analytics
+• Send proactive notifications and alerts
+• Improve our services and user experience
+• Ensure platform security and prevent fraud
+
+2. DATA STORAGE AND SECURITY
+
+• All data is encrypted in transit and at rest
+• We use industry-standard security measures to protect your information
+• Location data is stored securely and retained according to our data retention policy
+• Access to your data is restricted to authorized personnel only
+
+3. LOCATION TRACKING
+
+• Location tracking is enabled when you use MyMoto services
+• You can disable location tracking in your account settings
+• Historical location data is used to generate trip reports and analytics
+• Location data is shared only with authorized users assigned to your vehicles
+
+4. THIRD-PARTY SERVICES
+
+• We use third-party services (GPS51, Mapbox) for core functionality
+• These services may process your data according to their own privacy policies
+• We do not sell your personal information to third parties
+
+5. USER RIGHTS
+
+You have the right to:
+• Access your personal data
+• Request correction of inaccurate data
+• Request deletion of your account and data
+• Opt-out of non-essential data collection
+• Export your data in a portable format
+
+6. DATA RETENTION
+
+• Active account data is retained while your account is active
+• Location history is retained for up to 90 days
+• Trip records are retained for up to 1 year
+• Deleted account data is permanently removed within 30 days
+
+7. COMMUNICATIONS
+
+• We may send you notifications about vehicle alerts, system updates, and important information
+• You can manage notification preferences in your account settings
+• Marketing communications are opt-in only
+
+8. CHILDREN'S PRIVACY
+
+• MyMoto is not intended for users under 18 years of age
+• We do not knowingly collect data from children
+
+9. CHANGES TO TERMS
+
+• We may update these terms from time to time
+• You will be notified of significant changes
+• Continued use of the service constitutes acceptance of updated terms
+
+10. CONTACT US
+
+For privacy concerns or data requests, contact us at:
+Email: privacy@mymoto.com
+Support: support@mymoto.com
+
+By using MyMoto, you acknowledge that you have read, understood, and agree to these Privacy & Security Terms.`;
+
+        setTerms(defaultTerms);
         setVersion("1.0");
         setOriginalTerms("");
         setOriginalVersion("1.0");
+        setTermsData(null);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching terms:", error);
-      toast.error("Failed to load privacy & security terms");
+      const errorMessage = error?.message || "Failed to load privacy & security terms";
+      setError(errorMessage);
+      toast.error("Failed to load privacy & security terms", {
+        description: errorMessage,
+      });
     } finally {
       setIsLoading(false);
     }
@@ -125,11 +239,86 @@ export default function AdminPrivacySettings() {
   const wordCount = terms.trim().split(/\s+/).filter(Boolean).length;
   const charCount = terms.length;
 
-  if (isLoading) {
+  if (authLoading || isLoading) {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center h-64">
+          <Card className="max-w-md">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-destructive">
+                <Shield className="h-5 w-5" />
+                Access Denied
+              </CardTitle>
+              <CardDescription>
+                You must be an administrator to access this page.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <DashboardLayout>
+        <div className="space-y-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+              <Shield className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold">Privacy & Security Terms</h1>
+              <p className="text-muted-foreground text-sm">
+                Manage the privacy and security terms that users must agree to
+              </p>
+            </div>
+          </div>
+          <Card className="border-destructive">
+            <CardHeader>
+              <CardTitle className="text-destructive">Error Loading Terms</CardTitle>
+              <CardDescription>{error}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  {error.includes("table does not exist") ? (
+                    <>
+                      The database table is missing. Please run the migration:
+                      <code className="block mt-2 p-2 bg-muted rounded text-xs">
+                        RUN_THIS_MIGRATION_PRIVACY_TERMS.sql
+                      </code>
+                    </>
+                  ) : error.includes("permission") ? (
+                    <>
+                      You don't have the required permissions. Please ensure:
+                      <ul className="list-disc list-inside mt-2 space-y-1 text-xs">
+                        <li>You have admin role assigned in the database</li>
+                        <li>The RLS policies are correctly configured</li>
+                        <li>You are logged in with the correct account</li>
+                      </ul>
+                    </>
+                  ) : (
+                    "Please check the console for more details and try again."
+                  )}
+                </p>
+                <Button onClick={fetchTerms} variant="outline">
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                  Retry
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </DashboardLayout>
     );

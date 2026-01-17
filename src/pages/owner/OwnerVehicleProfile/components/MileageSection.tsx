@@ -1,12 +1,17 @@
 import { useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Gauge,
   Route,
   TrendingUp,
   Calendar,
   Filter,
+  Fuel,
+  AlertTriangle,
+  TrendingDown,
+  TrendingUp as TrendingUpIcon,
 } from "lucide-react";
 import {
   AreaChart,
@@ -21,9 +26,10 @@ import {
 import { format, parseISO } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import type { VehicleDailyStats } from "@/hooks/useVehicleProfile";
-import { deriveMileageFromStats } from "@/hooks/useVehicleProfile";
+import { deriveMileageFromStats, useVehicleMileageDetails } from "@/hooks/useVehicleProfile";
 
 interface MileageSectionProps {
+  deviceId: string;
   totalMileage: number | null;
   dailyStats: VehicleDailyStats[] | undefined;
   mileageStats: {
@@ -36,6 +42,7 @@ interface MileageSectionProps {
 }
 
 export function MileageSection({
+  deviceId,
   totalMileage,
   dailyStats,
   mileageStats,
@@ -43,6 +50,19 @@ export function MileageSection({
   dateRange,
 }: MileageSectionProps) {
   const isFilterActive = !!dateRange?.from;
+  
+  // Fetch mileage details for fuel consumption
+  const startDate = dateRange?.from?.toISOString().split('T')[0];
+  const endDate = dateRange?.to?.toISOString().split('T')[0];
+  const { data: mileageDetails, error: mileageError } = useVehicleMileageDetails(
+    deviceId,
+    startDate,
+    endDate,
+    true
+  );
+  
+  // Handle case where table doesn't exist yet (migration not applied)
+  const hasMileageData = mileageDetails && mileageDetails.length > 0 && !mileageError;
 
   // Derive stats from daily data (Single Source of Truth)
   const derivedStats = useMemo(() => {
@@ -102,8 +122,135 @@ export function MileageSection({
   // Use chartData consistently to prevent UI jumping
   const displayData = chartData.length > 0 ? chartData : [];
 
+  // Calculate fuel consumption statistics (only if table exists and has data)
+  const fuelStats = useMemo(() => {
+    // Check if table exists - if error is PGRST205, table doesn't exist
+    const tableExists = !mileageError || (mileageError as any)?.code !== 'PGRST205';
+    if (!tableExists || !mileageDetails || mileageDetails.length === 0) return null;
+
+    const withActual = mileageDetails.filter(m => m.oilper100km !== null);
+    const withEstimated = mileageDetails.filter(m => m.estimated_fuel_consumption_combined !== null);
+    const withBoth = mileageDetails.filter(
+      m => m.oilper100km !== null && m.estimated_fuel_consumption_combined !== null
+    );
+
+    const avgActual = withActual.length > 0
+      ? withActual.reduce((sum, m) => sum + (m.oilper100km || 0), 0) / withActual.length
+      : null;
+
+    const avgEstimated = withEstimated.length > 0
+      ? withEstimated.reduce((sum, m) => sum + (m.estimated_fuel_consumption_combined || 0), 0) / withEstimated.length
+      : null;
+
+    const avgVariance = withBoth.length > 0
+      ? withBoth.reduce((sum, m) => sum + (m.fuel_consumption_variance || 0), 0) / withBoth.length
+      : null;
+
+    const theftAlerts = mileageDetails.filter(m => m.leakoil && m.leakoil > 0).length;
+
+    return {
+      avgActual,
+      avgEstimated,
+      avgVariance,
+      theftAlerts,
+      hasData: withActual.length > 0,
+      hasEstimates: withEstimated.length > 0,
+    };
+  }, [mileageDetails, mileageError]);
+
   return (
     <>
+      {/* Fuel Consumption Card - Only show if table exists and has data */}
+      {fuelStats && fuelStats.hasData && (
+        <Card className="border-border bg-card/50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Fuel className="h-5 w-5 text-primary" />
+                <span className="font-medium text-foreground">Fuel Consumption</span>
+              </div>
+              {fuelStats.theftAlerts > 0 && (
+                <Badge variant="destructive" className="text-xs">
+                  <AlertTriangle className="h-3 w-3 mr-1" />
+                  {fuelStats.theftAlerts} Theft Alert{fuelStats.theftAlerts !== 1 ? 's' : ''}
+                </Badge>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              {/* Actual Consumption */}
+              <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
+                <div>
+                  <div className="text-xs text-muted-foreground">Actual (GPS51 measured)</div>
+                  <div className="text-2xl font-bold text-foreground">
+                    {fuelStats.avgActual?.toFixed(2) || '--'} <span className="text-sm font-normal">L/100km</span>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs text-muted-foreground">Avg Efficiency</div>
+                  <div className="text-sm font-medium text-green-600">
+                    {fuelStats.avgActual ? `${(100 / fuelStats.avgActual).toFixed(1)} km/L` : '--'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Estimated Consumption */}
+              {fuelStats.hasEstimates && fuelStats.avgEstimated && (
+                <div className="flex items-center justify-between p-3 bg-primary/5 rounded-lg border border-primary/20">
+                  <div>
+                    <div className="text-xs text-muted-foreground">Estimated (Manufacturer + Age)</div>
+                    <div className="text-2xl font-bold text-primary">
+                      {fuelStats.avgEstimated.toFixed(2)} <span className="text-sm font-normal">L/100km</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-muted-foreground">Based on specs</div>
+                    <div className="text-sm font-medium text-primary">
+                      {fuelStats.avgEstimated ? `${(100 / fuelStats.avgEstimated).toFixed(1)} km/L` : '--'}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Variance */}
+              {fuelStats.avgVariance !== null && fuelStats.avgActual && fuelStats.avgEstimated && (
+                <div className="flex items-center justify-between p-3 bg-background rounded-lg border">
+                  <div className="flex items-center gap-2">
+                    {fuelStats.avgVariance > 0 ? (
+                      <TrendingUpIcon className="h-4 w-4 text-orange-500" />
+                    ) : fuelStats.avgVariance < 0 ? (
+                      <TrendingDown className="h-4 w-4 text-green-500" />
+                    ) : null}
+                    <div>
+                      <div className="text-xs text-muted-foreground">Variance</div>
+                      <div className={`text-lg font-bold ${
+                        fuelStats.avgVariance > 10 ? 'text-orange-600' :
+                        fuelStats.avgVariance < -10 ? 'text-green-600' :
+                        'text-muted-foreground'
+                      }`}>
+                        {fuelStats.avgVariance > 0 ? '+' : ''}{fuelStats.avgVariance.toFixed(1)}%
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-xs text-muted-foreground text-right">
+                    {fuelStats.avgVariance > 0 ? 'Using more' : fuelStats.avgVariance < 0 ? 'Using less' : 'On target'} than estimated
+                  </div>
+                </div>
+              )}
+
+              {/* Disclaimer */}
+              <Alert>
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription className="text-xs">
+                  <strong>Note:</strong> Fuel consumption estimates are assumptions based on manufacturer data and vehicle age. 
+                  Actual consumption may vary based on driving conditions, vehicle condition, driver behavior, and other factors.
+                </AlertDescription>
+              </Alert>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Mileage Stats */}
       <Card className="border-border bg-card/50">
         <CardContent className="p-4">

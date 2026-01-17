@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { OwnerLayout } from "@/components/layouts/OwnerLayout";
+import myMotoLogo from "@/assets/mymoto-logo-new.png";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -62,7 +63,10 @@ export default function OwnerProfile() {
         {/* Header - Neumorphic styling */}
         <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm pt-[env(safe-area-inset-top)] -mt-[env(safe-area-inset-top)]">
           <div className="px-4 py-4">
-            <h1 className="text-xl font-bold text-foreground">Profile</h1>
+            <div className="flex items-center gap-2.5">
+              <img alt="MyMoto" className="w-6 h-6 object-contain" src={myMotoLogo} />
+              <h1 className="text-xl font-bold text-foreground">Profile</h1>
+            </div>
           </div>
         </div>
 
