@@ -47,9 +47,12 @@ export function VehicleDetailsModal({
   const { toast } = useToast();
 
   // Use cached queries - data is often already prefetched from hover
+  // Conditional polling: only poll when modal is open and vehicle is online (not offline)
+  const shouldPollPositionHistory = open && !!vehicle && vehicle.status !== 'offline';
   const { data: positionHistory = [], isLoading: historyLoading } = usePositionHistory(
     vehicle?.id || null,
-    open && !!vehicle
+    open && !!vehicle,
+    shouldPollPositionHistory // Poll every 60s when modal is open and vehicle is online
   );
 
   const { data: drivers = [] } = useAvailableDrivers(

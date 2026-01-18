@@ -42,14 +42,20 @@ async function fetchAvailableDrivers(): Promise<Driver[]> {
   return (data as Driver[]) || [];
 }
 
-// Hook for position history with caching
-export function usePositionHistory(deviceId: string | null, enabled: boolean = true) {
+// Hook for position history with caching and conditional polling
+export function usePositionHistory(
+  deviceId: string | null, 
+  enabled: boolean = true,
+  shouldPoll: boolean = false // New parameter: poll only when explicitly enabled
+) {
   return useQuery({
     queryKey: ['position-history', deviceId],
     queryFn: () => fetchPositionHistory(deviceId!),
     enabled: enabled && !!deviceId,
     staleTime: 30 * 1000, // Fresh for 30 seconds
     gcTime: 5 * 60 * 1000, // Keep in cache for 5 minutes
+    refetchInterval: shouldPoll ? 60 * 1000 : false, // Poll every 60s if shouldPoll is true
+    refetchOnWindowFocus: false, // Don't refetch on window focus to avoid unnecessary queries
   });
 }
 
