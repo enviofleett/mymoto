@@ -315,7 +315,7 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
         (payload) => {
           const newMessage = payload.new as ChatMessage;
           // Only add messages for this user
-          if (newMessage.user_id === user.id) {
+          if ((newMessage as any).user_id === user.id) {
             setMessages(prev => {
               // Avoid duplicates
               if (prev.some(m => m.id === newMessage.id)) return prev;

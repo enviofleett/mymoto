@@ -83,7 +83,7 @@ export function VehicleSpecificationsForm({ deviceId, onSaved }: VehicleSpecific
   const fetchSpecs = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('vehicle_specifications')
         .select('*')
         .eq('device_id', deviceId)
@@ -92,7 +92,7 @@ export function VehicleSpecificationsForm({ deviceId, onSaved }: VehicleSpecific
       if (error) throw error;
 
       if (data) {
-        setSpecs(data as VehicleSpecs);
+        setSpecs(data as unknown as VehicleSpecs);
       }
     } catch (err) {
       console.error('Error fetching vehicle specs:', err);
@@ -118,7 +118,7 @@ export function VehicleSpecificationsForm({ deviceId, onSaved }: VehicleSpecific
 
     setSaving(true);
     try {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('vehicle_specifications')
         .upsert({
           ...specs,
