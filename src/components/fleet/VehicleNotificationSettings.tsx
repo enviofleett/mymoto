@@ -223,7 +223,7 @@ export function VehicleNotificationSettings({ deviceId, userId }: VehicleNotific
       }
 
       try {
-        const { data, error } = await (supabase as any)
+        const { data, error } = await supabase
           .from('vehicle_notification_preferences')
           .select('*')
           .eq('user_id', userId)
@@ -267,7 +267,7 @@ export function VehicleNotificationSettings({ deviceId, userId }: VehicleNotific
           };
           
           // Save defaults to database
-          const { error: insertError } = await (supabase as any)
+          const { error: insertError } = await supabase
             .from('vehicle_notification_preferences')
             .insert(defaults)
             .select()
@@ -339,7 +339,7 @@ export function VehicleNotificationSettings({ deviceId, userId }: VehicleNotific
     setSaving(true);
 
     try {
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from('vehicle_notification_preferences')
         .upsert({
           ...updated,

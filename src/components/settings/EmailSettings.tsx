@@ -47,7 +47,7 @@ export function EmailSettings() {
     try {
       setLoading(true);
       // Check if email config exists in app_settings
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from("app_settings")
         .select("key, value, metadata")
         .in("key", ["gmail_user", "gmail_app_password", "email_enabled", "test_email"]);
@@ -56,7 +56,7 @@ export function EmailSettings() {
         console.error("Error fetching email config:", error);
       }
 
-      const settings = (data || []).reduce((acc: Record<string, string>, item: any) => {
+      const settings = (data || []).reduce((acc, item) => {
         acc[item.key] = item.value;
         return acc;
       }, {} as Record<string, string>);
@@ -116,7 +116,7 @@ export function EmailSettings() {
       ];
 
       for (const setting of settings) {
-        await (supabase as any)
+        await supabase
           .from("app_settings")
           .upsert({
             key: setting.key,
