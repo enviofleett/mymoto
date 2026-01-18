@@ -116,7 +116,7 @@ export function useNotificationPreferences() {
         try {
           const { data: { user } } = await supabase.auth.getUser();
           if (user) {
-            const { data: dbPrefs } = await supabase
+            const { data: dbPrefs } = await (supabase as any)
               .from('user_ai_chat_preferences')
               .select('*')
               .eq('user_id', user.id)
@@ -124,11 +124,11 @@ export function useNotificationPreferences() {
             
             if (dbPrefs) {
               loadedPrefs.aiChatPreferences = {
-                ignition_start: dbPrefs.ignition_start || false,
-                geofence_event: dbPrefs.geofence_event || false,
-                overspeeding: dbPrefs.overspeeding || false,
-                low_battery: dbPrefs.low_battery || false,
-                power_off: dbPrefs.power_off || false,
+                ignition_start: (dbPrefs as any).ignition_start || false,
+                geofence_event: (dbPrefs as any).geofence_event || false,
+                overspeeding: (dbPrefs as any).overspeeding || false,
+                low_battery: (dbPrefs as any).low_battery || false,
+                power_off: (dbPrefs as any).power_off || false,
               };
               
               // Update localStorage with database values
@@ -156,7 +156,7 @@ export function useNotificationPreferences() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('user_ai_chat_preferences')
         .upsert({
           user_id: user.id,
