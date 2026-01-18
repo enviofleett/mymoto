@@ -13,10 +13,14 @@ import {
   BellRing,
   Bell,
   Link2,
-  Shield
+  Shield,
+  Mail,
+  LogOut
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NavLink } from "@/components/NavLink";
+import { useAuth } from "@/contexts/AuthContext";
+import { Button } from "@/components/ui/button";
 import {
   Sheet,
   SheetContent,
@@ -65,13 +69,28 @@ const MORE_MENU_ITEMS = [
   { title: "Notifications", url: "/notifications", icon: BellRing },
   { title: "Alerts", url: "/admin/alerts", icon: Bell },
   { title: "Assignments", url: "/admin/assignments", icon: Link2 },
+  { title: "Email Templates", url: "/admin/email-templates", icon: Mail },
   { title: "Privacy & Terms", url: "/admin/privacy-settings", icon: Shield },
 ];
 
 export function AdminBottomNav() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const handleLogout = async () => {
+    try {
+      setMenuOpen(false);
+      await signOut();
+      // Use window.location for a hard redirect (more reliable for logout)
+      window.location.href = "/auth";
+    } catch (error) {
+      console.error("Logout error:", error);
+      // Still redirect even if signOut fails
+      window.location.href = "/auth";
+    }
+  };
 
   // Check if any "More" menu item is active
   const isMoreMenuActive = MORE_MENU_ITEMS.some(item => {
@@ -176,6 +195,16 @@ export function AdminBottomNav() {
                   </NavLink>
                 );
               })}
+              <div className="border-t border-border pt-4 mt-4">
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start gap-3 text-destructive hover:text-destructive hover:bg-destructive/10"
+                  onClick={handleLogout}
+                >
+                  <LogOut className="h-5 w-5" />
+                  <span className="font-medium">Logout</span>
+                </Button>
+              </div>
             </div>
           </SheetContent>
         </Sheet>

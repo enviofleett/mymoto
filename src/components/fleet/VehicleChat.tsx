@@ -245,6 +245,7 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
+  const [avatarError, setAvatarError] = useState(false);
   const { user } = useAuth();
   const { toast } = useToast();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -375,11 +376,15 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
         } : null
       };
 
+      // Get the session token for proper authorization
+      const { data: { session } } = await supabase.auth.getSession();
+      const authToken = session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      
       const response = await fetch(CHAT_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
+          'Authorization': `Bearer ${authToken}`
         },
         body: JSON.stringify(contextPayload)
       });
@@ -502,8 +507,13 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
             </div>
           ) : messages.length === 0 && !loading ? (
             <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-              {avatarUrl ? (
-                <img src={avatarUrl} alt={displayName} className="h-12 w-12 rounded-full object-cover mb-3" />
+              {avatarUrl && !avatarError ? (
+                <img 
+                  src={avatarUrl} 
+                  alt={displayName} 
+                  className="h-12 w-12 rounded-full object-cover mb-3" 
+                  onError={() => setAvatarError(true)}
+                />
               ) : (
                 <Car className="h-12 w-12 mb-3 text-primary/50" />
               )}
@@ -521,8 +531,13 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
             >
               {msg.role === 'assistant' && (
                 <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0 overflow-hidden">
-                  {avatarUrl ? (
-                    <img src={avatarUrl} alt={displayName} className="h-full w-full object-cover" />
+                  {avatarUrl && !avatarError ? (
+                    <img 
+                      src={avatarUrl} 
+                      alt={displayName} 
+                      className="h-full w-full object-cover"
+                      onError={() => setAvatarError(true)}
+                    />
                   ) : (
                     <Bot className="h-4 w-4 text-primary" />
                   )}
@@ -549,8 +564,13 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
           {streamingContent && (
             <div className="flex gap-3 justify-start">
               <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0 overflow-hidden">
-                {avatarUrl ? (
-                  <img src={avatarUrl} alt={displayName} className="h-full w-full object-cover" />
+                {avatarUrl && !avatarError ? (
+                  <img 
+                    src={avatarUrl} 
+                    alt={displayName} 
+                    className="h-full w-full object-cover"
+                    onError={() => setAvatarError(true)}
+                  />
                 ) : (
                   <Bot className="h-4 w-4 text-primary" />
                 )}

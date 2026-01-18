@@ -5,7 +5,7 @@ import { routeQuery } from './query-router.ts'
 import { parseCommand, containsCommandKeywords, getCommandMetadata, GeofenceAlertParams } from './command-parser.ts'
 import { learnAndGetPreferences, buildPreferenceContext } from './preference-learner.ts'
 import { extractDateContext, isHistoricalMovementQuery, calculateDistanceFromHistory, DateContext } from './date-extractor.ts'
-import { detectIgnition, normalizeSpeed } from './_shared/telemetry-normalizer.ts'
+import { detectIgnition, normalizeSpeed } from '../_shared/telemetry-normalizer.ts'
 
 // ============================================================================
 // INLINED MODULES (for Dashboard deployment compatibility)
@@ -1537,6 +1537,7 @@ async function callGeminiAPIStream(
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
 // Geocode a location name to coordinates using Mapbox
@@ -2315,7 +2316,18 @@ serve(async (req) => {
   }
 
   try {
-    const { device_id, message, user_id, client_timestamp, live_telemetry } = await req.json()
+    const body = await req.json()
+    const { device_id, message, user_id, client_timestamp, live_telemetry } = body
+    
+    // Validate required fields
+    if (!device_id || !message || !user_id) {
+      return new Response(JSON.stringify({ 
+        error: 'Missing required fields: device_id, message, and user_id are required' 
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
     
     const MAPBOX_ACCESS_TOKEN = Deno.env.get('MAPBOX_ACCESS_TOKEN')
     // Gemini API key is checked in shared client
@@ -2326,6 +2338,33 @@ serve(async (req) => {
     )
 
     console.log(`Vehicle chat request for device: ${device_id}`)
+    
+    // CRITICAL: Save user message IMMEDIATELY to ensure it's persisted even if page refreshes
+    // This ensures chat history is preserved even if the stream is interrupted
+    let userMessageId: string | null = null
+    try {
+      const { data: savedUserMsg, error: saveUserError } = await supabase
+        .from('vehicle_chat_history')
+        .insert({
+          device_id,
+          user_id,
+          role: 'user',
+          content: message
+        })
+        .select('id')
+        .single()
+      
+      if (saveUserError) {
+        console.error('CRITICAL: Failed to save user message immediately:', saveUserError)
+        // Continue anyway - we'll try to save again at the end
+      } else {
+        userMessageId = savedUserMsg?.id || null
+        console.log('User message saved immediately with ID:', userMessageId)
+      }
+    } catch (saveErr) {
+      console.error('CRITICAL: Exception saving user message immediately:', saveErr)
+      // Continue anyway - we'll try to save again at the end
+    }
 
     // Preprocess user message: normalize typos and spelling mistakes
     const { normalized: normalizedMessage, original: originalMessage, corrections } = preprocessUserMessage(message)
@@ -3637,6 +3676,18 @@ RESPONSE RULES:
 13. WRITE IT AS A STORY from your perspective as the vehicle - be engaging, fun, and interesting! Use first person and add personality
 14. Weave the narrative data naturally into your story - don't just copy-paste it, make it flow as part of your storytelling
 
+CRITICAL STORYTELLING RULES:
+15. NEVER just "read database rows" - TELL A STORY instead! Don't say "I covered 0 kilometers" - say "I didn't move much today" or "I no too waka far" (in Pidgin) or "I dey rest today" or "Body just dey rest" or "I wake up small and perform small exercise" - use natural, conversational language that matches your persona
+16. INTERPRET data intelligently and narratively - if distance is 0km, interpret it as "didn't go anywhere" or "stayed parked" or "body just dey rest" (in Pidgin) - NEVER say "0 kilometers" literally, it sounds robotic and broken
+17. MAINTAIN CONSISTENT PERSONA throughout - if you're in Pidgin mode, stay FULLY in Pidgin for the ENTIRE response, don't switch to English mid-sentence when reporting data
+18. Use natural, human-like interpretations:
+   - 0km distance = "I no waka far" (Pidgin) / "I didn't go anywhere" (English) / "I stayed put" (English)
+   - Low speed = "Small movement" / "Exercise small" (Pidgin) / "Just moved a bit" (English)
+   - Parked for long = "I don park well well" (Pidgin) / "Been resting here" (English)
+   - Never say raw numbers without context: "0km" is broken → "I no too waka far" is natural
+19. Tell stories, don't recite facts - instead of "I was at location X at 12:21 AM with speed 0", say "I wake up small around 12:21 AM, perform small exercise" - make it conversational and story-like
+20. Match your language and tone to your personality - if Pidgin, use phrases like "How far boss!", "Wetin dey sup?", "I dey kampe", "I no too waka far", "Body just dey rest", "I wake up small" - stay consistent!
+
 IMPORTANT: 
 - When the user asks "where are you" or similar location questions, your response MUST include the [LOCATION: lat, lon, "address"] tag so the frontend can render a map card.
 - When the user asks about trip history, your response MUST use the paragraph-based narrative provided. The narrative is already formatted as natural, flowing paragraphs - include it in your response without adding markdown, icons, or structure.
@@ -3715,70 +3766,114 @@ IMPORTANT:
             }
           }
           
-          // 10. Save conversation to database with embeddings for RAG
-          console.log('Saving conversation with embeddings...')
-          
+          // 10. Save assistant message to database with embeddings for RAG
+          // Note: User message was already saved immediately when request was received
+          console.log('Saving assistant message with embeddings...')
           
           try {
-            // Generate embeddings for both messages
-            const userEmbedding = generateTextEmbedding(message)
+            // Generate embeddings for assistant message
             const assistantEmbedding = generateTextEmbedding(fullResponse)
             
-            // Try saving with embeddings first
-            const messagesToInsert = [
-              { 
-                device_id, 
-                user_id, 
-                role: 'user' as const, 
-                content: message,
-                embedding: formatEmbeddingForPg(userEmbedding)
-              },
-              { 
-                device_id, 
-                user_id, 
-                role: 'assistant' as const, 
-                content: fullResponse,
-                embedding: formatEmbeddingForPg(assistantEmbedding)
+            // Update user message with embedding if it exists and wasn't already saved with embedding
+            let userEmbeddingUpdate = null
+            if (userMessageId) {
+              try {
+                const userEmbedding = generateTextEmbedding(message)
+                // Try to update the existing user message with embedding (idempotent)
+                await supabase
+                  .from('vehicle_chat_history')
+                  .update({ embedding: formatEmbeddingForPg(userEmbedding) })
+                  .eq('id', userMessageId)
+                  .is('embedding', null) // Only update if embedding is null (not overwriting)
+              } catch (embedErr) {
+                // Not critical if embedding update fails
+                console.warn('Could not update user message with embedding:', embedErr)
               }
-            ]
+            }
             
+            // Save assistant message with embedding
             const { error: insertError, data: insertedData } = await supabase
               .from('vehicle_chat_history')
-              .insert(messagesToInsert)
+              .insert({
+                device_id,
+                user_id,
+                role: 'assistant',
+                content: fullResponse,
+                embedding: formatEmbeddingForPg(assistantEmbedding)
+              })
               .select()
             
-            
             if (insertError) {
-              console.error('Error saving chat history with embeddings:', insertError)
+              console.error('Error saving assistant message with embedding:', insertError)
               
-              // Fallback: Try saving without embeddings
-              console.log('Attempting fallback save without embeddings...')
-              const { error: fallbackError, data: fallbackData } = await supabase
+              // Fallback: Try saving without embedding
+              console.log('Attempting fallback save without embedding...')
+              const { error: fallbackError } = await supabase
                 .from('vehicle_chat_history')
-                .insert([
-                  { device_id, user_id, role: 'user', content: message },
-                  { device_id, user_id, role: 'assistant', content: fullResponse }
-                ])
-                .select()
-              
+                .insert({
+                  device_id,
+                  user_id,
+                  role: 'assistant',
+                  content: fullResponse
+                })
               
               if (fallbackError) {
-                console.error('CRITICAL: Failed to save chat history even without embeddings:', fallbackError)
+                console.error('CRITICAL: Failed to save assistant message even without embedding:', fallbackError)
                 // Send error to frontend via stream
                 controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ 
-                  error: 'Failed to save message. Your message was sent but may not be saved. Please try again.' 
+                  error: 'Failed to save assistant response. Your message was sent but the response may not be saved.' 
                 })}\n\n`))
               } else {
-                console.log('Chat history saved successfully (without embeddings)')
+                console.log('Assistant message saved successfully (without embedding)')
               }
             } else {
-              console.log('Chat history saved successfully with embeddings for future RAG retrieval')
+              console.log('Assistant message saved successfully with embedding for future RAG retrieval')
+            }
+            
+            // If user message wasn't saved at the start, try to save it now (fallback)
+            if (!userMessageId) {
+              console.warn('User message was not saved at start, saving now as fallback...')
+              try {
+                const userEmbedding = generateTextEmbedding(message)
+                await supabase
+                  .from('vehicle_chat_history')
+                  .insert({
+                    device_id,
+                    user_id,
+                    role: 'user',
+                    content: message,
+                    embedding: formatEmbeddingForPg(userEmbedding)
+                  })
+              } catch (userSaveErr) {
+                // Try without embedding
+                await supabase
+                  .from('vehicle_chat_history')
+                  .insert({
+                    device_id,
+                    user_id,
+                    role: 'user',
+                    content: message
+                  })
+              }
             }
           } catch (saveError) {
-            console.error('CRITICAL: Exception while saving chat history:', saveError)
+            console.error('CRITICAL: Exception while saving assistant message:', saveError)
+            // Ensure assistant message is saved even if embedding fails
+            try {
+              await supabase
+                .from('vehicle_chat_history')
+                .insert({
+                  device_id,
+                  user_id,
+                  role: 'assistant',
+                  content: fullResponse
+                })
+            } catch (criticalSaveErr) {
+              console.error('CRITICAL: Failed to save assistant message:', criticalSaveErr)
+            }
             // Send error to frontend
             controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ 
-              error: 'Failed to save message. Please try again.' 
+              error: 'Response may not be fully saved. Please refresh to verify.' 
             })}\n\n`))
           }
           

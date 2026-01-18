@@ -143,3 +143,110 @@ export async function sendSystemNotificationEmail(
     data: options,
   });
 }
+
+/**
+ * Get email template from database
+ */
+async function getEmailTemplateFromDb(templateKey: string): Promise<{ subject: string; html: string } | null> {
+  try {
+    const { data, error } = await supabase
+      .from('email_templates')
+      .select('subject, html_content')
+      .eq('template_key', templateKey)
+      .eq('is_active', true)
+      .single();
+
+    if (error || !data) {
+      console.warn(`[Email Helper] Template '${templateKey}' not found in DB, using fallback`);
+      return null;
+    }
+
+    return {
+      subject: data.subject,
+      html: data.html_content,
+    };
+  } catch (err) {
+    console.error(`[Email Helper] Error fetching template from DB:`, err);
+    return null;
+  }
+}
+
+/**
+ * Replace template variables (simple {{variable}} replacement)
+ */
+function replaceTemplateVariables(template: string, data: Record<string, unknown>): string {
+  let result = template;
+  for (const [key, value] of Object.entries(data)) {
+    // Replace {{key}} with value
+    const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
+    result = result.replace(regex, String(value || ''));
+  }
+  // Remove any remaining {{#if}} blocks if vehicleCount is not provided (simple handling)
+  result = result.replace(/\{\{#if\s+\w+\}\}[\s\S]*?\{\{\/if\}\}/g, '');
+  return result;
+}
+
+/**
+ * Send vehicle assignment email notification (with database template support)
+ */
+export async function sendVehicleAssignmentEmail(
+  userEmail: string,
+  options: {
+    userName: string;
+    vehicleCount: number;
+    isNewUser?: boolean;
+  }
+): Promise<{ success: boolean; error?: string }> {
+  const { userName, vehicleCount, isNewUser = false } = options;
+  
+  // Get template from database (fallback to hardcoded if not found)
+  const templateKey = isNewUser ? 'welcome' : 'vehicle_assignment';
+  const dbTemplate = await getEmailTemplateFromDb(templateKey);
+  
+  if (dbTemplate) {
+    // Use database template with variable replacement
+    const subject = replaceTemplateVariables(dbTemplate.subject, { 
+      vehicleCount,
+      userName,
+    });
+    const html = replaceTemplateVariables(dbTemplate.html, {
+      userName,
+      vehicleCount: String(vehicleCount),
+      loginLink: `${window.location.origin}/auth`,
+      actionLink: `${window.location.origin}/fleet`,
+    });
+    
+    return sendEmail({
+      to: userEmail,
+      template: isNewUser ? 'welcome' : 'systemNotification',
+      data: {},
+      customSubject: subject,
+      customHtml: html,
+    });
+  }
+  
+  // Fallback to existing logic if database template not found
+  if (isNewUser) {
+    return sendEmail({
+      to: userEmail,
+      template: 'welcome',
+      data: {
+        userName,
+        loginLink: `${window.location.origin}/auth`,
+        vehicleCount,
+        welcomeMessage: `Welcome to MyMoto! ${vehicleCount} vehicle(s) have been assigned to your account.`,
+      },
+    });
+  } else {
+    return sendEmail({
+      to: userEmail,
+      template: 'systemNotification',
+      data: {
+        title: `${vehicleCount} New Vehicle(s) Assigned`,
+        message: `Hello ${userName}, ${vehicleCount} vehicle(s) have been assigned to your account. You can now access and monitor these vehicles in your dashboard.`,
+        actionLink: `${window.location.origin}/fleet`,
+        actionText: 'View Vehicles',
+      },
+    });
+  }
+}

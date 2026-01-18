@@ -87,10 +87,13 @@ export default function OwnerChatDetail() {
   const fetchHistory = async () => {
     setHistoryLoading(true);
     try {
+      if (!user?.id) return;
+      
       const { data, error } = await (supabase as any)
         .from("vehicle_chat_history")
         .select("*")
         .eq("device_id", deviceId)
+        .eq("user_id", user.id) // Ensure users only see their own messages
         .order("created_at", { ascending: true })
         .limit(50);
 
@@ -120,11 +123,15 @@ export default function OwnerChatDetail() {
     setMessages((prev) => [...prev, tempUserMsg]);
 
     try {
+      // Get the session token for proper authorization
+      const { data: { session } } = await supabase.auth.getSession();
+      const authToken = session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      
       const response = await fetch(CHAT_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          Authorization: `Bearer ${authToken}`,
         },
         body: JSON.stringify({
           device_id: deviceId,
