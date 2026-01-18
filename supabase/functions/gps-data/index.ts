@@ -150,6 +150,8 @@ async function syncPositions(supabase: any, records: any[]) {
       altitude: normalized.altitude,
       battery_percent: normalized.battery_level,
       ignition_on: normalized.ignition_on,
+      ignition_confidence: normalized.ignition_confidence || null,
+      ignition_detection_method: normalized.ignition_detection_method || null,
       is_online: normalized.is_online,
       is_overspeeding: record.currentoverspeedstate === 1,
       total_mileage: record.totaldistance,
@@ -221,6 +223,8 @@ async function syncPositions(supabase: any, records: any[]) {
     heading: p.heading,
     battery_percent: p.battery_percent,
     ignition_on: p.ignition_on,
+    ignition_confidence: p.ignition_confidence || null,
+    ignition_detection_method: p.ignition_detection_method || null,
     gps_time: p.gps_time
   }))
 

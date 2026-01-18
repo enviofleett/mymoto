@@ -147,10 +147,20 @@ export async function buildConversationContext(
  * Creates 2-3 sentence summary focusing on key topics
  */
 async function summarizeConversation(messages: ChatMessage[]): Promise<string> {
-  // Build conversation text
-  const conversationText = messages
+  // Build conversation text, but limit length to prevent API errors
+  // Most LLM APIs have input token limits (e.g., 8000 tokens ≈ 32000 chars)
+  // We'll limit to ~5000 chars (~1250 tokens) to leave room for system prompt and response
+  const MAX_CONVERSATION_LENGTH = 5000;
+  
+  let conversationText = messages
     .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
     .join('\n');
+
+  // If conversation is too long, truncate from the beginning (keep most recent messages)
+  if (conversationText.length > MAX_CONVERSATION_LENGTH) {
+    console.warn(`Conversation text too long (${conversationText.length} chars), truncating to ${MAX_CONVERSATION_LENGTH} chars`);
+    conversationText = '...[earlier messages]...\n' + conversationText.slice(-MAX_CONVERSATION_LENGTH);
+  }
 
   // Create summary prompt
   const summaryPrompt = `Summarize this vehicle chat conversation in 2-3 sentences, focusing on:
@@ -178,7 +188,13 @@ Summary (2-3 sentences):`;
     return result.text || 'Previous conversation covered vehicle status and location queries.';
   } catch (apiError: any) {
     // If API error (400, 429, etc.), return default summary
-    console.error('Summary API error:', apiError?.status || apiError?.message || 'Unknown');
+    const errorStatus = apiError?.status || (apiError instanceof Error ? apiError.message : 'Unknown');
+    console.error('Summary API error:', errorStatus, {
+      messageCount: messages.length,
+      conversationLength: conversationText.length,
+      errorType: apiError?.constructor?.name,
+    });
+    // Return default summary - this is non-blocking, the chat will still work
     return 'Previous conversation covered vehicle status and location queries.';
   }
 }

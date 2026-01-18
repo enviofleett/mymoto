@@ -60,14 +60,19 @@ function toTimezone(date: Date, timezone?: string): Date {
  * @param message - The user's query
  * @param clientTimestamp - Optional client timestamp for accurate "today" calculation
  * @param userTimezone - Optional IANA timezone (e.g., "Africa/Lagos") for accurate day boundaries
+ *                       Defaults to Lagos timezone if not provided
  * @returns DateContext with parsed date range
  */
 export function extractDateContext(message: string, clientTimestamp?: string, userTimezone?: string): DateContext {
+  // Default to Lagos timezone if not provided
+  const DEFAULT_TIMEZONE = 'Africa/Lagos'
+  const tz = userTimezone || DEFAULT_TIMEZONE
+  
   // Use client timestamp if provided, otherwise server time
   const baseNow = clientTimestamp ? new Date(clientTimestamp) : new Date()
   
-  // Convert to user's timezone for accurate day calculations
-  const now = userTimezone ? toTimezone(baseNow, userTimezone) : baseNow
+  // Convert to user's timezone (defaults to Lagos) for accurate day calculations
+  const now = toTimezone(baseNow, tz)
   
   const lowerMessage = message.toLowerCase()
   

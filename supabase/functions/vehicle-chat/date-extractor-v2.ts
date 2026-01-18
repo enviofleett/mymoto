@@ -22,9 +22,13 @@ async function callLovableAPIForDateExtraction(
     throw new Error('LOVABLE_API_KEY must be configured in Supabase secrets')
   }
 
+  // Default to Lagos timezone if not provided
+  const DEFAULT_TIMEZONE = 'Africa/Lagos'
+  const tz = userTimezone || DEFAULT_TIMEZONE
+  
   const now = clientTimestamp ? new Date(clientTimestamp) : new Date()
   const nowISO = now.toISOString()
-  const timezoneInfo = userTimezone ? `User's timezone: ${userTimezone}. ` : ''
+  const timezoneInfo = `User's timezone: ${tz}. `
 
   const systemPrompt = `You are a date extraction assistant. Extract date/time references from user messages and return structured date ranges.
 
@@ -196,8 +200,12 @@ export async function extractDateContextV2(
   clientTimestamp?: string,
   userTimezone?: string
 ): Promise<DateContext> {
+  // Default to Lagos timezone if not provided
+  const DEFAULT_TIMEZONE = 'Africa/Lagos'
+  const tz = userTimezone || DEFAULT_TIMEZONE
+  
   // Step 1: Try regex first (fast path)
-  const regexResult = extractDateContextRegex(message, clientTimestamp, userTimezone)
+  const regexResult = extractDateContextRegex(message, clientTimestamp, tz)
   
   // Step 2: Use LLM for ambiguous cases or low confidence
   if (regexResult.confidence < 0.9 || regexResult.period === 'none') {
@@ -215,7 +223,7 @@ export async function extractDateContextV2(
     
     if (hasAmbiguousPattern || regexResult.confidence < 0.7) {
       try {
-        const llmResult = await callLovableAPIForDateExtraction(message, clientTimestamp, userTimezone)
+        const llmResult = await callLovableAPIForDateExtraction(message, clientTimestamp, tz)
         
         // Use LLM result if it has higher confidence or found a date reference
         if (llmResult.confidence && llmResult.confidence > regexResult.confidence) {

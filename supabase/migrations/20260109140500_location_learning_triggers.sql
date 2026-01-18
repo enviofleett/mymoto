@@ -337,11 +337,14 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION get_current_location_context TO authenticated;
+-- Grant and comments use specific function signature to avoid ambiguity
+-- Note: If function already exists with DOUBLE PRECISION signature (from later migration),
+-- this will update it to use DECIMAL which is compatible
+GRANT EXECUTE ON FUNCTION get_current_location_context(TEXT, DECIMAL, DECIMAL) TO authenticated;
 
 -- Comments
 COMMENT ON TABLE parking_sessions IS 'Tracks individual parking sessions for learning location patterns';
 COMMENT ON FUNCTION detect_parking_and_learn_location IS 'Automatically detects parking sessions and learns location patterns';
 COMMENT ON FUNCTION learn_locations_from_history IS 'Analyzes historical position data to learn frequent locations (use for initial setup)';
 COMMENT ON FUNCTION update_location_visit_frequency IS 'Updates visit frequency statistics for all learned locations';
-COMMENT ON FUNCTION get_current_location_context IS 'Returns context about the current location if it matches a learned location';
+COMMENT ON FUNCTION get_current_location_context(TEXT, DECIMAL, DECIMAL) IS 'Returns context about the current location if it matches a learned location';

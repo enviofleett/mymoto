@@ -9,7 +9,8 @@ import {
   X,
   Settings,
   LogOut,
-  Wallet
+  Wallet,
+  BellRing
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,7 @@ const mainNavItems = [
 ];
 
 const menuItems = [
+  { title: "Notifications", url: "/notifications", icon: BellRing },
   { title: "Settings", url: "/settings", icon: Settings },
   { title: "Admin Wallets", url: "/admin/wallets", icon: Wallet, adminOnly: true },
 ];
@@ -51,7 +53,7 @@ export function BottomNavigation() {
   };
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 safe-area-pb">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 pb-[env(safe-area-inset-bottom)]">
       <div className="flex items-center justify-around h-16">
         {mainNavItems.map((item) => (
           <NavLink

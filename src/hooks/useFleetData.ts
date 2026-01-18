@@ -59,12 +59,26 @@ function getOfflineDuration(updateTime: Date): string {
  * Transform database row to FleetVehicle.
  * FLEET-SCALE SAFE: Status derived from backend is_online field.
  */
+/**
+ * Validate GPS coordinates are within valid ranges
+ * - Latitude: -90 to 90
+ * - Longitude: -180 to 180
+ * - Not null island (0, 0)
+ */
+function isValidCoordinate(lat: number | null, lon: number | null): boolean {
+  if (lat === null || lon === null) return false;
+  if (isNaN(lat) || isNaN(lon)) return false;
+  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return false;
+  if (lat === 0 && lon === 0) return false;
+  return true;
+}
+
 function transformDbRowToVehicle(row: any): FleetVehicle {
   const latitude = row.latitude;
   const longitude = row.longitude;
   const speed = row.speed ?? 0;
   const isOnline = row.is_online ?? false;
-  const hasValidCoords = latitude !== null && longitude !== null && latitude !== 0 && longitude !== 0;
+  const hasValidCoords = isValidCoordinate(latitude, longitude);
   
   // Status derived from backend is_online field - no frontend calculation
   let status: 'moving' | 'stopped' | 'offline' = 'offline';
@@ -152,6 +166,7 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
   console.log("[useFleetData] Fetching from DB (fleet-scale safe)...");
 
   // Fetch positions only - no joins to avoid FK issues
+  // Filter invalid coordinates at query level (lat -90 to 90, lon -180 to 180, not 0,0)
   const { data: positions, error: posError } = await (supabase as any)
     .from('vehicle_positions')
     .select(`
@@ -168,7 +183,14 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
       status_text,
       gps_time,
       cached_at
-    `);
+    `)
+    .not('latitude', 'is', null)
+    .not('longitude', 'is', null)
+    .gte('latitude', -90)
+    .lte('latitude', 90)
+    .gte('longitude', -180)
+    .lte('longitude', 180)
+    .or('latitude.neq.0,longitude.neq.0'); // Not (0,0)
 
   if (posError) throw new Error(`Fleet data error: ${posError.message}`);
 

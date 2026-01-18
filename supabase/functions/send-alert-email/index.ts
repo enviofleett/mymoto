@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { sendEmail, EmailTemplates, getEmailConfig } from "./email-service.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -16,13 +16,6 @@ interface AlertEmailRequest {
   message: string;
   metadata?: Record<string, unknown>;
 }
-
-const SEVERITY_COLORS: Record<string, string> = {
-  critical: "#dc2626",
-  error: "#ea580c",
-  warning: "#ca8a04",
-  info: "#2563eb",
-};
 
 // In-memory deduplication cache (per isolate instance)
 // Key: eventId or deviceId+eventType, Value: timestamp
@@ -91,10 +84,9 @@ const handler = async (req: Request): Promise<Response> => {
   }
 
   try {
-    const gmailUser = Deno.env.get("GMAIL_USER");
-    const gmailPassword = Deno.env.get("GMAIL_APP_PASSWORD");
-
-    if (!gmailUser || !gmailPassword) {
+    // Check if email is configured
+    const emailConfig = getEmailConfig();
+    if (!emailConfig) {
       console.error("Missing Gmail credentials");
       return new Response(
         JSON.stringify({ error: "Email service not configured" }),
@@ -176,8 +168,7 @@ const handler = async (req: Request): Promise<Response> => {
 
     const vehicleName = vehicleData?.device_name || deviceId;
 
-    // Build email HTML
-    const severityColor = SEVERITY_COLORS[severity] || SEVERITY_COLORS.info;
+    // Generate email template
     const timestamp = new Date().toLocaleString("en-US", {
       weekday: "long",
       year: "numeric",
@@ -188,120 +179,22 @@ const handler = async (req: Request): Promise<Response> => {
       timeZoneName: "short",
     });
 
-    const emailHtml = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Vehicle Alert</title>
-</head>
-<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f4f4f5;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="padding: 20px;">
-    <tr>
-      <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
-          <!-- Header -->
-          <tr>
-            <td style="background-color: ${severityColor}; padding: 24px; text-align: center;">
-              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600;">
-                🚨 ${severity.toUpperCase()} ALERT
-              </h1>
-            </td>
-          </tr>
-          
-          <!-- Content -->
-          <tr>
-            <td style="padding: 32px;">
-              <h2 style="margin: 0 0 16px 0; color: #18181b; font-size: 20px;">${title}</h2>
-              
-              <div style="background-color: #f4f4f5; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
-                <table width="100%" cellpadding="0" cellspacing="0">
-                  <tr>
-                    <td style="padding: 8px 0;">
-                      <strong style="color: #71717a;">Vehicle:</strong>
-                      <span style="color: #18181b; margin-left: 8px;">${vehicleName}</span>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 0;">
-                      <strong style="color: #71717a;">Device ID:</strong>
-                      <span style="color: #18181b; margin-left: 8px; font-family: monospace;">${deviceId}</span>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 0;">
-                      <strong style="color: #71717a;">Event Type:</strong>
-                      <span style="color: #18181b; margin-left: 8px;">${eventType.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}</span>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 0;">
-                      <strong style="color: #71717a;">Time:</strong>
-                      <span style="color: #18181b; margin-left: 8px;">${timestamp}</span>
-                    </td>
-                  </tr>
-                </table>
-              </div>
-              
-              <div style="background-color: #fef3c7; border-left: 4px solid ${severityColor}; padding: 16px; border-radius: 0 8px 8px 0; margin-bottom: 24px;">
-                <p style="margin: 0; color: #92400e; font-size: 14px;">${message}</p>
-              </div>
-              
-              ${metadata ? `
-              <div style="margin-bottom: 24px;">
-                <h3 style="margin: 0 0 12px 0; color: #71717a; font-size: 14px; text-transform: uppercase;">Additional Details</h3>
-                <pre style="background-color: #f4f4f5; padding: 12px; border-radius: 4px; font-size: 12px; overflow-x: auto; color: #18181b;">${JSON.stringify(metadata, null, 2)}</pre>
-              </div>
-              ` : ""}
-              
-              <p style="margin: 0; color: #71717a; font-size: 14px;">
-                Please review this alert and take appropriate action if needed.
-              </p>
-            </td>
-          </tr>
-          
-          <!-- Footer -->
-          <tr>
-            <td style="background-color: #f4f4f5; padding: 20px; text-align: center; border-top: 1px solid #e4e4e7;">
-              <p style="margin: 0; color: #71717a; font-size: 12px;">
-                MyMoto Fleet Management System
-              </p>
-              <p style="margin: 8px 0 0 0; color: #a1a1aa; font-size: 11px;">
-                This is an automated notification. Do not reply to this email.
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-    `;
-
-    // Send email using Gmail SMTP
-    const client = new SMTPClient({
-      connection: {
-        hostname: "smtp.gmail.com",
-        port: 465,
-        tls: true,
-        auth: {
-          username: gmailUser,
-          password: gmailPassword,
-        },
-      },
+    const emailTemplate = EmailTemplates.alert({
+      severity: (severity as 'info' | 'warning' | 'error' | 'critical') || 'info',
+      title,
+      message,
+      vehicleName,
+      timestamp,
+      metadata,
     });
 
-    await client.send({
-      from: gmailUser,
+    // Send email using shared email service
+    await sendEmail({
       to: adminEmails,
-      subject: `[${severity.toUpperCase()}] ${title} - ${vehicleName}`,
-      content: message,
-      html: emailHtml,
+      subject: emailTemplate.subject,
+      html: emailTemplate.html,
+      text: message,
     });
-
-    await client.close();
 
     // Mark alert as sent for deduplication
     markAlertSent(eventId, deviceId, eventType);

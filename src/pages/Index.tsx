@@ -2,7 +2,6 @@ import { Wifi, MapPin, BatteryWarning, Truck, RefreshCw, UserPlus, Plus } from "
 import { DashboardLayout } from "@/components/layouts/DashboardLayout";
 import { MetricCard } from "@/components/fleet/MetricCard";
 import { RecentActivityFeed } from "@/components/fleet/RecentActivityFeed";
-import { AdminGpsStatus } from "@/components/fleet/AdminGpsStatus";
 import { GpsSyncHealthDashboard } from "@/components/fleet/GpsSyncHealthDashboard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -60,12 +59,9 @@ const Index = () => {
           </p>
         </div>
 
-        {/* Admin GPS Status & Sync Health */}
+        {/* Admin GPS Sync Health */}
         {isAdmin && (
-          <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
-            <AdminGpsStatus />
-            <GpsSyncHealthDashboard />
-          </div>
+          <GpsSyncHealthDashboard />
         )}
 
         {/* Error State */}
@@ -75,12 +71,14 @@ const Index = () => {
           </div>
         )}
 
-        {/* Metrics Grid */}
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
-          {displayMetrics.map((metric) => (
-            <MetricCard key={metric.title} {...metric} />
-          ))}
-        </div>
+        {/* Metrics Grid - Only show if not admin (admin sees GPS Sync Health instead) */}
+        {!isAdmin && (
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
+            {displayMetrics.map((metric) => (
+              <MetricCard key={metric.title} {...metric} />
+            ))}
+          </div>
+        )}
 
         {/* Quick Actions */}
         <Card>

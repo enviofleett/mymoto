@@ -1,10 +1,14 @@
 import { ReactNode } from "react";
+import { useLocation } from "react-router-dom";
 import { TopNavigation } from "@/components/navigation/TopNavigation";
 import { BottomNavigation } from "@/components/navigation/BottomNavigation";
+import { AdminBottomNav } from "@/components/navigation/AdminBottomNav";
 import { DashboardFooter } from "@/components/fleet/DashboardFooter";
 import { GlobalAlertListener } from "@/components/notifications/GlobalAlertListener";
 import { StickyAlertBanner } from "@/components/notifications/StickyAlertBanner";
+import { useAuth } from "@/contexts/AuthContext";
 import { ConnectionStatus } from "@/hooks/useFleetData";
+import { useFooterPadding } from "@/hooks/useFooterPadding";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -12,18 +16,33 @@ interface DashboardLayoutProps {
 }
 
 export function DashboardLayout({ children, connectionStatus }: DashboardLayoutProps) {
+  const location = useLocation();
+  const { isAdmin } = useAuth();
+  const footerPadding = useFooterPadding();
+  
+  // Determine if we should show AdminBottomNav
+  // Admin routes: /, /fleet, /map, /insights, /settings, /notifications, and all /admin/* routes
+  const isAdminRoute = location.pathname.startsWith('/admin') || 
+                       location.pathname === '/' || 
+                       location.pathname === '/fleet' ||
+                       location.pathname === '/map' ||
+                       location.pathname === '/insights' ||
+                       location.pathname === '/settings' ||
+                       location.pathname === '/notifications';
+  const shouldShowAdminNav = isAdmin && isAdminRoute;
+
   return (
-    <div className="flex min-h-screen w-full flex-col bg-background">
+    <div className="flex h-[100dvh] w-full flex-col bg-background overflow-hidden">
       {/* Global Alert Listener - Real-time notifications */}
       <GlobalAlertListener />
       
       {/* Sticky Alert Banner - Shows at top header */}
       <StickyAlertBanner />
       
-      {/* Desktop Top Navigation */}
-      <div className="hidden md:block">
+      {/* Desktop Top Navigation - DISABLED: Using footer navigation only */}
+      {/* <div className="hidden md:block">
         <TopNavigation connectionStatus={connectionStatus} />
-      </div>
+      </div> */}
 
       {/* Mobile Header - Simple branding */}
       <header className="md:hidden sticky top-0 z-40 flex h-14 items-center border-b border-border bg-background/95 backdrop-blur px-4">
@@ -72,18 +91,19 @@ export function DashboardLayout({ children, connectionStatus }: DashboardLayoutP
         )}
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-auto p-4 md:p-6 pb-20 md:pb-6">
-        {children}
+      {/* Main Content - Dynamic padding ensures content is never cut off by footer */}
+      <main className={`flex-1 overflow-y-auto p-4 md:p-6 ${footerPadding}`}>
+        <div className="pb-4">
+          {children}
+        </div>
       </main>
 
-      {/* Desktop Footer */}
-      <div className="hidden md:block">
-        <DashboardFooter />
-      </div>
-
-      {/* Mobile Bottom Navigation */}
-      <BottomNavigation />
+      {/* Bottom Navigation - Shows on all screen sizes */}
+      {shouldShowAdminNav ? (
+        <AdminBottomNav />
+      ) : (
+        <BottomNavigation />
+      )}
     </div>
   );
 }

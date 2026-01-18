@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useEffect, useState } from "react";
+import type { VehicleTrip } from "./useVehicleProfile";
 
 export interface TripSyncStatus {
   id: string;
@@ -178,16 +179,45 @@ export function useRealtimeTripUpdates(deviceId: string | null, enabled: boolean
           filter: `device_id=eq.${deviceId}`,
         },
         (payload) => {
-          console.log("[Realtime] New trip detected:", payload.new);
+          const newTrip = payload.new as VehicleTrip;
+          console.log("[Realtime] New trip detected:", newTrip);
 
-          // Invalidate trips query to refetch
-          queryClient.invalidateQueries({ queryKey: ["vehicle-trips", deviceId] });
+          // Directly update cache instead of invalidating (instant update, no refetch delay)
+          queryClient.setQueryData(
+            ["vehicle-trips", deviceId],
+            (oldData: VehicleTrip[] | undefined) => {
+              if (!oldData) return [newTrip];
+              
+              // Check if trip already exists (prevent duplicates)
+              const exists = oldData.some(t => 
+                t.id === newTrip.id || 
+                (t.start_time === newTrip.start_time && 
+                 Math.abs((t.distance_km || 0) - (newTrip.distance_km || 0)) < 0.1)
+              );
+              
+              if (exists) return oldData;
+              
+              // Add new trip at the beginning (most recent first)
+              return [newTrip, ...oldData];
+            }
+          );
+          
+          // Invalidate related queries (for derived stats)
           queryClient.invalidateQueries({ queryKey: ["mileage-stats", deviceId] });
           queryClient.invalidateQueries({ queryKey: ["vehicle-daily-stats", deviceId] });
 
-          // Show toast notification
+          // Show toast notification with trip details
+          const distance = newTrip.distance_km ? `${newTrip.distance_km.toFixed(1)} km` : '';
+          const duration = newTrip.duration_seconds 
+            ? `${Math.round(newTrip.duration_seconds / 60)} min` 
+            : '';
+          const description = distance && duration 
+            ? `${distance} • ${duration}` 
+            : "Travel history updated";
+          
           toast.success("New trip recorded", {
-            description: "Travel history updated",
+            description,
+            duration: 3000,
           });
         }
       )

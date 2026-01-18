@@ -5,6 +5,7 @@ import { routeQuery } from './query-router.ts'
 import { parseCommand, containsCommandKeywords, getCommandMetadata, GeofenceAlertParams } from './command-parser.ts'
 import { learnAndGetPreferences, buildPreferenceContext } from './preference-learner.ts'
 import { extractDateContext, isHistoricalMovementQuery, calculateDistanceFromHistory, DateContext } from './date-extractor.ts'
+import { detectIgnition, normalizeSpeed } from './_shared/telemetry-normalizer.ts'
 
 // ============================================================================
 // INLINED MODULES (for Dashboard deployment compatibility)
@@ -1619,11 +1620,38 @@ async function formatTripsAsNarrative(
   // Process each date's trips into natural paragraph narratives
   const allParagraphs: string[] = []
   
+  // Track totals across all dates for summary statistics
+  let totalDriveTimeMinutes = 0
+  let totalParkingTimeMinutes = 0
+  let totalKilometers = 0
+  const allEnrichedTrips: Array<{
+    startTime: Date
+    endTime: Date
+    durationMinutes: number
+    distanceKm: number
+  }> = []
+  
   for (const [date, dateTrips] of tripsByDate.entries()) {
     // Sort trips by start time (earliest first)
     const sortedTrips = dateTrips.sort((a, b) => 
       new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
     )
+    
+    // Filter out ghost trips (0 km or < 0.1 km)
+    const validTrips = sortedTrips.filter(trip => {
+      const distance = trip.distance_km || 0
+      return distance > 0.1 // Exclude trips with 0 km or < 100m
+    })
+    
+    if (validTrips.length === 0) {
+      console.log(`No valid trips after filtering ghost trips for date ${date}`)
+      continue
+    }
+    
+    const filteredCount = sortedTrips.length - validTrips.length
+    if (filteredCount > 0) {
+      console.log(`Filtered ${filteredCount} ghost trips (0 km or < 0.1 km) for date ${date}`)
+    }
     
     // Enrich trips with addresses and metadata
     const enrichedTrips: Array<{
@@ -1640,7 +1668,7 @@ async function formatTripsAsNarrative(
       timeReadable: string
     }> = []
     
-    for (const trip of sortedTrips) {
+    for (const trip of validTrips) {
       const startTime = new Date(trip.start_time)
       const endTime = new Date(trip.end_time)
       const durationMs = endTime.getTime() - startTime.getTime()
@@ -1754,6 +1782,14 @@ async function formatTripsAsNarrative(
         timeReadable
       })
       
+      // Track for summary statistics
+      allEnrichedTrips.push({
+        startTime,
+        endTime,
+        durationMinutes,
+        distanceKm
+      })
+      
       await new Promise(resolve => setTimeout(resolve, 100))
     }
     
@@ -1800,19 +1836,44 @@ async function formatTripsAsNarrative(
       const isLastGroup = groupIndex === tripGroups.length - 1
       
       if (group.length === 1) {
-        // Single trip - use varied narrative
+        // Single trip - use explicit time and location format
         const t = group[0]
-        const distanceReadable = formatDistanceReadable(t.distanceKm)
+        const startTimeReadable = formatTimeReadable(t.startTime)
         const endTimeReadable = formatTimeReadable(t.endTime)
         
         let paragraph = ''
         
+        // Calculate parking duration before this trip
+        let parkingDurationMinutes = 0
+        if (!isFirstGroup) {
+          const prevTrip = tripGroups[groupIndex - 1][tripGroups[groupIndex - 1].length - 1]
+          parkingDurationMinutes = Math.round((t.startTime.getTime() - prevTrip.endTime.getTime()) / (60 * 1000))
+        }
+        
+        // Format parking duration
+        let parkingDurationText = ''
+        if (parkingDurationMinutes > 0) {
+          if (parkingDurationMinutes < 60) {
+            parkingDurationText = `${parkingDurationMinutes} minute${parkingDurationMinutes > 1 ? 's' : ''}`
+          } else {
+            const hours = Math.floor(parkingDurationMinutes / 60)
+            const minutes = parkingDurationMinutes % 60
+            if (minutes === 0) {
+              parkingDurationText = `${hours} hour${hours > 1 ? 's' : ''}`
+            } else {
+              parkingDurationText = `${hours} hour${hours > 1 ? 's' : ''} and ${minutes} minute${minutes > 1 ? 's' : ''}`
+            }
+          }
+        }
+        
+        // Build paragraph with explicit times and locations
         if (isFirstGroup) {
-          paragraph = `I began my day ${t.timeReadable} with ${t.tripCharacter} ${distanceReadable} drive from ${t.startAddress} to ${t.endAddress}.`
+          paragraph = `At ${startTimeReadable}, I started from ${t.startAddress} and drove to ${t.endAddress}, arriving at ${endTimeReadable}.`
         } else {
-          const timeGap = Math.round((t.startTime.getTime() - tripGroups[groupIndex - 1][tripGroups[groupIndex - 1].length - 1].endTime.getTime()) / (60 * 1000))
-          const timeConnector = timeGap < 30 ? 'Shortly after' : timeGap < 120 ? 'A little later' : 'Later'
-          paragraph = `${timeConnector}, I made ${t.tripCharacter} ${distanceReadable} journey from ${t.startAddress} to ${t.endAddress}.`
+          paragraph = `At ${startTimeReadable}, I started from ${t.startAddress} and drove to ${t.endAddress}, arriving at ${endTimeReadable}.`
+          if (parkingDurationText) {
+            paragraph += ` I was parked for ${parkingDurationText} before this trip.`
+          }
         }
         
         if (t.idlingInfo && t.idlingInfo.durationMinutes >= 5) {
@@ -1822,7 +1883,6 @@ async function formatTripsAsNarrative(
           paragraph += ` Along the way, I paused for ${idleDurationReadable} near ${t.idlingInfo.location}, likely waiting for traffic to ease.`
         }
         
-        paragraph += ` I arrived ${endTimeReadable} and settled in.`
         allParagraphs.push(paragraph)
         
       } else {
@@ -1891,85 +1951,103 @@ async function formatTripsAsNarrative(
   // Rejoin with double line breaks
   fullNarrative = brokenParagraphs.join('\n\n')
   
+  // Calculate summary statistics from all enriched trips
+  if (allEnrichedTrips.length > 0) {
+    // Sort all trips by start time to calculate parking durations correctly
+    const sortedAllTrips = [...allEnrichedTrips].sort((a, b) => 
+      a.startTime.getTime() - b.startTime.getTime()
+    )
+    
+    // Calculate totals
+    totalDriveTimeMinutes = sortedAllTrips.reduce((sum, t) => sum + t.durationMinutes, 0)
+    totalKilometers = sortedAllTrips.reduce((sum, t) => sum + t.distanceKm, 0)
+    
+    // Calculate total parking time (gaps between trips)
+    for (let i = 1; i < sortedAllTrips.length; i++) {
+      const prevTrip = sortedAllTrips[i - 1]
+      const currentTrip = sortedAllTrips[i]
+      const parkingGap = Math.round((currentTrip.startTime.getTime() - prevTrip.endTime.getTime()) / (60 * 1000))
+      if (parkingGap > 0) {
+        totalParkingTimeMinutes += parkingGap
+      }
+    }
+    
+    // Format drive time
+    let driveTimeText = ''
+    if (totalDriveTimeMinutes < 60) {
+      driveTimeText = `${totalDriveTimeMinutes} minute${totalDriveTimeMinutes > 1 ? 's' : ''}`
+    } else {
+      const hours = Math.floor(totalDriveTimeMinutes / 60)
+      const minutes = totalDriveTimeMinutes % 60
+      if (minutes === 0) {
+        driveTimeText = `${hours} hour${hours > 1 ? 's' : ''}`
+      } else {
+        driveTimeText = `${hours} hour${hours > 1 ? 's' : ''} and ${minutes} minute${minutes > 1 ? 's' : ''}`
+      }
+    }
+    
+    // Format parking time
+    let parkingTimeText = ''
+    if (totalParkingTimeMinutes === 0) {
+      parkingTimeText = '0 minutes'
+    } else if (totalParkingTimeMinutes < 60) {
+      parkingTimeText = `${totalParkingTimeMinutes} minute${totalParkingTimeMinutes > 1 ? 's' : ''}`
+    } else {
+      const hours = Math.floor(totalParkingTimeMinutes / 60)
+      const minutes = totalParkingTimeMinutes % 60
+      if (minutes === 0) {
+        parkingTimeText = `${hours} hour${hours > 1 ? 's' : ''}`
+      } else {
+        parkingTimeText = `${hours} hour${hours > 1 ? 's' : ''} and ${minutes} minute${minutes > 1 ? 's' : ''}`
+      }
+    }
+    
+    // Format kilometers (round to 1 decimal place)
+    const kilometersText = totalKilometers.toFixed(1)
+    
+    // Add summary section
+    const summaryText = `\n\nIn total, I drove for ${driveTimeText}, was parked for ${parkingTimeText}, and covered ${kilometersText} kilometers.`
+    fullNarrative += summaryText
+  }
+  
   // Add gentle call-to-action at the end
   const finalNarrative = `${fullNarrative}\n\nWhenever you're curious to see the full breakdown of these trips, you can find all the details in my car profile.`
   
   return finalNarrative
 }
 
-// Helper: Format time in human-readable way
+// Helper: Format time in 12:13am format with Lagos timezone
 function formatTimeReadable(date: Date): string {
-  const hour = date.getHours()
-  const minute = date.getMinutes()
+  // Convert to Lagos timezone
+  const lagosTimeStr = date.toLocaleString('en-US', { 
+    timeZone: 'Africa/Lagos',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  })
   
-  // Determine period and convert to 12-hour format
-  let period: string
-  let hour12: number
+  // Parse the formatted string to extract hour, minute, and period
+  // Format from toLocaleString: "12:13 AM" or "1:45 PM"
+  const parts = lagosTimeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i)
   
-  if (hour === 0) {
-    period = 'in the morning'
-    hour12 = 12
-  } else if (hour < 12) {
-    period = 'in the morning'
-    hour12 = hour
-  } else if (hour === 12) {
-    period = 'in the afternoon'
-    hour12 = 12
-  } else {
-    period = 'in the afternoon'
-    hour12 = hour - 12
+  if (parts) {
+    const hour = parseInt(parts[1], 10)
+    const minute = parts[2]
+    const period = parts[3].toLowerCase()
+    return `${hour}:${minute}${period}`
   }
   
-  // Format based on minutes
-  if (minute === 0) {
-    return `just after ${hour12} ${period}`
-  } else if (minute < 10) {
-    return `just after ${hour12} ${period}`
-  } else if (minute < 30) {
-    return `around ${hour12}:${minute.toString().padStart(2, '0')} ${period}`
-  } else if (minute < 45) {
-    // Calculate next hour in 12-hour format
-    const nextHour = hour + 1
-    let nextHour12: number
-    let nextPeriod: string
-    
-    if (nextHour === 24) {
-      nextPeriod = 'in the morning'
-      nextHour12 = 12
-    } else if (nextHour < 12) {
-      nextPeriod = 'in the morning'
-      nextHour12 = nextHour
-    } else if (nextHour === 12) {
-      nextPeriod = 'in the afternoon'
-      nextHour12 = 12
-    } else {
-      nextPeriod = 'in the afternoon'
-      nextHour12 = nextHour - 12
-    }
-    
-    return `a little before ${nextHour12} ${nextPeriod}`
-  } else {
-    // Calculate next hour in 12-hour format
-    const nextHour = hour + 1
-    let nextHour12: number
-    let nextPeriod: string
-    
-    if (nextHour === 24) {
-      nextPeriod = 'in the morning'
-      nextHour12 = 12
-    } else if (nextHour < 12) {
-      nextPeriod = 'in the morning'
-      nextHour12 = nextHour
-    } else if (nextHour === 12) {
-      nextPeriod = 'in the afternoon'
-      nextHour12 = 12
-    } else {
-      nextPeriod = 'in the afternoon'
-      nextHour12 = nextHour - 12
-    }
-    
-    return `a little before ${nextHour12} ${nextPeriod}`
-  }
+  // Fallback: manual conversion if parsing fails
+  const lagosDate = new Date(date.toLocaleString('en-US', { timeZone: 'Africa/Lagos' }))
+  const hour = lagosDate.getHours()
+  const minute = lagosDate.getMinutes()
+  
+  // Convert to 12-hour format
+  const hour12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour
+  const period = hour < 12 ? 'am' : 'pm'
+  const minuteStr = minute.toString().padStart(2, '0')
+  
+  return `${hour12}:${minuteStr}${period}`
 }
 
 // Helper: Format distance in human-readable way
@@ -2231,6 +2309,7 @@ async function fetchFreshGpsData(supabase: any, deviceId: string): Promise<any> 
 }
 
 serve(async (req) => {
+  
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
@@ -2488,7 +2567,12 @@ serve(async (req) => {
           heading: freshData.heading,
           altitude: freshData.altitude,
           battery_percent: freshData.voltagepercent > 0 ? freshData.voltagepercent : null,
-          ignition_on: freshData.strstatus?.toUpperCase().includes('ACC ON') || false,
+          ignition_on: (() => {
+            // Use improved ignition detection from telemetry-normalizer
+            const speedKmh = normalizeSpeed(freshData.speed);
+            const result = detectIgnition(freshData as any, speedKmh);
+            return result.ignition_on;
+          })(),
           is_online: freshData.updatetime ? (Date.now() - new Date(freshData.updatetime).getTime() < 600000) : false,
           is_overspeeding: freshData.currentoverspeedstate === 1,
           total_mileage: freshData.totaldistance,
@@ -2563,8 +2647,9 @@ serve(async (req) => {
       .limit(10)
 
     // 4.5. Extract date context from user message for historical queries (Enhanced V2)
-    // TODO: Fetch user timezone from user preferences/profile
-    const userTimezone = null // Will be fetched from user profile in future
+    // Enforce Lagos timezone across all date operations
+    const DEFAULT_TIMEZONE = 'Africa/Lagos'
+    const userTimezone = DEFAULT_TIMEZONE // Always use Lagos timezone (Africa/Lagos)
     
     // Use enhanced date extraction (hybrid: regex + LLM)
     let dateContext: DateContext
@@ -2574,7 +2659,17 @@ serve(async (req) => {
       // Validate extracted date context
       const validation = validateDateContext(dateContext)
       if (!validation.isValid && validation.corrected) {
-        console.warn('[Date Extraction] Validation issues found, using corrected dates:', validation.issues)
+        // Only warn about significant issues (not just minor date corrections)
+        const significantIssues = validation.issues.filter(issue => 
+          !issue.includes('End date is in the future') && 
+          !issue.includes('Start date is in the future')
+        )
+        if (significantIssues.length > 0) {
+          console.warn('[Date Extraction] Validation issues found, using corrected dates:', validation.issues)
+        } else {
+          // Minor corrections (future dates) are common and expected, just log at debug level
+          console.log('[Date Extraction] Auto-corrected future date to current time (expected behavior)')
+        }
         dateContext = validation.corrected
       }
     } catch (error) {
@@ -2889,6 +2984,20 @@ serve(async (req) => {
         if (label) {
           currentLocationName = `${label} (${learnedLocationContext.location_type})`
         }
+        
+        // Fetch time-of-day patterns for this location (multi-time pattern detection)
+        try {
+          const { data: locationPatterns } = await supabase.rpc('get_location_patterns_context', {
+            p_location_id: learnedLocationContext.location_id
+          })
+          // Store patterns in learnedLocationContext for later use in prompt
+          if (locationPatterns && Array.isArray(locationPatterns)) {
+            learnedLocationContext.patterns = locationPatterns
+          }
+        } catch (patternError) {
+          // Pattern fetch is optional, don't block if it fails
+          console.warn('Failed to fetch location patterns:', patternError)
+        }
       }
 
       // Fallback to geocoding if no learned location
@@ -3069,12 +3178,14 @@ serve(async (req) => {
     let languagePref = (llmSettings?.language_preference || 'english').toLowerCase().trim()
     const personalityMode = (llmSettings?.personality_mode || 'casual').toLowerCase().trim()
     
+    
     // Validate language preference against allowed values (prevent switching)
     const allowedLanguages = ['english', 'pidgin', 'yoruba', 'hausa', 'igbo', 'french']
     if (!allowedLanguages.includes(languagePref)) {
       console.warn(`[LANGUAGE VALIDATION] Invalid language preference: "${languagePref}", using english. Original value: "${llmSettings?.language_preference}"`)
       languagePref = 'english' // Use default, but don't change the stored value
     }
+    
 
     // Generate Google Maps link (reuse lat/lon from geocoding)
     const googleMapsLink = lat && lon ? `https://www.google.com/maps?q=${lat},${lon}` : null
@@ -3359,7 +3470,7 @@ CURRENT STATUS:
 - Speed: ${pos?.speed || 0} km/h ${pos?.is_overspeeding ? '(OVERSPEEDING!)' : ''}
 - Battery: ${pos?.battery_percent ?? 'Unknown'}%
 - Current Location: ${currentLocationName}
-${learnedLocationContext ? `  * This is a learned location! You've visited "${learnedLocationContext.custom_label || learnedLocationContext.location_name}" ${learnedLocationContext.visit_count} times (${learnedLocationContext.last_visit_days_ago} days since last visit). Typical stay: ${learnedLocationContext.typical_duration_minutes} minutes.` : ''}
+${learnedLocationContext ? `  * This is a learned location! You've visited "${learnedLocationContext.custom_label || learnedLocationContext.location_name}" ${learnedLocationContext.visit_count} times (${learnedLocationContext.last_visit_days_ago} days since last visit). Typical stay: ${learnedLocationContext.typical_duration_minutes} minutes.${learnedLocationContext.patterns && Array.isArray(learnedLocationContext.patterns) && learnedLocationContext.patterns.length > 0 ? ` Visit patterns: ${learnedLocationContext.patterns.map((p: any) => `${p.time_of_day} (${p.visit_count} visits, typically ${p.typical_hour}:00)`).join(', ')}.` : ''}` : ''}
 - GPS Coordinates: ${lat?.toFixed(5) || 'N/A'}, ${lon?.toFixed(5) || 'N/A'}
 - Google Maps: ${googleMapsLink || 'N/A'}
 - Total Mileage: ${pos?.total_mileage ? (pos.total_mileage / 1000).toFixed(1) + ' km' : 'Unknown'}
@@ -3607,6 +3718,7 @@ IMPORTANT:
           // 10. Save conversation to database with embeddings for RAG
           console.log('Saving conversation with embeddings...')
           
+          
           try {
             // Generate embeddings for both messages
             const userEmbedding = generateTextEmbedding(message)
@@ -3635,6 +3747,7 @@ IMPORTANT:
               .insert(messagesToInsert)
               .select()
             
+            
             if (insertError) {
               console.error('Error saving chat history with embeddings:', insertError)
               
@@ -3647,6 +3760,7 @@ IMPORTANT:
                   { device_id, user_id, role: 'assistant', content: fullResponse }
                 ])
                 .select()
+              
               
               if (fallbackError) {
                 console.error('CRITICAL: Failed to save chat history even without embeddings:', fallbackError)

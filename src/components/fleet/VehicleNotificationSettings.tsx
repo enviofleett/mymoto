@@ -18,7 +18,8 @@ import {
   Route,
   AlertTriangle,
   Sun,
-  Bell
+  Bell,
+  MessageSquare
 } from "lucide-react";
 
 interface VehicleNotificationPreferences {
@@ -41,6 +42,22 @@ interface VehicleNotificationPreferences {
   trip_completed: boolean;
   anomaly_detected: boolean;
   morning_greeting: boolean;
+  // AI Chat preferences (separate from push notifications)
+  enable_ai_chat_ignition_on?: boolean;
+  enable_ai_chat_ignition_off?: boolean;
+  enable_ai_chat_low_battery?: boolean;
+  enable_ai_chat_critical_battery?: boolean;
+  enable_ai_chat_overspeeding?: boolean;
+  enable_ai_chat_harsh_braking?: boolean;
+  enable_ai_chat_rapid_acceleration?: boolean;
+  enable_ai_chat_geofence_enter?: boolean;
+  enable_ai_chat_geofence_exit?: boolean;
+  enable_ai_chat_idle_too_long?: boolean;
+  enable_ai_chat_trip_completed?: boolean;
+  enable_ai_chat_offline?: boolean;
+  enable_ai_chat_online?: boolean;
+  enable_ai_chat_maintenance_due?: boolean;
+  enable_ai_chat_anomaly_detected?: boolean;
 }
 
 interface VehicleNotificationSettingsProps {
@@ -412,22 +429,21 @@ export function VehicleNotificationSettings({ deviceId, userId }: VehicleNotific
             <div className="space-y-3">
               {events.map((event) => {
                 const Icon = event.icon;
-                const value = preferences[event.key] as boolean;
+                const pushValue = preferences[event.key] as boolean;
+                const aiChatKey = `enable_ai_chat_${event.key}` as keyof VehicleNotificationPreferences;
+                const aiChatValue = (preferences[aiChatKey] as boolean) ?? false;
                 
                 return (
                   <div
                     key={event.key}
-                    className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border/50"
+                    className="p-3 rounded-lg bg-muted/50 border border-border/50 space-y-3"
                   >
-                    <div className="flex items-center gap-3 flex-1">
+                    <div className="flex items-center gap-3">
                       <div className="p-2 rounded-lg bg-background shadow-sm">
                         <Icon className="h-4 w-4 text-muted-foreground" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <Label
-                          htmlFor={`notif-${event.key}`}
-                          className="text-sm font-medium text-foreground cursor-pointer"
-                        >
+                        <Label className="text-sm font-medium text-foreground">
                           {event.label}
                         </Label>
                         <p className="text-xs text-muted-foreground mt-0.5">
@@ -435,12 +451,47 @@ export function VehicleNotificationSettings({ deviceId, userId }: VehicleNotific
                         </p>
                       </div>
                     </div>
-                    <Switch
-                      id={`notif-${event.key}`}
-                      checked={value}
-                      onCheckedChange={(checked) => updatePreference(event.key, checked)}
-                      disabled={saving}
-                    />
+                    
+                    {/* Separate toggles for Push Notifications and AI Chat */}
+                    <div className="space-y-2 pl-11">
+                      {/* Push Notifications Toggle */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Bell className="h-3.5 w-3.5 text-muted-foreground" />
+                          <Label
+                            htmlFor={`push-${event.key}`}
+                            className="text-xs text-muted-foreground cursor-pointer"
+                          >
+                            Push Notification
+                          </Label>
+                        </div>
+                        <Switch
+                          id={`push-${event.key}`}
+                          checked={pushValue}
+                          onCheckedChange={(checked) => updatePreference(event.key, checked)}
+                          disabled={saving}
+                        />
+                      </div>
+                      
+                      {/* AI Chat Toggle */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
+                          <Label
+                            htmlFor={`aichat-${event.key}`}
+                            className="text-xs text-muted-foreground cursor-pointer"
+                          >
+                            AI Chat Message
+                          </Label>
+                        </div>
+                        <Switch
+                          id={`aichat-${event.key}`}
+                          checked={aiChatValue}
+                          onCheckedChange={(checked) => updatePreference(aiChatKey, checked)}
+                          disabled={saving}
+                        />
+                      </div>
+                    </div>
                   </div>
                 );
               })}
@@ -448,10 +499,14 @@ export function VehicleNotificationSettings({ deviceId, userId }: VehicleNotific
           </div>
         ))}
         
-        <div className="pt-4 border-t border-border">
+        <div className="pt-4 border-t border-border space-y-2">
           <p className="text-xs text-muted-foreground">
             💡 <strong>Tip:</strong> Critical alerts (battery, offline, anomalies) are enabled by default for safety.
             You can disable them if you prefer fewer notifications.
+          </p>
+          <p className="text-xs text-muted-foreground">
+            📱 <strong>Push Notifications</strong> send alerts to your device. <strong>AI Chat Messages</strong> create conversational messages in the vehicle chat.
+            You can enable either or both independently.
           </p>
         </div>
       </CardContent>

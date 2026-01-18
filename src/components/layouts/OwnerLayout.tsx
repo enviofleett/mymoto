@@ -1,9 +1,10 @@
 import { ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { MessageCircle, Car, Wallet, User } from "lucide-react";
+import { MessageCircle, Car, Wallet, User, Bell } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { GlobalAlertListener } from "@/components/notifications/GlobalAlertListener";
 import { StickyAlertBanner } from "@/components/notifications/StickyAlertBanner";
+import { useOwnerFooterPadding } from "@/hooks/useFooterPadding";
 interface OwnerLayoutProps {
   children: ReactNode;
 }
@@ -17,6 +18,9 @@ const navItems = [{
   icon: Wallet,
   path: "/owner/wallet"
 }, {
+  icon: Bell,
+  path: "/owner/notifications"
+}, {
   icon: User,
   path: "/owner/profile"
 }];
@@ -25,22 +29,28 @@ export function OwnerLayout({
 }: OwnerLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
+  const footerPadding = useOwnerFooterPadding();
   const isActive = (path: string) => {
     if (path === "/owner") {
       return location.pathname === "/owner" || location.pathname.startsWith("/owner/chat");
     }
+    if (path === "/owner/notifications") {
+      return location.pathname === "/owner/notifications";
+    }
     return location.pathname.startsWith(path);
   };
-  return <div className="min-h-screen min-h-[100dvh] bg-background flex flex-col">
+  return <div className="h-[100dvh] bg-background flex flex-col overflow-hidden">
       {/* Global Alert Listener - Real-time notifications */}
       <GlobalAlertListener />
       
       {/* Sticky Alert Banner - Shows at top header */}
       <StickyAlertBanner />
       
-      {/* Main Content - scrollable area above fixed nav */}
-      <main className="flex-1 overflow-auto pb-[calc(5.5rem+env(safe-area-inset-bottom))]">
-        {children}
+      {/* Main Content - Dynamic padding ensures content is never cut off by footer */}
+      <main className={`flex-1 overflow-y-auto p-4 md:p-6 ${footerPadding}`}>
+        <div className="pb-4">
+          {children}
+        </div>
       </main>
 
       {/* Bottom Navigation - Premium Neumorphic Icon-Only Design */}

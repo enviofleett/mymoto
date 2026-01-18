@@ -393,7 +393,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Map event_type to preference key
+    // Map event_type to preference key (for push/sound notifications)
     const eventTypeToPreference: Record<string, string> = {
       'low_battery': 'low_battery',
       'critical_battery': 'critical_battery',
@@ -414,63 +414,70 @@ Deno.serve(async (req) => {
 
     const preferenceKey = eventTypeToPreference[proactiveEvent.event_type];
 
-    // Check vehicle-specific notification preferences
-    let enabledUserIds: string[] = userIds;
+    // Check AI Chat preferences (separate from push/sound notifications)
+    // Only create chat messages if AI Chat is enabled for this event type
+    const aiChatPreferenceKey = preferenceKey ? `enable_ai_chat_${preferenceKey}` : null;
+    let aiChatEnabledUserIds: string[] = [];
 
-    if (preferenceKey) {
-      const { data: vehiclePrefs, error: prefsError } = await supabase
+    if (aiChatPreferenceKey) {
+      const { data: aiChatPrefs, error: aiChatPrefsError } = await supabase
         .from('vehicle_notification_preferences')
-        .select('user_id, ' + preferenceKey)
+        .select(`user_id, ${aiChatPreferenceKey}`)
         .eq('device_id', proactiveEvent.device_id)
         .in('user_id', userIds);
 
-      if (prefsError) {
-        console.error('[proactive-alarm-to-chat] Error fetching vehicle notification preferences:', prefsError);
-        // If error, check defaults: critical events are enabled by default
+      if (aiChatPrefsError) {
+        console.error('[proactive-alarm-to-chat] Error fetching AI Chat preferences:', aiChatPrefsError);
+        // If error, check defaults: critical events are enabled by default for AI chat
         const defaultEnabled = ['critical_battery', 'offline', 'anomaly_detected', 'maintenance_due'].includes(proactiveEvent.event_type);
-        if (!defaultEnabled) {
-          console.log(`[proactive-alarm-to-chat] Preference check failed and event type ${proactiveEvent.event_type} is not default-enabled, skipping.`);
-          return new Response(JSON.stringify({ success: false, message: 'Preference check failed' }), {
-            status: 200,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+        if (defaultEnabled) {
+          aiChatEnabledUserIds = userIds; // Use all users for default-enabled events
         }
-        // Continue with all users for default-enabled events
       } else {
-        // Filter users who have this preference enabled for THIS VEHICLE
-        enabledUserIds = (vehiclePrefs || [])
+        // Filter users who have AI Chat enabled for this event
+        aiChatEnabledUserIds = (aiChatPrefs || [])
           .filter((pref: any) => {
-            // If preference exists and is false, skip
-            // If preference doesn't exist, check defaults
-            if (pref[preferenceKey] === false) return false;
-            if (pref[preferenceKey] === true) return true;
-            // Default enabled events
+            // If explicitly false, skip
+            if (pref[aiChatPreferenceKey] === false) return false;
+            // If explicitly true, include
+            if (pref[aiChatPreferenceKey] === true) return true;
+            // Default: critical events enabled
             return ['critical_battery', 'offline', 'anomaly_detected', 'maintenance_due'].includes(proactiveEvent.event_type);
           })
           .map((pref: any) => pref.user_id);
 
         // If no preferences exist, use defaults
-        if (vehiclePrefs.length === 0) {
+        if (aiChatPrefs.length === 0) {
           const defaultEnabled = ['critical_battery', 'offline', 'anomaly_detected', 'maintenance_due'].includes(proactiveEvent.event_type);
-          if (!defaultEnabled) {
-            console.log(`[proactive-alarm-to-chat] No preferences found and event type ${proactiveEvent.event_type} is not default-enabled, skipping.`);
-            return new Response(JSON.stringify({ success: false, message: 'Event type not enabled by default' }), {
-              status: 200,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            });
+          if (defaultEnabled) {
+            aiChatEnabledUserIds = userIds; // Use all users for default-enabled events
           }
-          enabledUserIds = userIds; // Use all users for default-enabled events
         }
       }
-
-      if (enabledUserIds.length === 0) {
-        console.log(`[proactive-alarm-to-chat] No users have ${preferenceKey} enabled for vehicle ${proactiveEvent.device_id}, skipping.`);
-        return new Response(JSON.stringify({ success: false, message: 'No users have this notification enabled' }), {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+    } else {
+      // If no preference key mapped, default: critical events enabled
+      const defaultEnabled = ['critical_battery', 'offline', 'anomaly_detected', 'maintenance_due'].includes(proactiveEvent.event_type);
+      if (defaultEnabled) {
+        aiChatEnabledUserIds = userIds;
       }
     }
+
+    // If no users have AI Chat enabled, skip creating chat messages
+    if (aiChatEnabledUserIds.length === 0) {
+      console.log(`[proactive-alarm-to-chat] No users have AI Chat enabled for ${proactiveEvent.event_type} on vehicle ${proactiveEvent.device_id}, skipping chat message creation.`);
+      return new Response(JSON.stringify({ 
+        success: false, 
+        message: 'No users have AI Chat enabled for this event',
+        note: 'Push notifications are handled separately'
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Use AI Chat enabled users for chat messages
+    // Note: Push/sound notification preferences are checked separately (not in this function)
+    const enabledUserIds: string[] = aiChatEnabledUserIds;
 
     // Insert proactive message into chat history for each enabled user
     const insertPromises = enabledUserIds.map((userId) =>

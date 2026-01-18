@@ -150,7 +150,7 @@ export default function OwnerVehicleProfile() {
     liveData?.longitude ?? null
   );
 
-  // CRITICAL FIX #2: Complete status derivation with charging detection
+  // Status derivation: online, charging, or offline
   const isOnline = liveData?.isOnline ?? false;
   const status: "online" | "charging" | "offline" = useMemo(() => {
     if (!liveData?.isOnline) {
@@ -158,7 +158,7 @@ export default function OwnerVehicleProfile() {
     }
     
     // Detect charging: vehicle is online, ignition is off, and battery is present
-    // This is a heuristic - adjust based on your actual charging detection logic
+    // Charging typically means vehicle is connected to power but not running
     const isCharging = 
       liveData.batteryPercent !== null && 
       liveData.ignitionOn === false && 
@@ -174,60 +174,18 @@ export default function OwnerVehicleProfile() {
     triggerSync({ deviceId, forceFullSync: true });
   }, [deviceId, triggerSync]);
 
-  // HIGH PRIORITY FIX #4: Pull to refresh handler with proper error handling and sync coordination
+  // Optimized pull-to-refresh: Show DB data instantly, sync in background
   const handleRefresh = useCallback(async () => {
     if (!deviceId) return;
 
     setIsRefreshing(true);
     
     try {
-      // Trigger incremental trip sync and wait briefly for it to start
-      // We don't wait for full completion to keep UI responsive, but we give it a moment
-      const syncPromise = supabase.functions.invoke("sync-trips-incremental", {
-        body: { device_ids: [deviceId], force_full_sync: false },
-      });
-
-      // Invalidate all cached queries for this device (especially trips to get latest data)
-      await queryClient.invalidateQueries({
-        predicate: (query) => {
-          const key = query.queryKey;
-          return (
-            Array.isArray(key) &&
-            (key[0] === "vehicle-live-data" ||
-              key[0] === "vehicle-trips" ||
-              key[0] === "vehicle-events" ||
-              key[0] === "mileage-stats" ||
-              key[0] === "daily-mileage" ||
-              key[0] === "vehicle-daily-stats" ||
-              key[0] === "vehicle-info" ||
-              key[0] === "vehicle-llm-settings" ||
-              key[0] === "trip-sync-status" ||
-              key[0] === "driver-score") &&
-            key[1] === deviceId
-          );
-        },
-      });
-      
-      // Explicitly invalidate trips query to force fresh fetch
-      queryClient.invalidateQueries({ 
-        queryKey: ["vehicle-trips", deviceId],
-        exact: false // Invalidate all trip queries for this device
-      });
-      
-      // Also remove cached trips data to force a fresh fetch
-      queryClient.removeQueries({
-        queryKey: ["vehicle-trips", deviceId],
-        exact: false
-      });
-      
-      // Force a fresh refetch after clearing cache
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // Refetch all queries in parallel
+      // Step 1: Immediately refetch from DB (instant response)
       const refetchResults = await Promise.allSettled([
         refetchProfile(),
         refetchLive(),
-        refetchTrips(),
+        refetchTrips(),  // Shows existing trips immediately
         refetchEvents(),
         refetchMileage(),
         refetchDaily(),
@@ -237,30 +195,26 @@ export default function OwnerVehicleProfile() {
       // Check for any failures
       const failures = refetchResults.filter(r => r.status === 'rejected');
       if (failures.length > 0) {
-        // Log errors but don't fail the entire refresh
         if (process.env.NODE_ENV === 'development') {
           console.warn('Some data failed to refresh:', failures);
         }
       }
 
-      // Wait for sync to complete (with timeout to prevent hanging)
-      try {
-        await Promise.race([
-          syncPromise,
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Sync timeout')), 10000)
-          ),
-        ]);
-      } catch (syncError) {
-        // Sync errors are non-critical - data will sync eventually
-        if (process.env.NODE_ENV === 'development') {
-          console.warn('Background sync warning:', syncError);
-        }
-      }
+      // Step 2: Trigger background sync (don't wait - fire-and-forget)
+      supabase.functions.invoke("sync-trips-incremental", {
+        body: { device_ids: [deviceId], force_full_sync: false },
+      }).catch((error) => {
+        // Log but don't block UI
+        console.warn('Background sync error:', error);
+      });
+
+      // Step 3: Show success immediately
+      toast.success("Refreshed", { 
+        description: "Syncing new data in background..." 
+      });
     } catch (error) {
-      // Show user-friendly error message
-      toast.error("Failed to refresh some data", {
-        description: "Some information may be outdated. Please try again.",
+      toast.error("Failed to refresh", { 
+        description: error instanceof Error ? error.message : "Unknown error" 
       });
       
       if (process.env.NODE_ENV === 'development') {

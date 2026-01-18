@@ -26,6 +26,8 @@ interface TrackRecord {
   gps_time: string
   battery_percent: number | null
   ignition_on: boolean
+  ignition_confidence?: number | null
+  ignition_detection_method?: string | null
 }
 
 // Using shared GPS51 client for rate limiting
@@ -89,6 +91,8 @@ async function fetchTrackHistory(
         gps_time: normalized.last_updated_at,
         battery_percent: normalized.battery_level,
         ignition_on: normalized.ignition_on,
+        ignition_confidence: normalized.ignition_confidence || null,
+        ignition_detection_method: normalized.ignition_detection_method || null,
       };
     })
     .filter((r: TrackRecord) => 
@@ -146,6 +150,8 @@ async function insertPositionHistory(
       heading: r.heading,
       battery_percent: r.battery_percent,
       ignition_on: r.ignition_on,
+      ignition_confidence: r.ignition_confidence || null,
+      ignition_detection_method: r.ignition_detection_method || null,
       gps_time: r.gps_time,
       recorded_at: new Date().toISOString()
     }))

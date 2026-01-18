@@ -68,6 +68,8 @@ export interface NormalizedVehicleState {
   lon: number | null;
   speed_kmh: number;
   ignition_on: boolean;
+  ignition_confidence?: number; // 0.0 to 1.0
+  ignition_detection_method?: IgnitionDetectionResult['detection_method'];
   is_moving: boolean;
   battery_level: number | null;
   signal_strength: number | null;
@@ -176,12 +178,33 @@ export function normalizeSpeed(rawSpeed: number | null | undefined): number {
 // ============================================================================
 
 /**
+ * Ignition detection result with confidence scoring
+ */
+export interface IgnitionDetectionResult {
+  ignition_on: boolean;
+  confidence: number; // 0.0 to 1.0
+  detection_method: 'status_bit' | 'string_parse' | 'speed_inference' | 'multi_signal' | 'unknown';
+  signals: {
+    status_bit?: boolean;
+    strstatus_match?: boolean;
+    speed_based?: boolean;
+    moving_status?: boolean;
+  };
+}
+
+/**
  * Check if JT808 status bitmask indicates ACC ON
  * 
- * Note: Without JT808 documentation, this is a placeholder.
- * In practice, we rely on strstatus/strstatusen for ACC detection.
+ * Enhanced implementation that tests multiple bit positions:
+ * - Bit 0 (0x01): Common ACC bit in many JT808 implementations
+ * - Bit 1 (0x02): Alternative ACC bit position
+ * - Bit 2 (0x04): Some devices use this for ACC
+ * 
+ * Returns true if any of the common patterns match.
  */
-function checkJt808AccBit(status: number | string): boolean {
+function checkJt808AccBit(status: number | string | null | undefined): boolean {
+  if (status === null || status === undefined) return false;
+  
   // If status is a string, try to parse it
   if (typeof status === 'string') {
     const numStatus = parseInt(status, 10);
@@ -189,49 +212,203 @@ function checkJt808AccBit(status: number | string): boolean {
     status = numStatus;
   }
 
-  // Common JT808 ACC bit patterns (bit 0 or bit 1 often indicates ACC)
-  // Without official docs, we use heuristics
-  // Bit 0 = ACC status in some implementations
-  return (status & 0x01) === 0x01;
+  // Ensure status is a valid number
+  if (typeof status !== 'number' || isNaN(status)) return false;
+
+  // Test multiple JT808 ACC bit patterns (bit 0, 1, or 2)
+  // Bit 0 (0x01): Most common ACC bit position
+  // Bit 1 (0x02): Alternative position used by some devices
+  // Bit 2 (0x04): Less common but used by some implementations
+  const ACC_BIT_MASKS = [0x01, 0x02, 0x04];
+  
+  for (const mask of ACC_BIT_MASKS) {
+    if ((status & mask) === mask) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+/**
+ * Enhanced string parsing for ACC status with multiple patterns
+ */
+function parseAccFromString(strstatus: string | null | undefined): boolean {
+  if (!strstatus) return false;
+  
+  const statusUpper = strstatus.toUpperCase();
+  
+  // Explicit ACC ON patterns (higher confidence)
+  const onPatterns = [
+    /ACC\s*ON\b/i,
+    /ACC:ON/i,
+    /ACC_ON/i,
+    /\bACC\s*=\s*ON\b/i,
+  ];
+  
+  // Explicit ACC OFF patterns
+  const offPatterns = [
+    /ACC\s*OFF\b/i,
+    /ACC:OFF/i,
+    /ACC_OFF/i,
+    /\bACC\s*=\s*OFF\b/i,
+  ];
+  
+  // Check for explicit OFF first (takes precedence)
+  for (const pattern of offPatterns) {
+    if (pattern.test(statusUpper)) {
+      return false;
+    }
+  }
+  
+  // Check for explicit ON
+  for (const pattern of onPatterns) {
+    if (pattern.test(statusUpper)) {
+      return true;
+    }
+  }
+  
+  return false;
 }
 
 /**
  * Detect ignition status using multi-signal confidence scoring
  * 
- * Uses weighted confidence system to avoid false positives:
- * - Primary signals (high confidence): strstatus, JT808 bitmask
- * - Secondary signals (medium confidence): speed, moving status
+ * Enhanced implementation that prioritizes JT808 status bits over string parsing
+ * and returns detailed detection results with confidence scoring.
  * 
- * Requires at least 2 confidence points to return true.
+ * Detection priority:
+ * 1. JT808 status bit (highest confidence - 1.0)
+ * 2. String parsing (high confidence - 0.8-0.9)
+ * 3. Speed inference (low confidence - 0.3-0.5)
+ * 4. Multi-signal (combines signals - 0.6-0.8)
+ * 
+ * Returns detailed result with confidence and detection method for monitoring.
  */
 export function detectIgnition(
   raw: Gps51RawData,
   speedKmh: number
-): boolean {
-  let confidence = 0;
-
-  // Primary signals (high confidence - 3 points each)
+): IgnitionDetectionResult {
+  const signals: IgnitionDetectionResult['signals'] = {};
+  
+  // Priority 1: JT808 status bit (most reliable if available and meaningful)
+  // Only use status bit if it provides meaningful ACC information
+  // If status byte exists but doesn't have ACC bits, continue to other signals
+  const statusBitResult = raw.status !== null && raw.status !== undefined 
+    ? checkJt808AccBit(raw.status) 
+    : null;
+  
+  // Only use status bit result if it's explicitly true (ACC ON detected)
+  // If status bit is false, it might mean:
+  // 1. ACC OFF explicitly (if device uses status byte for ACC)
+  // 2. Status byte doesn't contain ACC information (continue to other signals)
+  // We can't distinguish these cases reliably, so only trust explicit ACC ON
+  if (statusBitResult === true) {
+    signals.status_bit = true;
+    
+    // Explicit ACC ON from status bit - highest confidence
+    return {
+      ignition_on: true,
+      confidence: 1.0,
+      detection_method: 'status_bit',
+      signals
+    };
+  }
+  
+  // If status bit exists but is false, we can't be certain it means ACC OFF
+  // (it might just mean the status byte doesn't contain ACC info)
+  // So we record the signal but continue to check other methods
+  if (statusBitResult === false) {
+    signals.status_bit = false;
+  }
+  
+  // Priority 2: String parsing (fallback if status bit not available)
   const strstatus = raw.strstatus || raw.strstatusen || '';
-  if (strstatus.toUpperCase().includes('ACC ON')) {
-    confidence += 3;
+  
+  if (strstatus) {
+    // Check if string contains ACC patterns before parsing
+    // This allows us to distinguish between "ACC pattern found" vs "no pattern found"
+    const hasAccPattern = /ACC\s*(ON|OFF|:ON|:OFF|_ON|_OFF|=ON|=OFF)/i.test(strstatus);
+    
+    if (hasAccPattern) {
+      // Only parse if we detect ACC patterns in the string
+      const stringParseResult = parseAccFromString(strstatus);
+      signals.strstatus_match = stringParseResult;
+      
+      // High confidence for explicit string matches (both ON and OFF)
+      return {
+        ignition_on: stringParseResult, // true for ACC ON, false for ACC OFF
+        confidence: 0.9,
+        detection_method: 'string_parse',
+        signals
+      };
+    }
+    // If strstatus exists but no ACC pattern found, continue to multi-signal detection
   }
-  if (raw.status && checkJt808AccBit(raw.status)) {
-    confidence += 3;
+  
+  // Priority 3: Speed-based inference (low confidence, only if no other signals)
+  // Only use if speed is significant (> 5 km/h) to avoid GPS drift false positives
+  const speedBased = speedKmh > 5;
+  signals.speed_based = speedBased;
+  
+  const movingBased = raw.moving === 1 && speedKmh > 3;
+  signals.moving_status = movingBased;
+  
+  // Multi-signal detection: combine speed and moving status
+  // Requires at least speed OR moving status for confidence
+  let confidence = 0;
+  let signalCount = 0;
+  
+  if (speedBased) {
+    confidence += 0.4;
+    signalCount++;
   }
+  
+  if (movingBased) {
+    confidence += 0.3;
+    signalCount++;
+  }
+  
+  // Multi-signal detection requires at least 2 signals for confidence >= 0.6
+  if (signalCount >= 2) {
+    return {
+      ignition_on: true,
+      confidence: Math.min(confidence, 0.7), // Cap at 0.7 for speed-based
+      detection_method: 'multi_signal',
+      signals
+    };
+  }
+  
+  // If we have some signals but not enough, use low confidence
+  if (signalCount === 1) {
+    return {
+      ignition_on: speedBased || movingBased,
+      confidence: 0.3,
+      detection_method: 'speed_inference',
+      signals
+    };
+  }
+  
+  // No reliable signals available
+  return {
+    ignition_on: false,
+    confidence: 0.0,
+    detection_method: 'unknown',
+    signals
+  };
+}
 
-  // Secondary signals (medium confidence - 1 point each)
-  // Only use speed if significant (> 5 km/h) to avoid GPS drift false positives
-  if (speedKmh > 5) {
-    confidence += 1;
-  }
-  // Moving status + speed indicates active movement
-  if (raw.moving === 1 && speedKmh > 3) {
-    confidence += 1;
-  }
-
-  // Require at least 2 points for ignition ON
-  // This prevents false positives from single weak signals
-  return confidence >= 2;
+/**
+ * Backward compatibility wrapper - returns boolean for existing code
+ * @deprecated Use detectIgnition() which returns IgnitionDetectionResult
+ */
+export function detectIgnitionSimple(
+  raw: Gps51RawData,
+  speedKmh: number
+): boolean {
+  const result = detectIgnition(raw, speedKmh);
+  // Require at least 0.5 confidence for ignition ON
+  return result.ignition_on && result.confidence >= 0.5;
 }
 
 // ============================================================================
@@ -578,8 +755,9 @@ export function normalizeVehicleTelemetry(
   // Normalize speed
   const speedKmh = normalizeSpeed(raw.speed);
 
-  // Detect ignition
-  const ignitionOn = detectIgnition(raw, speedKmh);
+  // Detect ignition (returns detailed result with confidence)
+  const ignitionResult = detectIgnition(raw, speedKmh);
+  const ignitionOn = ignitionResult.ignition_on;
 
   // Determine if moving (speed > 3 km/h or moving flag set)
   const isMoving = speedKmh > 3 || raw.moving === 1;
@@ -615,6 +793,8 @@ export function normalizeVehicleTelemetry(
     lon,
     speed_kmh: speedKmh,
     ignition_on: ignitionOn,
+    ignition_confidence: ignitionResult.confidence,
+    ignition_detection_method: ignitionResult.detection_method,
     is_moving: isMoving,
     battery_level: batteryLevel,
     signal_strength: signalStrength,

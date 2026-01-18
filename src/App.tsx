@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import SplashScreen from "@/components/SplashScreen";
@@ -67,7 +67,7 @@ const App = () => {
               <Route path="/map" element={<ProtectedRoute><LiveMap /></ProtectedRoute>} />
               <Route path="/insights" element={<ProtectedRoute><Insights /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-              <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+              <Route path="/profile" element={<Navigate to="/settings" replace />} />
               <Route path="/notifications" element={<ProtectedRoute><NotificationSettings /></ProtectedRoute>} />
               <Route path="/admin/wallets" element={<ProtectedRoute><AdminWallets /></ProtectedRoute>} />
               <Route path="/admin/storage" element={<ProtectedRoute><AdminStorage /></ProtectedRoute>} />
