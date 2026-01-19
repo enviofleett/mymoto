@@ -24,20 +24,22 @@ interface CommandResult {
 }
 
 // Commands that require confirmation before execution
-// UPDATED: Strictly focused on immobilization safety
+// UPDATED: Strictly focused on immobilization and shutdown safety
 const COMMANDS_REQUIRING_CONFIRMATION = [
   'immobilize_engine', // Critical safety command
   'demobilize_engine', // Critical safety command
+  'shutdown_engine',  // Critical safety command - requires password
   'set_speed_limit',
   'clear_speed_limit'
 ]
 
 // Map our command types to GPS51 command strings
-// UPDATED: Removed door controls, standardized engine commands
+// UPDATED: Added shutdown_engine with password authentication
 const GPS51_COMMANDS: Record<string, string> = {
   // Security / Immobilization
   immobilize_engine: 'RELAY,1',    // Cut fuel/power
   demobilize_engine: 'RELAY,0',    // Restore fuel/power
+  shutdown_engine: 'STOP,zhuyi',   // Shutdown engine with password (GPS51 API requirement)
   
   // Alerts
   sound_alarm: 'FINDCAR',          // Sound horn/flash lights
@@ -375,20 +377,27 @@ serve(async (req) => {
             if (!sendResult.success) {
               executionResult = { success: false, error: sendResult.error }
             } else if (sendResult.commandId) {
-              // Poll for result (with shorter timeout for faster response, rate limiting handled by shared client)
-              const pollResult = await pollCommandResult(supabase, DO_PROXY_URL, token, serverid, sendResult.commandId, 5)
+              // Poll for result (with extended timeout for critical commands like shutdown/immobilize)
+              const maxAttempts = (command_type === 'shutdown_engine' || command_type === 'immobilize_engine') ? 10 : 5
+              const pollResult = await pollCommandResult(supabase, DO_PROXY_URL, token, serverid, sendResult.commandId, maxAttempts)
               executionResult = {
                 success: pollResult.success,
                 response: { 
                   command_id: sendResult.commandId,
-                  device_response: pollResult.response 
+                  device_response: pollResult.response,
+                  command_sent: gps51Command,
+                  executed_at: new Date().toISOString()
                 },
                 error: pollResult.error
               }
             } else {
               executionResult = {
                 success: true,
-                response: { message: 'Command sent to device' }
+                response: { 
+                  message: 'Command sent to device',
+                  command_sent: gps51Command,
+                  executed_at: new Date().toISOString()
+                }
               }
             }
           } catch (error) {
@@ -417,10 +426,22 @@ serve(async (req) => {
 
     console.log(`[Command] Execution complete for ${commandLog.id}: ${executionResult.success ? 'SUCCESS' : 'FAILED'}`)
 
+    // Enhanced success message for critical commands
+    let successMessage = `Command '${command_type}' executed successfully`
+    if (executionResult.success) {
+      if (command_type === 'shutdown_engine') {
+        successMessage = 'Engine shutdown command sent to GPS51 platform with password authentication. The vehicle engine will be shut down.'
+      } else if (command_type === 'immobilize_engine') {
+        successMessage = 'Immobilization command sent to GPS51 platform. Vehicle fuel/power has been cut.'
+      } else if (command_type === 'demobilize_engine') {
+        successMessage = 'Demobilization command sent to GPS51 platform. Vehicle fuel/power has been restored.'
+      }
+    }
+
     return new Response(JSON.stringify({
       success: executionResult.success,
       message: executionResult.success 
-        ? `Command '${command_type}' executed successfully` 
+        ? successMessage
         : `Command failed: ${executionResult.error}`,
       command_id: commandLog.id,
       executed_at: now,

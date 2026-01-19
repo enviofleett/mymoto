@@ -18,6 +18,7 @@ export type CommandType =
   | 'request_status'
   | 'start_engine'
   | 'stop_engine'
+  | 'shutdown_engine'
   | 'sound_alarm'
   | 'silence_alarm'
   | 'create_geofence_alert'
@@ -408,8 +409,7 @@ const COMMAND_PATTERNS: CommandPattern[] = [
     type: 'stop_engine',
     patterns: [
       /\bstop\s+(the\s+)?(engine|car|vehicle)\b/i,
-      /\bturn\s+off\s+(the\s+)?(engine|ignition)\b/i,
-      /\bshut\s+down\s+(the\s+)?engine\b/i
+      /\bturn\s+off\s+(the\s+)?(engine|ignition)\b/i
     ],
     requiresConfirmation: true,
     priority: 'urgent'
@@ -598,6 +598,7 @@ export function getCommandMetadata(commandType: CommandType): {
     request_status: 'Request vehicle status report',
     start_engine: 'Remote engine start',
     stop_engine: 'Remote engine stop (emergency use only)',
+    shutdown_engine: 'Emergency engine shutdown with password authentication (critical safety command)',
     sound_alarm: 'Sound alarm/horn to locate vehicle',
     silence_alarm: 'Silence active alarm',
     create_geofence_alert: 'Create location-based notification alert',

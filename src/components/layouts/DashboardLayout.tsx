@@ -45,7 +45,8 @@ export function DashboardLayout({ children, connectionStatus }: DashboardLayoutP
       </div> */}
 
       {/* Mobile Header - Simple branding */}
-      <header className="md:hidden sticky top-0 z-40 flex h-14 items-center border-b border-border bg-background/95 backdrop-blur px-4">
+      {/* CRITICAL FIX: z-40 ensures header stays above content but below AdminBottomNav (z-50) */}
+      <header className="md:hidden sticky top-0 z-40 flex-none flex h-14 items-center border-b border-border bg-background/95 backdrop-blur px-4">
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
             <svg
@@ -92,8 +93,9 @@ export function DashboardLayout({ children, connectionStatus }: DashboardLayoutP
       </header>
 
       {/* Main Content - Dynamic padding ensures content is never cut off by footer */}
-      <main className={`flex-1 overflow-y-auto p-4 md:p-6 ${footerPadding}`}>
-        <div className="pb-4">
+      {/* CRITICAL FIX: overflow-x-hidden prevents horizontal scroll, pb-32 ensures content clears footer */}
+      <main className={`flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 pb-32 safe-area-bottom ${footerPadding}`}>
+        <div className="mx-auto max-w-5xl animate-in fade-in slide-in-from-bottom-4 duration-500">
           {children}
         </div>
       </main>

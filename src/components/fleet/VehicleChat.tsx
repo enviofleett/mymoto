@@ -383,13 +383,22 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
 
       // Get the session token for proper authorization
       const { data: { session } } = await supabase.auth.getSession();
-      const authToken = session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      
+      // CRITICAL SECURITY FIX: Do not fallback to publishable key - require valid session
+      if (!session?.access_token) {
+        toast({
+          title: "Authentication required",
+          description: "Please sign in to send messages",
+          variant: "destructive",
+        });
+        return;
+      }
       
       const response = await fetch(CHAT_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify(contextPayload)
       });

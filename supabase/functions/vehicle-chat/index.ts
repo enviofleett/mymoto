@@ -2860,7 +2860,7 @@ serve(async (req) => {
                 setTimeout(() => resolve({ 
                   data: null, 
                   error: { code: 'TIMEOUT', message: 'Query timeout - using trip data instead' } 
-                }), 10000) // 10 second timeout
+                }), 8000) // 8 second timeout (performance optimization)
               )
             ]) as any
             
@@ -3559,7 +3559,11 @@ ${commandCreated ? `COMMAND DETECTED AND PROCESSED:
 - Status: ${commandExecutionResult ? (commandExecutionResult.success ? 'EXECUTED SUCCESSFULLY ✓' : 'EXECUTION FAILED ✗') : (commandCreated.requires_confirmation ? 'PENDING APPROVAL (requires confirmation)' : 'PROCESSING')}
 ${commandExecutionResult ? `- Result: ${commandExecutionResult.message || JSON.stringify(commandExecutionResult.data || {})}` : ''}
 ⚠️ IMPORTANT: ${commandExecutionResult?.success 
-  ? `Confirm to the user that their "${commandCreated.type}" command was executed successfully. Mention what was done.`
+  ? `Confirm to the user that their "${commandCreated.type}" command was executed successfully. Be specific about what happened:
+     - For shutdown_engine: "Engine shutdown command has been sent to GPS51 platform with password authentication. The vehicle engine will be shut down."
+     - For immobilize_engine: "Immobilization command has been sent to GPS51 platform. The vehicle fuel/power has been cut."
+     - For demobilize_engine: "Demobilization command has been sent to GPS51 platform. The vehicle fuel/power has been restored."
+     Always mention that the command was sent to GPS51 and executed successfully.`
   : commandExecutionResult 
     ? `Apologize and explain the command failed: ${commandExecutionResult.message}`
     : commandCreated.requires_confirmation 
@@ -3568,8 +3572,9 @@ ${commandExecutionResult ? `- Result: ${commandExecutionResult.message || JSON.s
 ` : ''}
 COMMAND CAPABILITY:
 - You can understand and execute vehicle commands through natural language
-- Supported commands: lock, unlock, immobilize, restore, set speed limit, enable/disable geofence, request location/status
-- Some commands (immobilize, stop engine) require manual approval for safety
+- Supported commands: lock, unlock, immobilize, restore, shutdown engine, set speed limit, enable/disable geofence, request location/status
+- Some commands (immobilize, shutdown engine) require manual approval for safety
+- Shutdown engine command uses password authentication (zhuyi) as required by GPS51 API
 - When a user issues a command, acknowledge it and explain the next steps
 - Examples: "Lock the doors" → Creates lock command, "Set speed limit to 80" → Creates speed limit command
 

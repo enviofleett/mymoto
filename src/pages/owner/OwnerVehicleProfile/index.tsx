@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import type { DateRange } from "react-day-picker";
@@ -94,18 +94,20 @@ export default function OwnerVehicleProfile() {
     true
   );
   
-  // DEBUG: Log trips when they change
-  console.log('[OwnerVehicleProfile] Trips data:', {
-    count: trips?.length || 0,
-    loading: tripsLoading,
-    error: tripsError,
-    hasDateRange: !!dateRange?.from
-  });
-  
-  if (trips && trips.length > 0) {
-    const tripDates = trips.map(t => t.start_time.split('T')[0]);
-    const uniqueDates = [...new Set(tripDates)];
-    console.log('[OwnerVehicleProfile] Unique trip dates:', uniqueDates.sort().reverse());
+  // DEBUG: Log trips when they change (development only)
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[OwnerVehicleProfile] Trips data:', {
+      count: trips?.length || 0,
+      loading: tripsLoading,
+      error: tripsError,
+      hasDateRange: !!dateRange?.from
+    });
+    
+    if (trips && trips.length > 0) {
+      const tripDates = trips.map(t => t.start_time.split('T')[0]);
+      const uniqueDates = [...new Set(tripDates)];
+      console.log('[OwnerVehicleProfile] Unique trip dates:', uniqueDates.sort().reverse());
+    }
   }
 
   const {
@@ -157,12 +159,18 @@ export default function OwnerVehicleProfile() {
       return "offline";
     }
     
-    // Detect charging: vehicle is online, ignition is off, and battery is present
-    // Charging typically means vehicle is connected to power but not running
-    const isCharging = 
-      liveData.batteryPercent !== null && 
+    // Detect charging/parked state: vehicle is online, ignition is off, and stationary
+    // This is an inferred status based on vehicle state
+    const isParked = 
       liveData.ignitionOn === false && 
       liveData.speed === 0;
+    
+    // Show as "charging" if:
+    // 1. Vehicle is parked (ignition off, speed 0)
+    // 2. Battery data is available (indicates battery monitoring capability)
+    // Note: This is inferred - actual charging state may vary by vehicle type
+    const hasBatteryData = liveData.batteryPercent !== null;
+    const isCharging = isParked && hasBatteryData;
     
     return isCharging ? "charging" : "online";
   }, [liveData?.isOnline, liveData?.batteryPercent, liveData?.ignitionOn, liveData?.speed]);
@@ -239,6 +247,55 @@ export default function OwnerVehicleProfile() {
   const { pullDistance, isPulling, handlers: pullHandlers } = usePullToRefresh({
     onRefresh: handleRefresh,
   });
+
+  // Auto-sync on page load (CRITICAL FIX #4: Auto-sync implementation)
+  const hasAutoSyncedRef = useRef(false);
+  const [isAutoSyncing, setIsAutoSyncing] = useState(false);
+  
+  useEffect(() => {
+    // Only auto-sync once per mount, and only if deviceId exists
+    if (!deviceId || hasAutoSyncedRef.current) return;
+    
+    // Mark as synced immediately to prevent duplicate calls
+    hasAutoSyncedRef.current = true;
+    
+    // Small delay to ensure page is fully loaded before syncing
+    const timeoutId = setTimeout(() => {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[VehicleProfile] Auto-syncing trips on page load');
+      }
+      
+      setIsAutoSyncing(true);
+      
+      // Trigger incremental sync (not full sync) to get latest trips
+      // Use mutate with callbacks to handle auto-sync state
+      triggerSync(
+        { deviceId, forceFullSync: false },
+        {
+          onSuccess: () => {
+            setIsAutoSyncing(false);
+            if (process.env.NODE_ENV === 'development') {
+              console.log('[VehicleProfile] Auto-sync completed successfully');
+            }
+            // Invalidate queries to refresh data after sync
+            queryClient.invalidateQueries({ queryKey: ["vehicle-trips", deviceId] });
+            queryClient.invalidateQueries({ queryKey: ["vehicle-daily-stats", deviceId] });
+          },
+          onError: (error) => {
+            setIsAutoSyncing(false);
+            // Don't show error toast for auto-sync failures (silent failure)
+            if (process.env.NODE_ENV === 'development') {
+              console.warn('[VehicleProfile] Auto-sync failed:', error);
+            }
+          },
+        }
+      );
+    }, 500); // 500ms delay to let page render first
+    
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [deviceId, triggerSync, queryClient]);
 
   // Display values with safe fallbacks
   const displayName = llmSettings?.nickname || deviceId;
@@ -388,9 +445,10 @@ export default function OwnerVehicleProfile() {
               onDateRangeChange={setDateRange}
               onPlayTrip={setSelectedTrip}
               syncStatus={syncStatus}
-              isSyncing={isSyncing || syncStatus?.sync_status === "processing"}
+              isSyncing={isSyncing || syncStatus?.sync_status === "processing" || isAutoSyncing}
               onForceSync={handleForceSync}
               isRealtimeActive={isSubscribed}
+              isAutoSyncing={isAutoSyncing}
             />
           </div>
         </ScrollArea>

@@ -54,6 +54,7 @@ interface ReportsSectionProps {
   isSyncing?: boolean;
   onForceSync?: () => void;
   isRealtimeActive?: boolean;
+  isAutoSyncing?: boolean;
 }
 
 export function ReportsSection({
@@ -69,33 +70,40 @@ export function ReportsSection({
   isSyncing = false,
   onForceSync,
   isRealtimeActive = false,
+  isAutoSyncing = false,
 }: ReportsSectionProps) {
   const [isDateFilterOpen, setIsDateFilterOpen] = useState(false);
   const isFilterActive = !!dateRange?.from;
   const { user } = useAuth();
   
-  // CRITICAL DEBUG: Log trips prop when it changes
-  console.log('[ReportsSection] Props received:', {
-    tripsCount: trips?.length || 0,
-    tripsLoading,
-    dateRange: dateRange ? `${dateRange.from?.toISOString()} to ${dateRange.to?.toISOString()}` : 'none',
-    deviceId
-  });
-  
-  if (trips && trips.length > 0) {
-    const tripDates = trips.map(t => t.start_time.split('T')[0]);
-    const uniqueDates = [...new Set(tripDates)];
-    console.log('[ReportsSection] Trip dates in props:', uniqueDates.sort().reverse());
+  // CRITICAL DEBUG: Log trips prop when it changes (development only)
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[ReportsSection] Props received:', {
+      tripsCount: trips?.length || 0,
+      tripsLoading,
+      dateRange: dateRange ? `${dateRange.from?.toISOString()} to ${dateRange.to?.toISOString()}` : 'none',
+      deviceId
+    });
+    
+    if (trips && trips.length > 0) {
+      const tripDates = trips.map(t => t.start_time.split('T')[0]);
+      const uniqueDates = [...new Set(tripDates)];
+      console.log('[ReportsSection] Trip dates in props:', uniqueDates.sort().reverse());
+    }
   }
 
   // Group trips by date and sort within each day (earliest first = Trip 1)
   const groupedTrips = useMemo(() => {
     if (!trips || trips.length === 0) {
-      console.log('[ReportsSection] No trips provided to group');
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[ReportsSection] No trips provided to group');
+      }
       return [];
     }
     
-    console.log('[ReportsSection] Grouping', trips.length, 'trips');
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[ReportsSection] Grouping', trips.length, 'trips');
+    }
     
     // CRITICAL FIX: Include ALL trips that have start_time and end_time, even if coordinates are 0
     // This allows trips with missing GPS data to still be displayed
@@ -104,18 +112,20 @@ export function ReportsSection({
       return trip.start_time && trip.end_time;
     });
     
-    console.log('[ReportsSection] Trip filtering:', {
-      total: trips.length,
-      valid: validTrips.length,
-      filteredOut: trips.length - validTrips.length
-    });
-    
-    console.log('[ReportsSection] Valid trips after filtering:', validTrips.length);
-    
-    if (validTrips.length > 0) {
-      const dates = validTrips.map(t => new Date(t.start_time).toISOString().split('T')[0]);
-      const uniqueDates = [...new Set(dates)];
-      console.log('[ReportsSection] Trip dates found:', uniqueDates.sort().reverse());
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[ReportsSection] Trip filtering:', {
+        total: trips.length,
+        valid: validTrips.length,
+        filteredOut: trips.length - validTrips.length
+      });
+      
+      console.log('[ReportsSection] Valid trips after filtering:', validTrips.length);
+      
+      if (validTrips.length > 0) {
+        const dates = validTrips.map(t => new Date(t.start_time).toISOString().split('T')[0]);
+        const uniqueDates = [...new Set(dates)];
+        console.log('[ReportsSection] Trip dates found:', uniqueDates.sort().reverse());
+      }
     }
     
     const groups: { date: Date; label: string; trips: VehicleTrip[] }[] = [];
@@ -162,7 +172,9 @@ export function ReportsSection({
           label = format(tripDateForDisplay, "EEE, MMM d");
         }
         groups.push({ date: tripDateUTC, label, trips: [trip] });
-        console.log('[ReportsSection] Created group:', label, 'date:', tripDateStr, 'trips:', 1);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[ReportsSection] Created group:', label, 'date:', tripDateStr, 'trips:', 1);
+        }
       }
     });
     
@@ -175,18 +187,21 @@ export function ReportsSection({
     
     // Sort days by date DESC (latest day first)
     const sortedGroups = groups.sort((a, b) => b.date.getTime() - a.date.getTime());
-    console.log('[ReportsSection] Final grouped days:', sortedGroups.map(g => 
-      `${g.label} (${g.trips.length} trips, date: ${g.date.toISOString().split('T')[0]})`
-    ));
     
-    // CRITICAL DEBUG: Verify all trips are included
-    const totalTripsInGroups = sortedGroups.reduce((sum, g) => sum + g.trips.length, 0);
-    if (totalTripsInGroups !== validTrips.length) {
-      console.error('[ReportsSection] TRIP COUNT MISMATCH!', {
-        validTrips: validTrips.length,
-        groupedTrips: totalTripsInGroups,
-        missing: validTrips.length - totalTripsInGroups
-      });
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[ReportsSection] Final grouped days:', sortedGroups.map(g => 
+        `${g.label} (${g.trips.length} trips, date: ${g.date.toISOString().split('T')[0]})`
+      ));
+      
+      // CRITICAL DEBUG: Verify all trips are included
+      const totalTripsInGroups = sortedGroups.reduce((sum, g) => sum + g.trips.length, 0);
+      if (totalTripsInGroups !== validTrips.length) {
+        console.error('[ReportsSection] TRIP COUNT MISMATCH!', {
+          validTrips: validTrips.length,
+          groupedTrips: totalTripsInGroups,
+          missing: validTrips.length - totalTripsInGroups
+        });
+      }
     }
     
     return sortedGroups;
@@ -248,7 +263,7 @@ export function ReportsSection({
     <Card className="border-border bg-card/50">
       <CardContent className="p-4">
         {/* Trip Sync Progress */}
-        <TripSyncProgress deviceId={deviceId} />
+        <TripSyncProgress deviceId={deviceId} isSyncing={isSyncing || isAutoSyncing} />
 
         {/* Date Filter and Sync Controls */}
         <div className="flex items-center justify-between mb-4">
@@ -257,13 +272,18 @@ export function ReportsSection({
               Reports
             </div>
             {/* Sync Status Indicator */}
-            {syncStatus && (
+            {(syncStatus || isAutoSyncing) && (
               <div className="flex items-center gap-1.5">
-                {isSyncing ? (
-                  <RefreshCw className="h-3 w-3 text-blue-500 animate-spin" />
-                ) : syncStatus.sync_status === "completed" ? (
+                {isSyncing || isAutoSyncing ? (
+                  <div className="flex items-center gap-1">
+                    <RefreshCw className="h-3 w-3 text-blue-500 animate-spin" />
+                    {isAutoSyncing && (
+                      <span className="text-xs text-muted-foreground">Auto-syncing...</span>
+                    )}
+                  </div>
+                ) : syncStatus?.sync_status === "completed" ? (
                   <CheckCircle2 className="h-3 w-3 text-green-500" />
-                ) : syncStatus.sync_status === "error" ? (
+                ) : syncStatus?.sync_status === "error" ? (
                   <AlertTriangle className="h-3 w-3 text-red-500" />
                 ) : null}
                 {isRealtimeActive && (
@@ -340,16 +360,16 @@ export function ReportsSection({
           </div>
         </div>
 
-        {/* Sync Status Details */}
-        {syncStatus && syncStatus.last_sync_at && (
+        {/* Sync Status Details - Only show when not processing (to avoid duplication with progress card) */}
+        {syncStatus && syncStatus.last_sync_at && syncStatus.sync_status !== 'processing' && (
           <div className="mb-3 p-2 rounded-md bg-muted/30 text-xs text-muted-foreground">
             <div className="flex items-center justify-between">
               <span>
                 Last synced: {formatDistanceToNow(new Date(syncStatus.last_sync_at), { addSuffix: true })}
               </span>
               {syncStatus.trips_processed > 0 && (
-                <span className="text-green-600">
-                  +{syncStatus.trips_processed} trips
+                <span className="text-green-600 font-medium">
+                  +{syncStatus.trips_processed} trip{syncStatus.trips_processed !== 1 ? 's' : ''}
                 </span>
               )}
             </div>
@@ -528,6 +548,9 @@ function TripCard({
   const hasValidEndCoords = trip.end_latitude && trip.end_longitude && 
                              trip.end_latitude !== 0 && trip.end_longitude !== 0;
   
+  // Check if trip can be played back (needs valid GPS coordinates)
+  const canPlayback = hasValidStartCoords && hasValidEndCoords;
+  
   const { address: startAddress, isLoading: startLoading } = useAddress(
     hasValidStartCoords ? trip.start_latitude : null, 
     hasValidStartCoords ? trip.start_longitude : null
@@ -547,6 +570,12 @@ function TripCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <span className="text-sm font-medium">Trip {index + 1}</span>
+            {!canPlayback && (
+              <Badge variant="outline" className="text-xs border-orange-500/50 text-orange-600">
+                <AlertTriangle className="h-3 w-3 mr-1" />
+                GPS incomplete
+              </Badge>
+            )}
             {hasValidEndCoords && (
               <a
                 href={getGoogleMapsLink(trip.end_latitude, trip.end_longitude)}
@@ -575,7 +604,17 @@ function TripCard({
         <div className="text-right shrink-0 flex items-center gap-2">
           <div>
             <div className="text-sm font-medium">
-              {trip.distance_km > 0 ? trip.distance_km.toFixed(1) : '0.0'} km
+              {trip.distance_km > 0 ? (
+                <>
+                  {trip.distance_km.toFixed(1)} km
+                  {/* Show estimated indicator if distance was calculated from duration */}
+                  {!hasValidStartCoords || !hasValidEndCoords ? (
+                    <span className="text-xs text-muted-foreground ml-1">(est.)</span>
+                  ) : null}
+                </>
+              ) : (
+                '0.0 km'
+              )}
             </div>
             <div className="text-xs text-green-500">
               {trip.duration_seconds 
@@ -588,9 +627,11 @@ function TripCard({
             variant="ghost"
             size="icon"
             className="h-8 w-8"
-            onClick={() => onPlayTrip(trip)}
+            onClick={() => canPlayback && onPlayTrip(trip)}
+            disabled={!canPlayback}
+            title={canPlayback ? "Play trip" : "GPS coordinates incomplete - cannot playback"}
           >
-            <Play className="h-4 w-4" />
+            <Play className={cn("h-4 w-4", !canPlayback && "opacity-50")} />
           </Button>
         </div>
       </div>

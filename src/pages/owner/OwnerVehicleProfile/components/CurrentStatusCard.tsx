@@ -20,7 +20,7 @@ export function CurrentStatusCard({ status, speed }: CurrentStatusCardProps) {
         return {
           icon: "⚡",
           label: "Charging",
-          description: "Charging in progress",
+          description: "Parked and charging (or idle)",
           bgColor: "bg-yellow-500/20",
         };
       default:

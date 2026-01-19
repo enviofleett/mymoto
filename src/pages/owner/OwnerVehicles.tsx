@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { OwnerLayout } from "@/components/layouts/OwnerLayout";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useOwnerVehicles, OwnerVehicle } from "@/hooks/useOwnerVehicles";
 import { useRealtimeFleetUpdates } from "@/hooks/useRealtimeVehicleUpdates";
+import { usePrefetchVehicleProfile } from "@/hooks/useVehicleProfile";
 import { Search, Plus, Car, Wifi, WifiOff, Battery, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import myMotoLogo from "@/assets/mymoto-logo-new.png";
@@ -153,11 +154,17 @@ function VehicleCard({ vehicle, onClick }: { vehicle: OwnerVehicle; onClick: () 
 export default function OwnerVehicles() {
   const navigate = useNavigate();
   const { data: vehicles, isLoading } = useOwnerVehicles();
+  const { prefetchAll } = usePrefetchVehicleProfile();
   const [searchQuery, setSearchQuery] = useState("");
 
   // Enable real-time updates for all owner vehicles
   const deviceIds = vehicles?.map(v => v.deviceId) || [];
   useRealtimeFleetUpdates(deviceIds);
+  
+  // Prefetch vehicle profile data on hover for instant loading
+  const handleVehicleHover = useCallback((deviceId: string) => {
+    prefetchAll(deviceId);
+  }, [prefetchAll]);
 
   const filteredVehicles = vehicles?.filter(v =>
     v.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -262,11 +269,15 @@ export default function OwnerVehicles() {
           ) : (
             <div className="space-y-3">
               {filteredVehicles.map((vehicle) => (
-                <VehicleCard
+                <div
                   key={vehicle.deviceId}
-                  vehicle={vehicle}
-                  onClick={() => navigate(`/owner/vehicle/${vehicle.deviceId}`)}
-                />
+                  onMouseEnter={() => handleVehicleHover(vehicle.deviceId)}
+                >
+                  <VehicleCard
+                    vehicle={vehicle}
+                    onClick={() => navigate(`/owner/vehicle/${vehicle.deviceId}`)}
+                  />
+                </div>
               ))}
             </div>
           )}

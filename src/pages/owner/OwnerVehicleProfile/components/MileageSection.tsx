@@ -85,6 +85,30 @@ export function MileageSection({
     return deriveMileageFromStats(dailyStats);
   }, [dailyStats, dateRange]);
 
+  // Calculate today and this week stats from dailyStats (unified source)
+  const todayAndWeekStats = useMemo(() => {
+    if (!dailyStats || dailyStats.length === 0) {
+      return { todayTrips: 0, todayDistance: 0, weekTrips: 0, weekDistance: 0 };
+    }
+    
+    const today = new Date().toISOString().split('T')[0];
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    const weekAgoStr = weekAgo.toISOString().split('T')[0];
+    
+    // Today's stats
+    const todayStat = dailyStats.find(s => s.stat_date === today);
+    const todayTrips = todayStat?.trip_count || 0;
+    const todayDistance = todayStat ? Number(todayStat.total_distance_km) : 0;
+    
+    // Last 7 days stats
+    const weekStats = dailyStats.filter(s => s.stat_date >= weekAgoStr && s.stat_date <= today);
+    const weekTrips = weekStats.reduce((sum, s) => sum + s.trip_count, 0);
+    const weekDistance = weekStats.reduce((sum, s) => sum + Number(s.total_distance_km), 0);
+    
+    return { todayTrips, todayDistance, weekTrips, weekDistance };
+  }, [dailyStats]);
+
   // Convert daily stats to chart data
   const chartData = useMemo(() => {
     if (!dailyStats || dailyStats.length === 0) return [];
@@ -291,7 +315,7 @@ export function MileageSection({
             <div className="rounded-lg bg-purple-500/10 p-3 text-center">
               <Route className="h-4 w-4 text-purple-500 mx-auto mb-1" />
               <div className="text-lg font-bold text-purple-500">
-                {isFilterActive ? derivedStats.totalTrips : (mileageStats?.trips_today ?? 0)}
+                {isFilterActive ? derivedStats.totalTrips : todayAndWeekStats.todayTrips}
               </div>
               <div className="text-xs text-muted-foreground">
                 {isFilterActive ? "Total Trips" : "Today"}
@@ -302,7 +326,7 @@ export function MileageSection({
               <div className="text-lg font-bold text-foreground">
                 {isFilterActive 
                   ? derivedStats.avgPerDay.toFixed(1)
-                  : ((mileageStats?.week ?? 0) / 7).toFixed(1)
+                  : (todayAndWeekStats.weekDistance / 7).toFixed(1)
                 }
               </div>
               <div className="text-xs text-muted-foreground">Avg km/day</div>
@@ -312,7 +336,7 @@ export function MileageSection({
               <div className="text-lg font-bold text-primary">
                 {isFilterActive 
                   ? (derivedStats.daysWithData || 1)
-                  : (mileageStats?.week ?? 0).toFixed(1)
+                  : todayAndWeekStats.weekDistance.toFixed(1)
                 }
               </div>
               <div className="text-xs text-muted-foreground">

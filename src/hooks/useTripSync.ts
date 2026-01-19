@@ -83,11 +83,11 @@ export function useTripSyncStatus(deviceId: string | null, enabled: boolean = tr
     queryKey: ["trip-sync-status", deviceId],
     queryFn: () => fetchTripSyncStatus(deviceId!),
     enabled: enabled && !!deviceId,
-    staleTime: 10 * 1000, // Fresh for 10 seconds
+    staleTime: 2 * 1000, // Fresh for 2 seconds (more frequent updates)
     refetchInterval: (query) => {
-      // Auto-refetch every 5 seconds if status is "processing"
+      // Auto-refetch more frequently if status is "processing" for better UX
       const status = query.state.data?.sync_status;
-      return status === "processing" ? 5000 : false;
+      return status === "processing" ? 2000 : false; // Every 2 seconds for real-time feel
     },
   });
 }
@@ -105,9 +105,33 @@ export function useTriggerTripSync() {
 
       const previousStatus = queryClient.getQueryData(["trip-sync-status", deviceId]);
 
+      // Create or update sync status optimistically
       queryClient.setQueryData(["trip-sync-status", deviceId], (old: TripSyncStatus | null) => {
-        if (!old) return null;
-        return { ...old, sync_status: "processing" as const };
+        if (!old) {
+          // If no status exists, create a new one optimistically
+          return {
+            id: '',
+            device_id: deviceId,
+            last_sync_at: new Date().toISOString(),
+            last_position_processed: null,
+            sync_status: "processing" as const,
+            trips_processed: 0,
+            trips_total: null,
+            sync_progress_percent: 0,
+            current_operation: "Initializing sync...",
+            error_message: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+        }
+        return { 
+          ...old, 
+          sync_status: "processing" as const,
+          trips_processed: 0,
+          trips_total: null,
+          sync_progress_percent: 0,
+          current_operation: "Starting sync...",
+        };
       });
 
       return { previousStatus };
@@ -180,7 +204,9 @@ export function useRealtimeTripUpdates(deviceId: string | null, enabled: boolean
         },
         (payload) => {
           const newTrip = payload.new as VehicleTrip;
-          console.log("[Realtime] New trip detected:", newTrip);
+          if (process.env.NODE_ENV === 'development') {
+            console.log("[Realtime] New trip detected:", newTrip);
+          }
 
           // Directly update cache instead of invalidating (instant update, no refetch delay)
           queryClient.setQueryData(
@@ -202,23 +228,36 @@ export function useRealtimeTripUpdates(deviceId: string | null, enabled: boolean
             }
           );
           
+          // Update sync status to reflect new trip processed (real-time countdown)
+          queryClient.setQueryData(
+            ["trip-sync-status", deviceId],
+            (oldStatus: TripSyncStatus | null | undefined) => {
+              if (!oldStatus || oldStatus.sync_status !== 'processing') {
+                return oldStatus;
+              }
+              
+              const newTripsProcessed = (oldStatus.trips_processed || 0) + 1;
+              const tripsTotal = oldStatus.trips_total;
+              
+              // Calculate new progress
+              const newProgress = tripsTotal && tripsTotal > 0
+                ? Math.round((newTripsProcessed / tripsTotal) * 100)
+                : oldStatus.sync_progress_percent;
+              
+              return {
+                ...oldStatus,
+                trips_processed: newTripsProcessed,
+                sync_progress_percent: newProgress,
+              };
+            }
+          );
+          
           // Invalidate related queries (for derived stats)
           queryClient.invalidateQueries({ queryKey: ["mileage-stats", deviceId] });
           queryClient.invalidateQueries({ queryKey: ["vehicle-daily-stats", deviceId] });
 
-          // Show toast notification with trip details
-          const distance = newTrip.distance_km ? `${newTrip.distance_km.toFixed(1)} km` : '';
-          const duration = newTrip.duration_seconds 
-            ? `${Math.round(newTrip.duration_seconds / 60)} min` 
-            : '';
-          const description = distance && duration 
-            ? `${distance} • ${duration}` 
-            : "Travel history updated";
-          
-          toast.success("New trip recorded", {
-            description,
-            duration: 3000,
-          });
+          // Show toast notification with trip details (only if not in silent mode)
+          // Don't show toast during sync to avoid spam - progress card shows it
         }
       )
       .subscribe((status) => {

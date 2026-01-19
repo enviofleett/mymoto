@@ -53,7 +53,7 @@ export function mapToVehicleLiveData(data: any): VehicleLiveData {
  * Fetches live vehicle data directly from the database.
  * NO Edge Function calls - this is the fleet-scale safe approach.
  */
-async function fetchVehicleLiveData(deviceId: string): Promise<VehicleLiveData> {
+export async function fetchVehicleLiveData(deviceId: string): Promise<VehicleLiveData> {
   if (process.env.NODE_ENV === 'development') {
     console.log("[useVehicleLiveData] Fetching from DB for:", deviceId);
   }
@@ -100,10 +100,11 @@ export function useVehicleLiveData(deviceId: string | null) {
     queryKey: ['vehicle-live-data', deviceId],
     queryFn: () => fetchVehicleLiveData(deviceId!),
     enabled: !!deviceId,
-    staleTime: 5 * 1000,        // Data stale after 5 seconds
-    gcTime: 60 * 1000,          // Keep in cache for 1 minute
-    refetchInterval: 15 * 1000, // Poll DB every 15 seconds
+    staleTime: 24 * 60 * 60 * 1000, // Fresh for 24 hours (cached data loads instantly)
+    gcTime: 48 * 60 * 60 * 1000,    // Keep in cache for 48 hours
+    refetchInterval: 15 * 1000,     // Poll DB every 15 seconds for fresh data
     retry: 2,
     retryDelay: 1000,
+    placeholderData: (previousData) => previousData, // Show cached data instantly while fresh data loads
   });
 }

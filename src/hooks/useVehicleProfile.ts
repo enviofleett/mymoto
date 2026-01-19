@@ -112,7 +112,9 @@ async function fetchVehicleTrips(
   limit: number = 200,
   dateRange?: TripDateRange
 ): Promise<VehicleTrip[]> {
-  console.log('[fetchVehicleTrips] Fetching trips for device:', deviceId, 'limit:', limit, 'dateRange:', dateRange);
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[fetchVehicleTrips] Fetching trips for device:', deviceId, 'limit:', limit, 'dateRange:', dateRange);
+  }
   
   let query = (supabase as any)
     .from("vehicle_trips")
@@ -122,12 +124,22 @@ async function fetchVehicleTrips(
     .not("start_time", "is", null)
     .not("end_time", "is", null);
 
-  // Only apply date filtering if explicitly provided (no automatic date filter)
+  // CRITICAL OPTIMIZATION: If no dateRange provided, prioritize last 24 hours for instant loading
   if (dateRange?.from) {
     const fromDate = new Date(dateRange.from);
     fromDate.setHours(0, 0, 0, 0);
     query = query.gte("start_time", fromDate.toISOString());
-    console.log('[fetchVehicleTrips] Date filter FROM:', fromDate.toISOString());
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[fetchVehicleTrips] Date filter FROM:', fromDate.toISOString());
+    }
+  } else {
+    // No explicit date range - prioritize last 24 hours for instant loading
+    const last24Hours = new Date();
+    last24Hours.setHours(last24Hours.getHours() - 24);
+    query = query.gte("start_time", last24Hours.toISOString());
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[fetchVehicleTrips] Auto-filtering last 24 hours for instant load:', last24Hours.toISOString());
+    }
   }
   
   if (dateRange?.to) {
@@ -136,9 +148,9 @@ async function fetchVehicleTrips(
     endDate.setDate(endDate.getDate() + 1);
     endDate.setHours(0, 0, 0, 0);
     query = query.lt("start_time", endDate.toISOString());
-    console.log('[fetchVehicleTrips] Date filter TO:', endDate.toISOString());
-  } else {
-    console.log('[fetchVehicleTrips] No date filter - fetching latest', limit, 'trips');
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[fetchVehicleTrips] Date filter TO:', endDate.toISOString());
+    }
   }
 
   // Always order by start_time DESC to get newest first, then limit
@@ -196,13 +208,35 @@ async function fetchVehicleTrips(
     .map((trip: any): VehicleTrip => {
       // Calculate distance if missing or 0
       let distanceKm = trip.distance_km || 0;
-      if (distanceKm === 0 && trip.start_latitude && trip.start_longitude && trip.end_latitude && trip.end_longitude) {
+      
+      // First, try to calculate from GPS coordinates if available
+      const hasValidStartCoords = trip.start_latitude && trip.start_longitude && 
+                                   trip.start_latitude !== 0 && trip.start_longitude !== 0;
+      const hasValidEndCoords = trip.end_latitude && trip.end_longitude && 
+                                 trip.end_latitude !== 0 && trip.end_longitude !== 0;
+      
+      if (distanceKm === 0 && hasValidStartCoords && hasValidEndCoords) {
         distanceKm = calculateDistance(
           trip.start_latitude,
           trip.start_longitude,
           trip.end_latitude,
           trip.end_longitude
         );
+      }
+      
+      // If distance is still 0 but we have duration and average speed, estimate distance
+      if (distanceKm === 0 && trip.duration_seconds && trip.avg_speed && trip.avg_speed > 0) {
+        // distance = speed (km/h) * time (hours)
+        const durationHours = trip.duration_seconds / 3600;
+        distanceKm = trip.avg_speed * durationHours;
+      }
+      
+      // If distance is still 0 but we have duration, estimate minimum distance
+      // Assume minimum speed of 5 km/h for any trip with duration
+      if (distanceKm === 0 && trip.duration_seconds && trip.duration_seconds > 0) {
+        const durationHours = trip.duration_seconds / 3600;
+        const minSpeedKmh = 5; // Minimum assumed speed for a trip
+        distanceKm = minSpeedKmh * durationHours;
       }
 
       return {
@@ -222,32 +256,6 @@ async function fetchVehicleTrips(
     });
 }
 
-async function fetchVehicleEvents(
-  deviceId: string, 
-  limit: number = 50,
-  dateRange?: TripDateRange
-): Promise<VehicleEvent[]> {
-  let query = (supabase as any)
-    .from("proactive_vehicle_events")
-    .select("*")
-    .eq("device_id", deviceId);
-
-  if (dateRange?.from) {
-    query = query.gte("created_at", dateRange.from.toISOString());
-  }
-  if (dateRange?.to) {
-    const endDate = new Date(dateRange.to);
-    endDate.setDate(endDate.getDate() + 1);
-    query = query.lt("created_at", endDate.toISOString());
-  }
-
-  const { data, error } = await query
-    .order("created_at", { ascending: false })
-    .limit(limit);
-
-  if (error) throw error;
-  return ((data as any[]) || []) as VehicleEvent[];
-}
 
 async function fetchVehicleLLMSettings(deviceId: string): Promise<VehicleLLMSettings | null> {
   const { data, error } = await (supabase as any)
@@ -359,18 +367,54 @@ export function useVehicleTrips(
     queryKey: ["vehicle-trips", deviceId, dateRange?.from?.toISOString(), dateRange?.to?.toISOString(), limit],
     queryFn: () => fetchVehicleTrips(deviceId!, limit, dateRange),
     enabled: enabled && !!deviceId,
-    staleTime: 30 * 1000, // Fresh for 30 seconds (reduced from 1 minute)
-    gcTime: 5 * 60 * 1000,
+    staleTime: 24 * 60 * 60 * 1000, // Fresh for 24 hours (data from last 24h loads instantly)
+    gcTime: 48 * 60 * 60 * 1000, // Keep in cache for 48 hours
     // Refetch on window focus to ensure latest trips are shown
     refetchOnWindowFocus: true,
     // Refetch on reconnect to get latest trips
     refetchOnReconnect: true,
+    // Use placeholderData to show cached data instantly while fresh data loads
+    placeholderData: (previousData) => previousData,
   });
 }
 
 export interface EventFilterOptions {
   dateRange?: TripDateRange;
   limit?: number;
+}
+
+async function fetchVehicleEvents(
+  deviceId: string, 
+  limit: number = 50,
+  dateRange?: TripDateRange
+): Promise<VehicleEvent[]> {
+  let query = (supabase as any)
+    .from("proactive_vehicle_events")
+    .select("*")
+    .eq("device_id", deviceId);
+
+  // CRITICAL OPTIMIZATION: If no dateRange provided, prioritize last 24 hours
+  if (dateRange?.from) {
+    query = query.gte("created_at", dateRange.from.toISOString());
+  } else {
+    // Auto-filter last 24 hours for instant loading
+    const last24Hours = new Date();
+    last24Hours.setHours(last24Hours.getHours() - 24);
+    query = query.gte("created_at", last24Hours.toISOString());
+  }
+  
+  if (dateRange?.to) {
+    const endDate = new Date(dateRange.to);
+    endDate.setDate(endDate.getDate() + 1);
+    query = query.lt("created_at", endDate.toISOString());
+  }
+
+  const { data, error } = await query
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+  return ((data as any[]) || []) as VehicleEvent[];
 }
 
 export function useVehicleEvents(
@@ -384,8 +428,9 @@ export function useVehicleEvents(
     queryKey: ["vehicle-events", deviceId, dateRange?.from?.toISOString(), dateRange?.to?.toISOString(), limit],
     queryFn: () => fetchVehicleEvents(deviceId!, limit, dateRange),
     enabled: enabled && !!deviceId,
-    staleTime: 30 * 1000, // Fresh for 30 seconds
-    gcTime: 5 * 60 * 1000,
+    staleTime: 24 * 60 * 60 * 1000, // Fresh for 24 hours
+    gcTime: 48 * 60 * 60 * 1000, // Keep in cache for 48 hours
+    placeholderData: (previousData) => previousData, // Show cached data instantly
   });
 }
 
@@ -429,8 +474,9 @@ export function useVehicleDailyStats(
     queryKey: ["vehicle-daily-stats", deviceId, days],
     queryFn: () => fetchVehicleDailyStats(deviceId!, days),
     enabled: enabled && !!deviceId,
-    staleTime: 5 * 60 * 1000, // Fresh for 5 minutes (server-calculated)
-    gcTime: 10 * 60 * 1000,
+    staleTime: 24 * 60 * 60 * 1000, // Fresh for 24 hours (last 24h data loads instantly)
+    gcTime: 48 * 60 * 60 * 1000, // Keep in cache for 48 hours
+    placeholderData: (previousData) => previousData, // Show cached data instantly
   });
 }
 
@@ -546,41 +592,53 @@ export function usePrefetchVehicleProfile() {
   const queryClient = useQueryClient();
 
   const prefetchAll = (deviceId: string) => {
+    // Prefetch last 24 hours of trips for instant loading
     queryClient.prefetchQuery({
-      queryKey: ["vehicle-trips", deviceId],
-      queryFn: () => fetchVehicleTrips(deviceId),
-      staleTime: 60 * 1000,
+      queryKey: ["vehicle-trips", deviceId, undefined, undefined, 200],
+      queryFn: () => fetchVehicleTrips(deviceId, 200), // Will auto-filter last 24h
+      staleTime: 24 * 60 * 60 * 1000, // 24 hours
     });
 
+    // Prefetch last 24 hours of events
     queryClient.prefetchQuery({
-      queryKey: ["vehicle-events", deviceId],
-      queryFn: () => fetchVehicleEvents(deviceId),
-      staleTime: 30 * 1000,
+      queryKey: ["vehicle-events", deviceId, undefined, undefined, 50],
+      queryFn: () => fetchVehicleEvents(deviceId, 50), // Will auto-filter last 24h
+      staleTime: 24 * 60 * 60 * 1000, // 24 hours
+    });
+
+    // Prefetch live data (async import to avoid circular dependency)
+    Promise.resolve().then(async () => {
+      const { fetchVehicleLiveData } = await import("@/hooks/useVehicleLiveData");
+      queryClient.prefetchQuery({
+        queryKey: ["vehicle-live-data", deviceId],
+        queryFn: () => fetchVehicleLiveData(deviceId),
+        staleTime: 24 * 60 * 60 * 1000,
+      });
     });
 
     queryClient.prefetchQuery({
       queryKey: ["mileage-stats", deviceId],
       queryFn: () => fetchMileageStats(deviceId),
-      staleTime: 2 * 60 * 1000,
+      staleTime: 24 * 60 * 60 * 1000, // 24 hours
     });
 
     queryClient.prefetchQuery({
       queryKey: ["daily-mileage", deviceId],
       queryFn: () => fetchDailyMileage(deviceId),
-      staleTime: 2 * 60 * 1000,
+      staleTime: 24 * 60 * 60 * 1000, // 24 hours
     });
 
     queryClient.prefetchQuery({
       queryKey: ["vehicle-llm-settings", deviceId],
       queryFn: () => fetchVehicleLLMSettings(deviceId),
-      staleTime: 5 * 60 * 1000,
+      staleTime: 24 * 60 * 60 * 1000, // 24 hours
     });
     
-    // Prefetch vehicle daily stats from view
+    // Prefetch vehicle daily stats from view (last 30 days, but cached for 24h)
     queryClient.prefetchQuery({
       queryKey: ["vehicle-daily-stats", deviceId, 30],
       queryFn: () => fetchVehicleDailyStats(deviceId, 30),
-      staleTime: 5 * 60 * 1000,
+      staleTime: 24 * 60 * 60 * 1000, // 24 hours
     });
   };
 
