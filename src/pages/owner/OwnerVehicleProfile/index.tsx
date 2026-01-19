@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import type { DateRange } from "react-day-picker";
@@ -19,8 +19,6 @@ import {
   useVehicleTrips,
   useVehicleEvents,
   useVehicleLLMSettings,
-  useMileageStats,
-  useDailyMileage,
   useVehicleDailyStats,
   VehicleTrip,
 } from "@/hooks/useVehicleProfile";
@@ -50,6 +48,7 @@ export default function OwnerVehicleProfile() {
   const [selectedTrip, setSelectedTrip] = useState<VehicleTrip | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [isAutoSyncing, setIsAutoSyncing] = useState(false);
 
   // CRITICAL FIX #1: Check deviceId BEFORE initializing hooks
   if (!deviceId) {
@@ -93,19 +92,21 @@ export default function OwnerVehicleProfile() {
       : { limit: 200 }, // Increased from 50 to 200 to ensure we get all recent trips
     true
   );
-  
+
   // DEBUG: Log trips when they change
-  console.log('[OwnerVehicleProfile] Trips data:', {
-    count: trips?.length || 0,
-    loading: tripsLoading,
-    error: tripsError,
-    hasDateRange: !!dateRange?.from
-  });
-  
-  if (trips && trips.length > 0) {
-    const tripDates = trips.map(t => t.start_time.split('T')[0]);
-    const uniqueDates = [...new Set(tripDates)];
-    console.log('[OwnerVehicleProfile] Unique trip dates:', uniqueDates.sort().reverse());
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[OwnerVehicleProfile] Trips data:', {
+      count: trips?.length || 0,
+      loading: tripsLoading,
+      error: tripsError,
+      hasDateRange: !!dateRange?.from
+    });
+
+    if (trips && trips.length > 0) {
+      const tripDates = trips.map(t => t.start_time.split('T')[0]);
+      const uniqueDates = [...new Set(tripDates)];
+      console.log('[OwnerVehicleProfile] Unique trip dates:', uniqueDates.sort().reverse());
+    }
   }
 
   const {
@@ -121,22 +122,10 @@ export default function OwnerVehicleProfile() {
     true
   );
 
-  const { 
-    data: mileageStats, 
-    error: mileageError,
-    refetch: refetchMileage 
-  } = useMileageStats(deviceId, true);
-  
-  const { 
-    data: dailyMileage, 
-    error: dailyMileageError,
-    refetch: refetchDaily 
-  } = useDailyMileage(deviceId, true);
-  
-  const { 
-    data: dailyStats, 
+  const {
+    data: dailyStats,
     error: dailyStatsError,
-    refetch: refetchDailyStats 
+    refetch: refetchDailyStats
   } = useVehicleDailyStats(deviceId, 30, true);
 
   // Trip sync management
@@ -166,6 +155,57 @@ export default function OwnerVehicleProfile() {
     
     return isCharging ? "charging" : "online";
   }, [liveData?.isOnline, liveData?.batteryPercent, liveData?.ignitionOn, liveData?.speed]);
+
+  // AUTO-SYNC ON PAGE LOAD - Ensures fresh trip data without manual sync
+  useEffect(() => {
+    if (!deviceId) return;
+
+    const autoSyncOnMount = async () => {
+      console.log('[VehicleProfile] Auto-syncing trips on page load');
+      setIsAutoSyncing(true);
+
+      try {
+        // Trigger incremental sync in background (non-blocking)
+        // This runs silently and updates the UI when complete
+        supabase.functions.invoke("sync-trips-incremental", {
+          body: {
+            device_ids: [deviceId],
+            force_full_sync: false  // Quick incremental sync only
+          },
+        }).then(result => {
+          console.log('[VehicleProfile] Auto-sync completed:', result);
+
+          // Invalidate trips query to trigger refetch with fresh data
+          queryClient.invalidateQueries({
+            queryKey: ["vehicle-trips", deviceId],
+            exact: false // Invalidate all variants
+          });
+
+          // Also invalidate daily stats for mileage consistency
+          queryClient.invalidateQueries({
+            queryKey: ["vehicle-daily-stats", deviceId],
+            exact: false
+          });
+
+          setIsAutoSyncing(false);
+        }).catch(error => {
+          console.warn('[VehicleProfile] Auto-sync failed (non-critical):', error);
+          setIsAutoSyncing(false);
+          // Don't show error to user - background operation failure is non-critical
+          // Cached data is still shown
+        });
+
+      } catch (error) {
+        console.warn('[VehicleProfile] Auto-sync error:', error);
+        setIsAutoSyncing(false);
+      }
+    };
+
+    // Small delay to let page render first (better UX)
+    const timer = setTimeout(autoSyncOnMount, 500);
+
+    return () => clearTimeout(timer);
+  }, [deviceId, queryClient]); // Only run on mount or when deviceId changes
 
   // CRITICAL FIX: All hooks must be called BEFORE any conditional returns
   // Force sync handler - processes last 7 days with full sync
@@ -229,8 +269,6 @@ export default function OwnerVehicleProfile() {
         refetchLive(),
         refetchTrips(),
         refetchEvents(),
-        refetchMileage(),
-        refetchDaily(),
         refetchDailyStats(),
       ]);
 
@@ -276,8 +314,6 @@ export default function OwnerVehicleProfile() {
     refetchLive,
     refetchTrips,
     refetchEvents,
-    refetchMileage,
-    refetchDaily,
     refetchDailyStats,
   ]);
 
@@ -417,8 +453,6 @@ export default function OwnerVehicleProfile() {
             <MileageSection
               totalMileage={liveData?.totalMileageKm ?? null}
               dailyStats={dailyStats}
-              mileageStats={mileageStats}
-              dailyMileage={dailyMileage}
               dateRange={dateRange}
             />
 
@@ -433,7 +467,8 @@ export default function OwnerVehicleProfile() {
               onDateRangeChange={setDateRange}
               onPlayTrip={setSelectedTrip}
               syncStatus={syncStatus}
-              isSyncing={isSyncing || syncStatus?.sync_status === "processing"}
+              isSyncing={isSyncing || isAutoSyncing || syncStatus?.sync_status === "processing"}
+              isAutoSyncing={isAutoSyncing}
               onForceSync={handleForceSync}
               isRealtimeActive={isSubscribed}
             />

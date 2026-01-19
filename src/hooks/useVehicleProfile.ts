@@ -405,16 +405,18 @@ export function useDailyMileage(deviceId: string | null, enabled: boolean = true
 
 // New: Hook to fetch pre-calculated daily stats from database view
 export function useVehicleDailyStats(
-  deviceId: string | null, 
-  days: number = 30, 
+  deviceId: string | null,
+  days: number = 30,
   enabled: boolean = true
 ) {
   return useQuery({
     queryKey: ["vehicle-daily-stats", deviceId, days],
     queryFn: () => fetchVehicleDailyStats(deviceId!, days),
     enabled: enabled && !!deviceId,
-    staleTime: 5 * 60 * 1000, // Fresh for 5 minutes (server-calculated)
+    staleTime: 30 * 1000, // ✅ CHANGED: 30 seconds (was 5 minutes)
     gcTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: true, // ✅ ADDED: Refetch when user returns to tab
+    refetchOnReconnect: true,   // ✅ ADDED: Refetch when network reconnects
   });
 }
 

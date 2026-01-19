@@ -21,61 +21,88 @@ import {
 import { format, parseISO } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import type { VehicleDailyStats } from "@/hooks/useVehicleProfile";
-import { deriveMileageFromStats } from "@/hooks/useVehicleProfile";
 
 interface MileageSectionProps {
   totalMileage: number | null;
   dailyStats: VehicleDailyStats[] | undefined;
-  mileageStats: {
-    today: number;
-    week: number;
-    trips_today: number;
-  } | null | undefined;
-  dailyMileage: { day: string; distance: number; trips: number }[] | undefined;
   dateRange: DateRange | undefined;
 }
 
 export function MileageSection({
   totalMileage,
   dailyStats,
-  mileageStats,
-  dailyMileage,
   dateRange,
 }: MileageSectionProps) {
   const isFilterActive = !!dateRange?.from;
 
-  // Derive stats from daily data (Single Source of Truth)
-  const derivedStats = useMemo(() => {
+  // ✅ SINGLE SOURCE OF TRUTH - Derive all stats from dailyStats
+  const stats = useMemo(() => {
     if (!dailyStats || dailyStats.length === 0) {
-      return deriveMileageFromStats([]);
+      return {
+        todayDistance: 0,
+        todayTrips: 0,
+        weekDistance: 0,
+        weekTrips: 0,
+        avgPerDay: 0,
+        totalDistance: 0,
+        totalTrips: 0,
+        daysWithData: 0,
+        peakSpeed: 0,
+        avgKmPerTrip: 0,
+      };
     }
-    
+
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const weekAgoStr = weekAgo.toISOString().split('T')[0];
+
+    // Apply date filter if provided
+    let filtered = dailyStats;
     if (dateRange?.from) {
-      const fromDate = dateRange.from.toISOString().split('T')[0];
-      const toDate = dateRange.to?.toISOString().split('T')[0] || fromDate;
-      
-      const filtered = dailyStats.filter(s => {
-        const date = s.stat_date;
-        return date >= fromDate && date <= toDate;
-      });
-      
-      return deriveMileageFromStats(filtered);
+      const fromStr = dateRange.from.toISOString().split('T')[0];
+      const toStr = dateRange.to?.toISOString().split('T')[0] || fromStr;
+      filtered = dailyStats.filter(s => s.stat_date >= fromStr && s.stat_date <= toStr);
     }
-    
-    return deriveMileageFromStats(dailyStats);
+
+    // Calculate today's stats
+    const todayStat = dailyStats.find(s => s.stat_date === today);
+
+    // Calculate week's stats (last 7 days)
+    const weekStats = dailyStats.filter(s => s.stat_date >= weekAgoStr);
+
+    // Calculate filtered period stats
+    const totalDistance = filtered.reduce((sum, s) => sum + Number(s.total_distance_km), 0);
+    const totalTrips = filtered.reduce((sum, s) => sum + s.trip_count, 0);
+    const weekDistance = weekStats.reduce((sum, s) => sum + Number(s.total_distance_km), 0);
+    const weekTrips = weekStats.reduce((sum, s) => sum + s.trip_count, 0);
+    const peakSpeed = Math.max(...filtered.map(s => s.peak_speed || 0));
+
+    return {
+      todayDistance: todayStat ? Number(todayStat.total_distance_km) : 0,
+      todayTrips: todayStat ? todayStat.trip_count : 0,
+      weekDistance,
+      weekTrips,
+      avgPerDay: filtered.length > 0 ? totalDistance / filtered.length : 0,
+      totalDistance,
+      totalTrips,
+      daysWithData: filtered.length,
+      peakSpeed,
+      avgKmPerTrip: totalTrips > 0 ? totalDistance / totalTrips : 0,
+    };
   }, [dailyStats, dateRange]);
 
   // Convert daily stats to chart data
   const chartData = useMemo(() => {
     if (!dailyStats || dailyStats.length === 0) return [];
-    
+
     let filtered = dailyStats;
     if (dateRange?.from) {
       const fromDate = dateRange.from.toISOString().split('T')[0];
       const toDate = dateRange.to?.toISOString().split('T')[0] || fromDate;
       filtered = dailyStats.filter(s => s.stat_date >= fromDate && s.stat_date <= toDate);
     }
-    
+
     return filtered
       .map(stat => ({
         day: format(parseISO(stat.stat_date), 'EEE'),
@@ -86,25 +113,11 @@ export function MileageSection({
       .sort((a, b) => a.date.localeCompare(b.date));
   }, [dailyStats, dateRange]);
 
-  // Trip stats calculation
-  const tripStats = useMemo(() => {
-    const { totalTrips, avgPerDay, avgKmPerTrip, daysWithData } = derivedStats;
-    const peakTrips = chartData.length > 0 ? Math.max(...chartData.map(d => d.trips)) : 0;
-    
-    return {
-      totalTrips,
-      avgTripsPerDay: daysWithData > 0 ? totalTrips / daysWithData : 0,
-      avgKmPerTrip,
-      peakTrips,
-    };
-  }, [derivedStats, chartData]);
-
-  // Use chartData consistently to prevent UI jumping
   const displayData = chartData.length > 0 ? chartData : [];
 
   return (
     <>
-      {/* Mileage Stats */}
+      {/* Mileage Stats Card */}
       <Card className="border-border bg-card/50">
         <CardContent className="p-4">
           <div className="flex items-center justify-between mb-4">
@@ -130,12 +143,11 @@ export function MileageSection({
               {isFilterActive ? "Period Distance" : "Total Odometer"}
             </div>
             <div className="text-3xl font-bold text-foreground">
-              {/* DEFENSIVE FIX: Check strictly for number type */}
-              {isFilterActive 
-                ? derivedStats.totalDistance.toFixed(1)
-                : typeof totalMileage === 'number' 
-                  ? totalMileage.toLocaleString(undefined, { maximumFractionDigits: 0 }) 
-                  : "--"
+              {isFilterActive
+                ? stats.totalDistance.toFixed(1)
+                : typeof totalMileage === 'number'
+                  ? totalMileage.toLocaleString(undefined, { maximumFractionDigits: 0 })
+                  : stats.totalDistance.toFixed(1)
               } <span className="text-base font-normal">km</span>
             </div>
           </div>
@@ -144,7 +156,7 @@ export function MileageSection({
             <div className="rounded-lg bg-purple-500/10 p-3 text-center">
               <Route className="h-4 w-4 text-purple-500 mx-auto mb-1" />
               <div className="text-lg font-bold text-purple-500">
-                {isFilterActive ? derivedStats.totalTrips : (mileageStats?.trips_today ?? 0)}
+                {isFilterActive ? stats.totalTrips : stats.todayTrips}
               </div>
               <div className="text-xs text-muted-foreground">
                 {isFilterActive ? "Total Trips" : "Today"}
@@ -153,19 +165,16 @@ export function MileageSection({
             <div className="rounded-lg bg-muted p-3 text-center">
               <TrendingUp className="h-4 w-4 text-muted-foreground mx-auto mb-1" />
               <div className="text-lg font-bold text-foreground">
-                {isFilterActive 
-                  ? derivedStats.avgPerDay.toFixed(1)
-                  : ((mileageStats?.week ?? 0) / 7).toFixed(1)
-                }
+                {stats.avgPerDay.toFixed(1)}
               </div>
               <div className="text-xs text-muted-foreground">Avg km/day</div>
             </div>
             <div className="rounded-lg bg-primary/10 p-3 text-center">
               <Calendar className="h-4 w-4 text-primary mx-auto mb-1" />
               <div className="text-lg font-bold text-primary">
-                {isFilterActive 
-                  ? (derivedStats.daysWithData || 1)
-                  : (mileageStats?.week ?? 0).toFixed(1)
+                {isFilterActive
+                  ? stats.daysWithData
+                  : stats.weekDistance.toFixed(1)
                 }
               </div>
               <div className="text-xs text-muted-foreground">
@@ -186,7 +195,7 @@ export function MileageSection({
                 <span className="font-medium text-foreground">Mileage Trend</span>
               </div>
               <div className="text-xs text-muted-foreground mt-0.5">
-                {isFilterActive 
+                {isFilterActive
                   ? `${chartData.length} day${chartData.length !== 1 ? 's' : ''} selected`
                   : "Last 30 days"
                 }
@@ -194,10 +203,10 @@ export function MileageSection({
             </div>
             <div className="text-right">
               <div className="text-lg font-bold text-primary">
-                {derivedStats.totalDistance.toFixed(1)} km
+                {stats.totalDistance.toFixed(1)} km
               </div>
               <div className="text-xs text-muted-foreground">
-                Avg: {derivedStats.avgPerDay.toFixed(1)}/day
+                Avg: {stats.avgPerDay.toFixed(1)}/day
               </div>
             </div>
           </div>
@@ -249,16 +258,16 @@ export function MileageSection({
                 <span className="font-medium text-foreground">Trip Activity</span>
               </div>
               <div className="text-xs text-muted-foreground mt-0.5">
-                {isFilterActive 
+                {isFilterActive
                   ? `${chartData.length} day${chartData.length !== 1 ? 's' : ''} selected`
                   : "Last 30 days"
                 }
               </div>
             </div>
             <div className="text-right">
-              <div className="text-lg font-bold text-purple-500">{tripStats.totalTrips} trips</div>
+              <div className="text-lg font-bold text-purple-500">{stats.totalTrips} trips</div>
               <div className="text-xs text-muted-foreground">
-                {derivedStats.totalDistance.toFixed(1)} km total
+                {stats.totalDistance.toFixed(1)} km total
               </div>
             </div>
           </div>
@@ -289,17 +298,19 @@ export function MileageSection({
           <div className="grid grid-cols-3 gap-2 mt-4 pt-3 border-t border-border">
             <div className="text-center">
               <div className="text-lg font-bold text-foreground">
-                {tripStats.avgTripsPerDay.toFixed(1)}
+                {stats.daysWithData > 0 ? (stats.totalTrips / stats.daysWithData).toFixed(1) : '0.0'}
               </div>
               <div className="text-xs text-muted-foreground">Avg trips/day</div>
             </div>
             <div className="text-center">
-              <div className="text-lg font-bold text-purple-500">{tripStats.peakTrips}</div>
+              <div className="text-lg font-bold text-purple-500">
+                {Math.max(...chartData.map(d => d.trips), 0)}
+              </div>
               <div className="text-xs text-muted-foreground">Peak trips</div>
             </div>
             <div className="text-center">
               <div className="text-lg font-bold text-primary">
-                {tripStats.avgKmPerTrip.toFixed(1)}
+                {stats.avgKmPerTrip.toFixed(1)}
               </div>
               <div className="text-xs text-muted-foreground">Avg km/trip</div>
             </div>
