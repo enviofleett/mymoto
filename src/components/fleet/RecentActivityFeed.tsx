@@ -515,8 +515,29 @@ function ActivityItemDetail({ item, index, deviceId }: { item: ActivityItem; ind
   
   const detailedInfo = getDetailedInfo(item);
   const activityMessage = getActivityMessage(item);
-  const formattedTime = format(new Date(item.gps_time), 'HH:mm:ss');
-  const formattedDate = format(new Date(item.gps_time), 'MMM dd, yyyy');
+  // Use Lagos timezone for all time displays
+  const formatLagosTime = (date: Date | string) => {
+    const d = typeof date === 'string' ? new Date(date) : date;
+    return d.toLocaleTimeString('en-US', { 
+      timeZone: 'Africa/Lagos',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  };
+  
+  const formatLagosDate = (date: Date | string) => {
+    const d = typeof date === 'string' ? new Date(date) : date;
+    return d.toLocaleDateString('en-US', { 
+      timeZone: 'Africa/Lagos',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  };
+  
+  const formattedTime = formatLagosTime(item.gps_time);
+  const formattedDate = formatLagosDate(item.gps_time);
 
   return (
     <div

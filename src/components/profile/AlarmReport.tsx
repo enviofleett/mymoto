@@ -260,7 +260,13 @@ export function AlarmReport({ deviceIds, vehicles }: AlarmReportProps) {
                       <TableCell>
                         <div className="flex flex-col">
                           <span className="text-sm">
-                            {format(new Date(event.created_at), "MMM d, HH:mm")}
+                            {new Date(event.created_at).toLocaleString('en-US', {
+                              timeZone: 'Africa/Lagos',
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
                           </span>
                           <span className="text-xs text-muted-foreground">
                             {formatDistanceToNow(new Date(event.created_at), { addSuffix: true })}

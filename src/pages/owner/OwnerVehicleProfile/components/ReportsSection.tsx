@@ -461,7 +461,12 @@ export function ReportsSection({
                             <div className="font-medium text-foreground">{event.title}</div>
                             <div className="text-sm text-muted-foreground truncate">{event.message}</div>
                             <div className="text-xs text-muted-foreground mt-1">
-                              {format(parseISO(event.created_at), 'h:mm a')}
+                              {new Date(event.created_at).toLocaleString('en-US', {
+                                timeZone: 'Africa/Lagos',
+                                hour: 'numeric',
+                                minute: '2-digit',
+                                hour12: true,
+                              })}
                             </div>
                           </div>
                         </div>
@@ -554,7 +559,17 @@ function TripCard({
             )}
           </div>
           <div className="text-xs text-muted-foreground">
-            {format(parseISO(trip.start_time), 'h:mm a')} - {format(parseISO(trip.end_time), 'h:mm a')}
+            {new Date(trip.start_time).toLocaleString('en-US', {
+              timeZone: 'Africa/Lagos',
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true,
+            })} - {new Date(trip.end_time).toLocaleString('en-US', {
+              timeZone: 'Africa/Lagos',
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true,
+            })}
           </div>
         </div>
         <div className="text-right shrink-0 flex items-center gap-2">

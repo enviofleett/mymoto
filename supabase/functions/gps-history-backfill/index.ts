@@ -78,8 +78,14 @@ async function fetchTrackHistory(
         deviceid: record.deviceid || deviceId,
       };
       
-      // Normalize telemetry
+      // Normalize telemetry using centralized normalizer
+      // This ensures JT808 status bits are properly detected and confidence is calculated
       const normalized = normalizeVehicleTelemetry(rawData);
+      
+      // Log low-confidence ignition detection for debugging
+      if (normalized.ignition_confidence !== undefined && normalized.ignition_confidence < 0.5) {
+        console.warn(`[fetchTrackHistory] Low ignition confidence (${normalized.ignition_confidence.toFixed(2)}) for device=${deviceId}, method=${normalized.ignition_detection_method}, status=${record.status}, strstatus=${record.strstatus}`);
+      }
       
       // Map to TrackRecord format (for backward compatibility)
       return {
@@ -221,10 +227,17 @@ async function detectAndInsertTrips(
   const STOP_THRESHOLD_MS = 300000 // 5 minutes stationary = trip end
   const MIN_TRIP_DISTANCE_KM = 0.1 // Minimum 100m for a valid trip
   
+  // Confidence threshold for ignition-based trip detection (>= 0.5 for medium confidence)
+  const MIN_IGNITION_CONFIDENCE = 0.5;
+  
   for (let i = 0; i < positions.length; i++) {
     const pos = positions[i]
     // Note: pos.speed is now in km/h (normalized), and ignition_on uses confidence scoring
-    const isMoving = pos.speed > 3 || pos.ignition_on
+    // Only use ignition for trip detection if confidence is sufficient (>= 0.5)
+    const hasIgnitionConfidence = pos.ignition_confidence !== null && pos.ignition_confidence !== undefined;
+    const ignitionConfidenceOk = hasIgnitionConfidence ? pos.ignition_confidence >= MIN_IGNITION_CONFIDENCE : true; // Allow if no confidence data (backward compat)
+    const ignitionOn = pos.ignition_on === true && ignitionConfidenceOk;
+    const isMoving = pos.speed > 3 || ignitionOn
     
     if (isMoving && !tripStart) {
       // Trip started

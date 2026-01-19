@@ -153,7 +153,15 @@ export function VehicleDetailsModal({
   };
 
   const formatTime = (timeString: string) => {
-    return new Date(timeString).toLocaleString();
+    // Use Lagos timezone for all time displays
+    return new Date(timeString).toLocaleString('en-US', { 
+      timeZone: 'Africa/Lagos',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   };
 
   return (
@@ -262,7 +270,14 @@ export function VehicleDetailsModal({
               {vehicle.lastUpdate && (
                 <p className="text-xs text-muted-foreground flex items-center gap-1">
                   <Calendar className="h-3 w-3" />
-                  Last update: {vehicle.lastUpdate.toLocaleString()}
+                  Last update: {new Date(vehicle.lastUpdate).toLocaleString('en-US', { 
+                    timeZone: 'Africa/Lagos',
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
                 </p>
               )}
             </div>

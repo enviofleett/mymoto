@@ -5,7 +5,7 @@ import { routeQuery } from './query-router.ts'
 import { parseCommand, containsCommandKeywords, getCommandMetadata, GeofenceAlertParams } from './command-parser.ts'
 import { learnAndGetPreferences, buildPreferenceContext } from './preference-learner.ts'
 import { extractDateContext, isHistoricalMovementQuery, calculateDistanceFromHistory, DateContext } from './date-extractor.ts'
-import { detectIgnition, normalizeSpeed } from '../_shared/telemetry-normalizer.ts'
+import { detectIgnition, normalizeSpeed, normalizeVehicleTelemetry, type Gps51RawData } from '../_shared/telemetry-normalizer.ts'
 
 // ============================================================================
 // INLINED MODULES (for Dashboard deployment compatibility)
@@ -2573,8 +2573,9 @@ serve(async (req) => {
       .eq('device_id', device_id)
       .maybeSingle()
 
-    // Check if LLM is disabled
-    if (llmSettings && !llmSettings.llm_enabled) {
+    // Check if LLM is disabled (default to enabled if null/undefined - never auto-disable)
+    const isEnabled = llmSettings?.llm_enabled ?? true;
+    if (!isEnabled) {
       return new Response(JSON.stringify({ 
         error: 'AI companion is paused for this vehicle. Please enable it in settings.' 
       }), {
@@ -2593,30 +2594,33 @@ serve(async (req) => {
       // Fetch fresh data from GPS51
       const freshData = await fetchFreshGpsData(supabase, device_id)
       if (freshData) {
+        // Use centralized telemetry normalizer for consistent processing
+        // This ensures JT808 status bits are properly detected and confidence is calculated
+        const normalized = normalizeVehicleTelemetry(freshData as Gps51RawData, {
+          offlineThresholdMs: 600000, // 10 minutes
+        });
+        
         dataFreshness = 'live'
-        dataTimestamp = freshData.updatetime ? new Date(freshData.updatetime).toISOString() : new Date().toISOString()
+        dataTimestamp = normalized.last_updated_at
         dataAgeSeconds = Math.floor((Date.now() - new Date(dataTimestamp).getTime()) / 1000)
         
-        // Map fresh GPS51 data to position format
+        // Map normalized telemetry to position format (includes confidence and detection method)
         position = {
-          device_id: freshData.deviceid,
-          latitude: freshData.callat,
-          longitude: freshData.callon,
-          speed: freshData.speed || 0,
-          heading: freshData.heading,
-          altitude: freshData.altitude,
-          battery_percent: freshData.voltagepercent > 0 ? freshData.voltagepercent : null,
-          ignition_on: (() => {
-            // Use improved ignition detection from telemetry-normalizer
-            const speedKmh = normalizeSpeed(freshData.speed);
-            const result = detectIgnition(freshData as any, speedKmh);
-            return result.ignition_on;
-          })(),
-          is_online: freshData.updatetime ? (Date.now() - new Date(freshData.updatetime).getTime() < 600000) : false,
+          device_id: normalized.vehicle_id,
+          latitude: normalized.lat,
+          longitude: normalized.lon,
+          speed: normalized.speed_kmh,
+          heading: normalized.heading,
+          altitude: normalized.altitude,
+          battery_percent: normalized.battery_level,
+          ignition_on: normalized.ignition_on,
+          ignition_confidence: normalized.ignition_confidence || null,
+          ignition_detection_method: normalized.ignition_detection_method || null,
+          is_online: normalized.is_online,
           is_overspeeding: freshData.currentoverspeedstate === 1,
           total_mileage: freshData.totaldistance,
-          status_text: freshData.strstatus,
-          gps_time: freshData.updatetime ? new Date(freshData.updatetime).toISOString() : null
+          status_text: freshData.strstatus, // Keep raw status_text for debugging
+          gps_time: normalized.last_updated_at
         }
       }
     }

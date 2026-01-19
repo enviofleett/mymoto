@@ -338,6 +338,8 @@ interface PositionPoint {
   heading: number | null;
   gps_time: string;
   ignition_on: boolean | null;
+  ignition_confidence?: number | null;
+  ignition_detection_method?: string | null;
 }
 
 interface TripData {
@@ -562,11 +564,27 @@ function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
   const STOP_DURATION_MS = 5 * 60 * 1000; // 5 minutes of no movement = trip end (increased)
   const MAX_TIME_GAP_MS = 30 * 60 * 1000; // 30 minutes - if gap is larger, end trip
 
-  // Check if we have USABLE ignition data (at least some true values)
-  // If all ignition values are false, we can't use ignition-based detection
-  const hasIgnitionTrue = positions.some(p => p.ignition_on === true);
+  // Check if we have USABLE ignition data (at least some true values with sufficient confidence)
+  // Confidence threshold: >= 0.5 (medium confidence) to ensure reliable trip detection
+  const MIN_IGNITION_CONFIDENCE = 0.5;
+  const hasIgnitionTrue = positions.some(p => {
+    const hasConfidence = p.ignition_confidence !== null && p.ignition_confidence !== undefined;
+    const confidenceOk = hasConfidence ? p.ignition_confidence! >= MIN_IGNITION_CONFIDENCE : false;
+    return p.ignition_on === true && (confidenceOk || !hasConfidence); // Allow if no confidence data (backward compat)
+  });
   const hasIgnitionData = positions.some(p => p.ignition_on !== null && p.ignition_on !== undefined);
-  const useIgnitionDetection = hasIgnitionData && hasIgnitionTrue; // Only use if we have actual true values
+  const useIgnitionDetection = hasIgnitionData && hasIgnitionTrue; // Only use if we have actual true values with sufficient confidence
+
+  // Log low-confidence ignition states for review
+  const lowConfidenceCount = positions.filter(p => 
+    p.ignition_on === true && 
+    p.ignition_confidence !== null && 
+    p.ignition_confidence !== undefined && 
+    p.ignition_confidence < MIN_IGNITION_CONFIDENCE
+  ).length;
+  if (lowConfidenceCount > 0) {
+    console.warn(`[extractTripsFromHistory] Found ${lowConfidenceCount} positions with low ignition confidence (<${MIN_IGNITION_CONFIDENCE}), these will not trigger trip starts`);
+  }
 
   console.log(`[extractTripsFromHistory] Using ${useIgnitionDetection ? 'ignition-based' : 'speed-based'} detection for ${positions.length} points`);
 
@@ -589,13 +607,20 @@ function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
 
     // IGNITION-BASED DETECTION (Primary - matches GPS51)
     if (useIgnitionDetection) {
-      const ignitionOn = point.ignition_on === true;
-      const prevIgnitionOn = prevPoint ? prevPoint.ignition_on === true : false;
+      // Check ignition with confidence threshold (>= 0.5 for reliable detection)
+      const hasConfidence = point.ignition_confidence !== null && point.ignition_confidence !== undefined;
+      const confidenceOk = hasConfidence ? point.ignition_confidence! >= MIN_IGNITION_CONFIDENCE : true; // Allow if no confidence data (backward compat)
+      const ignitionOn = point.ignition_on === true && confidenceOk;
+      
+      const prevHasConfidence = prevPoint ? (prevPoint.ignition_confidence !== null && prevPoint.ignition_confidence !== undefined) : false;
+      const prevConfidenceOk = prevPoint && prevHasConfidence ? prevPoint.ignition_confidence! >= MIN_IGNITION_CONFIDENCE : true;
+      const prevIgnitionOn = prevPoint ? (prevPoint.ignition_on === true && prevConfidenceOk) : false;
 
-      // Trip START: Ignition turns ON (false -> true)
+      // Trip START: Ignition turns ON (false -> true) with sufficient confidence
       if (ignitionOn && !prevIgnitionOn && !currentTrip) {
+        const confidenceInfo = hasConfidence ? ` (confidence: ${point.ignition_confidence!.toFixed(2)}, method: ${point.ignition_detection_method || 'unknown'})` : '';
         currentTrip = { points: [point] };
-        console.log(`[extractTripsFromHistory] Trip START (ignition ON) at ${point.gps_time}`);
+        console.log(`[extractTripsFromHistory] Trip START (ignition ON) at ${point.gps_time}${confidenceInfo}`);
       }
 
       // Continue trip while ignition is ON

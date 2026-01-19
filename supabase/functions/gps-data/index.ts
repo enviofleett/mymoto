@@ -119,9 +119,15 @@ async function syncPositions(supabase: any, records: any[]) {
   
   const positions = records.map(record => {
     // Normalize telemetry using centralized normalizer
+    // This ensures JT808 status bits are properly detected and confidence is calculated
     const normalized = normalizeVehicleTelemetry(record as Gps51RawData, {
       offlineThresholdMs: OFFLINE_THRESHOLD_MS,
     });
+    
+    // Log low-confidence ignition detection for debugging
+    if (normalized.ignition_confidence !== undefined && normalized.ignition_confidence < 0.5) {
+      console.warn(`[syncPositions] Low ignition confidence (${normalized.ignition_confidence.toFixed(2)}) for device=${record.deviceid}, method=${normalized.ignition_detection_method}, status=${record.status}, strstatus=${record.strstatus}`);
+    }
     
     // Debug: Log if speed > 200 after normalization (shouldn't happen unless raw was > 200000)
     if (normalized.speed_kmh > 200) {

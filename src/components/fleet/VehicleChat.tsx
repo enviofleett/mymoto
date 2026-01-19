@@ -334,6 +334,11 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
     };
   }, [deviceId, user?.id, refetchHistory]);
 
+  // Reset avatar error state when avatarUrl changes (e.g., switching vehicles)
+  useEffect(() => {
+    setAvatarError(false);
+  }, [avatarUrl]);
+
   // Auto-scroll on new messages
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });

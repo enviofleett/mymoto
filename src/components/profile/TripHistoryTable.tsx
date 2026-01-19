@@ -194,7 +194,13 @@ export function TripHistoryTable({ deviceIds, vehicles }: TripHistoryTableProps)
                       <TableCell>
                         <div className="flex flex-col">
                           <span className="text-sm">
-                            {format(new Date(trip.gps_time), "MMM d, HH:mm")}
+                            {new Date(trip.gps_time).toLocaleString('en-US', {
+                              timeZone: 'Africa/Lagos',
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
                           </span>
                           <span className="text-xs text-muted-foreground">
                             {formatDistanceToNow(new Date(trip.gps_time), { addSuffix: true })}

@@ -199,8 +199,11 @@ export interface IgnitionDetectionResult {
  * - Bit 0 (0x01): Common ACC bit in many JT808 implementations
  * - Bit 1 (0x02): Alternative ACC bit position
  * - Bit 2 (0x04): Some devices use this for ACC
+ * - Bit 3 (0x08): Less common but used by some devices
  * 
- * Returns true if any of the common patterns match.
+ * Also validates that status value is reasonable (not all zeros/ones which might indicate invalid data).
+ * 
+ * Returns true if any of the common patterns match and status appears valid.
  */
 function checkJt808AccBit(status: number | string | null | undefined): boolean {
   if (status === null || status === undefined) return false;
@@ -215,14 +218,26 @@ function checkJt808AccBit(status: number | string | null | undefined): boolean {
   // Ensure status is a valid number
   if (typeof status !== 'number' || isNaN(status)) return false;
 
-  // Test multiple JT808 ACC bit patterns (bit 0, 1, or 2)
+  // Validate status value is reasonable (not all zeros or all ones which might indicate invalid data)
+  // Status should be a byte value (0-255), but we allow up to 65535 for extended status fields
+  if (status < 0 || status > 65535) {
+    console.warn(`[checkJt808AccBit] Invalid status value: ${status} (expected 0-65535)`);
+    return false;
+  }
+
+  // Test multiple JT808 ACC bit patterns (bit 0, 1, 2, or 3)
   // Bit 0 (0x01): Most common ACC bit position
   // Bit 1 (0x02): Alternative position used by some devices
   // Bit 2 (0x04): Less common but used by some implementations
-  const ACC_BIT_MASKS = [0x01, 0x02, 0x04];
+  // Bit 3 (0x08): Additional pattern for some device types
+  const ACC_BIT_MASKS = [0x01, 0x02, 0x04, 0x08];
   
   for (const mask of ACC_BIT_MASKS) {
     if ((status & mask) === mask) {
+      // Log when ACC is detected via status bit for debugging
+      if (process.env.NODE_ENV === 'development' || Deno.env.get('LOG_IGNITION_DETECTION') === 'true') {
+        console.log(`[checkJt808AccBit] ACC ON detected via bit mask 0x${mask.toString(16)} (status=${status}, binary=${status.toString(2)})`);
+      }
       return true;
     }
   }

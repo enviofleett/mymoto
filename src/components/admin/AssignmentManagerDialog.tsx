@@ -140,9 +140,10 @@ export function AssignmentManagerDialog({
     },
   });
 
-  // Reset form when dialog opens/closes
+  // Reset form when dialog opens/closes and initialize state based on props
   useEffect(() => {
     if (!open) {
+      // Reset all state when dialog closes
       form.reset();
       setVehicleSearch("");
       setSelectedVehicleIds(new Set());
@@ -154,11 +155,25 @@ export function AssignmentManagerDialog({
       setSelectedAutoMatches(new Set());
       setAutoMatchSearch("");
       setActiveTab(initialTab);
-    } else if (editProfile && initialTab === "edit-user") {
-      setActiveTab("edit-user");
-      setSelectedProfileId(editProfile.id);
-    } else if (selectedVehicles.length > 0) {
-      setSelectedVehicleIds(new Set(selectedVehicles.map(v => v.device_id)));
+    } else {
+      // Initialize state when dialog opens based on props
+      // Priority: editProfile > selectedVehicles > initialTab
+      if (editProfile) {
+        setActiveTab("edit-user");
+        setSelectedProfileId(editProfile.id);
+        setSelectedVehicleIds(new Set());
+        setSelectedVehiclesToRemove(new Set());
+      } else if (selectedVehicles.length > 0) {
+        setActiveTab("existing-user");
+        setSelectedVehicleIds(new Set(selectedVehicles.map(v => v.device_id)));
+        setSelectedProfileId("");
+        setSelectedVehiclesToRemove(new Set());
+      } else {
+        setActiveTab(initialTab);
+        setSelectedVehicleIds(new Set());
+        setSelectedProfileId("");
+        setSelectedVehiclesToRemove(new Set());
+      }
     }
   }, [open, editProfile, initialTab, selectedVehicles, form]);
 
@@ -477,21 +492,6 @@ export function AssignmentManagerDialog({
 
   const exactMatches = autoMatches.filter(m => m.matchConfidence === "exact");
   const partialMatches = autoMatches.filter(m => m.matchConfidence === "partial");
-
-  // Determine which tab to show based on props and pre-select vehicles if provided
-  useEffect(() => {
-    if (open) {
-      if (editProfile) {
-        setActiveTab("edit-user");
-      } else if (selectedVehicles.length > 0) {
-        setActiveTab("existing-user");
-        // Pre-select vehicles that were passed from grid
-        setSelectedVehicleIds(new Set(selectedVehicles.map(v => v.device_id)));
-      } else {
-        setActiveTab(initialTab);
-      }
-    }
-  }, [open, editProfile, selectedVehicles, initialTab]);
 
   // Initialize auto-select exact matches when bulk actions tab opens
   useEffect(() => {

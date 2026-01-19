@@ -71,7 +71,8 @@ export function VehiclePersonaSettings({ deviceId, vehicleName }: VehiclePersona
         setNickname((data as any).nickname || "");
         setLanguage((data as any).language_preference);
         setPersonality((data as any).personality_mode);
-        setLlmEnabled((data as any).llm_enabled);
+        // Ensure llm_enabled defaults to true if null/undefined (never auto-disable)
+        setLlmEnabled((data as any).llm_enabled ?? true);
         setAvatarUrl((data as any).avatar_url);
       } else {
         // Defaults for new settings
@@ -198,6 +199,7 @@ export function VehiclePersonaSettings({ deviceId, vehicleName }: VehiclePersona
       }
 
       // Step 2: Save LLM settings
+      // Ensure llm_enabled is never null/undefined - always true or false (explicit user choice)
       const { error } = await (supabase as any)
         .from('vehicle_llm_settings')
         .upsert({
@@ -205,7 +207,7 @@ export function VehiclePersonaSettings({ deviceId, vehicleName }: VehiclePersona
           nickname: nickname.trim() || null,
           language_preference: language,
           personality_mode: personality,
-          llm_enabled: llmEnabled,
+          llm_enabled: llmEnabled ?? true, // Default to true if somehow null
           avatar_url: avatarUrl,
           updated_at: new Date().toISOString(),
         }, { onConflict: 'device_id' });
