@@ -29,10 +29,19 @@ interface TrackRecord {
 
 // Using shared GPS51 client for rate limiting
 
-// Parse ignition status from strstatus
-function parseIgnition(strstatus: string | null): boolean {
-  if (!strstatus) return false
-  return strstatus.toUpperCase().includes('ACC ON')
+// Parse ignition status using JT808 status bit field (more reliable than string parsing)
+function parseIgnition(status: number | null, strstatus: string | null): boolean {
+  // ✅ FIX: Use JT808 status bit field (bit 0 = ACC status)
+  // This is the authoritative source per GPS51 API spec
+  if (status !== null && status !== undefined) {
+    const ACC_BIT_MASK = 0x01; // Bit 0 indicates ACC (ignition) status
+    return (status & ACC_BIT_MASK) !== 0;
+  }
+
+  // Fallback to string parsing only if status field unavailable
+  // (for backwards compatibility with old data)
+  if (!strstatus) return false;
+  return strstatus.toUpperCase().includes('ACC ON');
 }
 
 // Format date for GPS51 API (YYYY-MM-DD HH:MM:SS)
@@ -86,7 +95,7 @@ async function fetchTrackHistory(
       altitude: parseFloat(record.altitude || 0),
       gps_time: new Date(gpsTime).toISOString(),
       battery_percent: record.voltagepercent > 0 ? record.voltagepercent : null,
-      ignition_on: parseIgnition(record.strstatus || record.status)
+      ignition_on: parseIgnition(record.status, record.strstatus)
     }
   }).filter((r: TrackRecord) => r.latitude && r.longitude && !isNaN(r.latitude) && !isNaN(r.longitude))
 }

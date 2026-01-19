@@ -40,10 +40,19 @@ async function getCachedPositions(supabase: any): Promise<any[] | null> {
   return allPositions
 }
 
-// Parse ignition status from strstatus
-function parseIgnition(strstatus: string | null): boolean {
-  if (!strstatus) return false
-  return strstatus.toUpperCase().includes('ACC ON')
+// Parse ignition status using JT808 status bit field (more reliable than string parsing)
+function parseIgnition(status: number | null, strstatus: string | null): boolean {
+  // ✅ FIX: Use JT808 status bit field (bit 0 = ACC status)
+  // This is the authoritative source per GPS51 API spec
+  if (status !== null && status !== undefined) {
+    const ACC_BIT_MASK = 0x01; // Bit 0 indicates ACC (ignition) status
+    return (status & ACC_BIT_MASK) !== 0;
+  }
+
+  // Fallback to string parsing only if status field unavailable
+  // (for backwards compatibility with old data)
+  if (!strstatus) return false;
+  return strstatus.toUpperCase().includes('ACC ON');
 }
 
 // Determine if vehicle is online based on updatetime
@@ -140,7 +149,7 @@ async function syncPositions(supabase: any, records: any[]) {
       heading: record.heading,
       altitude: record.altitude,
       battery_percent: battery,
-      ignition_on: parseIgnition(record.strstatus),
+      ignition_on: parseIgnition(record.status, record.strstatus),
       is_online: isOnline(record.updatetime),
       is_overspeeding: record.currentoverspeedstate === 1,
       total_mileage: record.totaldistance,
