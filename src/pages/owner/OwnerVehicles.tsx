@@ -10,6 +10,7 @@ import { useOwnerVehicles, OwnerVehicle } from "@/hooks/useOwnerVehicles";
 import { useRealtimeFleetUpdates } from "@/hooks/useRealtimeVehicleUpdates";
 import { Search, Plus, Car, Wifi, WifiOff, Battery, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import myMotoLogo from "@/assets/mymoto-logo-new.png";
 
 // Health indicator dot based on battery level
 function HealthDot({ battery }: { battery: number | null }) {
@@ -174,9 +175,12 @@ export default function OwnerVehicles() {
         <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm pt-[env(safe-area-inset-top)] -mt-[env(safe-area-inset-top)]">
           <div className="px-4 pt-4 pb-3">
             <div className="flex items-center justify-between mb-4">
-              <div>
-                <h1 className="text-xl font-bold text-foreground">My Vehicles</h1>
-                <p className="text-sm text-muted-foreground">Manage your connected vehicles</p>
+              <div className="flex items-center gap-2.5">
+                <img alt="MyMoto" className="w-6 h-6 object-contain" src={myMotoLogo} />
+                <div>
+                  <h1 className="text-xl font-bold text-foreground">My Vehicles</h1>
+                  <p className="text-sm text-muted-foreground">Manage your connected vehicles</p>
+                </div>
               </div>
               {/* Neumorphic add button */}
               <button className="w-12 h-12 rounded-full bg-card shadow-neumorphic-sm flex items-center justify-center transition-all duration-200 hover:shadow-neumorphic active:shadow-neumorphic-inset ring-2 ring-accent/50">

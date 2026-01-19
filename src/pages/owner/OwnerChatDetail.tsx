@@ -87,10 +87,13 @@ export default function OwnerChatDetail() {
   const fetchHistory = async () => {
     setHistoryLoading(true);
     try {
+      if (!user?.id) return;
+      
       const { data, error } = await (supabase as any)
         .from("vehicle_chat_history")
         .select("*")
         .eq("device_id", deviceId)
+        .eq("user_id", user.id) // Ensure users only see their own messages
         .order("created_at", { ascending: true })
         .limit(50);
 
@@ -245,6 +248,23 @@ export default function OwnerChatDetail() {
         </div>
       </div>
 
+      {/* AI Disabled Warning */}
+      {llmSettings && !llmSettings.llm_enabled && (
+        <div className="mx-4 mt-2 mb-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-amber-600 dark:text-amber-500">
+                AI Companion is paused for this vehicle
+              </p>
+              <p className="text-xs text-amber-600/80 dark:text-amber-500/80 mt-0.5">
+                Enable it in vehicle settings to chat with {vehicleName}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Messages */}
       <ScrollArea className="flex-1 px-4">
         <div className="py-4 space-y-4">
@@ -356,7 +376,13 @@ export default function OwnerChatDetail() {
                     "text-[10px] mt-1.5 text-right",
                     msg.role === "user" ? "text-accent-foreground/70" : "text-muted-foreground"
                   )}>
-                    {format(new Date(msg.created_at), "MMM d, HH:mm")}
+                    {new Date(msg.created_at).toLocaleString('en-US', {
+                      timeZone: 'Africa/Lagos',
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
                   </p>
                 </div>
                 {msg.role === "user" && (
@@ -408,14 +434,14 @@ export default function OwnerChatDetail() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
-            placeholder="Type a message..."
-            disabled={loading}
+            placeholder={llmSettings && !llmSettings.llm_enabled ? "AI Companion is paused. Enable it in settings to chat." : "Type a message..."}
+            disabled={loading || (llmSettings && !llmSettings.llm_enabled)}
             className="flex-1 bg-card border-0 shadow-neumorphic-inset rounded-full h-12 text-sm px-5 focus-visible:ring-accent/30"
           />
           {/* Neumorphic send button */}
           <button
             onClick={handleSend}
-            disabled={loading || !input.trim()}
+            disabled={loading || !input.trim() || (llmSettings && !llmSettings.llm_enabled)}
             className={cn(
               "w-12 h-12 rounded-full bg-card shadow-neumorphic-sm flex items-center justify-center transition-all duration-200 shrink-0",
               "hover:shadow-neumorphic active:shadow-neumorphic-inset",

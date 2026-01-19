@@ -244,7 +244,14 @@ export function VehicleTrips({ deviceId }: VehicleTripsProps) {
                   Start Time
                 </p>
                 <p className="text-sm font-medium">
-                  {format(new Date(trip.start_time), 'MMM d, h:mm a')}
+                  {new Date(trip.start_time).toLocaleString('en-US', {
+                    timeZone: 'Africa/Lagos',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true,
+                  })}
                 </p>
               </div>
               {trip.end_time && (
@@ -254,7 +261,14 @@ export function VehicleTrips({ deviceId }: VehicleTripsProps) {
                     End Time
                   </p>
                   <p className="text-sm font-medium">
-                    {format(new Date(trip.end_time), 'MMM d, h:mm a')}
+                    {new Date(trip.end_time).toLocaleString('en-US', {
+                      timeZone: 'Africa/Lagos',
+                      month: 'short',
+                      day: 'numeric',
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true,
+                    })}
                   </p>
                 </div>
               )}

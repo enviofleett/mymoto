@@ -85,6 +85,12 @@
     --sidebar-accent-foreground: 0 0% 98%;
     --sidebar-border: 220 12% 22%;
     --sidebar-ring: 24 95% 53%;
+
+    /* Navigation heights for footer spacing calculations */
+    --nav-height-admin: 5rem; /* 80px - AdminBottomNav h-20 */
+    --nav-height-regular: 4rem; /* 64px - BottomNavigation h-16 */
+    --nav-height-owner: 5rem; /* 80px - OwnerLayout nav h-20 */
+    --nav-spacing-min: 3rem; /* 48px - Minimum spacing between content and footer */
   }
 }
 

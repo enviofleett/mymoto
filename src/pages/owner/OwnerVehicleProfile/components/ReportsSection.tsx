@@ -39,6 +39,7 @@ import type { TripSyncStatus } from "@/hooks/useTripSync";
 import { useAddress } from "@/hooks/useAddress";
 import { useAuth } from "@/contexts/AuthContext";
 import { VehicleNotificationSettings } from "@/components/fleet/VehicleNotificationSettings";
+import { TripSyncProgress } from "@/components/fleet/TripSyncProgress";
 
 interface ReportsSectionProps {
   deviceId: string;
@@ -261,6 +262,9 @@ export function ReportsSection({
   return (
     <Card className="border-border bg-card/50">
       <CardContent className="p-4">
+        {/* Trip Sync Progress */}
+        <TripSyncProgress deviceId={deviceId} />
+
         {/* Date Filter and Sync Controls */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -477,7 +481,12 @@ export function ReportsSection({
                             <div className="font-medium text-foreground">{event.title}</div>
                             <div className="text-sm text-muted-foreground truncate">{event.message}</div>
                             <div className="text-xs text-muted-foreground mt-1">
-                              {format(parseISO(event.created_at), 'h:mm a')}
+                              {new Date(event.created_at).toLocaleString('en-US', {
+                                timeZone: 'Africa/Lagos',
+                                hour: 'numeric',
+                                minute: '2-digit',
+                                hour12: true,
+                              })}
                             </div>
                           </div>
                         </div>
@@ -581,7 +590,17 @@ function TripCard({
             )}
           </div>
           <div className="text-xs text-muted-foreground">
-            {format(parseISO(trip.start_time), 'h:mm a')} - {format(parseISO(trip.end_time), 'h:mm a')}
+            {new Date(trip.start_time).toLocaleString('en-US', {
+              timeZone: 'Africa/Lagos',
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true,
+            })} - {new Date(trip.end_time).toLocaleString('en-US', {
+              timeZone: 'Africa/Lagos',
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true,
+            })}
           </div>
         </div>
         <div className="text-right shrink-0 flex items-center gap-2">

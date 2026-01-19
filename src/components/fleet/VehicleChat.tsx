@@ -245,6 +245,7 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
+  const [avatarError, setAvatarError] = useState(false);
   const { user } = useAuth();
   const { toast } = useToast();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -333,6 +334,11 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
     };
   }, [deviceId, user?.id, refetchHistory]);
 
+  // Reset avatar error state when avatarUrl changes (e.g., switching vehicles)
+  useEffect(() => {
+    setAvatarError(false);
+  }, [avatarUrl]);
+
   // Auto-scroll on new messages
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -375,11 +381,15 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
         } : null
       };
 
+      // Get the session token for proper authorization
+      const { data: { session } } = await supabase.auth.getSession();
+      const authToken = session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      
       const response = await fetch(CHAT_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
+          'Authorization': `Bearer ${authToken}`
         },
         body: JSON.stringify(contextPayload)
       });
@@ -421,8 +431,32 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
       // Clear streaming content (message will come via realtime subscription)
       setStreamingContent("");
       
+      // Wait a moment for database save to complete, then refetch
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
       // Invalidate and refetch chat history to ensure messages are loaded
       await refetchHistory();
+      
+      // Verify messages were saved (check if our optimistic message was replaced with real one)
+      const { data: verifyData } = await (supabase as any)
+        .from('vehicle_chat_history')
+        .select('id, content, created_at')
+        .eq('device_id', deviceId)
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(2);
+      
+      if (verifyData && verifyData.length >= 2) {
+        // Messages were saved successfully
+        console.log('Chat messages verified in database');
+      } else {
+        console.warn('Warning: Chat messages may not have been saved to database');
+        toast({
+          title: "Warning",
+          description: "Your message was sent but may not have been saved. Please refresh the page.",
+          variant: "default"
+        });
+      }
 
     } catch (err) {
       console.error('Chat error:', err);
@@ -478,8 +512,13 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
             </div>
           ) : messages.length === 0 && !loading ? (
             <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-              {avatarUrl ? (
-                <img src={avatarUrl} alt={displayName} className="h-12 w-12 rounded-full object-cover mb-3" />
+              {avatarUrl && !avatarError ? (
+                <img 
+                  src={avatarUrl} 
+                  alt={displayName} 
+                  className="h-12 w-12 rounded-full object-cover mb-3" 
+                  onError={() => setAvatarError(true)}
+                />
               ) : (
                 <Car className="h-12 w-12 mb-3 text-primary/50" />
               )}
@@ -497,8 +536,13 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
             >
               {msg.role === 'assistant' && (
                 <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0 overflow-hidden">
-                  {avatarUrl ? (
-                    <img src={avatarUrl} alt={displayName} className="h-full w-full object-cover" />
+                  {avatarUrl && !avatarError ? (
+                    <img 
+                      src={avatarUrl} 
+                      alt={displayName} 
+                      className="h-full w-full object-cover"
+                      onError={() => setAvatarError(true)}
+                    />
                   ) : (
                     <Bot className="h-4 w-4 text-primary" />
                   )}
@@ -525,8 +569,13 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
           {streamingContent && (
             <div className="flex gap-3 justify-start">
               <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0 overflow-hidden">
-                {avatarUrl ? (
-                  <img src={avatarUrl} alt={displayName} className="h-full w-full object-cover" />
+                {avatarUrl && !avatarError ? (
+                  <img 
+                    src={avatarUrl} 
+                    alt={displayName} 
+                    className="h-full w-full object-cover"
+                    onError={() => setAvatarError(true)}
+                  />
                 ) : (
                   <Bot className="h-4 w-4 text-primary" />
                 )}

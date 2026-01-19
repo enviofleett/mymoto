@@ -51,11 +51,9 @@ import {
   useGpsOwners,
   useUnassignAllVehicles,
 } from "@/hooks/useAssignmentManagement";
-import { BulkAssignDialog } from "./BulkAssignDialog";
-import { CreateProfileDialog } from "./CreateProfileDialog";
-import { AutoAssignDialog } from "./AutoAssignDialog";
-import { AutoCreateProfilesDialog } from "./AutoCreateProfilesDialog";
-import { CreateTestUserDialog } from "./CreateTestUserDialog";
+import { AssignmentManagerDialog } from "./AssignmentManagerDialog";
+import { UserRow } from "./UserRow";
+import { VehicleRow } from "./VehicleRow";
 
 export function UserVehicleGrid() {
   const [vehicleSearch, setVehicleSearch] = useState("");
@@ -65,11 +63,9 @@ export function UserVehicleGrid() {
   const [selectedVehicles, setSelectedVehicles] = useState<Set<string>>(new Set());
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [selectedGpsOwner, setSelectedGpsOwner] = useState<string | null>(null);
-  const [showAssignDialog, setShowAssignDialog] = useState(false);
-  const [showCreateProfileDialog, setShowCreateProfileDialog] = useState(false);
-  const [showAutoAssignDialog, setShowAutoAssignDialog] = useState(false);
-  const [showAutoCreateProfilesDialog, setShowAutoCreateProfilesDialog] = useState(false);
-  const [showCreateTestUserDialog, setShowCreateTestUserDialog] = useState(false);
+  const [showAssignmentDialog, setShowAssignmentDialog] = useState(false);
+  const [assignmentDialogTab, setAssignmentDialogTab] = useState<"new-user" | "existing-user" | "bulk-actions" | "edit-user">("new-user");
+  const [selectedProfile, setSelectedProfile] = useState<ProfileWithAssignments | null>(null);
   const [activeTab, setActiveTab] = useState<"users" | "gps-owners">("users");
 
   const { data: profiles, isLoading: profilesLoading } = useProfiles();
@@ -178,13 +174,18 @@ export function UserVehicleGrid() {
                     onChange={(e) => setUserSearch(e.target.value)}
                   />
                 </div>
-                <Button size="sm" variant="outline" onClick={() => setShowCreateProfileDialog(true)}>
+                <Button 
+                  size="sm" 
+                  variant="default" 
+                  onClick={() => {
+                    setAssignmentDialogTab("new-user");
+                    setShowAssignmentDialog(true);
+                  }}
+                  className="bg-primary text-primary-foreground"
+                >
                   <UserPlus className="h-4 w-4" />
-                  <span className="hidden sm:inline ml-1">Add</span>
-                </Button>
-                <Button size="sm" variant="default" onClick={() => setShowCreateTestUserDialog(true)}>
-                  <UserCog className="h-4 w-4" />
-                  <span className="hidden sm:inline ml-1">Test User</span>
+                  <span className="hidden sm:inline ml-1">New User + Assign</span>
+                  <span className="sm:hidden">New</span>
                 </Button>
               </div>
             </div>
@@ -213,30 +214,18 @@ export function UserVehicleGrid() {
                   </button>
 
                   {filteredProfiles.map(profile => (
-                    <button
+                    <UserRow
                       key={profile.id}
-                      onClick={() => { setSelectedUserId(profile.id); setSelectedGpsOwner(null); }}
-                      className={`w-full text-left p-2 sm:p-3 rounded-lg transition-colors ${
-                        selectedUserId === profile.id
-                          ? "bg-primary/10 border border-primary/30"
-                          : "hover:bg-muted"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <p className="font-medium truncate text-sm">{profile.name}</p>
-                          <p className="text-xs text-muted-foreground truncate">
-                            {profile.email || profile.phone || "No contact"}
-                          </p>
-                        </div>
-                        <Badge
-                          variant={profile.assignmentCount > 0 ? "default" : "secondary"}
-                          className="text-xs shrink-0"
-                        >
-                          {profile.assignmentCount}
-                        </Badge>
-                      </div>
-                    </button>
+                      profile={profile}
+                      isSelected={selectedUserId === profile.id}
+                      onClick={() => {
+                        setSelectedProfile(profile);
+                        setSelectedUserId(profile.id);
+                        setSelectedGpsOwner(null);
+                        setAssignmentDialogTab("edit-user");
+                        setShowAssignmentDialog(true);
+                      }}
+                    />
                   ))}
                 </div>
               )}
@@ -255,7 +244,14 @@ export function UserVehicleGrid() {
                     onChange={(e) => setOwnerSearch(e.target.value)}
                   />
                 </div>
-                <Button size="sm" variant="outline" onClick={() => setShowAutoCreateProfilesDialog(true)}>
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={() => {
+                    setAssignmentDialogTab("bulk-actions");
+                    setShowAssignmentDialog(true);
+                  }}
+                >
                   <UsersRound className="h-4 w-4" />
                   <span className="hidden sm:inline ml-1">Create Profiles</span>
                 </Button>
@@ -329,7 +325,10 @@ export function UserVehicleGrid() {
               <Button
                 size="sm"
                 variant="secondary"
-                onClick={() => setShowAutoAssignDialog(true)}
+                onClick={() => {
+                  setAssignmentDialogTab("bulk-actions");
+                  setShowAssignmentDialog(true);
+                }}
                 className="text-xs sm:text-sm h-8"
               >
                 <Wand2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
@@ -408,7 +407,10 @@ export function UserVehicleGrid() {
             <div className="flex flex-wrap gap-2 pt-1">
               <Button
                 size="sm"
-                onClick={() => setShowAssignDialog(true)}
+                onClick={() => {
+                  setAssignmentDialogTab("existing-user");
+                  setShowAssignmentDialog(true);
+                }}
                 className="text-xs sm:text-sm h-8"
               >
                 <Link2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
@@ -467,78 +469,31 @@ export function UserVehicleGrid() {
           ) : (
             <div className="p-2 space-y-1">
               {displayVehicles?.map(vehicle => (
-                <div
+                <VehicleRow
                   key={vehicle.device_id}
-                  className={`flex items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg transition-colors ${
-                    selectedVehicles.has(vehicle.device_id)
-                      ? "bg-primary/10 border border-primary/30"
-                      : "hover:bg-muted"
-                  }`}
-                >
-                  <Checkbox
-                    checked={selectedVehicles.has(vehicle.device_id)}
-                    onCheckedChange={() => handleVehicleSelect(vehicle.device_id)}
-                  />
-                  <Car className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate text-sm">{vehicle.device_name}</p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {vehicle.device_id}
-                      {vehicle.gps_owner && (
-                        <span className="text-primary"> • {vehicle.gps_owner}</span>
-                      )}
-                    </p>
-                  </div>
-                  {vehicle.assignedTo ? (
-                    <Badge variant="default" className="shrink-0 text-xs">
-                      <User className="h-3 w-3 mr-1" />
-                      <span className="hidden sm:inline">{vehicle.assignedTo.profile_name}</span>
-                      <span className="sm:hidden">Assigned</span>
-                    </Badge>
-                  ) : (
-                    <Badge variant="secondary" className="shrink-0 text-xs">
-                      Unassigned
-                    </Badge>
-                  )}
-                </div>
+                  vehicle={vehicle}
+                  isSelected={selectedVehicles.has(vehicle.device_id)}
+                  onSelect={handleVehicleSelect}
+                />
               ))}
             </div>
           )}
         </ScrollArea>
       </div>
 
-      {/* Dialogs */}
-      <BulkAssignDialog
-        open={showAssignDialog}
-        onOpenChange={setShowAssignDialog}
-        selectedVehicles={getSelectedVehicleObjects()}
-        profiles={profiles || []}
-        onSuccess={() => setSelectedVehicles(new Set())}
-      />
-
-      <CreateProfileDialog
-        open={showCreateProfileDialog}
-        onOpenChange={setShowCreateProfileDialog}
-      />
-
-      <AutoAssignDialog
-        open={showAutoAssignDialog}
-        onOpenChange={setShowAutoAssignDialog}
-        vehicles={vehicles || []}
-        profiles={profiles || []}
-        onAssign={async (matches) => {
-          await autoAssignMutation.mutateAsync(matches);
+      {/* Unified Assignment Dialog */}
+      <AssignmentManagerDialog
+        open={showAssignmentDialog}
+        onOpenChange={(open) => {
+          setShowAssignmentDialog(open);
+          if (!open) {
+            setSelectedProfile(null);
+            setSelectedVehicles(new Set());
+          }
         }}
-      />
-
-      <AutoCreateProfilesDialog
-        open={showAutoCreateProfilesDialog}
-        onOpenChange={setShowAutoCreateProfilesDialog}
-      />
-
-      <CreateTestUserDialog
-        open={showCreateTestUserDialog}
-        onOpenChange={setShowCreateTestUserDialog}
+        initialTab={assignmentDialogTab}
+        editProfile={selectedProfile}
+        selectedVehicles={getSelectedVehicleObjects()}
       />
     </div>
   );

@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { callGps51WithRateLimit, getValidGps51Token } from "../_shared/gps51-client.ts"
+import { normalizeVehicleTelemetry, type Gps51RawData } from "../_shared/telemetry-normalizer.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -25,24 +26,12 @@ interface TrackRecord {
   gps_time: string
   battery_percent: number | null
   ignition_on: boolean
+  ignition_confidence?: number | null
+  ignition_detection_method?: string | null
 }
 
 // Using shared GPS51 client for rate limiting
-
-// Parse ignition status using JT808 status bit field (more reliable than string parsing)
-function parseIgnition(status: number | null, strstatus: string | null): boolean {
-  // ✅ FIX: Use JT808 status bit field (bit 0 = ACC status)
-  // This is the authoritative source per GPS51 API spec
-  if (status !== null && status !== undefined) {
-    const ACC_BIT_MASK = 0x01; // Bit 0 indicates ACC (ignition) status
-    return (status & ACC_BIT_MASK) !== 0;
-  }
-
-  // Fallback to string parsing only if status field unavailable
-  // (for backwards compatibility with old data)
-  if (!strstatus) return false;
-  return strstatus.toUpperCase().includes('ACC ON');
-}
+// Note: parseIgnition is now handled by telemetry-normalizer
 
 // Format date for GPS51 API (YYYY-MM-DD HH:MM:SS)
 function formatDateForGps51(date: Date): string {
@@ -79,25 +68,47 @@ async function fetchTrackHistory(
   
   const records = result?.data?.records || result?.records || []
   console.log(`Received ${records.length} track records from GPS51`)
-  
-  // Map GPS51 track data to our format
-  return records.map((record: any) => {
-    // GPS51 track records have various field names depending on API version
-    const lat = record.callat || record.lat || record.latitude
-    const lon = record.callon || record.lon || record.lng || record.longitude
-    const gpsTime = record.gpstime || record.updatetime || record.time
-    
-    return {
-      latitude: parseFloat(lat),
-      longitude: parseFloat(lon),
-      speed: parseFloat(record.speed || 0),
-      heading: parseFloat(record.heading || record.direction || 0),
-      altitude: parseFloat(record.altitude || 0),
-      gps_time: new Date(gpsTime).toISOString(),
-      battery_percent: record.voltagepercent > 0 ? record.voltagepercent : null,
-      ignition_on: parseIgnition(record.status, record.strstatus)
-    }
-  }).filter((r: TrackRecord) => r.latitude && r.longitude && !isNaN(r.latitude) && !isNaN(r.longitude))
+
+  // Normalize GPS51 track data using centralized normalizer
+  return records
+    .map((record: any) => {
+      // Add deviceid if missing (needed for normalizer)
+      const rawData: Gps51RawData = {
+        ...record,
+        deviceid: record.deviceid || deviceId,
+      };
+
+      // Normalize telemetry using centralized normalizer
+      // This ensures JT808 status bits are properly detected and confidence is calculated
+      const normalized = normalizeVehicleTelemetry(rawData);
+
+      // Log low-confidence ignition detection for debugging
+      if (normalized.ignition_confidence !== undefined && normalized.ignition_confidence < 0.5) {
+        console.warn(`[fetchTrackHistory] Low ignition confidence (${normalized.ignition_confidence.toFixed(2)}) for device=${deviceId}, method=${normalized.ignition_detection_method}, status=${record.status}, strstatus=${record.strstatus}`);
+      }
+
+      // Map to TrackRecord format (for backward compatibility)
+      return {
+        latitude: normalized.lat || 0,
+        longitude: normalized.lon || 0,
+        speed: normalized.speed_kmh, // Already normalized to km/h
+        heading: normalized.heading || 0,
+        altitude: normalized.altitude || 0,
+        gps_time: normalized.last_updated_at,
+        battery_percent: normalized.battery_level,
+        ignition_on: normalized.ignition_on,
+        ignition_confidence: normalized.ignition_confidence || null,
+        ignition_detection_method: normalized.ignition_detection_method || null,
+      };
+    })
+    .filter((r: TrackRecord) =>
+      r.latitude !== null &&
+      r.longitude !== null &&
+      r.latitude !== 0 &&
+      r.longitude !== 0 &&
+      !isNaN(r.latitude) &&
+      !isNaN(r.longitude)
+    )
 }
 
 // Insert track records into position_history
@@ -145,6 +156,8 @@ async function insertPositionHistory(
       heading: r.heading,
       battery_percent: r.battery_percent,
       ignition_on: r.ignition_on,
+      ignition_confidence: r.ignition_confidence || null,
+      ignition_detection_method: r.ignition_detection_method || null,
       gps_time: r.gps_time,
       recorded_at: new Date().toISOString()
     }))
@@ -214,9 +227,17 @@ async function detectAndInsertTrips(
   const STOP_THRESHOLD_MS = 300000 // 5 minutes stationary = trip end
   const MIN_TRIP_DISTANCE_KM = 0.1 // Minimum 100m for a valid trip
   
+  // Confidence threshold for ignition-based trip detection (>= 0.5 for medium confidence)
+  const MIN_IGNITION_CONFIDENCE = 0.5;
+  
   for (let i = 0; i < positions.length; i++) {
     const pos = positions[i]
-    const isMoving = pos.speed > 0 || pos.ignition_on
+    // Note: pos.speed is now in km/h (normalized), and ignition_on uses confidence scoring
+    // Only use ignition for trip detection if confidence is sufficient (>= 0.5)
+    const hasIgnitionConfidence = pos.ignition_confidence !== null && pos.ignition_confidence !== undefined;
+    const ignitionConfidenceOk = hasIgnitionConfidence ? pos.ignition_confidence >= MIN_IGNITION_CONFIDENCE : true; // Allow if no confidence data (backward compat)
+    const ignitionOn = pos.ignition_on === true && ignitionConfidenceOk;
+    const isMoving = pos.speed > 3 || ignitionOn
     
     if (isMoving && !tripStart) {
       // Trip started

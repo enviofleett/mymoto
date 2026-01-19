@@ -47,9 +47,12 @@ export function VehicleDetailsModal({
   const { toast } = useToast();
 
   // Use cached queries - data is often already prefetched from hover
+  // Conditional polling: only poll when modal is open and vehicle is online (not offline)
+  const shouldPollPositionHistory = open && !!vehicle && vehicle.status !== 'offline';
   const { data: positionHistory = [], isLoading: historyLoading } = usePositionHistory(
     vehicle?.id || null,
-    open && !!vehicle
+    open && !!vehicle,
+    shouldPollPositionHistory // Poll every 60s when modal is open and vehicle is online
   );
 
   const { data: drivers = [] } = useAvailableDrivers(
@@ -150,7 +153,15 @@ export function VehicleDetailsModal({
   };
 
   const formatTime = (timeString: string) => {
-    return new Date(timeString).toLocaleString();
+    // Use Lagos timezone for all time displays
+    return new Date(timeString).toLocaleString('en-US', { 
+      timeZone: 'Africa/Lagos',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   };
 
   return (
@@ -259,7 +270,14 @@ export function VehicleDetailsModal({
               {vehicle.lastUpdate && (
                 <p className="text-xs text-muted-foreground flex items-center gap-1">
                   <Calendar className="h-3 w-3" />
-                  Last update: {vehicle.lastUpdate.toLocaleString()}
+                  Last update: {new Date(vehicle.lastUpdate).toLocaleString('en-US', { 
+                    timeZone: 'Africa/Lagos',
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
                 </p>
               )}
             </div>

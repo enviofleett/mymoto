@@ -214,13 +214,20 @@ export function useAssignVehicles() {
     mutationFn: async ({ 
       deviceIds, 
       profileId, 
-      vehicleAliases 
+      vehicleAliases,
+      sendEmail
     }: { 
       deviceIds: string[]; 
       profileId: string; 
       vehicleAliases?: Record<string, string>;
+      sendEmail?: {
+        to: string;
+        userName: string;
+        vehicleCount: number;
+        isNewUser?: boolean;
+      };
     }) => {
-      // Upsert assignments one by one (Supabase doesn't support bulk upsert well with ON CONFLICT)
+      // Upsert assignments one by one with composite primary key (device_id, profile_id)
       const results = await Promise.all(
         deviceIds.map(async (deviceId) => {
           const { error } = await (supabase as any)
@@ -231,7 +238,7 @@ export function useAssignVehicles() {
               vehicle_alias: vehicleAliases?.[deviceId] || null,
               updated_at: new Date().toISOString(),
             }, {
-              onConflict: "device_id",
+              onConflict: "device_id,profile_id", // Composite primary key
             });
           return { deviceId, error };
         })
@@ -240,6 +247,24 @@ export function useAssignVehicles() {
       const errors = results.filter(r => r.error);
       if (errors.length > 0) {
         throw new Error(`Failed to assign ${errors.length} vehicles`);
+      }
+
+      // Send email notification if requested
+      if (sendEmail) {
+        try {
+          const { sendVehicleAssignmentEmail } = await import("@/utils/email-helpers");
+          await sendVehicleAssignmentEmail(
+            sendEmail.to,
+            {
+              userName: sendEmail.userName,
+              vehicleCount: sendEmail.vehicleCount,
+              isNewUser: sendEmail.isNewUser ?? false,
+            }
+          );
+        } catch (emailError: any) {
+          console.error("[useAssignVehicles] Email notification error:", emailError);
+          // Don't fail the assignment if email fails, just log it
+        }
       }
 
       return { assigned: deviceIds.length };
@@ -270,7 +295,7 @@ export function useBulkAutoAssign() {
               profile_id: profileId,
               updated_at: new Date().toISOString(),
             }, {
-              onConflict: "device_id",
+              onConflict: "device_id,profile_id", // Composite primary key
             });
           return { deviceId, error };
         })

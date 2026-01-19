@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
+import { cn } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,11 +18,13 @@ interface VehicleTableProps {
   vehicles: FleetVehicle[];
   loading: boolean;
   onAssignmentChange?: () => void;
+  onVehicleSelect?: (vehicle: FleetVehicle) => void;
+  selectedVehicleId?: string | null;
 }
 
 type StatusFilter = "all" | "online" | "offline";
 
-export function VehicleTable({ vehicles, loading, onAssignmentChange }: VehicleTableProps) {
+export function VehicleTable({ vehicles, loading, onAssignmentChange, onVehicleSelect, selectedVehicleId }: VehicleTableProps) {
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState<FleetVehicle | null>(null);
@@ -47,6 +50,8 @@ export function VehicleTable({ vehicles, loading, onAssignmentChange }: VehicleT
   const handleRowClick = (vehicle: FleetVehicle) => {
     setSelectedVehicle(vehicle);
     setDetailsModalOpen(true);
+    // Also call onVehicleSelect if provided (for side panel selection)
+    onVehicleSelect?.(vehicle);
   };
 
   const handleAssignmentComplete = () => {
@@ -257,7 +262,10 @@ export function VehicleTable({ vehicles, loading, onAssignmentChange }: VehicleT
             {filteredVehicles.map((v) => (
               <Card 
                 key={v.id} 
-                className="bg-card border-border cursor-pointer hover:bg-muted/50 transition-colors"
+                className={cn(
+                  "bg-card border-border cursor-pointer hover:bg-muted/50 transition-colors",
+                  selectedVehicleId === v.id && "bg-primary/5 border-primary ring-2 ring-primary/30"
+                )}
                 onClick={() => handleRowClick(v)}
                 onMouseEnter={() => handleRowHover(v)}
               >
@@ -315,7 +323,10 @@ export function VehicleTable({ vehicles, loading, onAssignmentChange }: VehicleT
                 {filteredVehicles.map((v) => (
                   <TableRow 
                     key={v.id} 
-                    className="cursor-pointer hover:bg-muted/50"
+                    className={cn(
+                      "cursor-pointer hover:bg-muted/50",
+                      selectedVehicleId === v.id && "bg-primary/5 ring-2 ring-primary/30"
+                    )}
                     onClick={() => handleRowClick(v)}
                     onMouseEnter={() => handleRowHover(v)}
                   >

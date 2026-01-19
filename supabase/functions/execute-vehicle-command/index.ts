@@ -264,20 +264,34 @@ serve(async (req) => {
     if (!isAdmin) {
       // Check if user has assignment via profiles table
       // vehicle_assignments.profile_id references profiles.id, and profiles.user_id = auth.uid()
-      const { data: assignment } = await supabase
-        .from('vehicle_assignments')
-        .select(`
-          device_id,
-          profiles!inner (
-            user_id
-          )
-        `)
-        .eq('device_id', device_id)
-        .eq('profiles.user_id', effectiveUserId)
+      // First, get the user's profile_id
+      const { data: userProfile, error: profileError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('user_id', effectiveUserId)
         .maybeSingle()
 
-      if (!assignment) {
-        console.log(`[Command] Permission denied for user ${effectiveUserId} on device ${device_id}`)
+      if (profileError || !userProfile) {
+        console.log(`[Command] No profile found for user ${effectiveUserId}`)
+        return new Response(JSON.stringify({ 
+          success: false, 
+          message: 'You do not have permission to control this vehicle' 
+        }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      // Now check if this profile has assignment for this device
+      const { data: assignment, error: assignmentError } = await supabase
+        .from('vehicle_assignments')
+        .select('device_id, profile_id')
+        .eq('device_id', device_id)
+        .eq('profile_id', userProfile.id)
+        .maybeSingle()
+
+      if (assignmentError || !assignment) {
+        console.log(`[Command] Permission denied for user ${effectiveUserId} (profile ${userProfile.id}) on device ${device_id}`)
         return new Response(JSON.stringify({ 
           success: false, 
           message: 'You do not have permission to control this vehicle' 

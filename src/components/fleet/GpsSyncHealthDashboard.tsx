@@ -9,7 +9,8 @@ import {
   Truck, 
   Wifi, 
   WifiOff,
-  RefreshCw 
+  RefreshCw,
+  BatteryWarning
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -18,6 +19,7 @@ interface SyncHealthData {
   online_count: number | null;
   moving_count: number | null;
   stale_count: number | null;
+  low_battery_count: number | null;
   oldest_sync: string | null;
   newest_sync: string | null;
   avg_age_seconds: number | null;
@@ -70,8 +72,8 @@ export function GpsSyncHealthDashboard() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {[1, 2, 3, 4].map((i) => (
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            {[1, 2, 3, 4, 5].map((i) => (
               <Skeleton key={i} className="h-20 w-full" />
             ))}
           </div>
@@ -118,7 +120,7 @@ export function GpsSyncHealthDashboard() {
         </div>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           {/* Total Vehicles */}
           <div className="bg-muted/50 rounded-lg p-3 space-y-1">
             <div className="flex items-center gap-2 text-muted-foreground">
@@ -144,6 +146,17 @@ export function GpsSyncHealthDashboard() {
               <span className="text-xs font-medium">Moving</span>
             </div>
             <p className="text-2xl font-bold text-blue-600">{health?.moving_count ?? 0}</p>
+          </div>
+
+          {/* Low Battery Count */}
+          <div className={`bg-muted/50 rounded-lg p-3 space-y-1 ${(health?.low_battery_count ?? 0) > 0 ? 'ring-1 ring-destructive/50' : ''}`}>
+            <div className={`flex items-center gap-2 ${(health?.low_battery_count ?? 0) > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
+              <BatteryWarning className="h-4 w-4" />
+              <span className="text-xs font-medium">Low Battery</span>
+            </div>
+            <p className={`text-2xl font-bold ${(health?.low_battery_count ?? 0) > 0 ? 'text-destructive' : ''}`}>
+              {health?.low_battery_count ?? 0}
+            </p>
           </div>
 
           {/* Stale Count */}

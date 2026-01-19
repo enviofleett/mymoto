@@ -1,204 +1,189 @@
 # Deploy Vehicle Chat Edge Function
 
-## 🚀 Deployment Methods
+## 📁 File Location
 
-### Method 1: Supabase CLI (Recommended)
+**Main File:**
+```
+supabase/functions/vehicle-chat/index.ts
+```
 
-**Prerequisites:**
-- Supabase CLI installed (`npm install -g supabase`)
-- Logged in to Supabase (`supabase login`)
-- Linked to your project (`supabase link --project-ref cmvpnsqiefbsqkwnraka`)
+**Supporting Files:**
+```
+supabase/functions/vehicle-chat/
+├── index.ts (3,693 lines - Main entry point)
+├── command-parser.ts
+├── conversation-manager.ts
+├── data-formatter.ts
+├── data-validator.ts
+├── date-extractor.ts
+├── date-extractor-v2.ts
+├── intent-classifier.ts
+├── preference-learner.ts
+├── query-optimizer.ts
+├── query-router.ts
+├── spell-checker.ts
+└── temporal-context.ts
+```
 
-**Deploy Command:**
+---
+
+## 🚀 Deployment Command
+
 ```bash
-cd /Users/alli/mymoto/fleet-heartbeat-dashboard-6f37655e
 supabase functions deploy vehicle-chat
 ```
 
-**Full deployment with all dependencies:**
+**Full deployment with project reference:**
 ```bash
-# Make sure you're in the project root
-cd /Users/alli/mymoto/fleet-heartbeat-dashboard-6f37655e
-
-# Deploy the function
-supabase functions deploy vehicle-chat
-
-# Verify deployment
-supabase functions list
+supabase functions deploy vehicle-chat --project-ref YOUR_PROJECT_REF
 ```
 
 ---
 
-### Method 2: Supabase Dashboard (Alternative)
+## 🔑 Key Changes in This Deployment
 
-**Steps:**
+### 1. Chat Message Saving Fix (Lines 3588-3630)
 
-1. **Go to Supabase Dashboard:**
-   - Navigate to: https://supabase.com/dashboard/project/cmvpnsqiefbsqkwnraka/functions
-   - Or: Project → Edge Functions → `vehicle-chat`
+**Before:** Messages failed silently if embedding column had issues
+**After:** Robust fallback logic with error handling
 
-2. **Upload the function:**
-   - Click "Edit Function" or "Deploy"
-   - Copy the entire contents of `supabase/functions/vehicle-chat/index.ts`
-   - Paste into the editor
-   - Click "Deploy" or "Save"
+```typescript
+// Try saving with embeddings first
+const { error: insertError, data: insertedData } = await supabase
+  .from('vehicle_chat_history')
+  .insert(messagesToInsert)
+  .select()
 
-3. **Important Notes:**
-   - ⚠️ Dashboard deployment may not automatically bundle shared modules
-   - If you get module errors, you may need to inline shared code
-   - CLI deployment is recommended for complex functions with dependencies
+if (insertError) {
+  // Fallback: Try saving without embeddings
+  const { error: fallbackError } = await supabase
+    .from('vehicle_chat_history')
+    .insert([
+      { device_id, user_id, role: 'user', content: message },
+      { device_id, user_id, role: 'assistant', content: fullResponse }
+    ])
+  
+  if (fallbackError) {
+    // Send error to frontend via stream
+    controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ 
+      error: 'Failed to save message...' 
+    })}\n\n`))
+  }
+}
+```
 
----
+### 2. Language Switching Fix (Lines 3068-3126)
 
-## 📁 Files to Deploy
+**Before:** Language could switch unexpectedly
+**After:** Strict validation with logging
 
-The `vehicle-chat` function uses these files:
+```typescript
+// Validate language preference against allowed values
+const allowedLanguages = ['english', 'pidgin', 'yoruba', 'hausa', 'igbo', 'french']
+if (!allowedLanguages.includes(languagePref)) {
+  console.warn(`[LANGUAGE VALIDATION] Invalid: "${languagePref}", using english`)
+  languagePref = 'english' // Use default, but don't change stored value
+}
 
-### Main Function:
-- `supabase/functions/vehicle-chat/index.ts` ✅ **REQUIRED**
-
-### Dependencies (automatically bundled by CLI):
-- `supabase/functions/vehicle-chat/conversation-manager.ts`
-- `supabase/functions/vehicle-chat/query-router.ts`
-- `supabase/functions/vehicle-chat/command-parser.ts`
-- `supabase/functions/vehicle-chat/date-extractor.ts`
-- `supabase/functions/vehicle-chat/intent-classifier.ts`
-- `supabase/functions/vehicle-chat/preference-learner.ts`
-- `supabase/functions/vehicle-chat/spell-checker.ts`
-- `supabase/functions/_shared/embedding-generator.ts`
-- `supabase/functions/_shared/gemini-client.ts`
-
----
-
-## 🔧 Environment Variables
-
-Make sure these are set in Supabase Dashboard:
-
-1. **Go to:** Project Settings → Edge Functions → Secrets
-
-2. **Required Secrets:**
-   - `MAPBOX_ACCESS_TOKEN` - For reverse geocoding addresses
-   - `GEMINI_API_KEY` - For AI responses (optional, has fallback)
-
-3. **Set them:**
-   ```bash
-   # Via CLI
-   supabase secrets set MAPBOX_ACCESS_TOKEN=your_mapbox_token_here
-   supabase secrets set GEMINI_API_KEY=your_gemini_key_here
-   ```
-
-   Or via Dashboard:
-   - Project Settings → Edge Functions → Secrets
-   - Add each secret with its value
+// Log language usage for debugging
+if (llmSettings?.language_preference) {
+  const originalLang = llmSettings.language_preference.toLowerCase().trim()
+  if (originalLang !== languagePref) {
+    console.warn(`[LANGUAGE SWITCH DETECTED] Original: "${originalLang}" -> Normalized: "${languagePref}"`)
+  }
+}
+```
 
 ---
 
-## ✅ Verification
+## 📋 Pre-Deployment Checklist
 
-After deployment, test the function:
+- [ ] Verify you're logged in: `supabase login`
+- [ ] Link to your project: `supabase link --project-ref YOUR_PROJECT_REF`
+- [ ] Check function exists: `supabase functions list`
+- [ ] Review recent changes in `index.ts`
 
-1. **Check function logs:**
+---
+
+## 🔍 Key Sections in index.ts
+
+1. **Lines 1-208:** Imports and semantic embedding generator
+2. **Lines 209-343:** Date extraction system
+3. **Lines 344-1076:** Data validation and formatting
+4. **Lines 1077-2800:** Query routing and context building
+5. **Lines 2801-3100:** Vehicle data fetching and processing
+6. **Lines 3101-3300:** System prompt building with language/personality
+7. **Lines 3301-3587:** LLM API calls and streaming
+8. **Lines 3588-3640:** **Chat message saving (FIXED)**
+9. **Lines 3068-3126:** **Language validation (FIXED)**
+
+---
+
+## ✅ Post-Deployment Verification
+
+1. **Test Chat Saving:**
    ```bash
-   supabase functions logs vehicle-chat
+   # Send a test message and verify it saves
+   # Check database:
+   SELECT * FROM vehicle_chat_history 
+   ORDER BY created_at DESC 
+   LIMIT 5;
    ```
 
-2. **Test via API:**
-   ```bash
-   curl -X POST https://cmvpnsqiefbsqkwnraka.supabase.co/functions/v1/vehicle-chat \
-     -H "Authorization: Bearer YOUR_ANON_KEY" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "device_id": "YOUR_DEVICE_ID",
-       "message": "Show me my trips yesterday",
-       "user_id": "YOUR_USER_ID"
-     }'
-   ```
+2. **Test Language Consistency:**
+   - Set language to English
+   - Send multiple messages
+   - Verify all responses are in English
+   - Check edge function logs for language warnings
 
-3. **Test in the app:**
-   - Open the vehicle chat
-   - Ask: "Show me my trips yesterday"
-   - Should see a formatted table with addresses
+3. **Check Edge Function Logs:**
+   - Go to Supabase Dashboard → Edge Functions → vehicle-chat → Logs
+   - Look for "Chat history saved successfully" messages
+   - Check for any "[LANGUAGE VALIDATION]" warnings
 
 ---
 
 ## 🐛 Troubleshooting
 
-### Error: "Module not found"
-- **Solution:** Use CLI deployment (it bundles dependencies automatically)
-- Or inline shared modules if using Dashboard
-
-### Error: "MAPBOX_ACCESS_TOKEN not found"
-- **Solution:** Set the secret in Supabase Dashboard or via CLI
-
-### Error: "Rate limit exceeded"
-- **Solution:** The function includes rate limiting (100ms delays)
-- If still issues, increase delays in `formatTripsAsTable` function
-
-### Function not updating
-- **Solution:** Clear browser cache, wait 1-2 minutes for CDN propagation
-- Check function version in Dashboard
-
----
-
-## 📝 Quick Deploy Script
-
-Create a file `deploy-vehicle-chat.sh`:
-
+### If deployment fails:
 ```bash
-#!/bin/bash
-echo "🚀 Deploying vehicle-chat edge function..."
-cd /Users/alli/mymoto/fleet-heartbeat-dashboard-6f37655e
-supabase functions deploy vehicle-chat
-echo "✅ Deployment complete!"
-echo "📊 Check logs: supabase functions logs vehicle-chat"
+# Check Supabase CLI version
+supabase --version
+
+# Verify project link
+supabase projects list
+
+# Try with debug flag
+supabase functions deploy vehicle-chat --debug
 ```
 
-Make it executable:
-```bash
-chmod +x deploy-vehicle-chat.sh
-./deploy-vehicle-chat.sh
-```
+### If messages still don't save:
+- Check edge function logs for errors
+- Verify `vehicle_chat_history` table exists
+- Check if `embedding` column exists (migration `20260110135952`)
+- Verify RLS policies allow inserts
+
+### If language still switches:
+- Check logs for "[LANGUAGE VALIDATION]" warnings
+- Verify `vehicle_llm_settings.language_preference` in database
+- Check frontend language selection component
 
 ---
 
-## 🎯 What Was Changed
+## 📊 File Size
 
-The following features were added to `vehicle-chat`:
-
-1. **Trip Table Formatting:**
-   - `reverseGeocode()` function for address lookup
-   - `formatTripsAsTable()` function for table generation
-   - Automatic detection of trip history queries
-
-2. **System Prompt Updates:**
-   - Instructions for AI to use `[TRIP_TABLE:]` tags
-   - Enhanced response rules for trip queries
-
-3. **Frontend Integration:**
-   - `TripTable` component in `VehicleChat.tsx`
-   - Markdown table parsing and rendering
+- **Main file:** 3,693 lines
+- **Total function size:** ~15,000+ lines (including all modules)
+- **Dependencies:** All inlined for deployment compatibility
 
 ---
 
-## ✨ Next Steps
+## 🔗 Related Files
 
-After deployment:
-
-1. **Test the feature:**
-   - Ask: "Show me my trips yesterday"
-   - Ask: "Where did I go last week?"
-   - Ask: "Display my trip history for Monday"
-
-2. **Monitor logs:**
-   ```bash
-   supabase functions logs vehicle-chat --tail
-   ```
-
-3. **Check for errors:**
-   - Look for Mapbox API errors
-   - Check for rate limiting issues
-   - Verify address geocoding is working
+- `DEPLOY_VEHICLE_CHAT_FIXES.md` - Detailed fix documentation
+- `AI_LLM_SERVICE_AUDIT.md` - Full audit report
+- `AI_LLM_FIXES_IMPLEMENTED.md` - Implementation details
 
 ---
 
-**Ready to deploy!** 🚀
+**Ready to deploy!** Run `supabase functions deploy vehicle-chat` when ready.

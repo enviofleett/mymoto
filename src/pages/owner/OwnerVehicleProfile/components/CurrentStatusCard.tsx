@@ -27,7 +27,7 @@ export function CurrentStatusCard({ status, speed }: CurrentStatusCardProps) {
         return {
           icon: "💤",
           label: "Offline",
-          description: "Vehicle is parked",
+          description: "Vehicle is offline",
           bgColor: "bg-muted",
         };
     }

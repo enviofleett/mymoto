@@ -1,22 +1,64 @@
+import { useState } from "react";
 import { DashboardLayout } from "@/components/layouts/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { UserVehicleGrid } from "@/components/admin/UserVehicleGrid";
 import { useAssignmentStats } from "@/hooks/useAssignmentManagement";
-import { Users, Car, Link2, UserX } from "lucide-react";
+import { Users, Car, Link2, UserX, RefreshCw } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 export default function AdminAssignments() {
   const { data: stats, isLoading } = useAssignmentStats();
+  const [syncing, setSyncing] = useState(false);
+
+  const handleSyncVehicles = async () => {
+    setSyncing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('gps-data', {
+        body: {
+          action: 'querymonitorlist',
+        },
+      });
+
+      if (error) throw error;
+
+      toast.success('Vehicles synced successfully from GPS51');
+      // Refresh the page to show updated data
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
+    } catch (error: any) {
+      console.error('Vehicle sync error:', error);
+      toast.error(`Sync failed: ${error.message || 'Unknown error'}`);
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   return (
     <DashboardLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Vehicle Assignments</h1>
-          <p className="text-muted-foreground">
-            Manage which users can access and control vehicles
-          </p>
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Vehicle Assignments</h1>
+            <p className="text-muted-foreground">
+              Manage which users can access and control vehicles
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={handleSyncVehicles}
+              disabled={syncing}
+              variant="outline"
+              size="sm"
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
+              {syncing ? 'Syncing...' : 'Sync from GPS51'}
+            </Button>
+          </div>
         </div>
 
         {/* Stats Cards */}

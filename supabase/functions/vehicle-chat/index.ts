@@ -3,9 +3,1342 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { buildConversationContext, estimateTokenCount } from './conversation-manager.ts'
 import { routeQuery } from './query-router.ts'
 import { parseCommand, containsCommandKeywords, getCommandMetadata, GeofenceAlertParams } from './command-parser.ts'
-import { generateTextEmbedding, formatEmbeddingForPg } from '../_shared/embedding-generator.ts'
 import { learnAndGetPreferences, buildPreferenceContext } from './preference-learner.ts'
 import { extractDateContext, isHistoricalMovementQuery, calculateDistanceFromHistory, DateContext } from './date-extractor.ts'
+import { detectIgnition, normalizeSpeed, normalizeVehicleTelemetry, type Gps51RawData } from '../_shared/telemetry-normalizer.ts'
+
+// ============================================================================
+// INLINED MODULES (for Dashboard deployment compatibility)
+// ============================================================================
+
+// ============================================================================
+// Semantic Embedding Generator - INLINED
+// ============================================================================
+
+// Vehicle/driving domain vocabulary with semantic weights
+const DOMAIN_VOCABULARY: Record<string, { weight: number; category: string }> = {
+  // Driving behavior terms
+  'driving': { weight: 1.0, category: 'behavior' },
+  'braking': { weight: 1.2, category: 'behavior' },
+  'acceleration': { weight: 1.2, category: 'behavior' },
+  'cornering': { weight: 1.1, category: 'behavior' },
+  'speeding': { weight: 1.3, category: 'behavior' },
+  'overspeeding': { weight: 1.4, category: 'behavior' },
+  'harsh': { weight: 1.3, category: 'behavior' },
+  'smooth': { weight: 1.0, category: 'behavior' },
+  'aggressive': { weight: 1.2, category: 'behavior' },
+  'safe': { weight: 1.1, category: 'behavior' },
+  'careful': { weight: 1.0, category: 'behavior' },
+  'reckless': { weight: 1.3, category: 'behavior' },
+  
+  // Score/performance terms
+  'score': { weight: 1.2, category: 'performance' },
+  'rating': { weight: 1.1, category: 'performance' },
+  'performance': { weight: 1.0, category: 'performance' },
+  'excellent': { weight: 1.1, category: 'performance' },
+  'good': { weight: 0.9, category: 'performance' },
+  'poor': { weight: 1.0, category: 'performance' },
+  'improved': { weight: 1.0, category: 'performance' },
+  'declined': { weight: 1.0, category: 'performance' },
+  
+  // Time/history terms
+  'yesterday': { weight: 1.2, category: 'time' },
+  'today': { weight: 1.0, category: 'time' },
+  'week': { weight: 1.1, category: 'time' },
+  'month': { weight: 1.2, category: 'time' },
+  'last': { weight: 0.8, category: 'time' },
+  'history': { weight: 1.1, category: 'time' },
+  'past': { weight: 0.9, category: 'time' },
+  'recent': { weight: 1.0, category: 'time' },
+  'ago': { weight: 0.8, category: 'time' },
+  
+  // Trip terms
+  'trip': { weight: 1.2, category: 'trip' },
+  'trips': { weight: 1.2, category: 'trip' },
+  'journey': { weight: 1.1, category: 'trip' },
+  'travel': { weight: 1.0, category: 'trip' },
+  'distance': { weight: 1.0, category: 'trip' },
+  'mileage': { weight: 1.1, category: 'trip' },
+  'kilometer': { weight: 0.9, category: 'trip' },
+  'km': { weight: 0.9, category: 'trip' },
+  
+  // Location terms
+  'location': { weight: 1.1, category: 'location' },
+  'where': { weight: 1.2, category: 'location' },
+  'home': { weight: 1.0, category: 'location' },
+  'work': { weight: 1.0, category: 'location' },
+  'office': { weight: 1.0, category: 'location' },
+  'arrived': { weight: 1.0, category: 'location' },
+  'left': { weight: 1.0, category: 'location' },
+  'parked': { weight: 1.0, category: 'location' },
+  
+  // Vehicle status terms
+  'battery': { weight: 1.2, category: 'status' },
+  'fuel': { weight: 1.1, category: 'status' },
+  'engine': { weight: 1.1, category: 'status' },
+  'ignition': { weight: 1.0, category: 'status' },
+  'online': { weight: 1.0, category: 'status' },
+  'offline': { weight: 1.0, category: 'status' },
+  'speed': { weight: 1.1, category: 'status' },
+  'moving': { weight: 1.0, category: 'status' },
+  'stopped': { weight: 1.0, category: 'status' },
+  
+  // Command terms
+  'lock': { weight: 1.3, category: 'command' },
+  'unlock': { weight: 1.3, category: 'command' },
+  'alert': { weight: 1.2, category: 'command' },
+  'notify': { weight: 1.1, category: 'command' },
+  'command': { weight: 1.0, category: 'command' },
+  'control': { weight: 1.0, category: 'command' },
+};
+
+// Category dimension ranges (total: 1536)
+const CATEGORY_RANGES: Record<string, [number, number]> = {
+  'behavior': [0, 200],
+  'performance': [200, 350],
+  'time': [350, 500],
+  'trip': [500, 650],
+  'location': [650, 800],
+  'status': [800, 950],
+  'command': [950, 1100],
+  'general': [1100, 1536],
+};
+
+/**
+ * Simple hash function for string to number
+ */
+function hashString(str: string): number {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash) + str.charCodeAt(i);
+  }
+  return Math.abs(hash);
+}
+
+/**
+ * Generate a semantic embedding for text content
+ * Creates a 1536-dimension vector optimized for cosine similarity search
+ */
+function generateTextEmbedding(text: string): number[] {
+  const embedding = new Array(1536).fill(0);
+  
+  // Tokenize and normalize
+  const words = text.toLowerCase()
+    .replace(/[^\w\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 1);
+  
+  const wordCounts = new Map<string, number>();
+  for (const word of words) {
+    wordCounts.set(word, (wordCounts.get(word) || 0) + 1);
+  }
+  
+  // Process domain vocabulary matches
+  for (const [word, count] of wordCounts) {
+    const vocabEntry = DOMAIN_VOCABULARY[word];
+    
+    if (vocabEntry) {
+      const [start, end] = CATEGORY_RANGES[vocabEntry.category];
+      const range = end - start;
+      
+      // Distribute influence across the category range
+      const hash = hashString(word);
+      const positions = 15; // Number of dimensions to activate per word
+      
+      for (let i = 0; i < positions; i++) {
+        const pos = start + ((hash + i * 97) % range);
+        const weight = vocabEntry.weight * Math.log2(count + 1);
+        embedding[pos] += weight * Math.cos(i * 0.4);
+      }
+    } else {
+      // General vocabulary - use hash-based distribution
+      const [start, end] = CATEGORY_RANGES['general'];
+      const range = end - start;
+      const hash = hashString(word);
+      
+      for (let i = 0; i < 5; i++) {
+        const pos = start + ((hash + i * 31) % range);
+        embedding[pos] += 0.3 * Math.log2(count + 1) * Math.sin(i * 0.5);
+      }
+    }
+  }
+  
+  // Add n-gram features for context
+  for (let i = 0; i < words.length - 1; i++) {
+    const bigram = words[i] + '_' + words[i + 1];
+    const hash = hashString(bigram);
+    const [start, end] = CATEGORY_RANGES['general'];
+    const pos = start + (hash % (end - start));
+    embedding[pos] += 0.5;
+  }
+  
+  // Add sentence-level features
+  const sentenceFeatures = {
+    questionMark: text.includes('?') ? 1 : 0,
+    exclamation: text.includes('!') ? 1 : 0,
+    wordCount: Math.min(words.length / 50, 1),
+    avgWordLength: words.reduce((sum, w) => sum + w.length, 0) / Math.max(words.length, 1) / 10,
+  };
+  
+  // Encode sentence features in last dimensions
+  embedding[1530] = sentenceFeatures.questionMark * 0.5;
+  embedding[1531] = sentenceFeatures.exclamation * 0.3;
+  embedding[1532] = sentenceFeatures.wordCount;
+  embedding[1533] = sentenceFeatures.avgWordLength;
+  
+  // Normalize to unit vector for cosine similarity
+  const magnitude = Math.sqrt(embedding.reduce((sum, val) => sum + val * val, 0));
+  if (magnitude > 0) {
+    for (let i = 0; i < embedding.length; i++) {
+      embedding[i] = embedding[i] / magnitude;
+    }
+  }
+  
+  return embedding;
+}
+
+/**
+ * Format embedding array for PostgreSQL vector type
+ */
+function formatEmbeddingForPg(embedding: number[]): string {
+  return `[${embedding.join(',')}]`;
+}
+
+// ============================================================================
+// END Semantic Embedding Generator
+// ============================================================================
+
+// ============================================================================
+// Enhanced Date Extraction System (V2) - INLINED
+// ============================================================================
+
+/**
+ * Call Lovable AI Gateway for date extraction
+ */
+async function callLovableAPIForDateExtraction(
+  message: string,
+  clientTimestamp?: string,
+  userTimezone?: string
+): Promise<DateContext> {
+  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY')
+
+  if (!LOVABLE_API_KEY) {
+    throw new Error('LOVABLE_API_KEY must be configured in Supabase secrets')
+  }
+
+  const now = clientTimestamp ? new Date(clientTimestamp) : new Date()
+  const nowISO = now.toISOString()
+  const timezoneInfo = userTimezone ? `User's timezone: ${userTimezone}. ` : ''
+
+  const systemPrompt = `You are a date extraction assistant. Extract date/time references from user messages and return structured date ranges.
+
+Current date/time: ${nowISO}
+${timezoneInfo}
+Return a JSON object with:
+- hasDateReference: boolean
+- period: 'today' | 'yesterday' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'custom' | 'none'
+- startDate: ISO string (start of day in UTC)
+- endDate: ISO string (end of day in UTC)
+- humanReadable: string (e.g., "yesterday", "last 3 days")
+- confidence: number (0-1)
+
+Examples:
+- "yesterday" → { hasDateReference: true, period: 'yesterday', startDate: '2026-01-14T00:00:00Z', endDate: '2026-01-14T23:59:59Z', humanReadable: 'yesterday', confidence: 0.95 }
+- "last week" → { hasDateReference: true, period: 'last_week', startDate: '2026-01-08T00:00:00Z', endDate: '2026-01-14T23:59:59Z', humanReadable: 'last week', confidence: 0.9 }
+- "on Monday" → { hasDateReference: true, period: 'custom', startDate: '2026-01-15T00:00:00Z', endDate: '2026-01-15T23:59:59Z', humanReadable: 'Monday', confidence: 0.85 }
+
+Be smart about ambiguous dates:
+- "Monday" without context → most recent Monday (could be today if today is Monday, or last Monday)
+- "last Monday" → previous Monday
+- "this Monday" → upcoming Monday or today if today is Monday
+- Relative dates like "3 days ago" → calculate from current date
+
+Return ONLY valid JSON, no other text.`
+
+  const userPrompt = `Extract date context from this message: "${message}"
+
+Return JSON:`
+
+  try {
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        max_tokens: 200,
+        temperature: 0.1,
+        stream: false,
+      }),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('[Date Extraction LLM] API error:', {
+        status: response.status,
+        body: errorText.substring(0, 200),
+      })
+      throw new Error(`Lovable API error: ${response.status}`)
+    }
+
+    const data = await response.json()
+    const text = data.choices?.[0]?.message?.content?.trim() || ''
+
+    if (!text) {
+      throw new Error('Empty response from Lovable API')
+    }
+
+    let jsonText = text
+    const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/)
+    if (jsonMatch) {
+      jsonText = jsonMatch[1]
+    }
+
+    const parsed = JSON.parse(jsonText)
+    
+    const result: DateContext = {
+      hasDateReference: parsed.hasDateReference || false,
+      period: parsed.period || 'none',
+      startDate: parsed.startDate || new Date().toISOString(),
+      endDate: parsed.endDate || new Date().toISOString(),
+      humanReadable: parsed.humanReadable || 'current',
+      timezone: userTimezone,
+      confidence: parsed.confidence || 0.7
+    }
+
+    const startDate = new Date(result.startDate)
+    const endDate = new Date(result.endDate)
+    const nowDate = new Date(nowISO)
+
+    if (startDate > nowDate) {
+      console.warn('[Date Extraction LLM] Start date is in future, adjusting')
+      result.startDate = nowDate.toISOString()
+      result.confidence = (result.confidence || 0.7) * 0.8
+    }
+
+    if (endDate > nowDate) {
+      console.warn('[Date Extraction LLM] End date is in future, adjusting')
+      result.endDate = nowDate.toISOString()
+      result.confidence = (result.confidence || 0.7) * 0.8
+    }
+
+    if (startDate > endDate) {
+      console.warn('[Date Extraction LLM] Start date is after end date, swapping')
+      const temp = result.startDate
+      result.startDate = result.endDate
+      result.endDate = temp
+      result.confidence = (result.confidence || 0.7) * 0.7
+    }
+
+    return result
+  } catch (error) {
+    console.error('[Date Extraction LLM] Error:', error)
+    return extractDateContext(message, clientTimestamp, userTimezone)
+  }
+}
+
+function extractDateContextRegex(
+  message: string,
+  clientTimestamp?: string,
+  userTimezone?: string
+): DateContext & { confidence: number } {
+  const result = extractDateContext(message, clientTimestamp, userTimezone)
+  
+  let confidence = 0.9
+  const lowerMessage = message.toLowerCase()
+  
+  if (/\b(today|yesterday|tomorrow)\b/i.test(lowerMessage)) {
+    confidence = 0.95
+  } else if (/\b(\d+)\s*days?\s*ago\b/i.test(lowerMessage)) {
+    confidence = 0.9
+  } else if (/\b(last|previous)\s+week\b/i.test(lowerMessage)) {
+    confidence = 0.85
+  } else if (/\b(this|current)\s+week\b/i.test(lowerMessage)) {
+    confidence = 0.85
+  } else if (/\b(on|last|this)?\s*(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(lowerMessage)) {
+    confidence = 0.7
+  } else if (result.hasDateReference) {
+    confidence = 0.8
+  } else {
+    confidence = 0.5
+  }
+
+  return {
+    ...result,
+    confidence
+  }
+}
+
+async function extractDateContextV2(
+  message: string,
+  clientTimestamp?: string,
+  userTimezone?: string
+): Promise<DateContext> {
+  const regexResult = extractDateContextRegex(message, clientTimestamp, userTimezone)
+  
+  if (regexResult.confidence < 0.9 || regexResult.period === 'none') {
+    console.log(`[Date Extraction V2] Low confidence (${regexResult.confidence}) or no match, using LLM extraction`)
+    
+    const ambiguousPatterns = [
+      /\b(on|last|this)?\s*(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i,
+      /\b(that|this)\s+(day|time|morning|afternoon|evening)\b/i,
+      /\b(recently|lately|earlier|before)\b/i,
+      /\b(when|what\s+time)\s+(did|was|were)\b/i
+    ]
+    
+    const hasAmbiguousPattern = ambiguousPatterns.some(p => p.test(message.toLowerCase()))
+    
+    if (hasAmbiguousPattern || regexResult.confidence < 0.7) {
+      try {
+        const llmResult = await callLovableAPIForDateExtraction(message, clientTimestamp, userTimezone)
+        
+        if (llmResult.confidence && llmResult.confidence > regexResult.confidence) {
+          console.log(`[Date Extraction V2] Using LLM result (confidence: ${llmResult.confidence})`)
+          return llmResult
+        } else if (llmResult.hasDateReference && !regexResult.hasDateReference) {
+          console.log(`[Date Extraction V2] Using LLM result (found date reference)`)
+          return llmResult
+        }
+      } catch (error) {
+        console.warn('[Date Extraction V2] LLM extraction failed, using regex result:', error)
+      }
+    }
+  }
+  
+  return regexResult
+}
+
+function validateDateContext(context: DateContext): {
+  isValid: boolean
+  issues: string[]
+  corrected?: DateContext
+} {
+  const issues: string[] = []
+  const now = new Date()
+  
+  const startDate = new Date(context.startDate)
+  const endDate = new Date(context.endDate)
+  
+  if (startDate > now) {
+    issues.push('Start date is in the future')
+  }
+  
+  if (endDate > now) {
+    issues.push('End date is in the future')
+  }
+  
+  if (startDate > endDate) {
+    issues.push('Start date is after end date')
+  }
+  
+  const rangeDays = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+  if (rangeDays > 365) {
+    issues.push(`Date range is very large: ${rangeDays.toFixed(0)} days`)
+  }
+  
+  if (rangeDays < 0) {
+    issues.push('Date range is negative')
+  }
+  
+  let corrected: DateContext | undefined = undefined
+  if (issues.length > 0) {
+    corrected = { ...context }
+    
+    if (startDate > now) {
+      corrected.startDate = now.toISOString()
+    }
+    if (endDate > now) {
+      corrected.endDate = now.toISOString()
+    }
+    
+    if (startDate > endDate) {
+      const temp = corrected.startDate
+      corrected.startDate = corrected.endDate
+      corrected.endDate = temp
+    }
+    
+    const endDateObj = new Date(corrected.endDate)
+    endDateObj.setHours(23, 59, 59, 999)
+    corrected.endDate = endDateObj.toISOString()
+    
+    const startDateObj = new Date(corrected.startDate)
+    startDateObj.setHours(0, 0, 0, 0)
+    corrected.startDate = startDateObj.toISOString()
+  }
+  
+  return {
+    isValid: issues.length === 0,
+    issues,
+    corrected
+  }
+}
+
+// ============================================================================
+// Data Validation & Cross-Validation Layer - INLINED
+// ============================================================================
+
+interface ValidatedTrip {
+  id: string
+  start_time: string
+  end_time: string
+  start_latitude: number | null
+  start_longitude: number | null
+  end_latitude: number | null
+  end_longitude: number | null
+  distance_km: number
+  duration_seconds: number | null
+  max_speed: number | null
+  avg_speed: number | null
+  dataQuality: 'high' | 'medium' | 'low'
+  validationIssues: string[]
+  confidence: number
+}
+
+interface ValidatedPosition {
+  latitude: number
+  longitude: number
+  speed: number
+  gps_time: string
+  ignition_on: boolean | null
+  dataQuality: 'high' | 'medium' | 'low'
+  validationIssues: string[]
+}
+
+interface ValidatedData {
+  trips: ValidatedTrip[]
+  positions: ValidatedPosition[]
+  overallQuality: 'high' | 'medium' | 'low'
+  validationSummary: {
+    totalTrips: number
+    validTrips: number
+    totalPositions: number
+    validPositions: number
+    issues: string[]
+    crossValidationWarnings: string[]
+  }
+}
+
+function haversineDistanceValidator(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371
+  const dLat = (lat2 - lat1) * (Math.PI / 180)
+  const dLon = (lon2 - lon1) * (Math.PI / 180)
+  const a = 
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  return R * c
+}
+
+function validateTrip(trip: any, index: number, allTrips: any[]): ValidatedTrip {
+  const issues: string[] = []
+  let confidence = 1.0
+  let dataQuality: 'high' | 'medium' | 'low' = 'high'
+
+  if (!trip.start_time || !trip.end_time) {
+    issues.push('Missing start_time or end_time')
+    confidence -= 0.3
+    dataQuality = 'low'
+  }
+
+  if (trip.start_time && trip.end_time) {
+    const startTime = new Date(trip.start_time)
+    const endTime = new Date(trip.end_time)
+    if (endTime <= startTime) {
+      issues.push('end_time is before or equal to start_time')
+      confidence -= 0.2
+      dataQuality = dataQuality === 'high' ? 'medium' : 'low'
+    }
+  }
+
+  const hasStartCoords = trip.start_latitude && trip.start_longitude
+  const hasEndCoords = trip.end_latitude && trip.end_longitude
+  
+  if (!hasStartCoords || !hasEndCoords) {
+    issues.push('Missing start or end coordinates')
+    confidence -= 0.2
+    if (dataQuality === 'high') dataQuality = 'medium'
+  } else {
+    if (Math.abs(trip.start_latitude) > 90 || Math.abs(trip.start_longitude) > 180) {
+      issues.push('Invalid start coordinates')
+      confidence -= 0.3
+      dataQuality = 'low'
+    }
+    if (Math.abs(trip.end_latitude) > 90 || Math.abs(trip.end_longitude) > 180) {
+      issues.push('Invalid end coordinates')
+      confidence -= 0.3
+      dataQuality = 'low'
+    }
+  }
+
+  if (trip.distance_km !== null && trip.distance_km !== undefined) {
+    if (trip.distance_km < 0) {
+      issues.push('Negative distance')
+      confidence -= 0.2
+    }
+    
+    if (hasStartCoords && hasEndCoords) {
+      const calculatedDistance = haversineDistanceValidator(
+        trip.start_latitude,
+        trip.start_longitude,
+        trip.end_latitude,
+        trip.end_longitude
+      )
+      const reportedDistance = trip.distance_km || 0
+      const distanceDiff = Math.abs(calculatedDistance - reportedDistance)
+      
+      if (distanceDiff > reportedDistance * 0.2 && reportedDistance > 0.1) {
+        issues.push(`Distance mismatch: reported ${reportedDistance.toFixed(2)}km, calculated ${calculatedDistance.toFixed(2)}km`)
+        confidence -= 0.1
+        if (dataQuality === 'high') dataQuality = 'medium'
+      }
+    }
+  } else {
+    issues.push('Missing distance_km')
+    confidence -= 0.1
+  }
+
+  if (trip.duration_seconds !== null && trip.duration_seconds !== undefined) {
+    if (trip.duration_seconds < 0) {
+      issues.push('Negative duration')
+      confidence -= 0.2
+    }
+    
+    if (trip.start_time && trip.end_time) {
+      const startTime = new Date(trip.start_time)
+      const endTime = new Date(trip.end_time)
+      const calculatedDuration = (endTime.getTime() - startTime.getTime()) / 1000
+      const reportedDuration = trip.duration_seconds
+      const durationDiff = Math.abs(calculatedDuration - reportedDuration)
+      
+      if (durationDiff > 5) {
+        issues.push(`Duration mismatch: reported ${reportedDuration}s, calculated ${calculatedDuration.toFixed(0)}s`)
+        confidence -= 0.1
+      }
+    }
+  }
+
+  if (trip.max_speed !== null && trip.max_speed !== undefined) {
+    if (trip.max_speed < 0 || trip.max_speed > 300) {
+      issues.push(`Unrealistic max_speed: ${trip.max_speed} km/h`)
+      confidence -= 0.1
+    }
+  }
+
+  const duplicateTrips = allTrips.filter((t, i) => 
+    i !== index &&
+    t.start_time &&
+    t.end_time &&
+    Math.abs(new Date(t.start_time).getTime() - new Date(trip.start_time).getTime()) < 60000 &&
+    Math.abs(new Date(t.end_time).getTime() - new Date(trip.end_time).getTime()) < 60000
+  )
+  
+  if (duplicateTrips.length > 0) {
+    issues.push(`Possible duplicate trip (${duplicateTrips.length} similar trips found)`)
+    confidence -= 0.1
+  }
+
+  if (confidence < 0.6) {
+    dataQuality = 'low'
+  } else if (confidence < 0.8) {
+    dataQuality = 'medium'
+  }
+
+  return {
+    ...trip,
+    dataQuality,
+    validationIssues: issues,
+    confidence: Math.max(0, Math.min(1, confidence))
+  }
+}
+
+function validatePosition(position: any): ValidatedPosition {
+  const issues: string[] = []
+  let dataQuality: 'high' | 'medium' | 'low' = 'high'
+
+  if (!position.latitude || !position.longitude) {
+    issues.push('Missing coordinates')
+    dataQuality = 'low'
+  } else {
+    if (Math.abs(position.latitude) > 90 || Math.abs(position.longitude) > 180) {
+      issues.push('Invalid coordinates')
+      dataQuality = 'low'
+    }
+    
+    if (position.latitude === 0 && position.longitude === 0) {
+      issues.push('Null island coordinates (0,0) - likely invalid GPS')
+      dataQuality = 'low'
+    }
+  }
+
+  if (position.speed !== null && position.speed !== undefined) {
+    if (position.speed < 0 || position.speed > 300) {
+      issues.push(`Unrealistic speed: ${position.speed} km/h`)
+      if (dataQuality === 'high') dataQuality = 'medium'
+    }
+  }
+
+  if (!position.gps_time) {
+    issues.push('Missing gps_time')
+    if (dataQuality === 'high') dataQuality = 'medium'
+  }
+
+  return {
+    ...position,
+    dataQuality,
+    validationIssues: issues
+  }
+}
+
+function crossValidate(
+  trips: ValidatedTrip[],
+  positions: ValidatedPosition[],
+  dateContext: DateContext
+): string[] {
+  const warnings: string[] = []
+
+  if (trips.length > 0 && positions.length > 0) {
+    const totalTripDistance = trips.reduce((sum, t) => sum + (t.distance_km || 0), 0)
+    
+    let positionDistance = 0
+    for (let i = 1; i < positions.length; i++) {
+      const prev = positions[i - 1]
+      const curr = positions[i]
+      if (prev.latitude && prev.longitude && curr.latitude && curr.longitude) {
+        positionDistance += haversineDistanceValidator(
+          prev.latitude,
+          prev.longitude,
+          curr.latitude,
+          curr.longitude
+        )
+      }
+    }
+    
+    if (totalTripDistance > 0 && positionDistance > 0) {
+      const distanceDiff = Math.abs(totalTripDistance - positionDistance)
+      if (distanceDiff > totalTripDistance * 0.3) {
+        warnings.push(
+          `Distance mismatch: trips report ${totalTripDistance.toFixed(2)}km, positions calculate ${positionDistance.toFixed(2)}km`
+        )
+      }
+    }
+  }
+
+  const startDate = new Date(dateContext.startDate)
+  const endDate = new Date(dateContext.endDate)
+  
+  if (trips.length > 0) {
+    const earliestTrip = trips.reduce((earliest, trip) => {
+      const tripStart = new Date(trip.start_time)
+      return tripStart < earliest ? tripStart : earliest
+    }, new Date(trips[0].start_time))
+    
+    const latestTrip = trips.reduce((latest, trip) => {
+      const tripEnd = new Date(trip.end_time)
+      return tripEnd > latest ? tripEnd : latest
+    }, new Date(trips[0].end_time))
+    
+    if (earliestTrip > startDate) {
+      warnings.push(`Earliest trip (${earliestTrip.toISOString()}) is after requested start date (${startDate.toISOString()})`)
+    }
+    
+    if (latestTrip < endDate) {
+      warnings.push(`Latest trip (${latestTrip.toISOString()}) is before requested end date (${endDate.toISOString()})`)
+    }
+  }
+
+  return warnings
+}
+
+function validateAndEnrichData(
+  trips: any[],
+  positions: any[],
+  dateContext: DateContext
+): ValidatedData {
+  const validatedTrips = trips.map((trip, index) => validateTrip(trip, index, trips))
+  const validatedPositions = positions.map(validatePosition)
+  const crossValidationWarnings = crossValidate(validatedTrips, validatedPositions, dateContext)
+  
+  const tripQualities = validatedTrips.map(t => t.dataQuality)
+  const positionQualities = validatedPositions.map(p => p.dataQuality)
+  
+  const hasLowQuality = [...tripQualities, ...positionQualities].includes('low')
+  const hasMediumQuality = [...tripQualities, ...positionQualities].includes('medium')
+  
+  let overallQuality: 'high' | 'medium' | 'low' = 'high'
+  if (hasLowQuality) {
+    overallQuality = 'low'
+  } else if (hasMediumQuality || crossValidationWarnings.length > 0) {
+    overallQuality = 'medium'
+  }
+  
+  const allIssues: string[] = []
+  validatedTrips.forEach(t => allIssues.push(...t.validationIssues))
+  validatedPositions.forEach(p => allIssues.push(...p.validationIssues))
+  allIssues.push(...crossValidationWarnings)
+  
+  return {
+    trips: validatedTrips,
+    positions: validatedPositions,
+    overallQuality,
+    validationSummary: {
+      totalTrips: trips.length,
+      validTrips: validatedTrips.filter(t => t.dataQuality !== 'low').length,
+      totalPositions: positions.length,
+      validPositions: validatedPositions.filter(p => p.dataQuality !== 'low').length,
+      issues: allIssues,
+      crossValidationWarnings
+    }
+  }
+}
+
+// ============================================================================
+// Temporal Context Management - INLINED
+// ============================================================================
+
+interface TemporalLink {
+  query: string
+  date: string
+  resolvedDate: string
+  context: string
+  timestamp: string
+}
+
+interface TemporalContext {
+  resolvedDates: Map<string, string>
+  dateAliases: Map<string, string>
+  conversationTimeline: Array<{
+    date: string
+    events: string[]
+  }>
+  recentQueries: TemporalLink[]
+}
+
+async function extractTemporalReferences(
+  supabase: any,
+  deviceId: string,
+  userId: string,
+  currentDateContext: DateContext
+): Promise<TemporalContext> {
+  const resolvedDates = new Map<string, string>()
+  const dateAliases = new Map<string, string>()
+  const conversationTimeline: Array<{ date: string; events: string[] }> = []
+  const recentQueries: TemporalLink[] = []
+
+  const thirtyDaysAgo = new Date()
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+  
+  const { data: recentMessages } = await supabase
+    .from('vehicle_chat_history')
+    .select('role, content, created_at')
+    .eq('device_id', deviceId)
+    .eq('user_id', userId)
+    .gte('created_at', thirtyDaysAgo.toISOString())
+    .order('created_at', { ascending: false })
+    .limit(50)
+
+  if (!recentMessages || recentMessages.length === 0) {
+    return {
+      resolvedDates,
+      dateAliases,
+      conversationTimeline,
+      recentQueries
+    }
+  }
+
+  const temporalPatterns = [
+    /\b(yesterday|yesternight|last\s+night)\b/i,
+    /\b(today|this\s+morning|this\s+afternoon|tonight)\b/i,
+    /\b(last|previous)\s+week\b/i,
+    /\b(this|current)\s+week\b/i,
+    /\b(last|previous)\s+month\b/i,
+    /\b(this|current)\s+month\b/i,
+    /\b(\d+)\s*days?\s*ago\b/i,
+    /\b(on|last|this)?\s*(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i,
+    /\b(that|this)\s+(day|time|morning|afternoon|evening)\b/i
+  ]
+
+  const messagesByDate = new Map<string, Array<{ role: string; content: string; created_at: string }>>()
+  
+  for (const msg of recentMessages) {
+    const msgDate = new Date(msg.created_at)
+    const dateKey = msgDate.toISOString().split('T')[0]
+    
+    if (!messagesByDate.has(dateKey)) {
+      messagesByDate.set(dateKey, [])
+    }
+    messagesByDate.get(dateKey)!.push(msg)
+  }
+
+  for (const [date, messages] of messagesByDate.entries()) {
+    const events: string[] = []
+    
+    for (const msg of messages) {
+      if (msg.role === 'user') {
+        for (const pattern of temporalPatterns) {
+          const match = msg.content.match(pattern)
+          if (match) {
+            const reference = match[0].toLowerCase()
+            const msgTimestamp = new Date(msg.created_at)
+            
+            let resolvedDate: string | null = null
+            
+            if (reference.includes('yesterday')) {
+              const yesterday = new Date(msgTimestamp)
+              yesterday.setDate(yesterday.getDate() - 1)
+              resolvedDate = yesterday.toISOString().split('T')[0]
+            } else if (reference.includes('today')) {
+              resolvedDate = msgTimestamp.toISOString().split('T')[0]
+            } else if (reference.includes('last week')) {
+              const dayOfWeek = msgTimestamp.getDay()
+              const daysToLastMonday = dayOfWeek === 0 ? 6 : dayOfWeek + 6
+              const lastMonday = new Date(msgTimestamp)
+              lastMonday.setDate(lastMonday.getDate() - daysToLastMonday)
+              resolvedDate = lastMonday.toISOString().split('T')[0]
+            } else if (reference.match(/\b(\d+)\s*days?\s*ago\b/i)) {
+              const daysAgo = parseInt(reference.match(/\b(\d+)\s*days?\s*ago\b/i)![1])
+              const targetDate = new Date(msgTimestamp)
+              targetDate.setDate(targetDate.getDate() - daysAgo)
+              resolvedDate = targetDate.toISOString().split('T')[0]
+            }
+            
+            if (resolvedDate) {
+              resolvedDates.set(reference, resolvedDate)
+              
+              recentQueries.push({
+                query: msg.content.substring(0, 100),
+                date: reference,
+                resolvedDate,
+                context: `Asked on ${msgTimestamp.toLocaleDateString()}`,
+                timestamp: msg.created_at
+              })
+            }
+            
+            events.push(`User asked about "${reference}" (resolved to ${resolvedDate})`)
+            break
+          }
+        }
+      }
+    }
+    
+    if (events.length > 0) {
+      conversationTimeline.push({
+        date,
+        events
+      })
+    }
+  }
+
+  if (currentDateContext.hasDateReference) {
+    const currentDate = currentDateContext.humanReadable.toLowerCase()
+    
+    if (resolvedDates.has(currentDate)) {
+      dateAliases.set('that day', resolvedDates.get(currentDate)!)
+    }
+    
+    recentQueries.push({
+      query: 'current query',
+      date: currentDate,
+      resolvedDate: currentDateContext.startDate.split('T')[0],
+      context: 'Current query',
+      timestamp: new Date().toISOString()
+    })
+  }
+
+  return {
+    resolvedDates,
+    dateAliases,
+    conversationTimeline: conversationTimeline.slice(0, 10),
+    recentQueries: recentQueries.slice(0, 10)
+  }
+}
+
+function formatTemporalContextForPrompt(temporalContext: TemporalContext): string {
+  if (temporalContext.recentQueries.length === 0 && temporalContext.resolvedDates.size === 0) {
+    return ''
+  }
+
+  let prompt = '## TEMPORAL CONTEXT (Date References from Recent Conversations)\n'
+  
+  if (temporalContext.resolvedDates.size > 0) {
+    prompt += '### Resolved Date References:\n'
+    for (const [ref, date] of temporalContext.resolvedDates.entries()) {
+      prompt += `- "${ref}" → ${date}\n`
+    }
+    prompt += '\n'
+  }
+  
+  if (temporalContext.dateAliases.size > 0) {
+    prompt += '### Date Aliases:\n'
+    for (const [alias, date] of temporalContext.dateAliases.entries()) {
+      prompt += `- "${alias}" → ${date}\n`
+    }
+    prompt += '\n'
+  }
+  
+  if (temporalContext.recentQueries.length > 0) {
+    prompt += '### Recent Date Queries:\n'
+    for (const query of temporalContext.recentQueries.slice(0, 5)) {
+      prompt += `- [${query.timestamp.split('T')[0]}] "${query.query.substring(0, 50)}..." → ${query.date} (${query.resolvedDate})\n`
+    }
+    prompt += '\n'
+  }
+  
+  if (temporalContext.conversationTimeline.length > 0) {
+    prompt += '### Conversation Timeline:\n'
+    for (const entry of temporalContext.conversationTimeline.slice(0, 5)) {
+      prompt += `- ${entry.date}: ${entry.events.length} temporal reference(s)\n`
+    }
+    prompt += '\n'
+  }
+  
+  prompt += '⚠️ IMPORTANT: Use these resolved dates when user refers to "that day", "yesterday", or other relative dates in conversation.\n'
+  
+  return prompt
+}
+
+// ============================================================================
+// Structured Data Formatter - INLINED
+// ============================================================================
+
+interface StructuredVehicleData {
+  realtime: {
+    timestamp: string
+    freshness: 'live' | 'cached' | 'stale'
+    ageSeconds: number
+    location: { lat: number | null; lon: number | null; address: string; quality: 'high' | 'medium' | 'low' }
+    status: { speed: number; battery: number | null; ignition: boolean; isOnline: boolean; isOverspeeding: boolean }
+    dataQuality: 'high' | 'medium' | 'low'
+  }
+  historical: {
+    period: { start: string; end: string; label: string; timezone?: string }
+    trips: Array<{
+      id: string
+      start: { time: string; location: string; coordinates: { lat: number | null; lon: number | null } }
+      end: { time: string; location: string; coordinates: { lat: number | null; lon: number | null } }
+      distance: number
+      duration: number
+      maxSpeed: number | null
+      avgSpeed: number | null
+      quality: 'high' | 'medium' | 'low'
+      confidence: number
+    }>
+    positions: Array<{ time: string; lat: number; lon: number; speed: number; quality: 'high' | 'medium' | 'low' }>
+    dataQuality: 'high' | 'medium' | 'low'
+    validationSummary: {
+      totalTrips: number
+      validTrips: number
+      totalPositions: number
+      validPositions: number
+      issues: string[]
+      warnings: string[]
+    }
+  }
+  context: {
+    conversationSummary: string | null
+    relevantMemories: Array<{ date: string; content: string; relevance: number }>
+    temporalLinks: Array<{ query: string; date: string; resolvedDate: string }>
+  }
+}
+
+function formatRealtimeData(
+  position: any,
+  currentLocationName: string,
+  dataFreshness: 'live' | 'cached' | 'stale',
+  dataTimestamp: string,
+  dataAgeSeconds: number
+): StructuredVehicleData['realtime'] {
+  return {
+    timestamp: dataTimestamp,
+    freshness: dataFreshness,
+    ageSeconds: dataAgeSeconds,
+    location: {
+      lat: position?.latitude || null,
+      lon: position?.longitude || null,
+      address: currentLocationName,
+      quality: (position?.latitude && position?.longitude && 
+                position.latitude !== 0 && position.longitude !== 0) ? 'high' : 'low'
+    },
+    status: {
+      speed: position?.speed || 0,
+      battery: position?.battery_percent ?? null,
+      ignition: position?.ignition_on || false,
+      isOnline: position?.is_online || false,
+      isOverspeeding: position?.is_overspeeding || false
+    },
+    dataQuality: dataFreshness === 'live' ? 'high' : dataFreshness === 'cached' ? 'medium' : 'low'
+  }
+}
+
+function formatHistoricalData(
+  validatedData: ValidatedData | null,
+  dateContext: DateContext,
+  tripNarrativeData: string | null
+): StructuredVehicleData['historical'] {
+  if (!validatedData) {
+    return {
+      period: {
+        start: dateContext.startDate,
+        end: dateContext.endDate,
+        label: dateContext.humanReadable,
+        timezone: dateContext.timezone
+      },
+      trips: [],
+      positions: [],
+      dataQuality: 'low',
+      validationSummary: {
+        totalTrips: 0,
+        validTrips: 0,
+        totalPositions: 0,
+        validPositions: 0,
+        issues: [],
+        warnings: []
+      }
+    }
+  }
+
+  return {
+    period: {
+      start: dateContext.startDate,
+      end: dateContext.endDate,
+      label: dateContext.humanReadable,
+      timezone: dateContext.timezone
+    },
+    trips: validatedData.trips.map(trip => ({
+      id: trip.id || '',
+      start: {
+        time: trip.start_time,
+        location: 'Unknown',
+        coordinates: {
+          lat: trip.start_latitude,
+          lon: trip.start_longitude
+        }
+      },
+      end: {
+        time: trip.end_time,
+        location: 'Unknown',
+        coordinates: {
+          lat: trip.end_latitude,
+          lon: trip.end_longitude
+        }
+      },
+      distance: trip.distance_km || 0,
+      duration: trip.duration_seconds || 0,
+      maxSpeed: trip.max_speed,
+      avgSpeed: trip.avg_speed,
+      quality: trip.dataQuality,
+      confidence: trip.confidence
+    })),
+    positions: validatedData.positions.map(pos => ({
+      time: pos.gps_time,
+      lat: pos.latitude,
+      lon: pos.longitude,
+      speed: pos.speed,
+      quality: pos.dataQuality
+    })),
+    dataQuality: validatedData.overallQuality,
+    validationSummary: {
+      totalTrips: validatedData.validationSummary.totalTrips,
+      validTrips: validatedData.validationSummary.validTrips,
+      totalPositions: validatedData.validationSummary.totalPositions,
+      validPositions: validatedData.validationSummary.validPositions,
+      issues: validatedData.validationSummary.issues,
+      warnings: validatedData.validationSummary.crossValidationWarnings
+    }
+  }
+}
+
+function formatConversationContext(
+  conversationContext: any,
+  ragContext: {
+    memories: string[]
+    semanticTripMatches: string[]
+  }
+): StructuredVehicleData['context'] {
+  const relevantMemories = ragContext.memories.map(memory => {
+    const dateMatch = memory.match(/\[([^\]]+)\]/)
+    const relevanceMatch = memory.match(/similarity:\s*(\d+)%/)
+    
+    return {
+      date: dateMatch ? dateMatch[1] : new Date().toISOString(),
+      content: memory,
+      relevance: relevanceMatch ? parseInt(relevanceMatch[1]) / 100 : 0.5
+    }
+  })
+
+  return {
+    conversationSummary: conversationContext.conversation_summary,
+    relevantMemories: relevantMemories.slice(0, 5),
+    temporalLinks: []
+  }
+}
+
+function formatStructuredVehicleData(
+  realtime: StructuredVehicleData['realtime'],
+  historical: StructuredVehicleData['historical'],
+  context: StructuredVehicleData['context']
+): StructuredVehicleData {
+  return {
+    realtime,
+    historical,
+    context
+  }
+}
+
+function structuredDataToPrompt(data: StructuredVehicleData): string {
+  let prompt = '## STRUCTURED VEHICLE DATA\n\n'
+  
+  prompt += `### REALTIME STATUS [${data.realtime.freshness.toUpperCase()}]\n`
+  prompt += `- Timestamp: ${data.realtime.timestamp} (${data.realtime.ageSeconds}s ago)\n`
+  prompt += `- Location: ${data.realtime.location.address} (${data.realtime.location.lat}, ${data.realtime.location.lon})\n`
+  prompt += `- Speed: ${data.realtime.status.speed} km/h\n`
+  prompt += `- Battery: ${data.realtime.status.battery ?? 'Unknown'}%\n`
+  prompt += `- Ignition: ${data.realtime.status.ignition ? 'ON' : 'OFF'}\n`
+  prompt += `- Online: ${data.realtime.status.isOnline ? 'YES' : 'NO'}\n`
+  prompt += `- Data Quality: ${data.realtime.dataQuality.toUpperCase()}\n\n`
+  
+  if (data.historical.trips.length > 0 || data.historical.positions.length > 0) {
+    prompt += `### HISTORICAL DATA (${data.historical.period.label})\n`
+    prompt += `- Period: ${data.historical.period.start} to ${data.historical.period.end}\n`
+    prompt += `- Trips: ${data.historical.trips.length} (${data.historical.validationSummary.validTrips} valid)\n`
+    prompt += `- Positions: ${data.historical.positions.length} (${data.historical.validationSummary.validPositions} valid)\n`
+    prompt += `- Data Quality: ${data.historical.dataQuality.toUpperCase()}\n`
+    
+    if (data.historical.validationSummary.warnings.length > 0) {
+      prompt += `- Warnings: ${data.historical.validationSummary.warnings.slice(0, 2).join('; ')}\n`
+    }
+    prompt += '\n'
+  }
+  
+  if (data.context.conversationSummary) {
+    prompt += `### CONVERSATION CONTEXT\n`
+    prompt += `- Summary: ${data.context.conversationSummary}\n`
+    prompt += `- Relevant Memories: ${data.context.relevantMemories.length}\n\n`
+  }
+  
+  return prompt
+}
+
+// ============================================================================
+// Query Optimization & Caching - INLINED
+// ============================================================================
+
+const queryCache = new Map<string, { data: any; timestamp: number; expiresAt: number }>()
+
+const CACHE_TTL = {
+  'today': 60 * 1000,
+  'yesterday': 5 * 60 * 1000,
+  'this_week': 2 * 60 * 1000,
+  'last_week': 10 * 60 * 1000,
+  'this_month': 5 * 60 * 1000,
+  'last_month': 30 * 60 * 1000,
+  'custom': 5 * 60 * 1000,
+  'none': 30 * 1000
+}
+
+function generateCacheKey(
+  deviceId: string,
+  period: string,
+  startDate: string,
+  endDate: string,
+  queryType: 'trips' | 'positions' | 'both'
+): string {
+  const startDay = startDate.split('T')[0]
+  const endDay = endDate.split('T')[0]
+  return `${deviceId}:${period}:${startDay}:${endDay}:${queryType}`
+}
+
+function getCachedQuery<T>(
+  deviceId: string,
+  period: string,
+  startDate: string,
+  endDate: string,
+  queryType: 'trips' | 'positions' | 'both'
+): T | null {
+  const cacheKey = generateCacheKey(deviceId, period, startDate, endDate, queryType)
+  const cached = queryCache.get(cacheKey)
+  
+  if (!cached) {
+    return null
+  }
+  
+  if (Date.now() > cached.expiresAt) {
+    queryCache.delete(cacheKey)
+    return null
+  }
+  
+  console.log(`[Query Cache] HIT for ${cacheKey} (age: ${Math.floor((Date.now() - cached.timestamp) / 1000)}s)`)
+  return cached.data
+}
+
+function setCachedQuery<T>(
+  deviceId: string,
+  period: string,
+  startDate: string,
+  endDate: string,
+  queryType: 'trips' | 'positions' | 'both',
+  data: T
+): void {
+  const cacheKey = generateCacheKey(deviceId, period, startDate, endDate, queryType)
+  const ttl = CACHE_TTL[period as keyof typeof CACHE_TTL] || CACHE_TTL.custom
+  
+  queryCache.set(cacheKey, {
+    data,
+    timestamp: Date.now(),
+    expiresAt: Date.now() + ttl
+  })
+  
+  console.log(`[Query Cache] SET for ${cacheKey} (TTL: ${ttl / 1000}s)`)
+  
+  if (queryCache.size > 100) {
+    const now = Date.now()
+    let cleaned = 0
+    for (const [key, value] of queryCache.entries()) {
+      if (now > value.expiresAt) {
+        queryCache.delete(key)
+        cleaned++
+      }
+    }
+    if (cleaned > 0) {
+      console.log(`[Query Cache] Cleaned up ${cleaned} expired entries`)
+    }
+  }
+}
+
+function invalidateCache(
+  deviceId: string,
+  period?: string
+): void {
+  if (period) {
+    const keysToDelete: string[] = []
+    for (const key of queryCache.keys()) {
+      if (key.startsWith(`${deviceId}:${period}:`)) {
+        keysToDelete.push(key)
+      }
+    }
+    keysToDelete.forEach(key => queryCache.delete(key))
+    console.log(`[Query Cache] Invalidated ${keysToDelete.length} entries for ${deviceId}:${period}`)
+  } else {
+    const keysToDelete: string[] = []
+    for (const key of queryCache.keys()) {
+      if (key.startsWith(`${deviceId}:`)) {
+        keysToDelete.push(key)
+      }
+    }
+    keysToDelete.forEach(key => queryCache.delete(key))
+    console.log(`[Query Cache] Invalidated all ${keysToDelete.length} entries for ${deviceId}`)
+  }
+}
+
+// ============================================================================
+// END INLINED MODULES
+// ============================================================================
 // Inlined Spell Checker (for Dashboard deployment compatibility)
 // Common vehicle/driving terms dictionary with common misspellings
 const VEHICLE_TERMS: Record<string, string[]> = {
@@ -204,6 +1537,7 @@ async function callGeminiAPIStream(
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
 // Geocode a location name to coordinates using Mapbox
@@ -287,11 +1621,38 @@ async function formatTripsAsNarrative(
   // Process each date's trips into natural paragraph narratives
   const allParagraphs: string[] = []
   
+  // Track totals across all dates for summary statistics
+  let totalDriveTimeMinutes = 0
+  let totalParkingTimeMinutes = 0
+  let totalKilometers = 0
+  const allEnrichedTrips: Array<{
+    startTime: Date
+    endTime: Date
+    durationMinutes: number
+    distanceKm: number
+  }> = []
+  
   for (const [date, dateTrips] of tripsByDate.entries()) {
     // Sort trips by start time (earliest first)
     const sortedTrips = dateTrips.sort((a, b) => 
       new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
     )
+    
+    // Filter out ghost trips (0 km or < 0.1 km)
+    const validTrips = sortedTrips.filter(trip => {
+      const distance = trip.distance_km || 0
+      return distance > 0.1 // Exclude trips with 0 km or < 100m
+    })
+    
+    if (validTrips.length === 0) {
+      console.log(`No valid trips after filtering ghost trips for date ${date}`)
+      continue
+    }
+    
+    const filteredCount = sortedTrips.length - validTrips.length
+    if (filteredCount > 0) {
+      console.log(`Filtered ${filteredCount} ghost trips (0 km or < 0.1 km) for date ${date}`)
+    }
     
     // Enrich trips with addresses and metadata
     const enrichedTrips: Array<{
@@ -308,7 +1669,7 @@ async function formatTripsAsNarrative(
       timeReadable: string
     }> = []
     
-    for (const trip of sortedTrips) {
+    for (const trip of validTrips) {
       const startTime = new Date(trip.start_time)
       const endTime = new Date(trip.end_time)
       const durationMs = endTime.getTime() - startTime.getTime()
@@ -422,6 +1783,14 @@ async function formatTripsAsNarrative(
         timeReadable
       })
       
+      // Track for summary statistics
+      allEnrichedTrips.push({
+        startTime,
+        endTime,
+        durationMinutes,
+        distanceKm
+      })
+      
       await new Promise(resolve => setTimeout(resolve, 100))
     }
     
@@ -468,19 +1837,44 @@ async function formatTripsAsNarrative(
       const isLastGroup = groupIndex === tripGroups.length - 1
       
       if (group.length === 1) {
-        // Single trip - use varied narrative
+        // Single trip - use explicit time and location format
         const t = group[0]
-        const distanceReadable = formatDistanceReadable(t.distanceKm)
+        const startTimeReadable = formatTimeReadable(t.startTime)
         const endTimeReadable = formatTimeReadable(t.endTime)
         
         let paragraph = ''
         
+        // Calculate parking duration before this trip
+        let parkingDurationMinutes = 0
+        if (!isFirstGroup) {
+          const prevTrip = tripGroups[groupIndex - 1][tripGroups[groupIndex - 1].length - 1]
+          parkingDurationMinutes = Math.round((t.startTime.getTime() - prevTrip.endTime.getTime()) / (60 * 1000))
+        }
+        
+        // Format parking duration
+        let parkingDurationText = ''
+        if (parkingDurationMinutes > 0) {
+          if (parkingDurationMinutes < 60) {
+            parkingDurationText = `${parkingDurationMinutes} minute${parkingDurationMinutes > 1 ? 's' : ''}`
+          } else {
+            const hours = Math.floor(parkingDurationMinutes / 60)
+            const minutes = parkingDurationMinutes % 60
+            if (minutes === 0) {
+              parkingDurationText = `${hours} hour${hours > 1 ? 's' : ''}`
+            } else {
+              parkingDurationText = `${hours} hour${hours > 1 ? 's' : ''} and ${minutes} minute${minutes > 1 ? 's' : ''}`
+            }
+          }
+        }
+        
+        // Build paragraph with explicit times and locations
         if (isFirstGroup) {
-          paragraph = `I began my day ${t.timeReadable} with ${t.tripCharacter} ${distanceReadable} drive from ${t.startAddress} to ${t.endAddress}.`
+          paragraph = `At ${startTimeReadable}, I started from ${t.startAddress} and drove to ${t.endAddress}, arriving at ${endTimeReadable}.`
         } else {
-          const timeGap = Math.round((t.startTime.getTime() - tripGroups[groupIndex - 1][tripGroups[groupIndex - 1].length - 1].endTime.getTime()) / (60 * 1000))
-          const timeConnector = timeGap < 30 ? 'Shortly after' : timeGap < 120 ? 'A little later' : 'Later'
-          paragraph = `${timeConnector}, I made ${t.tripCharacter} ${distanceReadable} journey from ${t.startAddress} to ${t.endAddress}.`
+          paragraph = `At ${startTimeReadable}, I started from ${t.startAddress} and drove to ${t.endAddress}, arriving at ${endTimeReadable}.`
+          if (parkingDurationText) {
+            paragraph += ` I was parked for ${parkingDurationText} before this trip.`
+          }
         }
         
         if (t.idlingInfo && t.idlingInfo.durationMinutes >= 5) {
@@ -490,7 +1884,6 @@ async function formatTripsAsNarrative(
           paragraph += ` Along the way, I paused for ${idleDurationReadable} near ${t.idlingInfo.location}, likely waiting for traffic to ease.`
         }
         
-        paragraph += ` I arrived ${endTimeReadable} and settled in.`
         allParagraphs.push(paragraph)
         
       } else {
@@ -559,85 +1952,103 @@ async function formatTripsAsNarrative(
   // Rejoin with double line breaks
   fullNarrative = brokenParagraphs.join('\n\n')
   
+  // Calculate summary statistics from all enriched trips
+  if (allEnrichedTrips.length > 0) {
+    // Sort all trips by start time to calculate parking durations correctly
+    const sortedAllTrips = [...allEnrichedTrips].sort((a, b) => 
+      a.startTime.getTime() - b.startTime.getTime()
+    )
+    
+    // Calculate totals
+    totalDriveTimeMinutes = sortedAllTrips.reduce((sum, t) => sum + t.durationMinutes, 0)
+    totalKilometers = sortedAllTrips.reduce((sum, t) => sum + t.distanceKm, 0)
+    
+    // Calculate total parking time (gaps between trips)
+    for (let i = 1; i < sortedAllTrips.length; i++) {
+      const prevTrip = sortedAllTrips[i - 1]
+      const currentTrip = sortedAllTrips[i]
+      const parkingGap = Math.round((currentTrip.startTime.getTime() - prevTrip.endTime.getTime()) / (60 * 1000))
+      if (parkingGap > 0) {
+        totalParkingTimeMinutes += parkingGap
+      }
+    }
+    
+    // Format drive time
+    let driveTimeText = ''
+    if (totalDriveTimeMinutes < 60) {
+      driveTimeText = `${totalDriveTimeMinutes} minute${totalDriveTimeMinutes > 1 ? 's' : ''}`
+    } else {
+      const hours = Math.floor(totalDriveTimeMinutes / 60)
+      const minutes = totalDriveTimeMinutes % 60
+      if (minutes === 0) {
+        driveTimeText = `${hours} hour${hours > 1 ? 's' : ''}`
+      } else {
+        driveTimeText = `${hours} hour${hours > 1 ? 's' : ''} and ${minutes} minute${minutes > 1 ? 's' : ''}`
+      }
+    }
+    
+    // Format parking time
+    let parkingTimeText = ''
+    if (totalParkingTimeMinutes === 0) {
+      parkingTimeText = '0 minutes'
+    } else if (totalParkingTimeMinutes < 60) {
+      parkingTimeText = `${totalParkingTimeMinutes} minute${totalParkingTimeMinutes > 1 ? 's' : ''}`
+    } else {
+      const hours = Math.floor(totalParkingTimeMinutes / 60)
+      const minutes = totalParkingTimeMinutes % 60
+      if (minutes === 0) {
+        parkingTimeText = `${hours} hour${hours > 1 ? 's' : ''}`
+      } else {
+        parkingTimeText = `${hours} hour${hours > 1 ? 's' : ''} and ${minutes} minute${minutes > 1 ? 's' : ''}`
+      }
+    }
+    
+    // Format kilometers (round to 1 decimal place)
+    const kilometersText = totalKilometers.toFixed(1)
+    
+    // Add summary section
+    const summaryText = `\n\nIn total, I drove for ${driveTimeText}, was parked for ${parkingTimeText}, and covered ${kilometersText} kilometers.`
+    fullNarrative += summaryText
+  }
+  
   // Add gentle call-to-action at the end
   const finalNarrative = `${fullNarrative}\n\nWhenever you're curious to see the full breakdown of these trips, you can find all the details in my car profile.`
   
   return finalNarrative
 }
 
-// Helper: Format time in human-readable way
+// Helper: Format time in 12:13am format with Lagos timezone
 function formatTimeReadable(date: Date): string {
-  const hour = date.getHours()
-  const minute = date.getMinutes()
+  // Convert to Lagos timezone
+  const lagosTimeStr = date.toLocaleString('en-US', { 
+    timeZone: 'Africa/Lagos',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  })
   
-  // Determine period and convert to 12-hour format
-  let period: string
-  let hour12: number
+  // Parse the formatted string to extract hour, minute, and period
+  // Format from toLocaleString: "12:13 AM" or "1:45 PM"
+  const parts = lagosTimeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i)
   
-  if (hour === 0) {
-    period = 'in the morning'
-    hour12 = 12
-  } else if (hour < 12) {
-    period = 'in the morning'
-    hour12 = hour
-  } else if (hour === 12) {
-    period = 'in the afternoon'
-    hour12 = 12
-  } else {
-    period = 'in the afternoon'
-    hour12 = hour - 12
+  if (parts) {
+    const hour = parseInt(parts[1], 10)
+    const minute = parts[2]
+    const period = parts[3].toLowerCase()
+    return `${hour}:${minute}${period}`
   }
   
-  // Format based on minutes
-  if (minute === 0) {
-    return `just after ${hour12} ${period}`
-  } else if (minute < 10) {
-    return `just after ${hour12} ${period}`
-  } else if (minute < 30) {
-    return `around ${hour12}:${minute.toString().padStart(2, '0')} ${period}`
-  } else if (minute < 45) {
-    // Calculate next hour in 12-hour format
-    const nextHour = hour + 1
-    let nextHour12: number
-    let nextPeriod: string
-    
-    if (nextHour === 24) {
-      nextPeriod = 'in the morning'
-      nextHour12 = 12
-    } else if (nextHour < 12) {
-      nextPeriod = 'in the morning'
-      nextHour12 = nextHour
-    } else if (nextHour === 12) {
-      nextPeriod = 'in the afternoon'
-      nextHour12 = 12
-    } else {
-      nextPeriod = 'in the afternoon'
-      nextHour12 = nextHour - 12
-    }
-    
-    return `a little before ${nextHour12} ${nextPeriod}`
-  } else {
-    // Calculate next hour in 12-hour format
-    const nextHour = hour + 1
-    let nextHour12: number
-    let nextPeriod: string
-    
-    if (nextHour === 24) {
-      nextPeriod = 'in the morning'
-      nextHour12 = 12
-    } else if (nextHour < 12) {
-      nextPeriod = 'in the morning'
-      nextHour12 = nextHour
-    } else if (nextHour === 12) {
-      nextPeriod = 'in the afternoon'
-      nextHour12 = 12
-    } else {
-      nextPeriod = 'in the afternoon'
-      nextHour12 = nextHour - 12
-    }
-    
-    return `a little before ${nextHour12} ${nextPeriod}`
-  }
+  // Fallback: manual conversion if parsing fails
+  const lagosDate = new Date(date.toLocaleString('en-US', { timeZone: 'Africa/Lagos' }))
+  const hour = lagosDate.getHours()
+  const minute = lagosDate.getMinutes()
+  
+  // Convert to 12-hour format
+  const hour12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour
+  const period = hour < 12 ? 'am' : 'pm'
+  const minuteStr = minute.toString().padStart(2, '0')
+  
+  return `${hour12}:${minuteStr}${period}`
 }
 
 // Helper: Format distance in human-readable way
@@ -899,12 +2310,24 @@ async function fetchFreshGpsData(supabase: any, deviceId: string): Promise<any> 
 }
 
 serve(async (req) => {
+  
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
 
   try {
-    const { device_id, message, user_id, client_timestamp, live_telemetry } = await req.json()
+    const body = await req.json()
+    const { device_id, message, user_id, client_timestamp, live_telemetry } = body
+    
+    // Validate required fields
+    if (!device_id || !message || !user_id) {
+      return new Response(JSON.stringify({ 
+        error: 'Missing required fields: device_id, message, and user_id are required' 
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
     
     const MAPBOX_ACCESS_TOKEN = Deno.env.get('MAPBOX_ACCESS_TOKEN')
     // Gemini API key is checked in shared client
@@ -915,6 +2338,33 @@ serve(async (req) => {
     )
 
     console.log(`Vehicle chat request for device: ${device_id}`)
+    
+    // CRITICAL: Save user message IMMEDIATELY to ensure it's persisted even if page refreshes
+    // This ensures chat history is preserved even if the stream is interrupted
+    let userMessageId: string | null = null
+    try {
+      const { data: savedUserMsg, error: saveUserError } = await supabase
+        .from('vehicle_chat_history')
+        .insert({
+          device_id,
+          user_id,
+          role: 'user',
+          content: message
+        })
+        .select('id')
+        .single()
+      
+      if (saveUserError) {
+        console.error('CRITICAL: Failed to save user message immediately:', saveUserError)
+        // Continue anyway - we'll try to save again at the end
+      } else {
+        userMessageId = savedUserMsg?.id || null
+        console.log('User message saved immediately with ID:', userMessageId)
+      }
+    } catch (saveErr) {
+      console.error('CRITICAL: Exception saving user message immediately:', saveErr)
+      // Continue anyway - we'll try to save again at the end
+    }
 
     // Preprocess user message: normalize typos and spelling mistakes
     const { normalized: normalizedMessage, original: originalMessage, corrections } = preprocessUserMessage(message)
@@ -1123,8 +2573,9 @@ serve(async (req) => {
       .eq('device_id', device_id)
       .maybeSingle()
 
-    // Check if LLM is disabled
-    if (llmSettings && !llmSettings.llm_enabled) {
+    // Check if LLM is disabled (default to enabled if null/undefined - never auto-disable)
+    const isEnabled = llmSettings?.llm_enabled ?? true;
+    if (!isEnabled) {
       return new Response(JSON.stringify({ 
         error: 'AI companion is paused for this vehicle. Please enable it in settings.' 
       }), {
@@ -1135,34 +2586,41 @@ serve(async (req) => {
 
     // 2. Fetch position - FRESH if location query, otherwise cached
     let position: any = null
-    let dataFreshness = 'cached'
+    let dataFreshness: 'live' | 'cached' | 'stale' = 'cached'
     let dataTimestamp = new Date().toISOString()
+    let dataAgeSeconds = 0
     
     if (needsFreshData) {
       // Fetch fresh data from GPS51
       const freshData = await fetchFreshGpsData(supabase, device_id)
       if (freshData) {
-        dataFreshness = 'live'
-        dataTimestamp = freshData.updatetime ? new Date(freshData.updatetime).toISOString() : new Date().toISOString()
+        // Use centralized telemetry normalizer for consistent processing
+        // This ensures JT808 status bits are properly detected and confidence is calculated
+        const normalized = normalizeVehicleTelemetry(freshData as Gps51RawData, {
+          offlineThresholdMs: 600000, // 10 minutes
+        });
         
-        // Map fresh GPS51 data to position format
+        dataFreshness = 'live'
+        dataTimestamp = normalized.last_updated_at
+        dataAgeSeconds = Math.floor((Date.now() - new Date(dataTimestamp).getTime()) / 1000)
+        
+        // Map normalized telemetry to position format (includes confidence and detection method)
         position = {
-          device_id: freshData.deviceid,
-          latitude: freshData.callat,
-          longitude: freshData.callon,
-          speed: freshData.speed || 0,
-          heading: freshData.heading,
-          altitude: freshData.altitude,
-          battery_percent: freshData.voltagepercent > 0 ? freshData.voltagepercent : null,
-          // ✅ FIX: Use JT808 status bit field instead of string parsing
-          ignition_on: freshData.status !== null && freshData.status !== undefined
-            ? (freshData.status & 0x01) !== 0  // Bit 0 = ACC status (authoritative)
-            : freshData.strstatus?.toUpperCase().includes('ACC ON') || false,  // Fallback
-          is_online: freshData.updatetime ? (Date.now() - new Date(freshData.updatetime).getTime() < 600000) : false,
+          device_id: normalized.vehicle_id,
+          latitude: normalized.lat,
+          longitude: normalized.lon,
+          speed: normalized.speed_kmh,
+          heading: normalized.heading,
+          altitude: normalized.altitude,
+          battery_percent: normalized.battery_level,
+          ignition_on: normalized.ignition_on,
+          ignition_confidence: normalized.ignition_confidence || null,
+          ignition_detection_method: normalized.ignition_detection_method || null,
+          is_online: normalized.is_online,
           is_overspeeding: freshData.currentoverspeedstate === 1,
           total_mileage: freshData.totaldistance,
-          status_text: freshData.strstatus,
-          gps_time: freshData.updatetime ? new Date(freshData.updatetime).toISOString() : null
+          status_text: freshData.strstatus, // Keep raw status_text for debugging
+          gps_time: normalized.last_updated_at
         }
       }
     }
@@ -1177,8 +2635,29 @@ serve(async (req) => {
       position = cachedPosition
       if (position?.gps_time) {
         dataTimestamp = position.gps_time
+        dataAgeSeconds = Math.floor((Date.now() - new Date(dataTimestamp).getTime()) / 1000)
+        
+        // Determine freshness based on age
+        if (dataAgeSeconds < 60) {
+          dataFreshness = 'live'
+        } else if (dataAgeSeconds < 300) { // 5 minutes
+          dataFreshness = 'cached'
+        } else {
+          dataFreshness = 'stale'
+        }
+      } else if (position?.cached_at) {
+        dataTimestamp = position.cached_at
+        dataAgeSeconds = Math.floor((Date.now() - new Date(dataTimestamp).getTime()) / 1000)
+        dataFreshness = dataAgeSeconds < 300 ? 'cached' : 'stale'
       }
     }
+    
+    // Format data age for display
+    const dataAgeReadable = dataAgeSeconds < 60 
+      ? `${dataAgeSeconds}s ago` 
+      : dataAgeSeconds < 3600 
+        ? `${Math.floor(dataAgeSeconds / 60)}min ago`
+        : `${Math.floor(dataAgeSeconds / 3600)}h ago`
 
     // 3. Fetch Driver Info
     const { data: assignment } = await supabase
@@ -1210,19 +2689,70 @@ serve(async (req) => {
       .order('gps_time', { ascending: false })
       .limit(10)
 
-    // 4.5. Extract date context from user message for historical queries
-    const dateContext = extractDateContext(message, client_timestamp)
+    // 4.5. Extract date context from user message for historical queries (Enhanced V2)
+    // Enforce Lagos timezone across all date operations
+    const DEFAULT_TIMEZONE = 'Africa/Lagos'
+    const userTimezone = DEFAULT_TIMEZONE // Always use Lagos timezone (Africa/Lagos)
+    
+    // Use enhanced date extraction (hybrid: regex + LLM)
+    let dateContext: DateContext
+    try {
+      dateContext = await extractDateContextV2(message, client_timestamp, userTimezone)
+      
+      // Validate extracted date context
+      const validation = validateDateContext(dateContext)
+      if (!validation.isValid && validation.corrected) {
+        // Only warn about significant issues (not just minor date corrections)
+        const significantIssues = validation.issues.filter(issue => 
+          !issue.includes('End date is in the future') && 
+          !issue.includes('Start date is in the future')
+        )
+        if (significantIssues.length > 0) {
+          console.warn('[Date Extraction] Validation issues found, using corrected dates:', validation.issues)
+        } else {
+          // Minor corrections (future dates) are common and expected, just log at debug level
+          console.log('[Date Extraction] Auto-corrected future date to current time (expected behavior)')
+        }
+        dateContext = validation.corrected
+      }
+    } catch (error) {
+      console.warn('[Date Extraction] V2 failed, falling back to V1:', error)
+      dateContext = extractDateContext(message, client_timestamp, userTimezone)
+    }
+    
     console.log('Date context extracted:', {
       hasDateReference: dateContext.hasDateReference,
       period: dateContext.period,
       humanReadable: dateContext.humanReadable,
       startDate: dateContext.startDate,
-      endDate: dateContext.endDate
+      endDate: dateContext.endDate,
+      timezone: dateContext.timezone,
+      confidence: dateContext.confidence
     })
+    
+    // 4.5.5. Extract temporal context from conversation history
+    let temporalContextPrompt = ''
+    if (user_id && dateContext.hasDateReference) {
+      try {
+        const temporalContext = await extractTemporalReferences(
+          supabase,
+          device_id,
+          user_id,
+          dateContext
+        )
+        temporalContextPrompt = formatTemporalContextForPrompt(temporalContext)
+        if (temporalContextPrompt) {
+          console.log('[Temporal Context] Extracted temporal references from conversation history')
+        }
+      } catch (error) {
+        console.warn('[Temporal Context] Failed to extract temporal context:', error)
+      }
+    }
 
     // 4.6. Fetch date-specific trip and position history if user is asking about a specific time period
     let dateSpecificTrips: any[] = []
     let dateSpecificPositions: any[] = []
+    let validatedData: ValidatedData | null = null
     let dateSpecificStats: {
       totalDistance: number
       tripCount: number
@@ -1234,7 +2764,7 @@ serve(async (req) => {
 
     if (dateContext.hasDateReference || isHistoricalMovementQuery(message)) {
       console.log(`Fetching historical data for period: ${dateContext.humanReadable}`)
-      
+
       // ✅ FIX: Fetch trips with timeout protection and optimized column selection
       // Ensure we get all trips in the date range, not just recent ones
       try {
@@ -1274,38 +2804,64 @@ serve(async (req) => {
         }
       }
       
-      // Fetch position history for the specific date range (with timeout protection)
+      // Fetch position history for the specific date range (with timeout protection and caching)
       // Use trips data instead if available to avoid timeout on large position_history queries
       let positionsError: any = null
       let positions: any[] = []
       
       // Only fetch positions if we don't have enough trip data
       if (dateSpecificTrips.length < 5) {
-        try {
-          // Use a smaller limit and add timeout protection
-          const { data: posData, error: posErr } = await Promise.race([
-            supabase
-              .from('position_history')
-              .select('latitude, longitude, speed, gps_time, ignition_on')
-              .eq('device_id', device_id)
-              .gte('gps_time', dateContext.startDate)
-              .lte('gps_time', dateContext.endDate)
-              .order('gps_time', { ascending: true })
-              .limit(200), // Reduced from 500 to prevent timeout
-            new Promise<{ data: null; error: { code: string; message: string } }>((resolve) => 
-              setTimeout(() => resolve({ 
-                data: null, 
-                error: { code: 'TIMEOUT', message: 'Query timeout - using trip data instead' } 
-              }), 10000) // 10 second timeout
-            )
-          ]) as any
-          
-          positionsError = posErr
-          positions = posData || []
-        } catch (timeoutError) {
-          console.warn('Position history query timed out, using trip data only:', timeoutError)
-          positionsError = { code: 'TIMEOUT', message: 'Query timeout' }
-          positions = []
+        // Phase 5: Check cache for positions
+        const cachedPositions = getCachedQuery<any[]>(
+          device_id,
+          dateContext.period,
+          dateContext.startDate,
+          dateContext.endDate,
+          'positions'
+        )
+        
+        if (cachedPositions) {
+          positions = cachedPositions
+          console.log(`[Query Cache] Using cached positions (${positions.length} positions)`)
+        } else {
+          try {
+            // Use a smaller limit and add timeout protection
+            const { data: posData, error: posErr } = await Promise.race([
+              supabase
+                .from('position_history')
+                .select('latitude, longitude, speed, gps_time, ignition_on')
+                .eq('device_id', device_id)
+                .gte('gps_time', dateContext.startDate)
+                .lte('gps_time', dateContext.endDate)
+                .order('gps_time', { ascending: true })
+                .limit(200), // Reduced from 500 to prevent timeout
+              new Promise<{ data: null; error: { code: string; message: string } }>((resolve) => 
+                setTimeout(() => resolve({ 
+                  data: null, 
+                  error: { code: 'TIMEOUT', message: 'Query timeout - using trip data instead' } 
+                }), 10000) // 10 second timeout
+              )
+            ]) as any
+            
+            positionsError = posErr
+            positions = posData || []
+            
+            // Cache the result if successful
+            if (!positionsError && positions.length > 0) {
+              setCachedQuery(
+                device_id,
+                dateContext.period,
+                dateContext.startDate,
+                dateContext.endDate,
+                'positions',
+                positions
+              )
+            }
+          } catch (timeoutError) {
+            console.warn('Position history query timed out, using trip data only:', timeoutError)
+            positionsError = { code: 'TIMEOUT', message: 'Query timeout' }
+            positions = []
+          }
         }
       } else {
         console.log('Skipping position_history query - using trip data instead to avoid timeout')
@@ -1317,31 +2873,55 @@ serve(async (req) => {
       } else {
         dateSpecificPositions = positions || []
         console.log(`Found ${dateSpecificPositions.length} position records for ${dateContext.humanReadable}`)
+      }
+      
+      // VALIDATE AND ENRICH DATA (Phase 1: Critical Fix)
+      if (dateSpecificTrips.length > 0 || dateSpecificPositions.length > 0) {
+        validatedData = validateAndEnrichData(
+          dateSpecificTrips,
+          dateSpecificPositions,
+          dateContext
+        )
         
-        // Calculate movement statistics
-        if (dateSpecificPositions.length > 0) {
-          const calculatedDistance = calculateDistanceFromHistory(dateSpecificPositions)
-          const movingPositions = dateSpecificPositions.filter((p: any) => p.speed > 0)
-          
-          dateSpecificStats = {
-            totalDistance: calculatedDistance,
-            tripCount: dateSpecificTrips.length,
-            movementDetected: movingPositions.length > 0 || calculatedDistance > 0.5,
-            earliestPosition: dateSpecificPositions[0]?.gps_time || null,
-            latestPosition: dateSpecificPositions[dateSpecificPositions.length - 1]?.gps_time || null,
-            positionCount: dateSpecificPositions.length
-          }
-          
-          // Also sum up trip distances if we have trips
-          if (dateSpecificTrips.length > 0) {
-            const tripTotalDistance = dateSpecificTrips.reduce((sum: number, t: any) => sum + (t.distance_km || 0), 0)
-            if (tripTotalDistance > dateSpecificStats.totalDistance) {
-              dateSpecificStats.totalDistance = tripTotalDistance
-            }
-          }
-          
-          console.log('Date-specific stats:', dateSpecificStats)
+        // Use validated trips and positions (filter out low-quality data if needed)
+        dateSpecificTrips = validatedData.trips.filter(t => t.dataQuality !== 'low')
+        dateSpecificPositions = validatedData.positions.filter(p => p.dataQuality !== 'low')
+        
+        // Log validation results
+        console.log(`[Data Validation] Overall quality: ${validatedData.overallQuality}`)
+        console.log(`[Data Validation] Valid trips: ${validatedData.validationSummary.validTrips}/${validatedData.validationSummary.totalTrips}`)
+        console.log(`[Data Validation] Valid positions: ${validatedData.validationSummary.validPositions}/${validatedData.validationSummary.totalPositions}`)
+        if (validatedData.validationSummary.issues.length > 0) {
+          console.warn(`[Data Validation] Issues found: ${validatedData.validationSummary.issues.slice(0, 5).join(', ')}`)
         }
+        if (validatedData.validationSummary.crossValidationWarnings.length > 0) {
+          console.warn(`[Data Validation] Cross-validation warnings: ${validatedData.validationSummary.crossValidationWarnings.join(', ')}`)
+        }
+      }
+      
+      // Calculate movement statistics using validated data
+      if (dateSpecificPositions.length > 0) {
+        const calculatedDistance = calculateDistanceFromHistory(dateSpecificPositions)
+        const movingPositions = dateSpecificPositions.filter((p: any) => p.speed > 0)
+        
+        dateSpecificStats = {
+          totalDistance: calculatedDistance,
+          tripCount: dateSpecificTrips.length,
+          movementDetected: movingPositions.length > 0 || calculatedDistance > 0.5,
+          earliestPosition: dateSpecificPositions[0]?.gps_time || null,
+          latestPosition: dateSpecificPositions[dateSpecificPositions.length - 1]?.gps_time || null,
+          positionCount: dateSpecificPositions.length
+        }
+        
+        // Also sum up trip distances if we have trips
+        if (dateSpecificTrips.length > 0) {
+          const tripTotalDistance = dateSpecificTrips.reduce((sum: number, t: any) => sum + (t.distance_km || 0), 0)
+          if (tripTotalDistance > dateSpecificStats.totalDistance) {
+            dateSpecificStats.totalDistance = tripTotalDistance
+          }
+        }
+        
+        console.log('Date-specific stats:', dateSpecificStats)
       }
     }
 
@@ -1425,6 +3005,20 @@ serve(async (req) => {
         const label = learnedLocationContext.custom_label || learnedLocationContext.location_name
         if (label) {
           currentLocationName = `${label} (${learnedLocationContext.location_type})`
+        }
+        
+        // Fetch time-of-day patterns for this location (multi-time pattern detection)
+        try {
+          const { data: locationPatterns } = await supabase.rpc('get_location_patterns_context', {
+            p_location_id: learnedLocationContext.location_id
+          })
+          // Store patterns in learnedLocationContext for later use in prompt
+          if (locationPatterns && Array.isArray(locationPatterns)) {
+            learnedLocationContext.patterns = locationPatterns
+          }
+        } catch (patternError) {
+          // Pattern fetch is optional, don't block if it fails
+          console.warn('Failed to fetch location patterns:', patternError)
         }
       }
 
@@ -1602,8 +3196,18 @@ serve(async (req) => {
     const driver = assignment?.profiles as unknown as { name: string; phone: string | null; license_number: string | null } | null
     const vehicleNickname = llmSettings?.nickname || assignment?.vehicle_alias || vehicle?.device_name || 'Unknown Vehicle'
     // Normalize language and personality to lowercase to prevent lookup errors
-    const languagePref = (llmSettings?.language_preference || 'english').toLowerCase().trim()
+    // IMPORTANT: Only use stored preference, never auto-detect or change language
+    let languagePref = (llmSettings?.language_preference || 'english').toLowerCase().trim()
     const personalityMode = (llmSettings?.personality_mode || 'casual').toLowerCase().trim()
+    
+    
+    // Validate language preference against allowed values (prevent switching)
+    const allowedLanguages = ['english', 'pidgin', 'yoruba', 'hausa', 'igbo', 'french']
+    if (!allowedLanguages.includes(languagePref)) {
+      console.warn(`[LANGUAGE VALIDATION] Invalid language preference: "${languagePref}", using english. Original value: "${llmSettings?.language_preference}"`)
+      languagePref = 'english' // Use default, but don't change the stored value
+    }
+    
 
     // Generate Google Maps link (reuse lat/lon from geocoding)
     const googleMapsLink = lat && lon ? `https://www.google.com/maps?q=${lat},${lon}` : null
@@ -1642,12 +3246,23 @@ serve(async (req) => {
     }
     
     // Validate and get language instruction with safe fallback
+    // Log language usage for debugging (to track any unexpected switches)
     const languageInstruction = languageInstructions[languagePref] || languageInstructions.english
     if (!languageInstruction) {
-      console.error(`[ERROR] Invalid language preference: "${languagePref}", falling back to english`)
-      console.error(`[ERROR] Available languages: ${Object.keys(languageInstructions).join(', ')}`)
+      console.error(`[LANGUAGE ERROR] Invalid language preference: "${languagePref}", falling back to english`)
+      console.error(`[LANGUAGE ERROR] Available languages: ${Object.keys(languageInstructions).join(', ')}`)
+      console.error(`[LANGUAGE ERROR] Original setting: "${llmSettings?.language_preference}"`)
     } else if (languagePref !== 'english' && languageInstructions[languagePref] === undefined) {
-      console.warn(`[WARN] Language preference "${languagePref}" not found, using fallback: english`)
+      console.warn(`[LANGUAGE WARN] Language preference "${languagePref}" not found, using fallback: english`)
+      console.warn(`[LANGUAGE WARN] Original setting: "${llmSettings?.language_preference}"`)
+    }
+    
+    // Log language usage for debugging language switching issues
+    if (llmSettings?.language_preference) {
+      const originalLang = llmSettings.language_preference.toLowerCase().trim()
+      if (originalLang !== languagePref) {
+        console.warn(`[LANGUAGE SWITCH DETECTED] Original: "${originalLang}" -> Normalized: "${languagePref}"`)
+      }
     }
     
     // Validate and get personality instruction with safe fallback
@@ -1776,9 +3391,41 @@ ${scenario.requires_vehicle_status ? '⚠️ REQUIRES: Vehicle status' : ''}
 `
     }
     
+    // Phase 3: Format structured data for LLM
+    const structuredRealtime = formatRealtimeData(
+      position,
+      currentLocationName,
+      dataFreshness,
+      dataTimestamp,
+      dataAgeSeconds
+    )
+    
+    const structuredHistorical = formatHistoricalData(
+      validatedData,
+      dateContext,
+      tripNarrativeData
+    )
+    
+    const structuredContext = formatConversationContext(
+      conversationContext,
+      ragContext
+    )
+    
+    const structuredVehicleData = formatStructuredVehicleData(
+      structuredRealtime,
+      structuredHistorical,
+      structuredContext
+    )
+    
+    // Convert structured data to prompt format (for backward compatibility)
+    const structuredDataPrompt = structuredDataToPrompt(structuredVehicleData)
+    
     // Build the HUMAN TOUCH system prompt - Admin Persona + Hard Rules + Training Scenarios
     let systemPrompt = `${basePersona}
 ${scenarioGuidance}
+${temporalContextPrompt}
+
+${structuredDataPrompt}
 
 ## FORBIDDEN PHRASES (NEVER USE THESE)
 ❌ "I can help you with that"
@@ -1833,7 +3480,8 @@ ${corrections.length > 0 ? `- Note: User's message had ${corrections.length} typ
 
 ${preferenceContext ? `## LEARNED USER PREFERENCES\n${preferenceContext}\n` : ''}
 ## REAL-TIME STATUS (${dataFreshness.toUpperCase()} as of ${formattedTimestamp})
-DATA FRESHNESS: ${dataFreshness.toUpperCase()} (as of ${formattedTimestamp})
+DATA FRESHNESS: ${dataFreshness === 'live' ? '[LIVE]' : dataFreshness === 'cached' ? `[CACHED: ${dataAgeReadable}]` : `[STALE: ${dataAgeReadable}]`} (as of ${formattedTimestamp})
+${dataFreshness === 'stale' ? '⚠️ WARNING: Data may be outdated. Consider requesting fresh data for accurate status.' : ''}
 
 CURRENT STATUS:
 - Name: ${vehicleNickname}
@@ -1844,7 +3492,7 @@ CURRENT STATUS:
 - Speed: ${pos?.speed || 0} km/h ${pos?.is_overspeeding ? '(OVERSPEEDING!)' : ''}
 - Battery: ${pos?.battery_percent ?? 'Unknown'}%
 - Current Location: ${currentLocationName}
-${learnedLocationContext ? `  * This is a learned location! You've visited "${learnedLocationContext.custom_label || learnedLocationContext.location_name}" ${learnedLocationContext.visit_count} times (${learnedLocationContext.last_visit_days_ago} days since last visit). Typical stay: ${learnedLocationContext.typical_duration_minutes} minutes.` : ''}
+${learnedLocationContext ? `  * This is a learned location! You've visited "${learnedLocationContext.custom_label || learnedLocationContext.location_name}" ${learnedLocationContext.visit_count} times (${learnedLocationContext.last_visit_days_ago} days since last visit). Typical stay: ${learnedLocationContext.typical_duration_minutes} minutes.${learnedLocationContext.patterns && Array.isArray(learnedLocationContext.patterns) && learnedLocationContext.patterns.length > 0 ? ` Visit patterns: ${learnedLocationContext.patterns.map((p: any) => `${p.time_of_day} (${p.visit_count} visits, typically ${p.typical_hour}:00)`).join(', ')}.` : ''}` : ''}
 - GPS Coordinates: ${lat?.toFixed(5) || 'N/A'}, ${lon?.toFixed(5) || 'N/A'}
 - Google Maps: ${googleMapsLink || 'N/A'}
 - Total Mileage: ${pos?.total_mileage ? (pos.total_mileage / 1000).toFixed(1) + ' km' : 'Unknown'}
@@ -1947,6 +3595,8 @@ ${dateContext.hasDateReference ? `HISTORICAL DATA FOR "${dateContext.humanReadab
 ${dateSpecificTrips.length > 0 ? `✅ TRIPS AVAILABLE: ${dateSpecificTrips.length} trips found for ${dateContext.humanReadable}
 - Date Range: ${new Date(dateContext.startDate).toLocaleDateString()} to ${new Date(dateContext.endDate).toLocaleDateString()}
 - Total Distance: ${dateSpecificTrips.reduce((sum: number, t: any) => sum + (t.distance_km || 0), 0).toFixed(2)} km
+${validatedData ? `- DATA QUALITY: ${validatedData.overallQuality.toUpperCase()} (${validatedData.validationSummary.validTrips}/${validatedData.validationSummary.totalTrips} valid trips, ${validatedData.validationSummary.validPositions}/${validatedData.validationSummary.totalPositions} valid positions)
+${validatedData.validationSummary.crossValidationWarnings.length > 0 ? `- ⚠️ WARNINGS: ${validatedData.validationSummary.crossValidationWarnings.slice(0, 2).join('; ')}` : ''}` : ''}
 - Trip Summary:
 ${dateSpecificTrips.slice(0, 10).map((t: any, i: number) => 
   `  ${i + 1}. ${new Date(t.start_time).toLocaleString()} - ${new Date(t.end_time).toLocaleString()}: ${t.distance_km?.toFixed(1) || 0} km, ${t.duration_seconds ? Math.round(t.duration_seconds / 60) : 0} min`
@@ -2008,6 +3658,18 @@ RESPONSE RULES:
 12. The trip narrative contains pre-formatted story sections with dates, times, addresses, distances, and durations
 13. WRITE IT AS A STORY from your perspective as the vehicle - be engaging, fun, and interesting! Use first person and add personality
 14. Weave the narrative data naturally into your story - don't just copy-paste it, make it flow as part of your storytelling
+
+CRITICAL STORYTELLING RULES:
+15. NEVER just "read database rows" - TELL A STORY instead! Don't say "I covered 0 kilometers" - say "I didn't move much today" or "I no too waka far" (in Pidgin) or "I dey rest today" or "Body just dey rest" or "I wake up small and perform small exercise" - use natural, conversational language that matches your persona
+16. INTERPRET data intelligently and narratively - if distance is 0km, interpret it as "didn't go anywhere" or "stayed parked" or "body just dey rest" (in Pidgin) - NEVER say "0 kilometers" literally, it sounds robotic and broken
+17. MAINTAIN CONSISTENT PERSONA throughout - if you're in Pidgin mode, stay FULLY in Pidgin for the ENTIRE response, don't switch to English mid-sentence when reporting data
+18. Use natural, human-like interpretations:
+   - 0km distance = "I no waka far" (Pidgin) / "I didn't go anywhere" (English) / "I stayed put" (English)
+   - Low speed = "Small movement" / "Exercise small" (Pidgin) / "Just moved a bit" (English)
+   - Parked for long = "I don park well well" (Pidgin) / "Been resting here" (English)
+   - Never say raw numbers without context: "0km" is broken → "I no too waka far" is natural
+19. Tell stories, don't recite facts - instead of "I was at location X at 12:21 AM with speed 0", say "I wake up small around 12:21 AM, perform small exercise" - make it conversational and story-like
+20. Match your language and tone to your personality - if Pidgin, use phrases like "How far boss!", "Wetin dey sup?", "I dey kampe", "I no too waka far", "Body just dey rest", "I wake up small" - stay consistent!
 
 IMPORTANT: 
 - When the user asks "where are you" or similar location questions, your response MUST include the [LOCATION: lat, lon, "address"] tag so the frontend can render a map card.
@@ -2086,7 +3748,7 @@ IMPORTANT:
               }
             }
           }
-          
+
           // 10. Save conversation to database (with embeddings for RAG if available)
           console.log('Saving conversation to chat history...')
 

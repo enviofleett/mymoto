@@ -9,9 +9,49 @@
 export interface DateContext {
   hasDateReference: boolean
   period: 'today' | 'yesterday' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'custom' | 'none'
-  startDate: string  // ISO string
-  endDate: string    // ISO string
+  startDate: string  // ISO string (UTC)
+  endDate: string    // ISO string (UTC)
   humanReadable: string  // e.g., "yesterday", "last 3 days"
+  timezone?: string  // IANA timezone (e.g., "Africa/Lagos", "America/New_York")
+  confidence?: number // 0-1, confidence in date extraction
+}
+
+/**
+ * Converts a date to user's timezone for accurate day calculations
+ * 
+ * @param date - Date to convert
+ * @param timezone - IANA timezone string (e.g., "Africa/Lagos")
+ * @returns Date adjusted to timezone
+ */
+function toTimezone(date: Date, timezone?: string): Date {
+  if (!timezone) return date
+  
+  try {
+    // Get date components in user's timezone
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    })
+    
+    const parts = formatter.formatToParts(date)
+    const year = parseInt(parts.find(p => p.type === 'year')?.value || '0')
+    const month = parseInt(parts.find(p => p.type === 'month')?.value || '0') - 1
+    const day = parseInt(parts.find(p => p.type === 'day')?.value || '0')
+    const hour = parseInt(parts.find(p => p.type === 'hour')?.value || '0')
+    const minute = parseInt(parts.find(p => p.type === 'minute')?.value || '0')
+    const second = parseInt(parts.find(p => p.type === 'second')?.value || '0')
+    
+    return new Date(Date.UTC(year, month, day, hour, minute, second))
+  } catch (error) {
+    console.warn(`Invalid timezone ${timezone}, using UTC:`, error)
+    return date
+  }
 }
 
 /**
@@ -19,10 +59,21 @@ export interface DateContext {
  * 
  * @param message - The user's query
  * @param clientTimestamp - Optional client timestamp for accurate "today" calculation
+ * @param userTimezone - Optional IANA timezone (e.g., "Africa/Lagos") for accurate day boundaries
+ *                       Defaults to Lagos timezone if not provided
  * @returns DateContext with parsed date range
  */
-export function extractDateContext(message: string, clientTimestamp?: string): DateContext {
-  const now = clientTimestamp ? new Date(clientTimestamp) : new Date()
+export function extractDateContext(message: string, clientTimestamp?: string, userTimezone?: string): DateContext {
+  // Default to Lagos timezone if not provided
+  const DEFAULT_TIMEZONE = 'Africa/Lagos'
+  const tz = userTimezone || DEFAULT_TIMEZONE
+  
+  // Use client timestamp if provided, otherwise server time
+  const baseNow = clientTimestamp ? new Date(clientTimestamp) : new Date()
+  
+  // Convert to user's timezone (defaults to Lagos) for accurate day calculations
+  const now = toTimezone(baseNow, tz)
+  
   const lowerMessage = message.toLowerCase()
   
   // Helper to get start/end of a day
@@ -133,12 +184,19 @@ export function extractDateContext(message: string, clientTimestamp?: string): D
     }
   }
   
-  // Last week - improved pattern matching
+  // Last week - FIXED calculation
+  // Last week = Monday to Sunday of the previous calendar week
+  // If today is Monday, last week is 7-13 days ago
+  // If today is Sunday, last week is 1-7 days ago
   if (/\b(last\s+week|previous\s+week|week\s+before)\b/i.test(lowerMessage)) {
-    const dayOfWeek = now.getDay()
-    // Last week: from 7 days ago to 1 day ago (Monday to Sunday of previous week)
-    const startOfLastWeek = subDays(now, dayOfWeek + 7)
-    const endOfLastWeek = subDays(now, dayOfWeek + 1)
+    const dayOfWeek = now.getDay() // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+    // Calculate days to last Monday: if today is Monday (1), go back 7 days; if Sunday (0), go back 6 days
+    const daysToLastMonday = dayOfWeek === 0 ? 6 : dayOfWeek + 6
+    const daysToLastSunday = dayOfWeek === 0 ? 0 : dayOfWeek - 1
+    
+    const startOfLastWeek = subDays(now, daysToLastMonday)
+    const endOfLastWeek = subDays(now, daysToLastSunday)
+    
     return {
       hasDateReference: true,
       period: 'last_week',
@@ -152,8 +210,12 @@ export function extractDateContext(message: string, clientTimestamp?: string): D
   if (/\b(trips?|journeys?|drives?|travels?)\s+(last|previous|past)\s+week\b/i.test(lowerMessage) ||
       /\b(last|previous|past)\s+week.*\b(trips?|journeys?|drives?|travels?)\b/i.test(lowerMessage)) {
     const dayOfWeek = now.getDay()
-    const startOfLastWeek = subDays(now, dayOfWeek + 7)
-    const endOfLastWeek = subDays(now, dayOfWeek + 1)
+    const daysToLastMonday = dayOfWeek === 0 ? 6 : dayOfWeek + 6
+    const daysToLastSunday = dayOfWeek === 0 ? 0 : dayOfWeek - 1
+    
+    const startOfLastWeek = subDays(now, daysToLastMonday)
+    const endOfLastWeek = subDays(now, daysToLastSunday)
+    
     return {
       hasDateReference: true,
       period: 'last_week',

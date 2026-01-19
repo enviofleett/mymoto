@@ -440,6 +440,115 @@ Write a warm, brief morning message from the vehicle's perspective.`;
   }
 }
 
+/**
+ * Helper function to process morning briefing for a single vehicle
+ * Extracted from main handler to enable batch processing
+ */
+async function processMorningBriefingForVehicle(
+  supabase: any,
+  deviceId: string
+): Promise<{ success: boolean; device_id: string; users_notified?: number; error?: string }> {
+  try {
+    console.log(`[morning-briefing] Processing vehicle: ${deviceId}`);
+
+    // 1. Check if LLM is enabled
+    const { data: llmSettings, error: settingsError } = await supabase
+      .from('vehicle_llm_settings')
+      .select('nickname, personality_mode, language_preference, llm_enabled')
+      .eq('device_id', deviceId)
+      .maybeSingle();
+
+    if (settingsError) {
+      console.error(`[morning-briefing] Error fetching LLM settings for ${deviceId}:`, settingsError);
+      return { success: false, device_id: deviceId, error: settingsError.message };
+    }
+
+    if (!llmSettings || !llmSettings.llm_enabled) {
+      console.log(`[morning-briefing] LLM disabled for device ${deviceId}, skipping.`);
+      return { success: true, device_id: deviceId }; // Success but skipped
+    }
+
+    // 2. Get vehicle assignments
+    const assignedUserIds = await getVehicleAssignments(supabase, deviceId);
+
+    if (assignedUserIds.length === 0) {
+      console.warn(`[morning-briefing] No users assigned to device ${deviceId}. Skipping.`);
+      return { success: true, device_id: deviceId }; // Success but skipped
+    }
+
+    // 3. Check morning_greeting preference for each user
+    const { data: vehiclePrefs, error: prefsError } = await supabase
+      .from('vehicle_notification_preferences')
+      .select('user_id, morning_greeting')
+      .eq('device_id', deviceId)
+      .in('user_id', assignedUserIds);
+
+    if (prefsError) {
+      console.error(`[morning-briefing] Error fetching preferences for ${deviceId}:`, prefsError);
+      return { success: false, device_id: deviceId, error: prefsError.message };
+    }
+
+    // Filter users who have morning_greeting enabled for THIS VEHICLE
+    const enabledUserIds = (vehiclePrefs || [])
+      .filter((pref: any) => pref.morning_greeting === true)
+      .map((pref: any) => pref.user_id);
+
+    if (vehiclePrefs.length === 0 || enabledUserIds.length === 0) {
+      console.log(`[morning-briefing] No users have morning_greeting enabled for vehicle ${deviceId}, skipping.`);
+      return { success: true, device_id: deviceId }; // Success but skipped
+    }
+
+    // 4. Get night status and yesterday's stats
+    const nightStatus = await getNightStatus(supabase, deviceId);
+    const yesterdayStats = await getYesterdayStats(supabase, deviceId);
+
+    // 5. Generate morning briefing
+    const vehicleNickname = llmSettings.nickname || 'MyMoto Vehicle';
+    const personalityMode = llmSettings.personality_mode || 'casual';
+    const languagePref = llmSettings.language_preference || 'english';
+
+    const briefingMessage = await generateMorningBriefing(
+      supabase,
+      deviceId,
+      vehicleNickname,
+      personalityMode,
+      languagePref,
+      nightStatus,
+      yesterdayStats
+    );
+
+    // 6. Generate embeddings for RAG
+    const embedding = generateTextEmbedding(briefingMessage);
+
+    // 7. Insert message into vehicle_chat_history for each enabled user
+    const chatInserts = enabledUserIds.map(userId => ({
+      device_id: deviceId,
+      user_id: userId,
+      role: 'assistant',
+      content: briefingMessage,
+      is_proactive: true,
+      embedding: formatEmbeddingForPg(embedding),
+    }));
+
+    const { error: chatError } = await supabase
+      .from('vehicle_chat_history')
+      .insert(chatInserts);
+
+    if (chatError) {
+      console.error(`[morning-briefing] Error inserting chat message for ${deviceId}:`, chatError);
+      return { success: false, device_id: deviceId, error: chatError.message };
+    }
+
+    console.log(`[morning-briefing] Morning briefing posted to chat for ${deviceId} (${enabledUserIds.length} user(s)).`);
+
+    return { success: true, device_id: deviceId, users_notified: enabledUserIds.length };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`[morning-briefing] Error processing vehicle ${deviceId}:`, errorMessage);
+    return { success: false, device_id: deviceId, error: errorMessage };
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -450,10 +559,72 @@ serve(async (req) => {
 
     // Get device_id from query params or body
     const url = new URL(req.url);
-    const deviceId = url.searchParams.get('device_id') || (await req.json().catch(() => ({}))).device_id;
+    const body = await req.json().catch(() => ({}));
+    const deviceId = url.searchParams.get('device_id') || body.device_id;
+    const trigger = body.trigger || url.searchParams.get('trigger');
+
+    // If triggered by cron and no device_id, process all vehicles with morning_greeting enabled
+    if (trigger === 'scheduled' && !deviceId) {
+      console.log('[morning-briefing] Processing all vehicles with morning_greeting enabled...');
+      
+      // Get all vehicles that have at least one user with morning_greeting enabled
+      const { data: vehiclesWithGreeting, error: vehiclesError } = await supabase
+        .from('vehicle_notification_preferences')
+        .select('device_id')
+        .eq('morning_greeting', true)
+        .not('device_id', 'is', null);
+
+      if (vehiclesError) {
+        console.error('[morning-briefing] Error fetching vehicles with morning_greeting:', vehiclesError);
+        return new Response(JSON.stringify({ error: vehiclesError.message }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Get unique device IDs
+      const uniqueDeviceIds = [...new Set((vehiclesWithGreeting || []).map((v: any) => v.device_id))];
+
+      if (uniqueDeviceIds.length === 0) {
+        console.log('[morning-briefing] No vehicles have morning_greeting enabled.');
+        return new Response(JSON.stringify({ 
+          message: 'No vehicles have morning greeting enabled',
+          vehicles_processed: 0
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      console.log(`[morning-briefing] Found ${uniqueDeviceIds.length} vehicle(s) with morning_greeting enabled. Processing...`);
+
+      // Process each vehicle in parallel
+      const results = await Promise.allSettled(
+        uniqueDeviceIds.map(deviceId => processMorningBriefingForVehicle(supabase, deviceId))
+      );
+
+      const successful = results.filter(r => r.status === 'fulfilled' && (r.value as any).success).length;
+      const failed = results.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && !(r.value as any).success)).length;
+      const totalUsersNotified = results
+        .filter(r => r.status === 'fulfilled' && (r.value as any).success)
+        .reduce((sum, r) => sum + ((r.value as any).users_notified || 0), 0);
+
+      console.log(`[morning-briefing] Batch processing complete: ${successful} succeeded, ${failed} failed, ${totalUsersNotified} total users notified.`);
+
+      return new Response(JSON.stringify({ 
+        message: 'Morning briefing batch processing complete',
+        vehicles_found: uniqueDeviceIds.length,
+        vehicles_succeeded: successful,
+        vehicles_failed: failed,
+        users_notified: totalUsersNotified
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     if (!deviceId) {
-      return new Response(JSON.stringify({ error: 'device_id is required' }), {
+      return new Response(JSON.stringify({ error: 'device_id is required (or trigger=scheduled to process all)' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });

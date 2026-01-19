@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -18,7 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Loader2, Car, User } from "lucide-react";
+import { Loader2, Car, User, Mail } from "lucide-react";
 import { ProfileWithAssignments, VehicleWithAssignment, useAssignVehicles } from "@/hooks/useAssignmentManagement";
 
 interface BulkAssignDialogProps {
@@ -38,21 +39,40 @@ export function BulkAssignDialog({
 }: BulkAssignDialogProps) {
   const [selectedProfileId, setSelectedProfileId] = useState<string>("");
   const [vehicleAliases, setVehicleAliases] = useState<Record<string, string>>({});
+  const [sendEmail, setSendEmail] = useState(true);
   const assignMutation = useAssignVehicles();
+
+  // Get selected profile for email notification
+  const selectedProfile = profiles.find(p => p.id === selectedProfileId);
+
+  // Reset email checkbox when profile changes
+  useEffect(() => {
+    setSendEmail(true);
+  }, [selectedProfileId]);
 
   const handleAssign = async () => {
     if (!selectedProfileId) return;
+
+    // Check if this is a new user (no existing assignments)
+    const isNewUser = selectedProfile?.assignmentCount === 0;
 
     await assignMutation.mutateAsync({
       deviceIds: selectedVehicles.map(v => v.device_id),
       profileId: selectedProfileId,
       vehicleAliases,
+      sendEmail: sendEmail && selectedProfile?.email ? {
+        to: selectedProfile.email,
+        userName: selectedProfile.name,
+        vehicleCount: selectedVehicles.length,
+        isNewUser,
+      } : undefined,
     });
 
     onSuccess();
     onOpenChange(false);
     setSelectedProfileId("");
     setVehicleAliases({});
+    setSendEmail(true);
   };
 
   const handleAliasChange = (deviceId: string, alias: string) => {
@@ -98,6 +118,23 @@ export function BulkAssignDialog({
               </SelectContent>
             </Select>
           </div>
+
+          {/* Email Notification Option */}
+          {selectedProfile?.email && (
+            <div className="flex items-center space-x-2 p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg">
+              <Checkbox
+                id="send-email"
+                checked={sendEmail}
+                onCheckedChange={(checked) => setSendEmail(checked === true)}
+              />
+              <Label htmlFor="send-email" className="flex items-center gap-2 cursor-pointer">
+                <Mail className="h-4 w-4" />
+                <span className="text-sm">
+                  Send email notification to {selectedProfile.email} about the {selectedVehicles.length} vehicle(s)
+                </span>
+              </Label>
+            </div>
+          )}
 
           {/* Vehicle List with Aliases */}
           <div className="space-y-2">

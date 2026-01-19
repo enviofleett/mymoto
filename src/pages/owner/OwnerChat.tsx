@@ -3,9 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { OwnerLayout } from "@/components/layouts/OwnerLayout";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import myMotoLogo from "@/assets/mymoto-logo-new.png";
 import { useOwnerVehicles, OwnerVehicle } from "@/hooks/useOwnerVehicles";
 import { Search, Car, MessageSquare, ChevronRight } from "lucide-react";
-import myMotoLogo from "@/assets/mymoto-logo-new.png";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 function VehicleChatItem({
@@ -79,7 +79,7 @@ export default function OwnerChat() {
           <div className="px-4 pt-4 pb-3">
             {/* Title with logo */}
             <div className="flex items-center gap-2.5 mb-4">
-              
+              <img alt="MyMoto" className="w-6 h-6 object-contain" src={myMotoLogo} />
               <h1 className="text-xl font-bold text-foreground">Messages</h1>
             </div>
             

@@ -322,6 +322,31 @@ Deno.serve(async (req) => {
     }
     console.log(`[proactive-alarm-to-chat] Processing event: ${proactiveEvent.id} for device: ${proactiveEvent.device_id}`);
 
+    // CRITICAL FIX: Early deduplication check - skip if already notified
+    // This prevents duplicate processing if trigger fires multiple times
+    if (proactiveEvent.id) {
+      const { data: existingEvent, error: checkError } = await supabase
+        .from('proactive_vehicle_events')
+        .select('id, notified, notified_at')
+        .eq('id', proactiveEvent.id)
+        .maybeSingle();
+
+      if (checkError) {
+        console.warn('[proactive-alarm-to-chat] Could not check notified status (non-critical):', checkError.message);
+      } else if (existingEvent?.notified === true) {
+        console.log(`[proactive-alarm-to-chat] Event ${proactiveEvent.id} already notified at ${existingEvent.notified_at}, skipping duplicate`);
+        return new Response(JSON.stringify({ 
+          success: false, 
+          message: 'Event already notified',
+          event_id: proactiveEvent.id,
+          skipped: true
+        }), {
+          status: 200, // 200 because this is expected behavior, not an error
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
     // Get vehicle info
     const { data: vehicle } = await supabase
       .from('vehicles')
@@ -368,7 +393,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Map event_type to preference key
+    // Map event_type to preference key (for push/sound notifications)
     const eventTypeToPreference: Record<string, string> = {
       'low_battery': 'low_battery',
       'critical_battery': 'critical_battery',
@@ -389,63 +414,70 @@ Deno.serve(async (req) => {
 
     const preferenceKey = eventTypeToPreference[proactiveEvent.event_type];
 
-    // Check vehicle-specific notification preferences
-    let enabledUserIds: string[] = userIds;
+    // Check AI Chat preferences (separate from push/sound notifications)
+    // Only create chat messages if AI Chat is enabled for this event type
+    const aiChatPreferenceKey = preferenceKey ? `enable_ai_chat_${preferenceKey}` : null;
+    let aiChatEnabledUserIds: string[] = [];
 
-    if (preferenceKey) {
-      const { data: vehiclePrefs, error: prefsError } = await supabase
+    if (aiChatPreferenceKey) {
+      const { data: aiChatPrefs, error: aiChatPrefsError } = await supabase
         .from('vehicle_notification_preferences')
-        .select('user_id, ' + preferenceKey)
+        .select(`user_id, ${aiChatPreferenceKey}`)
         .eq('device_id', proactiveEvent.device_id)
         .in('user_id', userIds);
 
-      if (prefsError) {
-        console.error('[proactive-alarm-to-chat] Error fetching vehicle notification preferences:', prefsError);
-        // If error, check defaults: critical events are enabled by default
+      if (aiChatPrefsError) {
+        console.error('[proactive-alarm-to-chat] Error fetching AI Chat preferences:', aiChatPrefsError);
+        // If error, check defaults: critical events are enabled by default for AI chat
         const defaultEnabled = ['critical_battery', 'offline', 'anomaly_detected', 'maintenance_due'].includes(proactiveEvent.event_type);
-        if (!defaultEnabled) {
-          console.log(`[proactive-alarm-to-chat] Preference check failed and event type ${proactiveEvent.event_type} is not default-enabled, skipping.`);
-          return new Response(JSON.stringify({ success: false, message: 'Preference check failed' }), {
-            status: 200,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+        if (defaultEnabled) {
+          aiChatEnabledUserIds = userIds; // Use all users for default-enabled events
         }
-        // Continue with all users for default-enabled events
       } else {
-        // Filter users who have this preference enabled for THIS VEHICLE
-        enabledUserIds = (vehiclePrefs || [])
+        // Filter users who have AI Chat enabled for this event
+        aiChatEnabledUserIds = (aiChatPrefs || [])
           .filter((pref: any) => {
-            // If preference exists and is false, skip
-            // If preference doesn't exist, check defaults
-            if (pref[preferenceKey] === false) return false;
-            if (pref[preferenceKey] === true) return true;
-            // Default enabled events
+            // If explicitly false, skip
+            if (pref[aiChatPreferenceKey] === false) return false;
+            // If explicitly true, include
+            if (pref[aiChatPreferenceKey] === true) return true;
+            // Default: critical events enabled
             return ['critical_battery', 'offline', 'anomaly_detected', 'maintenance_due'].includes(proactiveEvent.event_type);
           })
           .map((pref: any) => pref.user_id);
 
         // If no preferences exist, use defaults
-        if (vehiclePrefs.length === 0) {
+        if (aiChatPrefs.length === 0) {
           const defaultEnabled = ['critical_battery', 'offline', 'anomaly_detected', 'maintenance_due'].includes(proactiveEvent.event_type);
-          if (!defaultEnabled) {
-            console.log(`[proactive-alarm-to-chat] No preferences found and event type ${proactiveEvent.event_type} is not default-enabled, skipping.`);
-            return new Response(JSON.stringify({ success: false, message: 'Event type not enabled by default' }), {
-              status: 200,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            });
+          if (defaultEnabled) {
+            aiChatEnabledUserIds = userIds; // Use all users for default-enabled events
           }
-          enabledUserIds = userIds; // Use all users for default-enabled events
         }
       }
-
-      if (enabledUserIds.length === 0) {
-        console.log(`[proactive-alarm-to-chat] No users have ${preferenceKey} enabled for vehicle ${proactiveEvent.device_id}, skipping.`);
-        return new Response(JSON.stringify({ success: false, message: 'No users have this notification enabled' }), {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+    } else {
+      // If no preference key mapped, default: critical events enabled
+      const defaultEnabled = ['critical_battery', 'offline', 'anomaly_detected', 'maintenance_due'].includes(proactiveEvent.event_type);
+      if (defaultEnabled) {
+        aiChatEnabledUserIds = userIds;
       }
     }
+
+    // If no users have AI Chat enabled, skip creating chat messages
+    if (aiChatEnabledUserIds.length === 0) {
+      console.log(`[proactive-alarm-to-chat] No users have AI Chat enabled for ${proactiveEvent.event_type} on vehicle ${proactiveEvent.device_id}, skipping chat message creation.`);
+      return new Response(JSON.stringify({ 
+        success: false, 
+        message: 'No users have AI Chat enabled for this event',
+        note: 'Push notifications are handled separately'
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Use AI Chat enabled users for chat messages
+    // Note: Push/sound notification preferences are checked separately (not in this function)
+    const enabledUserIds: string[] = aiChatEnabledUserIds;
 
     // Insert proactive message into chat history for each enabled user
     const insertPromises = enabledUserIds.map((userId) =>
@@ -462,15 +494,44 @@ Deno.serve(async (req) => {
 
     const results = await Promise.allSettled(insertPromises);
     const errors = results.filter((r) => r.status === 'rejected').map((r) => (r as PromiseRejectedResult).reason);
+    const successfulInserts = results.filter((r) => r.status === 'fulfilled').length;
 
     if (errors.length > 0) {
       console.error('[proactive-alarm-to-chat] Some inserts failed:', errors);
+      // If some inserts failed, we still mark as notified to prevent retries
+      // The successful inserts are already posted
     }
 
-    // Note: We don't update a 'notified' column since it may not exist in all schemas
-    // The edge function is called via webhook, so deduplication is handled by the trigger logic
+    // CRITICAL FIX: Mark event as notified after successful posting
+    // This prevents duplicate notifications if trigger fires again
+    // Only mark as notified if at least one message was successfully posted
+    if (successfulInserts > 0) {
+      try {
+        // Check if notified column exists before updating
+        const { error: updateError } = await supabase
+          .from('proactive_vehicle_events')
+          .update({ 
+            notified: true, 
+            notified_at: new Date().toISOString() 
+          })
+          .eq('id', proactiveEvent.id);
 
-    console.log(`[proactive-alarm-to-chat] Successfully posted proactive message for event ${proactiveEvent.id}`);
+        if (updateError) {
+          // Column might not exist, log but don't fail
+          console.warn('[proactive-alarm-to-chat] Could not update notified column (may not exist):', updateError.message);
+        } else {
+          console.log(`[proactive-alarm-to-chat] Marked event ${proactiveEvent.id} as notified`);
+        }
+      } catch (updateErr) {
+        // Silently handle if column doesn't exist
+        console.warn('[proactive-alarm-to-chat] Notified column update failed (non-critical):', updateErr);
+      }
+    } else {
+      // No successful inserts - don't mark as notified so it can be retried
+      console.error(`[proactive-alarm-to-chat] No messages posted for event ${proactiveEvent.id}, not marking as notified`);
+    }
+
+    console.log(`[proactive-alarm-to-chat] Successfully posted proactive message for event ${proactiveEvent.id} (${successfulInserts}/${enabledUserIds.length} users)`);
 
     return new Response(
       JSON.stringify({
@@ -478,18 +539,57 @@ Deno.serve(async (req) => {
         event_id: proactiveEvent.id,
         device_id: proactiveEvent.device_id,
         message_posted: chatMessage.substring(0, 100) + '...',
-        users_notified: userIds.length,
+        users_notified: successfulInserts,
+        users_total: enabledUserIds.length,
+        errors: errors.length > 0 ? errors.length : undefined,
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       }
     );
   } catch (error) {
-    console.error('[proactive-alarm-to-chat] Error:', error);
+    // Enhanced error handling with detailed logging
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    
+    console.error('[proactive-alarm-to-chat] Error processing event:', {
+      event_id: proactiveEvent?.id,
+      device_id: proactiveEvent?.device_id,
+      error: errorMessage,
+      stack: errorStack,
+      error_type: error?.constructor?.name,
+    });
+
+    // Log error to database for monitoring (if table exists)
+    try {
+      const supabase = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      );
+      
+      // Try to log error to a monitoring table (optional, won't fail if table doesn't exist)
+      await supabase.from('edge_function_errors').insert({
+        function_name: 'proactive-alarm-to-chat',
+        event_id: proactiveEvent?.id,
+        device_id: proactiveEvent?.device_id,
+        error_message: errorMessage,
+        error_stack: errorStack,
+        created_at: new Date().toISOString(),
+      }).catch(() => {
+        // Silently fail if table doesn't exist - this is optional monitoring
+      });
+    } catch (logError) {
+      // Ignore logging errors
+      console.warn('[proactive-alarm-to-chat] Could not log error to database:', logError);
+    }
+
     return new Response(
       JSON.stringify({
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: errorMessage,
+        event_id: proactiveEvent?.id,
+        device_id: proactiveEvent?.device_id,
+        retry_recommended: true, // Indicate that this can be retried
       }),
       {
         status: 500,

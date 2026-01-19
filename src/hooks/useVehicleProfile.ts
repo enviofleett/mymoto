@@ -69,6 +69,22 @@ export interface VehicleDailyStats {
   last_trip_end: string;
 }
 
+export interface VehicleMileageDetail {
+  id: string;
+  device_id: string;
+  statisticsday: string;
+  totaldistance: number | null;
+  oilper100km: number | null; // Actual measured (GPS51)
+  runoilper100km: number | null;
+  oilperhour: number | null;
+  estimated_fuel_consumption_combined: number | null; // Manufacturer estimate
+  estimated_fuel_consumption_city: number | null;
+  estimated_fuel_consumption_highway: number | null;
+  fuel_consumption_variance: number | null; // % difference
+  leakoil: number | null; // Fuel theft detection
+  totalacc: number | null; // ACC time (ms)
+}
+
 // ============ Fetch Functions ============
 
 export interface TripDateRange {
@@ -417,6 +433,62 @@ export function useVehicleDailyStats(
     gcTime: 10 * 60 * 1000,
     refetchOnWindowFocus: true, // ✅ ADDED: Refetch when user returns to tab
     refetchOnReconnect: true,   // ✅ ADDED: Refetch when network reconnects
+  });
+}
+
+async function fetchVehicleMileageDetails(
+  deviceId: string,
+  startDate?: string,
+  endDate?: string
+): Promise<VehicleMileageDetail[]> {
+  let query = (supabase as any)
+    .from("vehicle_mileage_details")
+    .select("*")
+    .eq("device_id", deviceId)
+    .order("statisticsday", { ascending: false });
+
+  if (startDate) {
+    query = query.gte("statisticsday", startDate);
+  }
+  if (endDate) {
+    query = query.lte("statisticsday", endDate);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    // Table doesn't exist yet (migration not applied) - return empty array gracefully
+    if (error.code === 'PGRST205' || error.message?.includes('Could not find the table')) {
+      console.warn("vehicle_mileage_details table not found - migration may not be applied yet. Returning empty array.");
+      return [];
+    }
+    console.error("Error fetching mileage details:", error);
+    throw error;
+  }
+
+  return (data || []) as VehicleMileageDetail[];
+}
+
+export function useVehicleMileageDetails(
+  deviceId: string | null,
+  startDate?: string,
+  endDate?: string,
+  enabled: boolean = true
+) {
+  return useQuery({
+    queryKey: ["vehicle-mileage-details", deviceId, startDate, endDate],
+    queryFn: () => {
+      if (!deviceId) return Promise.resolve([]);
+      return fetchVehicleMileageDetails(deviceId, startDate, endDate);
+    },
+    enabled: enabled && !!deviceId,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    retry: false, // Don't retry if table doesn't exist
+    // Don't throw errors for missing table - it's expected if migration hasn't been applied
+    throwOnError: (error: any) => {
+      // Only throw if it's not a "table not found" error
+      return !(error?.code === 'PGRST205' || error?.message?.includes('Could not find the table'));
+    },
   });
 }
 

@@ -28,6 +28,8 @@ import { AlarmReport } from "@/components/profile/AlarmReport";
 import { TripPlayback } from "@/components/profile/TripPlayback";
 import { WalletSection } from "@/components/wallet/WalletSection";
 import { useRealtimeFleetUpdates } from "@/hooks/useRealtimeVehicleUpdates";
+import { EmailSettings } from "@/components/settings/EmailSettings";
+import { TermsAgreementDate } from "@/components/profile/TermsAgreementDate";
 
 interface UserProfile {
   id: string;
@@ -59,7 +61,7 @@ interface AssignedVehicle {
 }
 
 const Profile = () => {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [searchParams] = useSearchParams();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [assignedVehicles, setAssignedVehicles] = useState<AssignedVehicle[]>([]);
@@ -203,8 +205,52 @@ const Profile = () => {
     );
   }
 
-  // If no profile linked, show basic user info
+  // If no profile linked, show basic user info or admin settings
   if (!profile) {
+    // For admins, show settings tabs even without a profile
+    if (isAdmin) {
+      return (
+        <DashboardLayout>
+          <div className="space-y-6">
+            <Card className="border-border bg-card">
+              <CardContent className="p-8">
+                <div className="flex flex-col items-center text-center space-y-4">
+                  <Avatar className="h-24 w-24 border-4 border-primary/20">
+                    <AvatarFallback className="bg-primary/10 text-primary text-2xl">
+                      {user?.email?.[0].toUpperCase() || "U"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <h1 className="text-2xl font-bold text-foreground">{user?.email}</h1>
+                    <p className="text-muted-foreground mt-1">Administrator</p>
+                  </div>
+                  <Badge variant="default" className="mt-2">
+                    Admin Account
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Tabbed Content for Admin Settings */}
+            <Tabs defaultValue={searchParams.get("tab") || "email"} className="space-y-4">
+              <TabsList className="bg-muted/50">
+                <TabsTrigger value="email" className="data-[state=active]:bg-background">
+                  <Mail className="h-4 w-4 mr-2" />
+                  Email Settings
+                </TabsTrigger>
+              </TabsList>
+
+              {/* Email Settings Tab */}
+              <TabsContent value="email" className="mt-4">
+                <EmailSettings />
+              </TabsContent>
+            </Tabs>
+          </div>
+        </DashboardLayout>
+      );
+    }
+
+    // For non-admin users without profile
     return (
       <DashboardLayout>
         <div className="space-y-6">
@@ -381,6 +427,10 @@ const Profile = () => {
               <Bell className="h-4 w-4 mr-2" />
               Alarm Reports
             </TabsTrigger>
+            <TabsTrigger value="email" className="data-[state=active]:bg-background">
+              <Mail className="h-4 w-4 mr-2" />
+              Email Settings
+            </TabsTrigger>
           </TabsList>
 
           {/* Vehicles Tab */}
@@ -436,6 +486,11 @@ const Profile = () => {
               deviceIds={assignedVehicles.map(v => v.device_id)}
               vehicles={assignedVehicles}
             />
+          </TabsContent>
+
+          {/* Email Settings Tab */}
+          <TabsContent value="email" className="mt-4">
+            <EmailSettings />
           </TabsContent>
         </Tabs>
       </div>

@@ -1,93 +1,110 @@
-# Localhost Testing Setup Guide
+# Localhost Testing Setup
 
-## Quick Start
+## 🚀 Development Server
 
-### 1. Install Dependencies (if needed)
+The development server is configured to run on **port 8080**.
+
+### Access URLs:
+
+- **Local:** http://localhost:8080
+- **Network:** http://0.0.0.0:8080 (accessible from other devices on your network)
+
+---
+
+## 📋 Quick Start
+
+### 1. Start the Development Server
+
 ```bash
-npm install
-```
-
-### 2. Start Development Server
-```bash
+cd /Users/alli/mymoto/fleet-heartbeat-dashboard-6f37655e
 npm run dev
 ```
 
-### 3. Access Application
-Once the server starts, you'll see output like:
+The server should start automatically and display:
 ```
   VITE v5.x.x  ready in xxx ms
 
   ➜  Local:   http://localhost:8080/
-  ➜  Network: http://[your-ip]:8080/
+  ➜  Network: http://0.0.0.0:8080/
 ```
 
-**Your localhost URL:** `http://localhost:8080`
+### 2. Open in Browser
+
+Open your browser and navigate to:
+**http://localhost:8080**
 
 ---
 
-## Server Configuration
+## 🔧 Configuration
 
-The development server is configured in `vite.config.ts`:
+### Port Configuration
+The server port is configured in `vite.config.ts`:
 - **Port:** 8080
-- **Host:** `::` (all interfaces - accessible from network)
-- **Hot Module Replacement:** Enabled
-- **PWA Support:** Enabled
+- **Host:** `::` (all interfaces)
+
+### Environment Variables
+The Supabase client has hardcoded fallbacks, so it should work without a `.env` file:
+- `VITE_SUPABASE_URL` (optional - has fallback)
+- `VITE_SUPABASE_PUBLISHABLE_KEY` (optional - has fallback)
 
 ---
 
-## Testing Features
+## 🧪 Testing the AI LLM Service
 
-### 1. Authentication
-- Navigate to: `http://localhost:8080/auth`
-- Sign in with your credentials
+### Step 1: Deploy Instrumented Edge Functions
 
-### 2. Admin Features
-- **Privacy & Security Terms:** `http://localhost:8080/admin/privacy-settings`
-- **AI Settings:** `http://localhost:8080/admin/ai-settings`
-- **Notification Settings:** Available in vehicle profile
+Before testing locally, deploy the instrumented edge functions:
 
-### 3. Owner Features
-- **Owner Dashboard:** `http://localhost:8080/owner`
-- **Vehicle Profile:** `http://localhost:8080/owner/vehicle/[deviceId]`
-- **Notifications:** `http://localhost:8080/owner/notifications`
+```bash
+# Deploy vehicle-chat function
+supabase functions deploy vehicle-chat
 
-### 4. New Features to Test
+# Deploy proactive-alarm-to-chat function
+supabase functions deploy proactive-alarm-to-chat
+```
 
-#### Privacy & Security Terms
-1. Sign in as admin
-2. Go to "Privacy & Terms" in admin menu
-3. Edit terms content
-4. Save new version
-5. Sign out and sign in as new user
-6. Verify terms agreement dialog appears
+### Step 2: Test in Browser
 
-#### Vehicle Notification Settings
-1. Sign in as owner
-2. Go to vehicle profile
-3. Click "Notifications" tab
-4. Toggle notification preferences
-5. Verify settings save correctly
+1. Open http://localhost:8080
+2. Log in to your account
+3. Navigate to a vehicle's chat
+4. Send test messages
+5. Check the debug log: `.cursor/debug.log`
 
-#### Proactive AI Conversations
-1. Enable notification preferences for a vehicle
-2. Trigger an event (e.g., low battery, ignition on)
-3. Verify AI chat message appears
-4. Check morning briefing (if enabled)
+### Step 3: Monitor Logs
+
+The instrumentation logs will be written to:
+```
+/Users/alli/mymoto/fleet-heartbeat-dashboard-6f37655e/.cursor/debug.log
+```
 
 ---
 
-## Environment Variables
+## 📊 What to Test
 
-Make sure your `.env` file (if needed) is configured with:
-- `VITE_SUPABASE_URL` - Your Supabase project URL
-- `VITE_SUPABASE_ANON_KEY` - Your Supabase anon key
+1. **Chat Message Saving:**
+   - Send messages in vehicle chat
+   - Verify messages appear and persist after refresh
+
+2. **Language Preference:**
+   - Change language in vehicle settings
+   - Send messages and verify language consistency
+
+3. **Proactive Notifications:**
+   - Create test proactive events
+   - Verify they appear in chat
+
+4. **Error Handling:**
+   - Test with invalid inputs
+   - Verify graceful error messages
 
 ---
 
-## Troubleshooting
+## 🐛 Troubleshooting
 
-### Port Already in Use
-If port 8080 is already in use:
+### Server Won't Start
+
+**Port already in use:**
 ```bash
 # Kill process on port 8080
 lsof -ti:8080 | xargs kill -9
@@ -95,63 +112,33 @@ lsof -ti:8080 | xargs kill -9
 # Or change port in vite.config.ts
 ```
 
-### Dependencies Not Installing
+**Dependencies missing:**
 ```bash
-# Clear npm cache
-npm cache clean --force
-
-# Delete node_modules and reinstall
-rm -rf node_modules package-lock.json
 npm install
 ```
 
-### Build Errors
-```bash
-# Clear Vite cache
-rm -rf node_modules/.vite
+### Edge Functions Not Working
 
-# Restart dev server
-npm run dev
-```
+- Verify functions are deployed: Check Supabase Dashboard
+- Check environment variables: Supabase Dashboard → Edge Functions → Settings
+- Check function logs: Supabase Dashboard → Edge Functions → Logs
 
----
+### Logs Not Appearing
 
-## Network Access
-
-The server is configured to be accessible from your local network:
-- **Local:** `http://localhost:8080`
-- **Network:** `http://[your-local-ip]:8080`
-
-To find your local IP:
-```bash
-# macOS/Linux
-ifconfig | grep "inet " | grep -v 127.0.0.1
-
-# Or
-ipconfig getifaddr en0  # macOS
-```
+- Verify debug log server is running (should be automatic)
+- Check log file path: `.cursor/debug.log`
+- Ensure edge functions are deployed with instrumentation
 
 ---
 
-## Development Tips
+## 📝 Next Steps
 
-1. **Hot Reload:** Changes to files automatically reload the browser
-2. **Console Logs:** Check browser console for debugging
-3. **Network Tab:** Monitor API calls to Supabase
-4. **React DevTools:** Install browser extension for React debugging
-
----
-
-## Production Build
-
-To test production build locally:
-```bash
-npm run build
-npm run preview
-```
-
-This will build and serve the production version on a different port.
+After testing:
+1. Review logs in `.cursor/debug.log`
+2. Share logs for analysis
+3. Get GO/NO-GO production readiness report
 
 ---
 
-**Ready to test!** 🚀
+**Status:** ✅ Development server ready for testing  
+**URL:** http://localhost:8080

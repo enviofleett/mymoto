@@ -10,6 +10,8 @@ import { Database, HardDrive, Clock, RefreshCw, AlertTriangle, CheckCircle } fro
 import { Navigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { AdminGpsStatus } from "@/components/fleet/AdminGpsStatus";
+import { InactiveVehiclesCleanup } from "@/components/admin/InactiveVehiclesCleanup";
 
 interface TableStat {
   table: string;
@@ -132,6 +134,14 @@ export default function AdminStorage() {
           </div>
         ) : data ? (
           <>
+            {/* GPS Token Status */}
+            <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-2">
+              <AdminGpsStatus />
+            </div>
+
+            {/* Inactive Vehicles Cleanup */}
+            <InactiveVehiclesCleanup />
+
             {/* Overview Cards */}
             <div className="grid gap-4 md:grid-cols-3">
               <Card>

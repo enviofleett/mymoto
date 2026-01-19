@@ -24,19 +24,19 @@ const SplashScreen = ({ onFinish, minDuration = 1500 }: SplashScreenProps) => {
         fadeOut ? 'opacity-0' : 'opacity-100'
       }`}
     >
-      {/* Neumorphic Logo Container */}
-      <div className="relative animate-[scale-in_0.5s_ease-out]">
-        {/* Outer neumorphic circle */}
-        <div className="w-28 h-28 rounded-full shadow-neumorphic bg-card flex items-center justify-center">
+      {/* Neumorphic Logo Container - Fixed alignment */}
+      <div className="relative animate-[scale-in_0.5s_ease-out] flex items-center justify-center">
+        {/* Outer neumorphic circle - Fixed size and centering */}
+        <div className="w-32 h-32 rounded-full shadow-neumorphic bg-card flex items-center justify-center p-4">
           <img
             src={myMotoLogo}
             alt="MyMoto"
-            className="h-20 w-20 object-contain"
+            className="w-full h-full object-contain object-center"
           />
         </div>
         {/* Orange glow effect with pulse */}
-        <div className="absolute inset-0 -z-10 blur-3xl opacity-40 animate-pulse">
-          <div className="h-32 w-32 -ml-2 -mt-2 rounded-full bg-accent" />
+        <div className="absolute inset-0 -z-10 blur-3xl opacity-40 animate-pulse flex items-center justify-center">
+          <div className="h-32 w-32 rounded-full bg-accent" />
         </div>
       </div>
 
