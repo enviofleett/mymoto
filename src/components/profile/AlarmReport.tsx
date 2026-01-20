@@ -71,7 +71,7 @@ export function AlarmReport({ deviceIds, vehicles }: AlarmReportProps) {
       // Query proactive_vehicle_events directly - no client-side calculations!
       let query = (supabase as any)
         .from("proactive_vehicle_events")
-        .select("id, device_id, event_type, title, severity, created_at, notified, notified_at")
+        .select("*")
         .in("device_id", filterDevices)
         .gte("created_at", fromDate)
         .order("created_at", { ascending: false });

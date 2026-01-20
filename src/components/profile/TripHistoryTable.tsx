@@ -68,7 +68,7 @@ export function TripHistoryTable({ deviceIds, vehicles }: TripHistoryTableProps)
       
       const { data, error } = await (supabase as any)
         .from("position_history")
-        .select("id, device_id, gps_time, latitude, longitude, speed, heading, battery_percent, ignition_on")
+        .select("*")
         .in("device_id", filterDevices)
         .gte("gps_time", fromDate)
         .order("gps_time", { ascending: false })

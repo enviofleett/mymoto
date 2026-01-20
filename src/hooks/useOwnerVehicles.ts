@@ -193,7 +193,7 @@ export function useOwnerVehicles() {
     queryKey: ["owner-vehicles", user?.id],
     queryFn: () => fetchOwnerVehicles(user!.id),
     enabled: !!user,
-    staleTime: 60 * 1000, // 60 seconds - realtime subscription handles updates
-    refetchOnWindowFocus: false, // Realtime subscription handles updates
+    staleTime: 30 * 1000, // 30 seconds
+    refetchInterval: 60 * 1000, // 1 minute
   });
 }
