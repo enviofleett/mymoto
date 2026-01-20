@@ -146,7 +146,7 @@ async function syncPositions(supabase: any, records: any[]) {
     // FLEET-SCALE: Determine sync priority based on vehicle movement
     // Moving vehicles (>3 km/h) get high priority for more frequent syncs
     const syncPriority = normalized.is_moving ? 'high' : 'normal';
-    
+
     return {
       device_id: normalized.vehicle_id,
       latitude: normalized.lat,

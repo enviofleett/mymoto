@@ -2764,65 +2764,44 @@ serve(async (req) => {
 
     if (dateContext.hasDateReference || isHistoricalMovementQuery(message)) {
       console.log(`Fetching historical data for period: ${dateContext.humanReadable}`)
-      
-      // Phase 5: Query Optimization - Check cache first
-      const cachedTrips = getCachedQuery<any[]>(
-        device_id,
-        dateContext.period,
-        dateContext.startDate,
-        dateContext.endDate,
-        'trips'
-      )
-      
-      let trips: any[] | null = null
-      let tripsError: any = null
-      
-      if (cachedTrips) {
-        // Use cached data
-        trips = cachedTrips
-        console.log(`[Query Cache] Using cached trips (${trips.length} trips)`)
-      } else {
-        // Fetch trips for the specific date range (up to 30 days, limit 200 trips)
-        // CRITICAL FIX: Capture trips that overlap with date range in ANY way
-        // A trip overlaps if: start_time <= endDate AND end_time >= startDate
-        // This captures:
-        // - Trips that start before range but end within/after it
-        // - Trips that start within range but end after it
-        // - Trips that span the entire range
-        // - Trips that are completely within the range
-        const tripsResult = await supabase
-          .from('vehicle_trips')
-          .select('*')
-          .eq('device_id', device_id)
-          .lte('start_time', dateContext.endDate)
-          .gte('end_time', dateContext.startDate)
-          .order('start_time', { ascending: false })
-          .limit(200) // Increased to 200 to capture all trips in a week/month
-        
-        trips = tripsResult.data
-        tripsError = tripsResult.error
-        
-        console.log(`[Trip Query] Date range: ${dateContext.startDate} to ${dateContext.endDate}`)
-        console.log(`[Trip Query] Found ${trips?.length || 0} trips for ${dateContext.humanReadable}`)
-        
-        // Cache the result
-        if (!tripsError && trips) {
-          setCachedQuery(
-            device_id,
-            dateContext.period,
-            dateContext.startDate,
-            dateContext.endDate,
-            'trips',
-            trips
+
+      // ✅ FIX: Fetch trips with timeout protection and optimized column selection
+      // Ensure we get all trips in the date range, not just recent ones
+      try {
+        const tripQueryResult = await Promise.race([
+          supabase
+            .from('vehicle_trips')
+            // ✅ Only select needed columns to reduce data transfer and speed up query
+            .select('id, start_time, end_time, distance_km, duration_seconds, start_latitude, start_longitude, end_latitude, end_longitude')
+            .eq('device_id', device_id)
+            .gte('start_time', dateContext.startDate)
+            .lte('end_time', dateContext.endDate)
+            .order('start_time', { ascending: false })
+            .limit(200), // Limit to 200 trips
+          // ✅ 8 second timeout for trip queries
+          new Promise<{ data: null; error: { code: string; message: string } }>((_, reject) =>
+            setTimeout(() => reject({ code: 'TIMEOUT', message: 'Trip query timeout' }), 8000)
           )
+        ]);
+
+        const { data: trips, error: tripsError } = tripQueryResult as any;
+
+        console.log(`[Trip Query] Date range: ${dateContext.startDate} to ${dateContext.endDate}`);
+        console.log(`[Trip Query] Found ${trips?.length || 0} trips for ${dateContext.humanReadable}`);
+
+        if (tripsError) {
+          console.error('Error fetching date-specific trips:', tripsError);
+        } else {
+          dateSpecificTrips = trips || [];
+          console.log(`Found ${dateSpecificTrips.length} trips for ${dateContext.humanReadable}`);
         }
-      }
-      
-      if (tripsError) {
-        console.error('Error fetching date-specific trips:', tripsError)
-      } else {
-        dateSpecificTrips = trips || []
-        console.log(`Found ${dateSpecificTrips.length} trips for ${dateContext.humanReadable}`)
+      } catch (error: any) {
+        if (error?.code === 'TIMEOUT') {
+          console.warn('⏱️ Trip query timed out - too much data for this period');
+          // Continue without trip data - AI will inform user
+        } else {
+          console.error('Error fetching trips:', error);
+        }
       }
       
       // Fetch position history for the specific date range (with timeout protection and caching)
@@ -3774,116 +3753,53 @@ IMPORTANT:
               }
             }
           }
-          
-          // 10. Save assistant message to database with embeddings for RAG
-          // Note: User message was already saved immediately when request was received
-          console.log('Saving assistant message with embeddings...')
-          
+
+          // 10. Save conversation to database (with embeddings for RAG if available)
+          console.log('Saving conversation to chat history...')
+
           try {
-            // Generate embeddings for assistant message
-            const assistantEmbedding = generateTextEmbedding(fullResponse)
-            
-            // Update user message with embedding if it exists and wasn't already saved with embedding
-            let userEmbeddingUpdate = null
-            if (userMessageId) {
-              try {
-                const userEmbedding = generateTextEmbedding(message)
-                // Try to update the existing user message with embedding (idempotent)
-                await supabase
-                  .from('vehicle_chat_history')
-                  .update({ embedding: formatEmbeddingForPg(userEmbedding) })
-                  .eq('id', userMessageId)
-                  .is('embedding', null) // Only update if embedding is null (not overwriting)
-              } catch (embedErr) {
-                // Not critical if embedding update fails
-                console.warn('Could not update user message with embedding:', embedErr)
-              }
+            // ✅ FIX: Generate embeddings asynchronously and handle errors gracefully
+            let userEmbedding = null;
+            let assistantEmbedding = null;
+
+            try {
+              userEmbedding = await generateTextEmbedding(message);
+              assistantEmbedding = await generateTextEmbedding(fullResponse);
+              console.log('Embeddings generated successfully');
+            } catch (embeddingError) {
+              console.warn('Embedding generation failed (non-critical):', embeddingError);
+              // Continue without embeddings - RAG will use keyword search instead
             }
-            
-            // Save assistant message with embedding
-            const { error: insertError, data: insertedData } = await supabase
-              .from('vehicle_chat_history')
-              .insert({
+
+            // Save messages with or without embeddings
+            const { error: insertError } = await supabase.from('vehicle_chat_history').insert([
+              {
+                device_id,
+                user_id,
+                role: 'user',
+                content: message,
+                created_at: new Date().toISOString(),
+                embedding: userEmbedding ? formatEmbeddingForPg(userEmbedding) : null
+              },
+              {
                 device_id,
                 user_id,
                 role: 'assistant',
                 content: fullResponse,
-                embedding: formatEmbeddingForPg(assistantEmbedding)
-              })
-              .select()
-            
+                created_at: new Date().toISOString(),
+                embedding: assistantEmbedding ? formatEmbeddingForPg(assistantEmbedding) : null
+              }
+            ])
+
             if (insertError) {
-              console.error('Error saving assistant message with embedding:', insertError)
-              
-              // Fallback: Try saving without embedding
-              console.log('Attempting fallback save without embedding...')
-              const { error: fallbackError } = await supabase
-                .from('vehicle_chat_history')
-                .insert({
-                  device_id,
-                  user_id,
-                  role: 'assistant',
-                  content: fullResponse
-                })
-              
-              if (fallbackError) {
-                console.error('CRITICAL: Failed to save assistant message even without embedding:', fallbackError)
-                // Send error to frontend via stream
-                controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ 
-                  error: 'Failed to save assistant response. Your message was sent but the response may not be saved.' 
-                })}\n\n`))
-              } else {
-                console.log('Assistant message saved successfully (without embedding)')
-              }
+              console.error('❌ CRITICAL: Error saving chat history:', insertError)
+              // Log to error tracking service in production
             } else {
-              console.log('Assistant message saved successfully with embedding for future RAG retrieval')
-            }
-            
-            // If user message wasn't saved at the start, try to save it now (fallback)
-            if (!userMessageId) {
-              console.warn('User message was not saved at start, saving now as fallback...')
-              try {
-                const userEmbedding = generateTextEmbedding(message)
-                await supabase
-                  .from('vehicle_chat_history')
-                  .insert({
-                    device_id,
-                    user_id,
-                    role: 'user',
-                    content: message,
-                    embedding: formatEmbeddingForPg(userEmbedding)
-                  })
-              } catch (userSaveErr) {
-                // Try without embedding
-                await supabase
-                  .from('vehicle_chat_history')
-                  .insert({
-                    device_id,
-                    user_id,
-                    role: 'user',
-                    content: message
-                  })
-              }
+              console.log('✅ Chat history saved successfully' + (userEmbedding ? ' with embeddings' : ''))
             }
           } catch (saveError) {
-            console.error('CRITICAL: Exception while saving assistant message:', saveError)
-            // Ensure assistant message is saved even if embedding fails
-            try {
-              await supabase
-                .from('vehicle_chat_history')
-                .insert({
-                  device_id,
-                  user_id,
-                  role: 'assistant',
-                  content: fullResponse
-                })
-            } catch (criticalSaveErr) {
-              console.error('CRITICAL: Failed to save assistant message:', criticalSaveErr)
-            }
-            // Send error to frontend
-            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ 
-              error: 'Response may not be fully saved. Please refresh to verify.' 
-            })}\n\n`))
+            console.error('❌ CRITICAL: Failed to save chat history:', saveError)
+            // Don't throw - streaming already started, just log the error
           }
           
           controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'))

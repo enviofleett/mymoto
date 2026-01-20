@@ -68,7 +68,7 @@ async function fetchTrackHistory(
   
   const records = result?.data?.records || result?.records || []
   console.log(`Received ${records.length} track records from GPS51`)
-  
+
   // Normalize GPS51 track data using centralized normalizer
   return records
     .map((record: any) => {
@@ -77,16 +77,16 @@ async function fetchTrackHistory(
         ...record,
         deviceid: record.deviceid || deviceId,
       };
-      
+
       // Normalize telemetry using centralized normalizer
       // This ensures JT808 status bits are properly detected and confidence is calculated
       const normalized = normalizeVehicleTelemetry(rawData);
-      
+
       // Log low-confidence ignition detection for debugging
       if (normalized.ignition_confidence !== undefined && normalized.ignition_confidence < 0.5) {
         console.warn(`[fetchTrackHistory] Low ignition confidence (${normalized.ignition_confidence.toFixed(2)}) for device=${deviceId}, method=${normalized.ignition_detection_method}, status=${record.status}, strstatus=${record.strstatus}`);
       }
-      
+
       // Map to TrackRecord format (for backward compatibility)
       return {
         latitude: normalized.lat || 0,
@@ -101,12 +101,12 @@ async function fetchTrackHistory(
         ignition_detection_method: normalized.ignition_detection_method || null,
       };
     })
-    .filter((r: TrackRecord) => 
-      r.latitude !== null && 
-      r.longitude !== null && 
-      r.latitude !== 0 && 
+    .filter((r: TrackRecord) =>
+      r.latitude !== null &&
+      r.longitude !== null &&
+      r.latitude !== 0 &&
       r.longitude !== 0 &&
-      !isNaN(r.latitude) && 
+      !isNaN(r.latitude) &&
       !isNaN(r.longitude)
     )
 }
