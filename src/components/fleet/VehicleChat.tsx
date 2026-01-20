@@ -260,7 +260,7 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
       
       const { data, error } = await (supabase as any)
         .from('vehicle_chat_history')
-        .select('*')
+        .select('id, role, content, created_at, device_id, user_id')
         .eq('device_id', deviceId)
         .eq('user_id', user.id) // Filter by user_id so users only see their own messages
         .order('created_at', { ascending: true })
@@ -270,18 +270,17 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
       return (data as ChatMessage[]) || [];
     },
     enabled: !!deviceId && !!user?.id,
-    staleTime: 0, // Always consider data stale to refetch on mount
-    refetchOnMount: true, // Refetch when component mounts
-    refetchOnWindowFocus: true, // Refetch when window regains focus
+    staleTime: 60 * 1000, // 60 seconds - data fresh for 1 minute
+    refetchOnWindowFocus: false, // Realtime subscription handles updates
   });
 
-  // Fetch current vehicle telemetry for context
+  // Fetch current vehicle telemetry for context (optimized with specific columns)
   const { data: vehicleContext } = useQuery({
     queryKey: ['vehicle-context', deviceId],
     queryFn: async () => {
       const { data, error } = await (supabase as any)
         .from('vehicle_positions')
-        .select('*')
+        .select('speed, battery_percent, ignition_on, latitude, longitude, is_online, is_overspeeding, total_mileage, gps_time')
         .eq('device_id', deviceId)
         .single();
 
@@ -289,7 +288,8 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
       return data as any;
     },
     enabled: !!deviceId,
-    refetchInterval: 30000 // Refresh every 30s for live context
+    staleTime: 60 * 1000, // 60 seconds - realtime subscription handles updates
+    refetchOnWindowFocus: false, // Realtime subscription handles updates
   });
 
   // Update messages when history loads
@@ -322,8 +322,7 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
               if (prev.some(m => m.id === newMessage.id)) return prev;
               return [...prev, newMessage];
             });
-            // Refetch history to ensure we have the latest
-            refetchHistory();
+            // Realtime subscription updates UI directly - no refetch needed
           }
         }
       )
@@ -332,7 +331,7 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [deviceId, user?.id, refetchHistory]);
+  }, [deviceId, user?.id]);
 
   // Reset avatar error state when avatarUrl changes (e.g., switching vehicles)
   useEffect(() => {
@@ -440,32 +439,8 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
       // Clear streaming content (message will come via realtime subscription)
       setStreamingContent("");
       
-      // Wait a moment for database save to complete, then refetch
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Invalidate and refetch chat history to ensure messages are loaded
-      await refetchHistory();
-      
-      // Verify messages were saved (check if our optimistic message was replaced with real one)
-      const { data: verifyData } = await (supabase as any)
-        .from('vehicle_chat_history')
-        .select('id, content, created_at')
-        .eq('device_id', deviceId)
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(2);
-      
-      if (verifyData && verifyData.length >= 2) {
-        // Messages were saved successfully
-        console.log('Chat messages verified in database');
-      } else {
-        console.warn('Warning: Chat messages may not have been saved to database');
-        toast({
-          title: "Warning",
-          description: "Your message was sent but may not have been saved. Please refresh the page.",
-          variant: "default"
-        });
-      }
+      // Realtime subscription automatically updates UI when message saved
+      // No setTimeout needed, no verification query needed
 
     } catch (err) {
       console.error('Chat error:', err);

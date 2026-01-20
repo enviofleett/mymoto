@@ -102,7 +102,7 @@ const Fleet = () => {
     try {
       const { data, error } = await (supabase as any)
         .from("profiles")
-        .select("*")
+        .select("id, name, email, phone, license_number, created_at")
         .order("created_at", { ascending: false });
 
       if (error) throw error;

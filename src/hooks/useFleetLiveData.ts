@@ -264,10 +264,9 @@ export function useFleetLiveData(filters?: FleetFilters) {
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['fleet-live-data', filters],
     queryFn: fetchFleetData,
-    staleTime: 10 * 1000,       // 10 seconds
+    staleTime: 60 * 1000,       // 60 seconds - realtime subscription handles updates
     gcTime: 5 * 60 * 1000,      // Keep in cache for 5 minutes
-    refetchInterval: 30 * 1000, // Poll DB every 30 seconds
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: false, // Realtime subscription handles updates
     retry: 2,
   });
 
