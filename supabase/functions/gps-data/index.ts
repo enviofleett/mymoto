@@ -274,77 +274,6 @@ async function syncPositions(supabase: any, records: any[]) {
     metadata: Record<string, unknown>;
   }> = []
 
-  // Process battery alerts with context-aware logic (async)
-  const batteryAlertPromises = positions
-    .filter(pos => pos.battery_percent && pos.battery_percent < 20)
-    .map(async (pos) => {
-      if (pos.battery_percent && pos.battery_percent < 10) {
-        // Critical battery - always alert
-        return {
-          device_id: pos.device_id,
-          event_type: 'critical_battery',
-          severity: 'critical' as const,
-          title: 'Critical Battery Level',
-          message: `Battery at ${pos.battery_percent}% - immediate attention required`,
-          metadata: { battery: pos.battery_percent, detected_by: 'gps-data' }
-        };
-      } else if (pos.battery_percent && pos.battery_percent < 20) {
-        // Low battery - context-aware check
-        let shouldAlert = true;
-        let alertContext = '';
-
-        if (pos.latitude && pos.longitude) {
-          try {
-            const { data: patterns } = await supabase
-              .rpc('get_trip_patterns', {
-                p_device_id: pos.device_id,
-                p_day_of_week: new Date().getDay(),
-                p_hour_of_day: new Date().getHours(),
-                p_current_lat: pos.latitude,
-                p_current_lon: pos.longitude,
-              });
-
-            if (patterns && patterns.length > 0) {
-              const pattern = patterns[0];
-              if (pattern.is_at_origin && pattern.avg_distance_km) {
-                // Estimate range based on current battery (assume 1% = ~1km for EVs, adjust for your vehicles)
-                const estimatedRangeKm = pos.battery_percent * 1.0; // Adjust multiplier based on vehicle type
-                const requiredRangeKm = pattern.avg_distance_km * 1.5; // 1.5x safety margin
-
-                if (estimatedRangeKm >= requiredRangeKm) {
-                  shouldAlert = false; // Sufficient range for typical trip
-                } else {
-                  alertContext = ` Estimated range: ${estimatedRangeKm.toFixed(1)}km, typical trip: ${pattern.avg_distance_km.toFixed(1)}km`;
-                }
-              }
-            }
-          } catch (error) {
-            console.error(`[gps-data] Error checking trip patterns for ${pos.device_id}:`, error);
-            // Continue with alert if pattern check fails
-          }
-        }
-
-        if (shouldAlert) {
-          return {
-            device_id: pos.device_id,
-            event_type: 'low_battery',
-            severity: 'warning' as const,
-            title: 'Low Battery Warning',
-            message: `Battery level at ${pos.battery_percent}%${alertContext}`,
-            metadata: { 
-              battery: pos.battery_percent, 
-              detected_by: 'gps-data',
-              context_aware: true
-            }
-          };
-        }
-      }
-      return null;
-    });
-
-  const batteryAlerts = (await Promise.all(batteryAlertPromises)).filter(alert => alert !== null);
-  eventsToInsert.push(...batteryAlerts);
-
   for (const pos of positions) {
     // 1. OVERSPEEDING DETECTION (speed > 120 km/h)
     // Note: pos.speed is now in km/h (normalized)
@@ -364,8 +293,28 @@ async function syncPositions(supabase: any, records: any[]) {
       })
     }
 
-    // 2. CRITICAL BATTERY (< 10%) - handled above in async batch
-    // 3. LOW BATTERY WARNING (10-20%) - handled above in async batch
+    // 2. CRITICAL BATTERY (< 10%)
+    if (pos.battery_percent && pos.battery_percent < 10) {
+      eventsToInsert.push({
+        device_id: pos.device_id,
+        event_type: 'critical_battery',
+        severity: 'critical',
+        title: 'Critical Battery Level',
+        message: `Battery at ${pos.battery_percent}% - immediate attention required`,
+        metadata: { battery: pos.battery_percent, detected_by: 'gps-data' }
+      })
+    }
+    // 3. LOW BATTERY WARNING (10-20%)
+    else if (pos.battery_percent && pos.battery_percent < 20) {
+      eventsToInsert.push({
+        device_id: pos.device_id,
+        event_type: 'low_battery',
+        severity: 'warning',
+        title: 'Low Battery Warning',
+        message: `Battery level at ${pos.battery_percent}%`,
+        metadata: { battery: pos.battery_percent, detected_by: 'gps-data' }
+      })
+    }
 
     // 4. IGNITION ON DETECTION (state change from off -> on)
     const prevIgnition = prevIgnitionMap.get(pos.device_id)
