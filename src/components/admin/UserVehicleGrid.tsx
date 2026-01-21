@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +41,7 @@ import {
   Phone,
   UsersRound,
   UserCog,
+  Plus,
 } from "lucide-react";
 import {
   ProfileWithAssignments,
@@ -54,8 +56,10 @@ import {
 import { AssignmentManagerDialog } from "./AssignmentManagerDialog";
 import { UserRow } from "./UserRow";
 import { VehicleRow } from "./VehicleRow";
+import { AddVehicleDialog } from "./AddVehicleDialog";
 
 export function UserVehicleGrid() {
+  const queryClient = useQueryClient();
   const [vehicleSearch, setVehicleSearch] = useState("");
   const [vehicleFilter, setVehicleFilter] = useState<"all" | "assigned" | "unassigned">("all");
   const [userSearch, setUserSearch] = useState("");
@@ -67,6 +71,7 @@ export function UserVehicleGrid() {
   const [assignmentDialogTab, setAssignmentDialogTab] = useState<"new-user" | "existing-user" | "bulk-actions" | "edit-user">("new-user");
   const [selectedProfile, setSelectedProfile] = useState<ProfileWithAssignments | null>(null);
   const [activeTab, setActiveTab] = useState<"users" | "gps-owners">("users");
+  const [showAddVehicleDialog, setShowAddVehicleDialog] = useState(false);
 
   const { data: profiles, isLoading: profilesLoading } = useProfiles();
   const { data: vehicles, isLoading: vehiclesLoading } = useVehiclesWithAssignments(vehicleSearch, vehicleFilter);
@@ -400,6 +405,15 @@ export function UserVehicleGrid() {
                 <SelectItem value="unassigned">Unassigned</SelectItem>
               </SelectContent>
             </Select>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowAddVehicleDialog(true)}
+              className="h-9"
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              <span className="hidden sm:inline">Add</span>
+            </Button>
           </div>
 
           {/* Selected Actions */}
@@ -494,6 +508,18 @@ export function UserVehicleGrid() {
         initialTab={assignmentDialogTab}
         editProfile={selectedProfile}
         selectedVehicles={getSelectedVehicleObjects()}
+      />
+
+      {/* Add Vehicle Dialog */}
+      <AddVehicleDialog
+        open={showAddVehicleDialog}
+        onOpenChange={(open) => {
+          setShowAddVehicleDialog(open);
+          if (!open) {
+            // Refresh vehicle list when dialog closes
+            queryClient.invalidateQueries({ queryKey: ["vehicles-with-assignments"] });
+          }
+        }}
       />
     </div>
   );

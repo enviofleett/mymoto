@@ -34,64 +34,29 @@ export function useCreateUserWithVehicles() {
 
   return useMutation({
     mutationFn: async (params: CreateUserWithVehiclesParams): Promise<CreateUserWithVehiclesResult> => {
-      let userId: string | null = null;
+      // Use Edge Function for user creation (has admin privileges)
+      const { data, error } = await supabase.functions.invoke('create-test-user', {
+        body: {
+          email: params.profile.email || null,
+          password: params.authUser?.password || null,
+          name: params.profile.name.trim(),
+          phone: params.profile.phone?.trim() || null,
+          deviceIds: params.vehicles?.map(v => v.deviceId) || [],
+        },
+      });
 
-      // Step 1: Create auth user if password provided
-      if (params.authUser?.password && params.profile.email) {
-        const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-          email: params.profile.email,
-          password: params.authUser.password,
-          email_confirm: true, // Auto-confirm for admin-created users
-        });
-
-        if (authError) {
-          throw new Error(`Failed to create auth user: ${authError.message}`);
-        }
-
-        userId = authData.user.id;
+      if (error) {
+        throw new Error(error.message || 'Failed to create user');
       }
 
-      // Step 2: Create profile
-      const profileData = {
-        name: params.profile.name.trim(),
-        email: params.profile.email?.trim() || null,
-        phone: params.profile.phone?.trim() || null,
-        user_id: userId,
-      };
-
-      const { data: profile, error: profileError } = await (supabase as any)
-        .from("profiles")
-        .insert(profileData)
-        .select()
-        .single();
-
-      if (profileError) {
-        // If profile creation fails and we created an auth user, we can't easily rollback
-        // But we can at least log the error
-        throw new Error(`Failed to create profile: ${profileError.message}`);
+      if (data?.error) {
+        throw new Error(data.error);
       }
 
-      // Step 3: Assign vehicles if provided
-      const assignedVehicles: string[] = [];
-      if (params.vehicles && params.vehicles.length > 0) {
-        const assignments = params.vehicles.map((v) => ({
-          device_id: v.deviceId,
-          profile_id: profile.id,
-          vehicle_alias: v.alias?.trim() || null,
-        }));
-
-        const { error: assignError } = await (supabase as any)
-          .from("vehicle_assignments")
-          .insert(assignments);
-
-        if (assignError) {
-          // Log error but don't fail - vehicle assignment can be done later
-          console.error("Failed to assign vehicles:", assignError);
-          toast.warning("User created but vehicle assignment failed. You can assign vehicles later.");
-        } else {
-          assignedVehicles.push(...params.vehicles.map(v => v.deviceId));
-        }
-      }
+      // The Edge Function returns the created user data
+      const userId = data?.userId || data?.user?.id || null;
+      const profileId = data?.profileId || data?.profile?.id;
+      const assignedVehicles = data?.assignedVehicles || [];
 
       // Step 4: Send email notification if requested
       if (params.sendEmail) {
@@ -111,9 +76,13 @@ export function useCreateUserWithVehicles() {
         }
       }
 
+      if (!profileId) {
+        throw new Error('Failed to create profile: No profile ID returned');
+      }
+
       return {
         userId,
-        profileId: profile.id,
+        profileId,
         assignedVehicles,
       };
     },

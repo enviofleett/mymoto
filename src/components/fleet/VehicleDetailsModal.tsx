@@ -89,7 +89,7 @@ export function VehicleDetailsModal({
           device_id: vehicle.id,
           profile_id: selectedDriverId,
           updated_at: new Date().toISOString(),
-        }, { onConflict: 'device_id' });
+        }, { onConflict: 'device_id,profile_id' });
 
       if (error) throw error;
 

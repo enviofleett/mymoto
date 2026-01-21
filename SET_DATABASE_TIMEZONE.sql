@@ -7,12 +7,13 @@
 SET timezone = 'Africa/Lagos';
 
 -- ============================================================================
--- STEP 2: Set default timezone for database (persistent)
+-- STEP 2: Verify database name (for reference only)
 -- ============================================================================
-ALTER DATABASE CURRENT_DATABASE SET timezone = 'Africa/Lagos';
-
--- Note: Replace CURRENT_DATABASE with your actual database name
--- Or run this in Supabase SQL Editor (it will use the current database)
+-- Note: In Supabase, the session-level SET (Step 1) is sufficient for queries.
+-- Database-level timezone is managed by Supabase infrastructure.
+-- 
+-- To see your current database name (for reference):
+SELECT current_database() as database_name;
 
 -- ============================================================================
 -- STEP 3: Verify timezone is set

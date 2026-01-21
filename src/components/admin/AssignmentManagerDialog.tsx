@@ -65,6 +65,7 @@ import {
 } from "@/hooks/useAssignmentManagement";
 import { useCreateUserWithVehicles } from "@/hooks/useCreateUserWithVehicles";
 import { useEditProfile } from "@/hooks/useEditProfile";
+import { AddVehicleDialog } from "./AddVehicleDialog";
 
 // Form schema for new user
 const newUserFormSchema = z.object({
@@ -120,6 +121,7 @@ export function AssignmentManagerDialog({
   const [selectedOwners, setSelectedOwners] = useState<Set<string>>(new Set());
   const [selectedAutoMatches, setSelectedAutoMatches] = useState<Set<string>>(new Set());
   const [autoMatchSearch, setAutoMatchSearch] = useState("");
+  const [showAddVehicleDialog, setShowAddVehicleDialog] = useState(false);
 
   const { data: profiles } = useProfiles();
   const { data: vehicles } = useVehiclesWithAssignments(vehicleSearch, "all");
@@ -379,6 +381,9 @@ export function AssignmentManagerDialog({
       const originalAssignedCount = assignedVehicles.length + removeVehicles.length;
       const isNewUser = originalAssignedCount === 0;
 
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/6471c9be-8210-40bb-9684-44414c3d01cc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AssignmentManagerDialog.tsx:384',message:'Before assignMutation.mutateAsync',data:{addVehicles,profileId:selectedProfile.id,selectedProfile:selectedProfile?{id:selectedProfile.id,name:selectedProfile.name,email:selectedProfile.email}:null,vehicleAliases:Object.keys(vehicleAliases||{}),profileIdType:typeof selectedProfile.id,profileIdValid:selectedProfile.id&&selectedProfile.id.length>0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B,C'})}).catch(()=>{});
+      // #endregion
       await assignMutation.mutateAsync({
         deviceIds: addVehicles,
         profileId: selectedProfile.id,
@@ -610,7 +615,19 @@ export function AssignmentManagerDialog({
 
                 {/* Vehicle Selection */}
                 <div className="flex-1 flex flex-col min-h-0">
-                  <Label className="mb-2">Assign Vehicles (optional)</Label>
+                  <div className="flex items-center justify-between mb-2">
+                    <Label>Assign Vehicles (optional)</Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowAddVehicleDialog(true)}
+                      className="h-7 text-xs"
+                    >
+                      <Plus className="h-3 w-3 mr-1" />
+                      Add Vehicle
+                    </Button>
+                  </div>
                   <div className="relative mb-2">
                     <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
@@ -1384,6 +1401,18 @@ export function AssignmentManagerDialog({
           </TabsContent>
         </Tabs>
       </DialogContent>
+
+      {/* Add Vehicle Dialog */}
+      <AddVehicleDialog
+        open={showAddVehicleDialog}
+        onOpenChange={(open) => {
+          setShowAddVehicleDialog(open);
+          if (!open) {
+            // Refresh vehicle list when dialog closes
+            queryClient.invalidateQueries({ queryKey: ["vehicles-with-assignments"] });
+          }
+        }}
+      />
     </Dialog>
   );
 }

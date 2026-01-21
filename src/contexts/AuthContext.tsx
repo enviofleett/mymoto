@@ -6,7 +6,6 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   isAdmin: boolean;
-  isProvider: boolean;
   isLoading: boolean;
   isRoleLoaded: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
@@ -30,7 +29,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [isProvider, setIsProvider] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isRoleLoaded, setIsRoleLoaded] = useState(false);
 
@@ -49,31 +47,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return !!data;
   };
 
-  const checkProviderRole = async (userId: string) => {
-    // ✅ FIX: 'provider' is not a role in user_roles table (enum only has 'admin' and 'user')
-    // Instead, check if user has a record in service_providers table
-    try {
-      const { data, error } = await supabase
-        .from('service_providers')
-        .select('id')
-        .eq('user_id', userId)
-        .maybeSingle();
-      
-      if (error) {
-        // If table doesn't exist or user doesn't have a provider record, that's fine
-        if (error.code === '42P01' || error.code === 'PGRST116') {
-          // Table doesn't exist - provider feature not enabled, return false
-          return false;
-        }
-        // Other errors (like RLS blocking) - also return false gracefully
-        return false;
-      }
-      return !!data;
-    } catch (err) {
-      // Gracefully handle if service_providers table doesn't exist or any other error
-      return false;
-    }
-  };
 
   useEffect(() => {
     // Set up auth state listener FIRST
@@ -82,22 +55,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setSession(session);
         setUser(session?.user ?? null);
         
-        // Defer role checks with setTimeout to prevent deadlock
+        // Defer admin check with setTimeout to prevent deadlock
         if (session?.user) {
           setIsRoleLoaded(false);
           setTimeout(() => {
-            Promise.all([
-              checkAdminRole(session.user.id),
-              checkProviderRole(session.user.id),
-            ]).then(([isAdminResult, isProviderResult]) => {
+            checkAdminRole(session.user.id).then((isAdminResult) => {
               setIsAdmin(isAdminResult);
-              setIsProvider(isProviderResult);
               setIsRoleLoaded(true);
             });
           }, 0);
         } else {
           setIsAdmin(false);
-          setIsProvider(false);
           setIsRoleLoaded(true);
         }
         setIsLoading(false);
@@ -150,7 +118,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signOut = async () => {
     await supabase.auth.signOut();
     setIsAdmin(false);
-    setIsProvider(false);
   };
 
   const resetPassword = async (email: string) => {
@@ -169,7 +136,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, isAdmin, isProvider, isLoading, isRoleLoaded, signIn, signUp, signOut, resetPassword, updatePassword }}>
+    <AuthContext.Provider value={{ user, session, isAdmin, isLoading, isRoleLoaded, signIn, signUp, signOut, resetPassword, updatePassword }}>
       {children}
     </AuthContext.Provider>
   );

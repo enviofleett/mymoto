@@ -377,8 +377,6 @@ interface Gps51Trip {
   [key: string]: any;
 }
 
-// Use shared GPS51 client (has centralized rate limiting)
-
 // Format date for GPS51 API (yyyy-MM-dd HH:mm:ss)
 function formatDateForGps51(date: Date): string {
   const year = date.getFullYear();
@@ -474,24 +472,28 @@ async function fetchTripsFromGps51(
         throw new Error('Trip missing end time');
       }
 
-      // GPS51 distance can be in different fields: distance, totaldistance, or calculated
-      // According to API docs, totaldistance is in meters
+      // CRITICAL FIX: Use GPS51 distance as source of truth (not recalculated)
+      // GPS51 accumulates distance along actual GPS path, which is more accurate than straight-line
+      // According to API docs, distance/totaldistance is in meters
       let distanceKm = 0;
       if (trip.distance) {
-        // If distance is provided, it's in meters
+        // Primary: Use GPS51's distance field (accumulated along path)
         distanceKm = trip.distance / 1000;
+        console.log(`[fetchTripsFromGps51] Using GPS51 distance: ${distanceKm.toFixed(2)}km`);
       } else if ((trip as any).totaldistance) {
-        // Some API versions use totaldistance
+        // Secondary: Some API versions use totaldistance field
         distanceKm = (trip as any).totaldistance / 1000;
+        console.log(`[fetchTripsFromGps51] Using GPS51 totaldistance: ${distanceKm.toFixed(2)}km`);
       } else if (trip.startlat && trip.startlon && trip.endlat && trip.endlon) {
-        // Fallback: calculate distance from coordinates
+        // Fallback only: Calculate straight-line distance if GPS51 doesn't provide distance
+        // This is less accurate (30-50% less than actual path) but better than 0
         distanceKm = calculateDistance(
           trip.startlat,
           trip.startlon,
           trip.endlat,
           trip.endlon
         );
-        console.log(`[fetchTripsFromGps51] Calculated distance for trip: ${distanceKm.toFixed(2)}km`);
+        console.warn(`[fetchTripsFromGps51] GPS51 didn't provide distance, calculated fallback: ${distanceKm.toFixed(2)}km (may be 30-50% less than actual)`);
       }
     
       // Speed is in m/h, normalize using centralized normalizer
@@ -969,10 +971,10 @@ Deno.serve(async (req) => {
         let endDate: Date = new Date(); // End at now
 
         if (!syncStatus || forceFullSync) {
-          // SAFETY: Reduced from 7 days to 3 days to prevent too many API calls
-          // First sync or force full sync: look back 3 days
-          startDate = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
-          console.log(`[sync-trips-incremental] Full sync for ${deviceId}, processing last 3 days (reduced from 7 for rate limit safety)`);
+          // FIX: Extended from 3 days to 30 days for comprehensive historical data
+          // First sync or force full sync: look back 30 days
+          startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+          console.log(`[sync-trips-incremental] Full sync for ${deviceId}, processing last 30 days (extended from 3 for comprehensive history)`);
 
           // Initialize sync status
           await supabase
@@ -1101,11 +1103,12 @@ Deno.serve(async (req) => {
                 trip.end_latitude === 0 || trip.end_longitude === 0) {
               console.log(`[sync-trips-incremental] Backfilling coordinates for trip: ${trip.start_time}`);
               
-              // Get first GPS point near start time (within 5 minutes)
+              // FIX: Extended from ±5 minutes to ±15 minutes to catch more coordinates
+              // Get first GPS point near start time (within 15 minutes)
               const startTimeMin = new Date(trip.start_time);
-              startTimeMin.setMinutes(startTimeMin.getMinutes() - 5);
+              startTimeMin.setMinutes(startTimeMin.getMinutes() - 15);
               const startTimeMax = new Date(trip.start_time);
-              startTimeMax.setMinutes(startTimeMax.getMinutes() + 5);
+              startTimeMax.setMinutes(startTimeMax.getMinutes() + 15);
               
               const { data: startPoint } = await supabase
                 .from("position_history")
@@ -1121,11 +1124,12 @@ Deno.serve(async (req) => {
                 .limit(1)
                 .maybeSingle();
               
-              // Get last GPS point near end time (within 5 minutes)
+              // FIX: Extended from ±5 minutes to ±15 minutes to catch more coordinates
+              // Get last GPS point near end time (within 15 minutes)
               const endTimeMin = new Date(trip.end_time);
-              endTimeMin.setMinutes(endTimeMin.getMinutes() - 5);
+              endTimeMin.setMinutes(endTimeMin.getMinutes() - 15);
               const endTimeMax = new Date(trip.end_time);
-              endTimeMax.setMinutes(endTimeMax.getMinutes() + 5);
+              endTimeMax.setMinutes(endTimeMax.getMinutes() + 15);
               
               const { data: endPoint } = await supabase
                 .from("position_history")

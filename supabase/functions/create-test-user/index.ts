@@ -9,7 +9,10 @@ const corsHeaders = {
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { 
+      status: 200,
+      headers: corsHeaders 
+    });
   }
 
   try {
@@ -26,54 +29,80 @@ serve(async (req) => {
 
     const { email, password, name, phone, deviceIds } = await req.json();
 
-    console.log('Creating test user:', { email, name, phone, deviceIds });
+    console.log('Creating user:', { email, name, phone, deviceIds, hasPassword: !!password });
 
     // Validate required fields
-    if (!email || !password) {
+    if (!name || name.trim().length === 0) {
       return new Response(
-        JSON.stringify({ error: 'Email and password are required' }),
+        JSON.stringify({ error: 'Name is required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // 1. Create auth user using admin API
-    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true, // Auto-confirm email for test users
-      user_metadata: {
-        name,
-        phone
+    // If password is provided, email is required
+    if (password && !email) {
+      return new Response(
+        JSON.stringify({ error: 'Email is required when password is provided' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    let userId: string | null = null;
+
+    // 1. Create auth user using admin API (only if password provided)
+    if (password && email) {
+      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true, // Auto-confirm email for admin-created users
+        user_metadata: {
+          name,
+          phone
+        }
+      });
+
+      if (authError) {
+        console.error('Error creating auth user:', authError);
+        return new Response(
+          JSON.stringify({ error: `Failed to create auth user: ${authError.message}` }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
-    });
 
-    if (authError) {
-      console.error('Error creating auth user:', authError);
-      return new Response(
-        JSON.stringify({ error: `Failed to create auth user: ${authError.message}` }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      userId = authData.user.id;
+      console.log('Created auth user with ID:', userId);
+    } else if (email && !password) {
+      // Check if user already exists
+      const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers();
+      const existingUser = existingUsers?.users.find(u => u.email === email);
+      if (existingUser) {
+        userId = existingUser.id;
+        console.log('Using existing auth user:', userId);
+      }
     }
 
-    const userId = authData.user.id;
-    console.log('Created auth user with ID:', userId);
+    // 2. Create profile linked to auth user (if exists)
+    const profileDataToInsert = {
+      name: name.trim(),
+      email: email?.trim() || null,
+      phone: phone?.trim() || null,
+      user_id: userId
+    };
 
-    // 2. Create profile linked to auth user
     const { data: profileData, error: profileError } = await supabaseAdmin
       .from('profiles')
-      .insert({
-        name: name || email.split('@')[0],
-        email,
-        phone,
-        user_id: userId
-      })
+      .insert(profileDataToInsert)
       .select()
       .single();
 
     if (profileError) {
       console.error('Error creating profile:', profileError);
-      // Cleanup: delete the auth user if profile creation fails
-      await supabaseAdmin.auth.admin.deleteUser(userId);
+      // Cleanup: delete the auth user if profile creation fails and we created one
+      if (userId) {
+        await supabaseAdmin.auth.admin.deleteUser(userId).catch(err => 
+          console.error('Error cleaning up auth user:', err)
+        );
+      }
       return new Response(
         JSON.stringify({ error: `Failed to create profile: ${profileError.message}` }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -82,53 +111,77 @@ serve(async (req) => {
 
     console.log('Created profile with ID:', profileData.id);
 
-    // 3. Assign user role as 'owner'
-    const { error: roleError } = await supabaseAdmin
-      .from('user_roles')
-      .insert({
-        user_id: userId,
-        role: 'owner'
-      });
+    // 3. Assign user role as 'owner' (only if auth user was created)
+    if (userId) {
+      const { error: roleError } = await supabaseAdmin
+        .from('user_roles')
+        .insert({
+          user_id: userId,
+          role: 'owner'
+        });
 
-    if (roleError) {
-      console.error('Error assigning role:', roleError);
-      // Non-fatal, continue
+      if (roleError) {
+        console.error('Error assigning role:', roleError);
+        // Non-fatal, continue
+      }
     }
 
     // 4. Assign vehicles if provided
     let assignedVehicles: string[] = [];
     if (deviceIds && deviceIds.length > 0) {
-      // Get vehicle details for aliases
-      const { data: vehicleDetails } = await supabaseAdmin
+      // Verify vehicles exist before assigning
+      const { data: vehicleDetails, error: vehicleCheckError } = await supabaseAdmin
         .from('vehicles')
-        .select('device_id, plate')
+        .select('device_id, device_name')
         .in('device_id', deviceIds);
 
-      const assignments = deviceIds.map((deviceId: string) => {
-        const vehicle = vehicleDetails?.find(v => v.device_id === deviceId);
-        return {
-          device_id: deviceId,
-          profile_id: profileData.id,
-          vehicle_alias: vehicle?.plate || null
-        };
-      });
+      if (vehicleCheckError) {
+        console.error('Error checking vehicles:', vehicleCheckError);
+        // Continue but log warning
+      }
 
-      const { data: assignmentData, error: assignError } = await supabaseAdmin
-        .from('vehicle_assignments')
-        .insert(assignments)
-        .select();
+      // Only assign vehicles that exist in the database
+      const existingDeviceIds = vehicleDetails?.map(v => v.device_id) || [];
+      const missingDevices = deviceIds.filter(id => !existingDeviceIds.includes(id));
+      
+      if (missingDevices.length > 0) {
+        console.warn('Some vehicles do not exist in database:', missingDevices);
+      }
 
-      if (assignError) {
-        console.error('Error assigning vehicles:', assignError);
-      } else {
-        assignedVehicles = assignmentData?.map(a => a.device_id) || [];
-        console.log('Assigned vehicles:', assignedVehicles);
+      if (existingDeviceIds.length > 0) {
+        const assignments = existingDeviceIds.map((deviceId: string) => {
+          const vehicle = vehicleDetails?.find(v => v.device_id === deviceId);
+          return {
+            device_id: deviceId,
+            profile_id: profileData.id,
+            vehicle_alias: vehicle?.device_name || null
+          };
+        });
+
+        const { data: assignmentData, error: assignError } = await supabaseAdmin
+          .from('vehicle_assignments')
+          .insert(assignments)
+          .select();
+
+        if (assignError) {
+          console.error('Error assigning vehicles:', assignError);
+          // Check if it's a composite key conflict (already assigned)
+          if (assignError.code === '23505') {
+            console.log('Some vehicles already assigned, continuing...');
+          }
+        } else {
+          assignedVehicles = assignmentData?.map(a => a.device_id) || [];
+          console.log('Assigned vehicles:', assignedVehicles);
+        }
       }
     }
 
     return new Response(
       JSON.stringify({
         success: true,
+        userId,
+        profileId: profileData.id,
+        assignedVehicles,
         user: {
           id: userId,
           email,
@@ -137,8 +190,7 @@ serve(async (req) => {
         profile: {
           id: profileData.id,
           name: profileData.name
-        },
-        assignedVehicles
+        }
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

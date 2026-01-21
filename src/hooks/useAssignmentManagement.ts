@@ -228,18 +228,52 @@ export function useAssignVehicles() {
       };
     }) => {
       // Upsert assignments one by one with composite primary key (device_id, profile_id)
+      // Workaround: Use insert with ON CONFLICT handling since Supabase client may have issues with composite keys
       const results = await Promise.all(
         deviceIds.map(async (deviceId) => {
-          const { error } = await (supabase as any)
+          const payload = {
+            device_id: deviceId,
+            profile_id: profileId,
+            vehicle_alias: vehicleAliases?.[deviceId] || null,
+            updated_at: new Date().toISOString()
+          };
+          
+          // Use check-then-update-or-insert pattern to avoid Supabase composite key upsert issues
+          // Check if assignment already exists
+          const { data: existing, error: checkError } = await (supabase as any)
             .from("vehicle_assignments")
-            .upsert({
-              device_id: deviceId,
-              profile_id: profileId,
-              vehicle_alias: vehicleAliases?.[deviceId] || null,
-              updated_at: new Date().toISOString(),
-            }, {
-              onConflict: "device_id,profile_id", // Composite primary key
-            });
+            .select("device_id, profile_id")
+            .eq("device_id", deviceId)
+            .eq("profile_id", profileId)
+            .maybeSingle();
+          
+          if (checkError && checkError.code !== 'PGRST116') { // PGRST116 = no rows returned, which is fine
+            return { deviceId, error: checkError };
+          }
+          
+          let error: any = null;
+          
+          if (existing) {
+            // Update existing assignment
+            const { error: updateError } = await (supabase as any)
+              .from("vehicle_assignments")
+              .update({
+                vehicle_alias: payload.vehicle_alias,
+                updated_at: payload.updated_at,
+              })
+              .eq("device_id", deviceId)
+              .eq("profile_id", profileId);
+            
+            error = updateError;
+          } else {
+            // Insert new assignment
+            const { error: insertError } = await (supabase as any)
+              .from("vehicle_assignments")
+              .insert(payload);
+            
+            error = insertError;
+          }
+          
           return { deviceId, error };
         })
       );
@@ -288,15 +322,42 @@ export function useBulkAutoAssign() {
     mutationFn: async (assignments: { deviceId: string; profileId: string }[]) => {
       const results = await Promise.all(
         assignments.map(async ({ deviceId, profileId }) => {
-          const { error } = await (supabase as any)
+          // Use check-then-update-or-insert pattern to avoid Supabase composite key upsert issues
+          const { data: existing, error: checkError } = await (supabase as any)
             .from("vehicle_assignments")
-            .upsert({
-              device_id: deviceId,
-              profile_id: profileId,
-              updated_at: new Date().toISOString(),
-            }, {
-              onConflict: "device_id,profile_id", // Composite primary key
-            });
+            .select("device_id, profile_id")
+            .eq("device_id", deviceId)
+            .eq("profile_id", profileId)
+            .maybeSingle();
+          
+          if (checkError && checkError.code !== 'PGRST116') {
+            return { deviceId, error: checkError };
+          }
+          
+          const payload = {
+            device_id: deviceId,
+            profile_id: profileId,
+            updated_at: new Date().toISOString(),
+          };
+          
+          let error: any = null;
+          
+          if (existing) {
+            // Update existing assignment
+            const { error: updateError } = await (supabase as any)
+              .from("vehicle_assignments")
+              .update({ updated_at: payload.updated_at })
+              .eq("device_id", deviceId)
+              .eq("profile_id", profileId);
+            error = updateError;
+          } else {
+            // Insert new assignment
+            const { error: insertError } = await (supabase as any)
+              .from("vehicle_assignments")
+              .insert(payload);
+            error = insertError;
+          }
+          
           return { deviceId, error };
         })
       );

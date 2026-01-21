@@ -40,6 +40,22 @@ export function GlobalAlertListener() {
   // Get list of device IDs for user's assigned vehicles
   const userDeviceIds = ownerVehicles?.map(v => v.deviceId) || [];
 
+  // ✅ FIX: Vibration patterns by severity (for Android locked screens)
+  const getVibrationPattern = useCallback((severity: SeverityLevel): number[] => {
+    switch (severity) {
+      case 'info':
+        return [200]; // Single short vibration
+      case 'warning':
+        return [200, 100, 200]; // Two vibrations
+      case 'error':
+        return [200, 100, 200, 100, 200]; // Three vibrations
+      case 'critical':
+        return [300, 100, 300, 100, 300, 100, 300]; // Four long vibrations
+      default:
+        return [200]; // Default single vibration
+    }
+  }, []);
+
   // Send email notification for critical/error events
   const sendEmailNotification = useCallback(async (event: ProactiveEvent) => {
     if (event.severity !== 'critical' && event.severity !== 'error') {
@@ -108,6 +124,11 @@ export function GlobalAlertListener() {
         body: event.message,
         tag: `alert-${event.id}`,
         requireInteraction: severity === 'critical',
+        // ✅ FIX: Locked screen support
+        silent: false, // CRITICAL: Enables system sound on locked screens
+        vibrate: getVibrationPattern(severity), // Severity-based vibration patterns
+        renotify: true, // Re-alert even if same tag exists
+        timestamp: Date.now(), // Proper notification sorting
         data: {
           eventId: event.id,
           deviceId: event.device_id,
@@ -115,7 +136,7 @@ export function GlobalAlertListener() {
         }
       });
     }
-  }, [toast, playAlertSound, showNotification, permission, shouldPlaySound, shouldShowPush, preferences.soundVolume, sendEmailNotification, isAdmin, userDeviceIds]);
+  }, [toast, playAlertSound, showNotification, permission, shouldPlaySound, shouldShowPush, preferences.soundVolume, sendEmailNotification, isAdmin, userDeviceIds, getVibrationPattern]);
 
   useEffect(() => {
     console.log('[GlobalAlertListener] Setting up realtime subscription');

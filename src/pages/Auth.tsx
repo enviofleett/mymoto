@@ -23,8 +23,9 @@ const Auth = () => {
   const [success, setSuccess] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  const { signIn, user, isAdmin, isLoading, isRoleLoaded } = useAuth();
+  const { signIn, signUp, user, isAdmin, isLoading, isRoleLoaded } = useAuth();
   const navigate = useNavigate();
+  const [isSignUp, setIsSignUp] = useState(false);
 
   useEffect(() => {
     if (user && !isLoading && isRoleLoaded) {
@@ -46,6 +47,7 @@ const Auth = () => {
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSuccess(null);
     
     if (!validateInput()) return;
     
@@ -59,6 +61,30 @@ const Auth = () => {
       } else {
         setError(error.message);
       }
+    }
+  };
+
+  const handleSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccess(null);
+    
+    if (!validateInput()) return;
+    
+    setIsSubmitting(true);
+    const { error } = await signUp(email, password);
+    setIsSubmitting(false);
+    
+    if (error) {
+      setError(error.message || 'Failed to create account. Please try again.');
+    } else {
+      setSuccess('Account created! Please check your email to confirm your account.');
+      // Reset form after successful signup
+      setTimeout(() => {
+        setEmail('');
+        setPassword('');
+        setIsSignUp(false);
+      }, 3000);
     }
   };
 
@@ -97,16 +123,18 @@ const Auth = () => {
         </p>
       </div>
 
-      {/* Login Card with Neumorphic styling */}
+      {/* Login/Signup Card with Neumorphic styling */}
       <Card className="w-full max-w-sm border-0 bg-card shadow-neumorphic rounded-2xl animate-fade-in [animation-delay:400ms]">
         <CardHeader className="text-center space-y-2 pb-4">
-          <CardTitle className="text-xl font-semibold text-foreground">Welcome Back</CardTitle>
+          <CardTitle className="text-xl font-semibold text-foreground">
+            {isSignUp ? 'Create Account' : 'Welcome Back'}
+          </CardTitle>
           <CardDescription className="text-muted-foreground">
-            Sign in to your account
+            {isSignUp ? 'Sign up for a new account' : 'Sign in to your account'}
           </CardDescription>
         </CardHeader>
         
-        <form onSubmit={handleSignIn}>
+        <form onSubmit={isSignUp ? handleSignUp : handleSignIn}>
           <CardContent className="space-y-4">
             {error && (
               <Alert variant="destructive" className="animate-fade-in shadow-neumorphic-inset border-0">
@@ -161,20 +189,33 @@ const Auth = () => {
             </div>
           </CardContent>
           
-          <CardFooter className="pt-0">
+          <CardFooter className="pt-0 flex flex-col gap-2">
             <Button 
               type="submit" 
-              className="w-full mt-2 h-12 rounded-xl shadow-neumorphic-button bg-accent hover:bg-accent/90 text-accent-foreground font-semibold transition-all duration-200 hover:ring-2 hover:ring-accent/30" 
+              className="w-full h-12 rounded-xl shadow-neumorphic-button bg-accent hover:bg-accent/90 text-accent-foreground font-semibold transition-all duration-200 hover:ring-2 hover:ring-accent/30" 
               disabled={isSubmitting}
             >
               {isSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Signing in...
+                  {isSignUp ? 'Creating account...' : 'Signing in...'}
                 </>
               ) : (
-                'Sign In'
+                isSignUp ? 'Sign Up' : 'Sign In'
               )}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full text-sm text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                setIsSignUp(!isSignUp);
+                setError(null);
+                setSuccess(null);
+              }}
+              disabled={isSubmitting}
+            >
+              {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
             </Button>
           </CardFooter>
         </form>

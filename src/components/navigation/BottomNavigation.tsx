@@ -4,13 +4,13 @@ import {
   LayoutDashboard, 
   Truck, 
   Map, 
+  Brain, 
   Menu,
   X,
   Settings,
   LogOut,
   Wallet,
-  BellRing,
-  ShoppingBag
+  BellRing
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -26,7 +26,7 @@ const mainNavItems = [
   { title: "Home", url: "/", icon: LayoutDashboard },
   { title: "Fleet", url: "/fleet", icon: Truck },
   { title: "Map", url: "/map", icon: Map },
-  { title: "Market", url: "/marketplace", icon: ShoppingBag },
+  { title: "Insights", url: "/insights", icon: Brain },
 ];
 
 const menuItems = [
@@ -55,21 +55,19 @@ export function BottomNavigation() {
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 pb-[env(safe-area-inset-bottom)]">
       <div className="flex items-center justify-around h-16">
-        {mainNavItems.map((item) => {
-          const IconComponent = item.icon;
-          return (
-            <NavLink
-              key={item.url}
-              to={item.url}
-              end={item.url === "/"}
-              className="flex flex-col items-center justify-center gap-1 px-2 py-2 text-muted-foreground transition-colors min-w-[60px] flex-1"
-              activeClassName="text-primary"
-            >
-              <IconComponent className="h-5 w-5" />
-              <span className="text-[10px] font-medium">{item.title}</span>
-            </NavLink>
-          );
-        })}
+        {mainNavItems.map((item) => (
+          <NavLink
+            key={item.url}
+            to={item.url}
+            end={item.url === "/"}
+            className="flex flex-col items-center justify-center gap-1 px-3 py-2 text-muted-foreground transition-colors min-w-[64px]"
+            activeClassName="text-primary"
+          >
+            <item.icon className="h-5 w-5" />
+            <span className="text-[10px] font-medium">{item.title}</span>
+          </NavLink>
+        ))}
+
 
         {/* Menu Button */}
         <Sheet open={menuOpen} onOpenChange={setMenuOpen}>

@@ -24,10 +24,6 @@ import AdminAssignments from "./pages/AdminAssignments";
 import AdminPrivacySettings from "./pages/AdminPrivacySettings";
 import AdminEmailTemplates from "./pages/AdminEmailTemplates";
 import NotificationSettings from "./pages/NotificationSettings";
-import Marketplace from "./pages/Marketplace";
-import ProviderRegister from "./pages/provider/Register";
-import ProviderDashboard from "./pages/provider/Dashboard";
-import MarketplaceProviders from "./pages/admin/MarketplaceProviders";
 import NotFound from "./pages/NotFound";
 import InstallApp from "./pages/InstallApp";
 import PwaLogin from "./pages/PwaLogin";
@@ -74,11 +70,6 @@ const App = () => {
               <Route path="/settings" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
               <Route path="/profile" element={<Navigate to="/settings" replace />} />
               <Route path="/notifications" element={<ProtectedRoute><NotificationSettings /></ProtectedRoute>} />
-              <Route path="/marketplace" element={<ProtectedRoute><Marketplace /></ProtectedRoute>} />
-              
-              {/* Provider Routes */}
-              <Route path="/provider/register" element={<ProtectedRoute><ProviderRegister /></ProtectedRoute>} />
-              <Route path="/provider/dashboard" element={<ProtectedRoute><ProviderDashboard /></ProtectedRoute>} />
               
               {/* Admin Routes */}
               <Route path="/admin/wallets" element={<ProtectedRoute><AdminWallets /></ProtectedRoute>} />
@@ -88,7 +79,6 @@ const App = () => {
               <Route path="/admin/assignments" element={<ProtectedRoute><AdminAssignments /></ProtectedRoute>} />
               <Route path="/admin/privacy-settings" element={<ProtectedRoute><AdminPrivacySettings /></ProtectedRoute>} />
               <Route path="/admin/email-templates" element={<ProtectedRoute><AdminEmailTemplates /></ProtectedRoute>} />
-              <Route path="/admin/marketplace/providers" element={<ProtectedRoute><MarketplaceProviders /></ProtectedRoute>} />
               
               {/* Owner PWA Routes */}
               <Route path="/owner" element={<ProtectedRoute><OwnerChat /></ProtectedRoute>} />

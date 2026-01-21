@@ -4,8 +4,15 @@ interface PushNotificationOptions {
   title: string;
   body: string;
   icon?: string;
+  badge?: string;
   tag?: string;
   requireInteraction?: boolean;
+  silent?: boolean;
+  vibrate?: number[];
+  renotify?: boolean;
+  timestamp?: number;
+  image?: string;
+  actions?: NotificationAction[];
   data?: Record<string, unknown>;
 }
 
@@ -15,6 +22,9 @@ interface UseNotificationsReturn {
   requestPermission: () => Promise<boolean>;
   showNotification: (options: PushNotificationOptions) => void;
   playAlertSound: (severity: 'info' | 'warning' | 'error' | 'critical', volumeMultiplier?: number) => void;
+  updateBadge: (count: number) => void;
+  incrementBadge: () => void;
+  clearBadge: () => void;
 }
 
 // Audio context for generating notification sounds
@@ -110,27 +120,44 @@ export function useNotifications(): UseNotificationsReturn {
     }
 
     try {
-      // Check if we have a service worker for PWA
+      // ✅ FIX: Check if we have a service worker for PWA (CRITICAL for locked screens)
       if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-        // Use service worker to show notification (works in background)
+        // Use service worker to show notification (works in background and locked screens)
         navigator.serviceWorker.ready.then((registration) => {
           registration.showNotification(options.title, {
             body: options.body,
             icon: options.icon || '/pwa-192x192.png',
-            badge: '/pwa-192x192.png',
+            badge: options.badge || '/pwa-192x192.png',
             tag: options.tag,
+            // ✅ FIX: Locked screen support - CRITICAL flags
+            silent: options.silent ?? false, // false = system sound plays on locked screens
+            vibrate: options.vibrate, // Vibration pattern for Android
+            renotify: options.renotify ?? true, // Re-alert even if same tag exists
+            timestamp: options.timestamp || Date.now(), // Proper notification sorting
+            image: options.image, // Rich notification image
+            actions: options.actions, // Interactive buttons
             requireInteraction: options.requireInteraction ?? true,
-            data: options.data
+            data: options.data || {}
           });
+          
+          // Increment badge when notification is shown
+          if (options.tag) {
+            incrementBadge();
+          }
         });
       } else {
-        // Fallback to regular notification
-        new Notification(options.title, {
+        // Fallback to regular notification (limited locked screen support)
+        const notification = new Notification(options.title, {
           body: options.body,
           icon: options.icon || '/pwa-192x192.png',
+          badge: options.badge || '/pwa-192x192.png',
           tag: options.tag,
-          requireInteraction: options.requireInteraction ?? true
+          requireInteraction: options.requireInteraction ?? true,
+          data: options.data
         });
+        
+        // Note: Regular Notification API has limited locked screen support
+        // Service worker notifications are preferred for PWA
       }
     } catch (error) {
       console.error('Error showing notification:', error);
@@ -143,12 +170,76 @@ export function useNotifications(): UseNotificationsReturn {
     playBeep(pattern.frequency, pattern.duration, adjustedVolume, pattern.pattern);
   }, []);
 
+  // ✅ FIX: Badge management functions
+  const updateBadge = useCallback((count: number) => {
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.ready.then((registration) => {
+        // Send message to service worker to update badge
+        if (navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({
+            type: 'UPDATE_BADGE',
+            count: Math.max(0, count)
+          });
+        }
+        
+        // Also update badge directly if Badge API is supported
+        if ('setAppBadge' in registration) {
+          if (count > 0) {
+            registration.setAppBadge(count).catch((err) => {
+              console.error('Error setting badge:', err);
+            });
+          } else {
+            registration.clearAppBadge().catch((err) => {
+              console.error('Error clearing badge:', err);
+            });
+          }
+        }
+      });
+    }
+  }, []);
+
+  const incrementBadge = useCallback(() => {
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.ready.then((registration) => {
+        // Send message to service worker to increment badge
+        if (navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({
+            type: 'INCREMENT_BADGE'
+          });
+        }
+      });
+    }
+  }, []);
+
+  const clearBadge = useCallback(() => {
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.ready.then((registration) => {
+        // Send message to service worker to clear badge
+        if (navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({
+            type: 'CLEAR_BADGE'
+          });
+        }
+        
+        // Also clear badge directly if Badge API is supported
+        if ('clearAppBadge' in registration) {
+          registration.clearAppBadge().catch((err) => {
+            console.error('Error clearing badge:', err);
+          });
+        }
+      });
+    }
+  }, []);
+
   return {
     permission,
     isSupported,
     requestPermission,
     showNotification,
-    playAlertSound
+    playAlertSound,
+    updateBadge,
+    incrementBadge,
+    clearBadge
   };
 }
 

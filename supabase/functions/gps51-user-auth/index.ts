@@ -270,7 +270,7 @@ Deno.serve(async (req) => {
 
         const { error: assignError } = await supabaseAdmin
           .from('vehicle_assignments')
-          .upsert(assignmentData, { onConflict: 'device_id' });
+          .upsert(assignmentData, { onConflict: 'device_id,profile_id' });
 
         if (assignError) {
           console.error(`[gps51-user-auth] Error upserting assignment ${deviceId}:`, assignError);

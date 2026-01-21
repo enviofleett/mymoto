@@ -1,4 +1,5 @@
 import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
+import { validateEmailList, sanitizeHtml, escapeHtml, validateSenderId } from "./email-validation.ts";
 
 export interface EmailConfig {
   gmailUser: string;
@@ -17,6 +18,7 @@ export interface EmailOptions {
   html: string;
   text?: string;
   from?: string;
+  senderId?: string; // Custom sender ID from template
 }
 
 /**
@@ -37,6 +39,27 @@ export function getEmailConfig(): EmailConfig | null {
  * Send email using Gmail SMTP
  */
 export async function sendEmail(options: EmailOptions): Promise<void> {
+  // Validate recipients
+  const emailValidation = validateEmailList(options.to);
+  if (!emailValidation.valid || !emailValidation.validEmails) {
+    throw new Error(emailValidation.error || 'Invalid email addresses');
+  }
+
+  // Validate sender ID
+  if (options.senderId) {
+    const senderValidation = validateSenderId(options.senderId);
+    if (!senderValidation.valid) {
+      throw new Error(senderValidation.error || 'Invalid sender ID');
+    }
+    options.senderId = senderValidation.formatted;
+  }
+
+  // Sanitize HTML content
+  options.html = sanitizeHtml(options.html);
+  
+  // Escape subject (but allow & for readability)
+  options.subject = escapeHtml(options.subject).replace(/&amp;/g, '&');
+
   const config = getEmailConfig();
   
   if (!config) {
@@ -55,10 +78,14 @@ export async function sendEmail(options: EmailOptions): Promise<void> {
     },
   });
 
-  const recipients = Array.isArray(options.to) ? options.to : [options.to];
+  // Use validated emails
+  const recipients = emailValidation.validEmails;
+
+  // Use senderId if provided, otherwise use from, otherwise use default Gmail user
+  const fromAddress = options.senderId || options.from || config.gmailUser;
 
   await client.send({
-    from: options.from || config.gmailUser,
+    from: fromAddress,
     to: recipients,
     subject: options.subject,
     content: options.text || options.html,

@@ -21,16 +21,14 @@ export function DashboardLayout({ children, connectionStatus }: DashboardLayoutP
   const footerPadding = useFooterPadding();
   
   // Determine if we should show AdminBottomNav
-  // Admin routes: /, /fleet, /map, /insights, /settings, /notifications, /marketplace, and all /admin/* routes
+  // Admin routes: /, /fleet, /map, /insights, /settings, /notifications, and all /admin/* routes
   const isAdminRoute = location.pathname.startsWith('/admin') || 
                        location.pathname === '/' || 
                        location.pathname === '/fleet' ||
                        location.pathname === '/map' ||
                        location.pathname === '/insights' ||
                        location.pathname === '/settings' ||
-                       location.pathname === '/notifications' ||
-                       location.pathname === '/marketplace' ||
-                       location.pathname.startsWith('/marketplace');
+                       location.pathname === '/notifications';
   const shouldShowAdminNav = isAdmin && isAdminRoute;
 
   return (
