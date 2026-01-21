@@ -15,7 +15,8 @@ import {
   Link2,
   Shield,
   Mail,
-  LogOut
+  LogOut,
+  ShoppingBag
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NavLink } from "@/components/NavLink";
@@ -55,6 +56,12 @@ const ADMIN_NAV_ITEMS = [
     activeMatch: /^\/admin\/(wallets|finance)/
   },
   { 
+    label: "Market", 
+    path: "/marketplace", 
+    icon: ShoppingBag,
+    activeMatch: /^\/marketplace|^\/admin\/marketplace/
+  },
+  { 
     label: "System", 
     path: "/admin/storage", 
     icon: Database,
@@ -67,6 +74,7 @@ const MORE_MENU_ITEMS = [
   { title: "Insights", url: "/insights", icon: BarChart3 },
   { title: "Settings", url: "/settings", icon: Settings },
   { title: "Notifications", url: "/notifications", icon: BellRing },
+  { title: "Marketplace Providers", url: "/admin/marketplace/providers", icon: ShoppingBag },
   { title: "Alerts", url: "/admin/alerts", icon: Bell },
   { title: "Assignments", url: "/admin/assignments", icon: Link2 },
   { title: "Email Templates", url: "/admin/email-templates", icon: Mail },

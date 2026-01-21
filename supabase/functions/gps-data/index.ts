@@ -23,22 +23,30 @@ interface TokenData {
 
 // Check if cached data is still valid
 async function getCachedPositions(supabase: any): Promise<any[] | null> {
-  const { data, error } = await supabase
-    .from('vehicle_positions')
-    .select('*, cached_at')
-    .limit(1)
+  if (!supabase) return null
+  
+  try {
+    const { data, error } = await supabase
+      .from('vehicle_positions')
+      .select('*, cached_at')
+      .limit(1)
 
-  if (error || !data?.length) return null
+    if (error || !data?.length) return null
 
-  const cachedAt = new Date(data[0].cached_at)
-  if (Date.now() - cachedAt.getTime() > CACHE_TTL_MS) return null
+    const cachedAt = new Date(data[0].cached_at)
+    if (Date.now() - cachedAt.getTime() > CACHE_TTL_MS) return null
 
-  // Get all cached positions
-  const { data: allPositions } = await supabase
-    .from('vehicle_positions')
-    .select('*')
+    // Get all cached positions
+    const { data: allPositions, error: allError } = await supabase
+      .from('vehicle_positions')
+      .select('*')
 
-  return allPositions
+    if (allError || !allPositions) return null
+    return allPositions
+  } catch (err) {
+    console.error('[getCachedPositions] Error:', err)
+    return null
+  }
 }
 
 // Note: parseIgnition and isOnline are now handled by telemetry-normalizer
@@ -457,8 +465,20 @@ async function getAllDeviceIds(supabase: any, proxyUrl: string, token: string, s
   }
   
   // Fallback to API call - MUST include serverid
-  const { result } = await callGps51(proxyUrl, 'querymonitorlist', token, serverid, { username }, supabase)
+  let gps51Result
+  try {
+    gps51Result = await callGps51(proxyUrl, 'querymonitorlist', token, serverid, { username }, supabase)
+  } catch (error) {
+    console.error('Failed to call querymonitorlist:', error)
+    return []
+  }
   
+  if (!gps51Result || !gps51Result.result) {
+    console.error('Empty response from querymonitorlist')
+    return []
+  }
+  
+  const result = gps51Result.result
   if (result.status !== 0 || !result.groups) {
     console.error('Failed to fetch device list:', result)
     return []
@@ -473,13 +493,39 @@ async function getAllDeviceIds(supabase: any, proxyUrl: string, token: string, s
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL') ?? '',
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-  )
+  let supabase
+  try {
+    supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    )
+    
+    if (!supabase) {
+      throw new Error('Failed to create Supabase client')
+    }
+  } catch (clientError) {
+    const errorMsg = clientError instanceof Error ? clientError.message : 'Failed to initialize Supabase client'
+    console.error('[gps-data] Supabase client error:', errorMsg)
+    return new Response(JSON.stringify({ error: errorMsg }), { 
+      status: 500, 
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+    })
+  }
 
   try {
-    const { action, body_payload, use_cache = true } = await req.json()
+    let requestBody
+    try {
+      requestBody = await req.json()
+    } catch (jsonError) {
+      const errorMsg = jsonError instanceof Error ? jsonError.message : 'Invalid JSON in request body'
+      console.error('[gps-data] JSON parse error:', errorMsg)
+      return new Response(JSON.stringify({ error: errorMsg }), { 
+        status: 400, 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      })
+    }
+    
+    const { action, body_payload, use_cache = true } = requestBody || {}
     
     const DO_PROXY_URL = Deno.env.get('DO_PROXY_URL')
     if (!DO_PROXY_URL) throw new Error('Missing DO_PROXY_URL secret')
@@ -526,12 +572,26 @@ serve(async (req) => {
     }
 
     // Call GPS51 API - now includes serverid in URL query (with centralized rate limiting)
-    const { result: apiResponse, duration } = await callGps51(DO_PROXY_URL, action, token, serverid, finalBody, supabase)
+    let gps51Result
+    try {
+      gps51Result = await callGps51(DO_PROXY_URL, action, token, serverid, finalBody, supabase)
+    } catch (apiError) {
+      const errorMsg = apiError instanceof Error ? apiError.message : String(apiError || 'GPS51 API call failed')
+      console.error('[gps-data] GPS51 API call error:', errorMsg)
+      throw new Error(`GPS51 API error: ${errorMsg}`)
+    }
     
     // Handle null/undefined response
-    if (!apiResponse) {
-      throw new Error('Empty response from GPS51 API')
+    if (!gps51Result) {
+      throw new Error('Empty response from GPS51 API call')
     }
+    
+    if (!gps51Result.result) {
+      throw new Error('GPS51 API returned no result data')
+    }
+    
+    const apiResponse = gps51Result.result
+    const duration = gps51Result.duration || 0
 
     // Log the API call
     await logApiCall(supabase, action, finalBody, apiResponse.status ?? 0, apiResponse, null, duration)
@@ -557,14 +617,18 @@ serve(async (req) => {
     })
 
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error'
-    console.error('GPS Data Error:', message)
+    const message = error instanceof Error ? error.message : String(error || 'Unknown error')
+    console.error('GPS Data Error:', message, error)
     
-    // Log error
-    await logApiCall(supabase, 'error', null, 0, null, message, 0)
+    // Log error (wrap in try-catch to prevent secondary errors)
+    try {
+      await logApiCall(supabase, 'error', null, 0, null, message, 0)
+    } catch (logError) {
+      console.error('Failed to log error:', logError)
+    }
 
     return new Response(JSON.stringify({ error: message }), { 
-      status: 400, 
+      status: 500, 
       headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
     })
   }

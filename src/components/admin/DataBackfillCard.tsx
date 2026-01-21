@@ -376,23 +376,23 @@ export function DataBackfillCard() {
               <div className="space-y-2">
                 {results.map((result) => (
                   <div
-                    key={result.device_id}
+                    key={result?.device_id || 'unknown'}
                     className={`p-3 rounded-lg text-sm ${
-                      result.success
+                      result?.success
                         ? "bg-green-500/10 border border-green-500/20"
                         : "bg-destructive/10 border border-destructive/20"
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        {result.success ? (
+                        {result?.success ? (
                           <Check className="h-4 w-4 text-green-500 flex-shrink-0" />
                         ) : (
                           <AlertCircle className="h-4 w-4 text-destructive flex-shrink-0" />
                         )}
-                        <span className="font-medium">{result.device_name}</span>
+                        <span className="font-medium">{result?.device_name || 'Unknown'}</span>
                       </div>
-                      {result.success && (
+                      {result?.success && (
                         <div className="flex gap-1 flex-wrap">
                           <Badge variant="secondary" className="text-xs">
                             {result.records_inserted} inserted
@@ -406,9 +406,9 @@ export function DataBackfillCard() {
                       )}
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {result.success
-                        ? `Found ${result.records_found} records, skipped ${result.records_skipped}`
-                        : result.error || result.message}
+                      {result?.success
+                        ? `Found ${result.records_found || 0} records, skipped ${result.records_skipped || 0}`
+                        : result?.error || result?.message || 'Unknown error'}
                     </p>
                   </div>
                 ))}

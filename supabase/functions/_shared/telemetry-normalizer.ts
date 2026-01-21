@@ -220,9 +220,19 @@ function checkJt808AccBit(status: number | string | null | undefined): boolean {
 
   // Validate status value is reasonable (not all zeros or all ones which might indicate invalid data)
   // Status should be a byte value (0-255), but we allow up to 65535 for extended status fields
-  if (status < 0 || status > 65535) {
-    console.warn(`[checkJt808AccBit] Invalid status value: ${status} (expected 0-65535)`);
+  // Some devices may send larger values - clamp them instead of rejecting
+  if (status < 0) {
+    console.warn(`[checkJt808AccBit] Negative status value: ${status}, treating as invalid`);
     return false;
+  }
+  
+  // For values > 65535, they might be bit-packed differently - try to extract meaningful bits
+  // by taking modulo or bitwise operations, but log a warning
+  if (status > 65535) {
+    console.warn(`[checkJt808AccBit] Status value ${status} exceeds expected range (0-65535), attempting bit extraction`);
+    // Try to extract lower 16 bits which might contain the ACC information
+    const clampedStatus = status & 0xFFFF; // Take lower 16 bits
+    status = clampedStatus;
   }
 
   // Test multiple JT808 ACC bit patterns (bit 0, 1, 2, or 3)
@@ -247,13 +257,26 @@ function checkJt808AccBit(status: number | string | null | undefined): boolean {
 
 /**
  * Enhanced string parsing for ACC status with multiple patterns
+ * Supports both English and Chinese patterns
  */
 function parseAccFromString(strstatus: string | null | undefined): boolean {
   if (!strstatus) return false;
   
   const statusUpper = strstatus.toUpperCase();
   
-  // Explicit ACC ON patterns (higher confidence)
+  // Chinese patterns: ACC开 = ON, ACC关 = OFF
+  const chineseOnPattern = /ACC[开]/i;
+  const chineseOffPattern = /ACC[关]/i;
+  
+  // Check Chinese patterns first
+  if (chineseOffPattern.test(strstatus)) {
+    return false; // ACC关 = OFF
+  }
+  if (chineseOnPattern.test(strstatus)) {
+    return true; // ACC开 = ON
+  }
+  
+  // Explicit ACC ON patterns (English)
   const onPatterns = [
     /ACC\s*ON\b/i,
     /ACC:ON/i,
@@ -261,7 +284,7 @@ function parseAccFromString(strstatus: string | null | undefined): boolean {
     /\bACC\s*=\s*ON\b/i,
   ];
   
-  // Explicit ACC OFF patterns
+  // Explicit ACC OFF patterns (English)
   const offPatterns = [
     /ACC\s*OFF\b/i,
     /ACC:OFF/i,
@@ -341,13 +364,20 @@ export function detectIgnition(
   const strstatus = raw.strstatus || raw.strstatusen || '';
   
   if (strstatus) {
-    // Check if string contains ACC patterns before parsing
-    // This allows us to distinguish between "ACC pattern found" vs "no pattern found"
-    const hasAccPattern = /ACC\s*(ON|OFF|:ON|:OFF|_ON|_OFF|=ON|=OFF)/i.test(strstatus);
+    // Check for Chinese ACC patterns (ACC关 = ACC OFF, ACC开 = ACC ON)
+    // Also check for English patterns
+    const hasChineseAccPattern = /ACC[关开]/i.test(strstatus);
+    const hasEnglishAccPattern = /ACC\s*(ON|OFF|:ON|:OFF|_ON|_OFF|=ON|=OFF)/i.test(strstatus);
     
-    if (hasAccPattern) {
-      // Only parse if we detect ACC patterns in the string
-      const stringParseResult = parseAccFromString(strstatus);
+    if (hasChineseAccPattern || hasEnglishAccPattern) {
+      // Parse Chinese patterns: ACC关 = OFF, ACC开 = ON
+      let stringParseResult = false;
+      if (hasChineseAccPattern) {
+        stringParseResult = /ACC开/i.test(strstatus); // ACC开 = ON
+      } else {
+        stringParseResult = parseAccFromString(strstatus);
+      }
+      
       signals.strstatus_match = stringParseResult;
       
       // High confidence for explicit string matches (both ON and OFF)

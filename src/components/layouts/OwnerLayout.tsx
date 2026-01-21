@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { MessageCircle, Car, Wallet, User, Bell } from "lucide-react";
+import { MessageCircle, Car, Wallet, User, ShoppingBag } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { GlobalAlertListener } from "@/components/notifications/GlobalAlertListener";
 import { StickyAlertBanner } from "@/components/notifications/StickyAlertBanner";
@@ -18,8 +18,8 @@ const navItems = [{
   icon: Wallet,
   path: "/owner/wallet"
 }, {
-  icon: Bell,
-  path: "/owner/notifications"
+  icon: ShoppingBag,
+  path: "/marketplace"
 }, {
   icon: User,
   path: "/owner/profile"
@@ -34,8 +34,8 @@ export function OwnerLayout({
     if (path === "/owner") {
       return location.pathname === "/owner" || location.pathname.startsWith("/owner/chat");
     }
-    if (path === "/owner/notifications") {
-      return location.pathname === "/owner/notifications";
+    if (path === "/marketplace") {
+      return location.pathname === "/marketplace" || location.pathname.startsWith("/marketplace");
     }
     return location.pathname.startsWith(path);
   };

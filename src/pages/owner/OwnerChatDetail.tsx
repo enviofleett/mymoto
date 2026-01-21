@@ -14,6 +14,7 @@ import { ArrowLeft, Car, User, Send, Loader2, AlertTriangle } from "lucide-react
 import { cn } from "@/lib/utils";
 import { ChatMessageContent } from "@/components/chat/ChatMessageContent";
 import { format } from "date-fns";
+import { useQuery } from "@tanstack/react-query";
 
 interface ChatMessage {
   id: string;
@@ -36,8 +37,8 @@ export default function OwnerChatDetail() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
-  const [historyLoading, setHistoryLoading] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const isSendingRef = useRef(false); // Track if we're currently sending a message
 
   // Fetch vehicle alerts
   const { data: vehicleAlerts } = useVehicleAlerts(deviceId ?? null, 20);
@@ -49,6 +50,162 @@ export default function OwnerChatDetail() {
   const avatarUrl = llmSettings?.avatar_url || vehicle?.avatarUrl;
   
   const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vehicle-chat`;
+
+  // ✅ FIX: Use React Query for chat history with caching
+  const { data: historyData, isLoading: historyLoading } = useQuery({
+    queryKey: ['vehicle-chat-history', deviceId, user?.id],
+    queryFn: async () => {
+      if (!user?.id || !deviceId) return [];
+      
+      const { data, error } = await (supabase as any)
+        .from("vehicle_chat_history")
+        .select("id, role, content, created_at, device_id, user_id")
+        .eq("device_id", deviceId)
+        .eq("user_id", user.id) // Ensure users only see their own messages
+        .order("created_at", { ascending: true })
+        .limit(100); // Increased limit to show more history
+
+      if (error) throw error;
+      return ((data as any[]) || []) as ChatMessage[];
+    },
+    enabled: !!deviceId && !!user?.id,
+    staleTime: 5 * 60 * 1000, // 5 minutes - data fresh for longer (realtime handles updates)
+    gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
+    refetchOnWindowFocus: false, // Realtime subscription handles updates
+    refetchOnMount: false, // Don't refetch on mount if we have cached data
+    refetchOnReconnect: false, // Don't refetch on reconnect (realtime handles it)
+  });
+
+  // ✅ FIX: Merge history data with existing messages (don't overwrite temp messages)
+  useEffect(() => {
+    // Don't merge if we're currently sending a message (to avoid race conditions)
+    if (isSendingRef.current) {
+      console.log('[Chat] Skipping history merge - message sending in progress');
+      return;
+    }
+    
+    if (historyData && historyData.length > 0) {
+      setMessages(prev => {
+        // Merge strategy: Keep temp messages, merge DB messages by ID
+        const dbMessageIds = new Set(historyData.map(m => m.id));
+        const tempMessages = prev.filter(m => m.id.startsWith('temp-'));
+        const existingDbMessages = prev.filter(m => !m.id.startsWith('temp-') && dbMessageIds.has(m.id));
+        const newDbMessages = historyData.filter(m => !existingDbMessages.some(ex => ex.id === m.id));
+        
+        // Combine: existing DB messages (keep order), new DB messages, temp messages
+        const merged = [...existingDbMessages, ...newDbMessages, ...tempMessages];
+        
+        // Sort by created_at to maintain chronological order
+        merged.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+        
+        console.log('[Chat] Merging history:', {
+          historyCount: historyData.length,
+          prevCount: prev.length,
+          tempCount: tempMessages.length,
+          mergedCount: merged.length,
+          isSending: isSendingRef.current
+        });
+        
+        return merged;
+      });
+    } else if (historyData && historyData.length === 0) {
+      // Only clear if we have no temp messages (initial load)
+      setMessages(prev => {
+        const hasTempMessages = prev.some(m => m.id.startsWith('temp-'));
+        if (!hasTempMessages && !isSendingRef.current) {
+          return [];
+        }
+        // Keep temp messages even if history is empty
+        return prev.filter(m => m.id.startsWith('temp-'));
+      });
+    }
+  }, [historyData]);
+
+  // ✅ FIX: Set up realtime subscription for new messages
+  useEffect(() => {
+    if (!user?.id || !deviceId) return;
+    
+    console.log('[Chat] Setting up realtime subscription for:', { deviceId, userId: user.id });
+    
+    const channel = supabase
+      .channel(`vehicle_chat:${deviceId}:${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'vehicle_chat_history',
+          filter: `device_id=eq.${deviceId}`
+        },
+        (payload) => {
+          console.log('[Chat] Realtime event received:', {
+            event: payload.eventType,
+            table: payload.table,
+            new: payload.new
+          });
+          
+          const newMessage = payload.new as ChatMessage;
+          console.log('[Chat] New message from realtime:', {
+            id: newMessage.id,
+            role: newMessage.role,
+            content: newMessage.content?.substring(0, 50) + '...',
+            userId: newMessage.user_id,
+            matchesCurrentUser: newMessage.user_id === user.id
+          });
+          
+          // Only add messages for this user
+          if (newMessage.user_id === user.id) {
+            setMessages(prev => {
+              // ✅ FIX: Replace temporary user messages with real DB messages
+              // Check if this is a user message that matches a temporary one
+              if (newMessage.role === 'user') {
+                console.log('[Chat] Processing user message from realtime');
+                // Find and remove temporary user message with matching content
+                const filtered = prev.filter(m => 
+                  !(m.id.startsWith('temp-') && m.role === 'user' && m.content === newMessage.content)
+                );
+                // Avoid duplicates - check by ID
+                if (filtered.some(m => m.id === newMessage.id)) {
+                  console.log('[Chat] User message already exists, skipping');
+                  return filtered;
+                }
+                console.log('[Chat] Adding user message from realtime');
+                return [...filtered, newMessage];
+              } else {
+                // Assistant messages - replace temporary messages with real DB message
+                console.log('[Chat] Processing assistant message from realtime:', newMessage.id);
+                // Remove any temporary assistant messages with matching content
+                const filtered = prev.filter(m => 
+                  !(m.id.startsWith('temp-assistant-') && m.role === 'assistant' && m.content === newMessage.content)
+                );
+                // Avoid duplicates - check by ID
+                if (filtered.some(m => m.id === newMessage.id)) {
+                  console.log('[Chat] Assistant message already exists, skipping');
+                  return filtered;
+                }
+                console.log('[Chat] Adding assistant message from realtime, replacing temp');
+                return [...filtered, newMessage];
+              }
+            });
+          } else {
+            console.log('[Chat] Message user_id does not match current user, ignoring');
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log('[Chat] Realtime subscription status:', status);
+        if (status === 'SUBSCRIBED') {
+          console.log('[Chat] ✅ Realtime subscription active');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('[Chat] ❌ Realtime subscription error');
+        }
+      });
+
+    return () => {
+      console.log('[Chat] Cleaning up realtime subscription');
+      supabase.removeChannel(channel);
+    };
+  }, [deviceId, user?.id]);
 
   // Convert alerts to chat messages and merge with chat history
   const allMessages = useMemo(() => {
@@ -75,36 +232,8 @@ export default function OwnerChatDetail() {
   }, [messages, vehicleAlerts]);
 
   useEffect(() => {
-    if (deviceId) {
-      fetchHistory();
-    }
-  }, [deviceId]);
-
-  useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingContent]);
-
-  const fetchHistory = async () => {
-    setHistoryLoading(true);
-    try {
-      if (!user?.id) return;
-      
-      const { data, error } = await (supabase as any)
-        .from("vehicle_chat_history")
-        .select("*")
-        .eq("device_id", deviceId)
-        .eq("user_id", user.id) // Ensure users only see their own messages
-        .order("created_at", { ascending: true })
-        .limit(50);
-
-      if (error) throw error;
-      setMessages(((data as any[]) || []) as ChatMessage[]);
-    } catch (err) {
-      console.error("Error fetching chat history:", err);
-    } finally {
-      setHistoryLoading(false);
-    }
-  };
 
   const handleSend = async () => {
     if (!input.trim() || !user || !deviceId) return;
@@ -113,6 +242,7 @@ export default function OwnerChatDetail() {
     setInput("");
     setLoading(true);
     setStreamingContent("");
+    isSendingRef.current = true; // Mark that we're sending
 
     const tempUserMsg: ChatMessage = {
       id: `temp-${Date.now()}`,
@@ -134,6 +264,8 @@ export default function OwnerChatDetail() {
         return;
       }
       
+      console.log('[Chat] Sending message:', { deviceId, message: userMessage, userId: user.id });
+      
       const response = await fetch(CHAT_URL, {
         method: "POST",
         headers: {
@@ -147,50 +279,125 @@ export default function OwnerChatDetail() {
         }),
       });
 
+      console.log('[Chat] Response status:', response.status, response.statusText);
+      console.log('[Chat] Response headers:', Object.fromEntries(response.headers.entries()));
+
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to get response");
+        const errorText = await response.text().catch(() => 'Unknown error');
+        console.error('[Chat] Error response:', errorText);
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { error: errorText || `HTTP ${response.status}: ${response.statusText}` };
+        }
+        throw new Error(errorData.error || `Failed to get response: ${response.status}`);
       }
 
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let fullResponse = "";
-      let buffer = "";
-
-      while (reader) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            const data = line.slice(6).trim();
-            if (data === "[DONE]") continue;
-            try {
-              const parsed = JSON.parse(data);
-              if (parsed.delta) {
-                fullResponse += parsed.delta;
-                setStreamingContent(fullResponse);
-              }
-            } catch {}
-          }
+      // Check content type - might be JSON error instead of stream
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const jsonData = await response.json();
+        console.warn('[Chat] Received JSON instead of stream:', jsonData);
+        if (jsonData.error) {
+          throw new Error(jsonData.error);
         }
       }
 
-      setStreamingContent("");
-      if (fullResponse) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `assistant-${Date.now()}`,
+      if (!response.body) {
+        console.error('[Chat] No response body received');
+        throw new Error('No response body from server');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let fullResponse = "";
+      let buffer = "";
+      let hasReceivedData = false;
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          
+          if (done) {
+            console.log('[Chat] Stream done. Full response length:', fullResponse.length);
+            break;
+          }
+
+          hasReceivedData = true;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const data = line.slice(6).trim();
+              if (data === "[DONE]") {
+                console.log('[Chat] Received [DONE] marker');
+                continue;
+              }
+              try {
+                const parsed = JSON.parse(data);
+                if (parsed.delta) {
+                  fullResponse += parsed.delta;
+                  setStreamingContent(fullResponse);
+                  console.log('[Chat] Received delta, total length:', fullResponse.length);
+                } else if (parsed.error) {
+                  console.error('[Chat] Error in stream:', parsed.error);
+                  throw new Error(parsed.error);
+                }
+              } catch (parseError) {
+                console.warn('[Chat] Failed to parse stream data:', line, parseError);
+              }
+            }
+          }
+        }
+
+        if (!hasReceivedData) {
+          console.warn('[Chat] No data received in stream');
+        }
+
+        // ✅ FIX: Keep streaming content visible, add as temporary message if realtime doesn't arrive
+        if (fullResponse) {
+          console.log('[Chat] Full response received:', fullResponse.substring(0, 50) + '...');
+          
+          // Add as temporary assistant message immediately so user sees it
+          const tempAssistantMsg: ChatMessage = {
+            id: `temp-assistant-${Date.now()}`,
             role: "assistant",
             content: fullResponse,
             created_at: new Date().toISOString(),
-          },
-        ]);
+          };
+          setMessages(prev => {
+            // Check if message already exists (from realtime)
+            const exists = prev.some(m => 
+              m.role === 'assistant' && 
+              m.content === fullResponse &&
+              !m.id.startsWith('temp-')
+            );
+            if (exists) {
+              console.log('[Chat] Message already exists from realtime, skipping temp');
+              return prev;
+            }
+            // Add temporary message
+            return [...prev, tempAssistantMsg];
+          });
+          
+          // Clear streaming content since we've added it as a message
+          setStreamingContent("");
+          
+          // Don't set timeout to remove - keep temp message permanently if realtime doesn't arrive
+          // The realtime subscription will replace it when it arrives
+          // If realtime never arrives, the temp message stays (better than losing the message)
+          console.log('[Chat] Temp assistant message added, will be replaced by realtime when it arrives');
+        } else {
+          setStreamingContent("");
+        }
+      } catch (streamError) {
+        console.error('[Chat] Stream error:', streamError);
+        throw streamError;
+      } finally {
+        reader.releaseLock();
       }
     } catch (err) {
       console.error("Chat error:", err);
@@ -202,6 +409,11 @@ export default function OwnerChatDetail() {
       setMessages((prev) => prev.filter((m) => m.id !== tempUserMsg.id));
     } finally {
       setLoading(false);
+      // Clear sending flag after a delay to allow realtime to process
+      setTimeout(() => {
+        isSendingRef.current = false;
+        console.log('[Chat] Message send complete, allowing history merges');
+      }, 3000); // 3 second buffer
     }
   };
 
