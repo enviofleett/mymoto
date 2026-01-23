@@ -444,6 +444,95 @@ export function detectIgnition(
 }
 
 /**
+ * Phase 3 (shadow mode): Alternative ignition detection algorithm (v2)
+ *
+ * Key difference vs v1:
+ * - Interprets `status` as a 32-bit field (GPS51-style):
+ *   - baseStatus = status & 0xFFFF (lower 16 bits), ACC bit = bit0
+ *   - extStatus  = status >>> 16 (upper 16 bits), ACC bit = bit0 (i.e. bit16 overall)
+ *
+ * This function is intended for shadow comparison and should NOT replace v1
+ * unless explicitly enabled.
+ */
+export function detectIgnitionV2(raw: Gps51RawData, speedKmh: number): IgnitionDetectionResult {
+  const signals: IgnitionDetectionResult['signals'] = {};
+
+  // Status-bit based (32-bit) confidence scoring
+  if (raw.status !== null && raw.status !== undefined) {
+    let statusNum: number | null = null;
+
+    if (typeof raw.status === 'number' && !isNaN(raw.status)) {
+      statusNum = raw.status;
+    } else if (typeof raw.status === 'string') {
+      const parsed = parseInt(raw.status, 10);
+      statusNum = isNaN(parsed) ? null : parsed;
+    }
+
+    if (statusNum !== null && statusNum >= 0) {
+      const status32 = statusNum >>> 0;
+      const baseStatus = status32 & 0xffff;
+      const extStatus = status32 >>> 16;
+
+      const baseAcc = (baseStatus & 0x01) === 0x01;
+      const extAcc = (extStatus & 0x01) === 0x01;
+
+      let confidence = 0.0;
+      if (baseAcc) confidence += 0.6;
+      if (extAcc) confidence += 0.2;
+      if (speedKmh > 3) confidence += 0.2;
+      confidence = Math.min(confidence, 1.0);
+
+      const ignitionOn = confidence >= 0.5;
+      signals.status_bit = ignitionOn;
+
+      if (confidence >= 0.5) {
+        return {
+          ignition_on: ignitionOn,
+          confidence,
+          detection_method: 'status_bit',
+          signals
+        };
+      }
+    }
+  }
+
+  // Fallback: explicit string parsing (high confidence)
+  const strstatus = raw.strstatus || raw.strstatusen || '';
+  if (strstatus) {
+    const hasChineseAccPattern = /ACC[关开]/i.test(strstatus);
+    const hasEnglishAccPattern = /ACC\s*(ON|OFF|:ON|:OFF|_ON|_OFF|=ON|=OFF)/i.test(strstatus);
+
+    if (hasChineseAccPattern || hasEnglishAccPattern) {
+      const stringParseResult = hasChineseAccPattern ? /ACC开/i.test(strstatus) : parseAccFromString(strstatus);
+      signals.strstatus_match = stringParseResult;
+      return {
+        ignition_on: stringParseResult,
+        confidence: 0.9,
+        detection_method: 'string_parse',
+        signals
+      };
+    }
+  }
+
+  // Fallback: speed inference (low confidence)
+  const speedBased = speedKmh > 5;
+  signals.speed_based = speedBased;
+  const movingBased = raw.moving === 1 && speedKmh > 3;
+  signals.moving_status = movingBased;
+
+  if (speedBased || movingBased) {
+    return {
+      ignition_on: speedBased || movingBased,
+      confidence: 0.3,
+      detection_method: 'speed_inference',
+      signals
+    };
+  }
+
+  return { ignition_on: false, confidence: 0.0, detection_method: 'unknown', signals };
+}
+
+/**
  * Backward compatibility wrapper - returns boolean for existing code
  * @deprecated Use detectIgnition() which returns IgnitionDetectionResult
  */

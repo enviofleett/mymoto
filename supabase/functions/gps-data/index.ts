@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { callGps51WithRateLimit, getValidGps51Token } from "../_shared/gps51-client.ts"
-import { normalizeVehicleTelemetry, type Gps51RawData } from "../_shared/telemetry-normalizer.ts"
+import { normalizeVehicleTelemetry, detectIgnitionV2, type Gps51RawData } from "../_shared/telemetry-normalizer.ts"
 import { getFeatureFlag } from "../_shared/feature-flags.ts"
 
 const corsHeaders = {
@@ -126,6 +126,8 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 async function syncPositions(supabase: any, records: any[]) {
   const now = new Date().toISOString()
   
+  const shadowLogs: Array<Record<string, any>> = []
+
   const positions = records.map(record => {
     // Normalize telemetry using centralized normalizer
     // This ensures JT808 status bits are properly detected and confidence is calculated
@@ -155,6 +157,28 @@ async function syncPositions(supabase: any, records: any[]) {
     // FLEET-SCALE: Determine sync priority based on vehicle movement
     // Moving vehicles (>3 km/h) get high priority for more frequent syncs
     const syncPriority = normalized.is_moving ? 'high' : 'normal';
+
+    // Phase 3 (shadow mode): compute v2 ignition and keep ONLY mismatches for logging later.
+    // No behavior change: we do not override ignition_on in vehicle_positions.
+    try {
+      const v2 = detectIgnitionV2(record as Gps51RawData, normalized.speed_kmh)
+      if (v2.ignition_on !== normalized.ignition_on) {
+        shadowLogs.push({
+          device_id: normalized.vehicle_id,
+          gps_time: normalized.last_updated_at,
+          speed_kmh: normalized.speed_kmh,
+          status_raw: record.status ?? null,
+          strstatus: record.strstatus ?? record.strstatusen ?? null,
+          old_ignition_on: normalized.ignition_on,
+          new_ignition_on: v2.ignition_on,
+          new_confidence: v2.confidence,
+          new_method: v2.detection_method,
+          note: 'v1_vs_v2_mismatch'
+        })
+      }
+    } catch {
+      // ignore v2 failures (shadow only)
+    }
 
     return {
       device_id: normalized.vehicle_id,
@@ -188,6 +212,33 @@ async function syncPositions(supabase: any, records: any[]) {
   }
   
   console.log(`[syncPositions] Updated ${positions.length} positions (${positions.filter(p => p.sync_priority === 'high').length} moving)`)
+
+  // Phase 3 (shadow mode): insert ignition mismatch logs (guarded by global flag + per-device allowlist).
+  // Default OFF. Also logs only mismatches to keep volume low.
+  if (shadowLogs.length > 0) {
+    try {
+      const { enabled: shadowEnabled } = await getFeatureFlag(supabase, 'new_ignition_detection_shadow')
+      if (shadowEnabled) {
+        const deviceIds = Array.from(new Set(shadowLogs.map(l => l.device_id)))
+        const { data: allowlisted, error: allowErr } = await supabase
+          .from('feature_flag_devices')
+          .select('device_id')
+          .eq('flag_key', 'new_ignition_detection_shadow')
+          .eq('enabled', true)
+          .in('device_id', deviceIds)
+
+        if (!allowErr && allowlisted?.length) {
+          const allowedSet = new Set(allowlisted.map((r: any) => r.device_id))
+          const rows = shadowLogs.filter(l => allowedSet.has(l.device_id))
+          if (rows.length > 0) {
+            await supabase.from('ignition_detection_shadow_logs').insert(rows)
+          }
+        }
+      }
+    } catch {
+      // Safe: ignore logging failures (table may not exist yet, etc.)
+    }
+  }
 
   // SMART HISTORY: Only record if position changed significantly (>50m) or 5 min elapsed
   const validPositions = positions.filter(p => p.latitude && p.longitude)
