@@ -9,7 +9,8 @@ interface ProfileHeaderProps {
   avatarUrl: string | null;
   personalityMode: string | null;
   status: 'online' | 'charging' | 'offline';
-  lastUpdate: Date | null;
+  lastUpdate: Date | null; // gps_time
+  lastSyncedAt?: Date | null; // backend sync heartbeat
   onBack: () => void;
   onSettings: () => void;
 }
@@ -21,6 +22,7 @@ export function ProfileHeader({
   personalityMode,
   status,
   lastUpdate,
+  lastSyncedAt,
   onBack,
   onSettings,
 }: ProfileHeaderProps) {
@@ -88,11 +90,18 @@ export function ProfileHeader({
             {getPersonalityLabel(personalityMode)}
           </p>
         )}
-        {lastUpdate && (
-          <p className="text-[11px] text-muted-foreground mt-1">
-            Updated {format(lastUpdate, "MMM d, HH:mm")}
-          </p>
-        )}
+        <div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
+          {lastSyncedAt && (
+            <p>
+              Last synced {format(lastSyncedAt, "MMM d, HH:mm")}
+            </p>
+          )}
+          {lastUpdate && (
+            <p>
+              Last GPS fix {format(lastUpdate, "MMM d, HH:mm")}
+            </p>
+          )}
+        </div>
       </div>
     </>
   );
