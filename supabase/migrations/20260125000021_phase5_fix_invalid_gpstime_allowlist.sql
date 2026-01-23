@@ -11,7 +11,11 @@
 -- ============
 -- 1) Safer staleness view
 -- ============
-CREATE OR REPLACE VIEW public.v_vehicle_staleness AS
+-- NOTE: Postgres will not allow CREATE OR REPLACE VIEW to reorder/rename columns.
+-- We drop first to ensure the new column list can be applied cleanly.
+DROP VIEW IF EXISTS public.v_vehicle_staleness;
+
+CREATE VIEW public.v_vehicle_staleness AS
 SELECT
   vp.device_id,
   vp.gps_time,
