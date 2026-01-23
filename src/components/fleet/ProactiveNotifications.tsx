@@ -44,6 +44,7 @@ interface ProactiveEvent {
   created_at: string;
   acknowledged: boolean;
   acknowledged_at?: string;
+  vehicle_name?: string; // Added vehicle name
 }
 
 // Event type to icon mapping
@@ -95,7 +96,7 @@ export function ProactiveNotifications({
     try {
       let query = (supabase as any)
         .from('proactive_vehicle_events')
-        .select('*')
+        .select('*, vehicles(device_name)')
         .order('created_at', { ascending: false })
         .limit(limit);
 
@@ -113,7 +114,8 @@ export function ProactiveNotifications({
       setEvents((data || []).map((e: any) => ({
         ...e,
         severity: e.severity as ProactiveEvent['severity'],
-        metadata: e.metadata as Record<string, unknown>
+        metadata: e.metadata as Record<string, unknown>,
+        vehicle_name: e.vehicles?.device_name || e.device_id
       })));
     } catch (err) {
       console.error('Error fetching events:', err);
@@ -221,7 +223,8 @@ export function ProactiveNotifications({
             const mappedEvent: ProactiveEvent = {
               ...newEvent,
               severity: newEvent.severity as ProactiveEvent['severity'],
-              metadata: newEvent.metadata as Record<string, unknown>
+              metadata: newEvent.metadata as Record<string, unknown>,
+              vehicle_name: newEvent.device_id // Fallback for realtime payload
             };
             
             const alertType = mappedEvent.event_type as AlertType;
@@ -364,7 +367,7 @@ export function ProactiveNotifications({
                         <Clock className="h-3 w-3" />
                         {timeAgo}
                       </span>
-                      <span className="font-mono">{event.device_id}</span>
+                      <span className="font-medium text-primary/80">{event.vehicle_name}</span>
                     </div>
 
                     {!event.acknowledged && (

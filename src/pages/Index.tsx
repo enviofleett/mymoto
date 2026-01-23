@@ -1,10 +1,10 @@
-import { Wifi, MapPin, BatteryWarning, Truck, RefreshCw, UserPlus, Plus } from "lucide-react";
+import { Wifi, MapPin, BatteryWarning, Truck, RefreshCw, UserPlus, Plus, Brain } from "lucide-react";
 import { DashboardLayout } from "@/components/layouts/DashboardLayout";
 import { MetricCard } from "@/components/fleet/MetricCard";
-import { RecentActivityFeed } from "@/components/fleet/RecentActivityFeed";
+import { InsightHistory } from "@/components/fleet/InsightHistory";
 import { GpsSyncHealthDashboard } from "@/components/fleet/GpsSyncHealthDashboard";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useAuth } from "@/contexts/AuthContext";
 import { useFleetData } from "@/hooks/useFleetData";
 import { useNavigate } from "react-router-dom";
@@ -119,8 +119,21 @@ const Index = () => {
           </CardContent>
         </Card>
 
-        {/* Activity Feed */}
-        <RecentActivityFeed />
+        {/* Insight History */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Brain className="h-5 w-5 text-primary" />
+              Insight History
+            </CardTitle>
+            <CardDescription>
+              Historical AI-driven fleet analysis and health reports.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <InsightHistory limit={10} />
+          </CardContent>
+        </Card>
       </div>
     </DashboardLayout>
   );

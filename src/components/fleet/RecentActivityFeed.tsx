@@ -557,7 +557,15 @@ function ActivityItemDetail({ item, index, deviceId }: { item: ActivityItem; ind
             <div className="flex items-center gap-2 shrink-0">
               {getSeverityBadge(item.severity)}
               <p className="text-xs text-muted-foreground whitespace-nowrap">
-                {formatDistanceToNow(new Date(item.gps_time), { addSuffix: true })}
+                {(() => {
+                  const date = new Date(item.gps_time);
+                  const now = new Date();
+                  // If date is more than 1 hour in the future, show "Just now" to avoid buggy "in X years"
+                  if (date.getTime() > now.getTime() + 3600000) {
+                    return "Just now";
+                  }
+                  return formatDistanceToNow(date, { addSuffix: true });
+                })()}
               </p>
             </div>
           </div>
