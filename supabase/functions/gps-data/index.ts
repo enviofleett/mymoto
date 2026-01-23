@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { callGps51WithRateLimit, getValidGps51Token } from "../_shared/gps51-client.ts"
 import { normalizeVehicleTelemetry, type Gps51RawData } from "../_shared/telemetry-normalizer.ts"
+import { getFeatureFlag } from "../_shared/feature-flags.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -462,6 +463,10 @@ serve(async (req) => {
   }
 
   try {
+    // Phase 2: feature-flagged verbose logging (default OFF)
+    const { enabled: verboseLogs } = await getFeatureFlag(supabase, 'sync_logging_verbose')
+    const vlog = (...args: any[]) => { if (verboseLogs) console.log(...args) }
+
     let requestBody
     try {
       requestBody = await req.json()
@@ -473,6 +478,8 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
       })
     }
+
+    vlog('[gps-data] request body keys:', requestBody && typeof requestBody === 'object' ? Object.keys(requestBody) : typeof requestBody)
     
     const { action, body_payload, use_cache = true } = requestBody || {}
     

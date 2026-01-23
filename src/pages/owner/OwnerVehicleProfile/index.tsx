@@ -29,6 +29,7 @@ import {
   useTriggerTripSync,
   useRealtimeTripUpdates,
 } from "@/hooks/useTripSync";
+import { useRealtimeVehicleUpdates } from "@/hooks/useRealtimeVehicleUpdates";
 import { supabase } from "@/integrations/supabase/client";
 
 // Import sub-components
@@ -74,6 +75,10 @@ export default function OwnerVehicleProfile() {
     error: liveError,
     refetch: refetchLive,
   } = useVehicleLiveData(deviceId);
+
+  // Phase 2: realtime is gated by feature flag + device allowlist
+  // (default OFF -> no behavior change until enabled)
+  useRealtimeVehicleUpdates(deviceId);
 
   const { 
     data: llmSettings, 

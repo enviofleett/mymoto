@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizeSpeed } from "../_shared/telemetry-normalizer.ts";
+import { getFeatureFlag } from "../_shared/feature-flags.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -894,6 +895,8 @@ Deno.serve(async (req) => {
     
     // Create Supabase client with service role key (bypasses RLS)
     const supabase = createClient(supabaseUrl, supabaseKey);
+    const { enabled: verboseLogs } = await getFeatureFlag(supabase, "sync_logging_verbose");
+    const vlog = (...args: any[]) => { if (verboseLogs) console.log(...args) };
 
     // Parse request body for optional parameters
     let deviceIds: string[] | null = null;
@@ -910,6 +913,8 @@ Deno.serve(async (req) => {
     } catch {
       // No body or invalid JSON, process all devices
     }
+
+    vlog("[sync-trips-incremental] params:", { deviceIdsCount: deviceIds?.length ?? null, forceFullSync });
 
     // Get GPS51 credentials and proxy URL
     const DO_PROXY_URL = Deno.env.get("DO_PROXY_URL");

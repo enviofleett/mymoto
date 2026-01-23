@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { mapToVehicleLiveData } from './useVehicleLiveData';
+import { useDeviceFeatureFlag } from './useFeatureFlags';
 
 /**
  * Real-time vehicle updates hook
@@ -11,9 +12,12 @@ import { mapToVehicleLiveData } from './useVehicleLiveData';
  */
 export function useRealtimeVehicleUpdates(deviceId: string | null) {
   const queryClient = useQueryClient();
+  const { data: realtimeGate } = useDeviceFeatureFlag('realtime_vehicle_positions_enabled', deviceId);
+  const realtimeEnabled = realtimeGate?.enabled === true;
 
   useEffect(() => {
     if (!deviceId) return;
+    if (!realtimeEnabled) return;
 
     const channel = supabase
       .channel(`vehicle-realtime-${deviceId}`)
@@ -71,7 +75,7 @@ export function useRealtimeVehicleUpdates(deviceId: string | null) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [deviceId, queryClient]);
+  }, [deviceId, queryClient, realtimeEnabled]);
 }
 
 /**

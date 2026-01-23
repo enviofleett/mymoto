@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getFeatureFlag } from "../_shared/feature-flags.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -166,6 +167,8 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
+    const { enabled: verboseLogs } = await getFeatureFlag(supabase, "sync_logging_verbose");
+    const vlog = (...args: any[]) => { if (verboseLogs) console.log(...args) };
 
     // Parse request body for optional parameters
     let lookbackHours = 2; // Default: process last 2 hours
@@ -185,6 +188,7 @@ Deno.serve(async (req) => {
 
     const cutoffTime = new Date(Date.now() - lookbackHours * 60 * 60 * 1000).toISOString();
     console.log(`[process-trips] Processing data since ${cutoffTime}`);
+    vlog("[process-trips] params:", { lookbackHours, deviceIdsCount: deviceIds?.length ?? null });
 
     // Get distinct device IDs that have recent position data
     let devicesQuery = supabase
