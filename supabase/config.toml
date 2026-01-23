@@ -63,5 +63,17 @@ verify_jwt = false
 [functions.sync-trips-incremental]
 verify_jwt = false
 
+[functions.admin-wallet-topup]
+verify_jwt = false
+
+[functions.admin-update-bonus]
+verify_jwt = false
+
 [functions.send-email]
+verify_jwt = false
+
+[functions.admin-register-provider]
+verify_jwt = false
+
+[functions.send-provider-approval-email]
 verify_jwt = false

@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
 import { checkRateLimit, logEmailAttempt } from "../_shared/email-rate-limit.ts";
-import { validateEmailList } from "../_shared/email-validation.ts";
+import { validateEmailList, sanitizeHtml, escapeHtml, validateSenderId } from "../_shared/email-validation.ts";
 
 // ============================================================================
 // EMAIL SERVICE (Inlined from email-service.ts for single-file deployment)
@@ -364,7 +364,7 @@ const EmailTemplates = {
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Max-Age": "86400",
 };
 
@@ -375,65 +375,85 @@ interface SendEmailRequest {
   customSubject?: string;
   customHtml?: string;
   senderId?: string;
+  bypassStatusCheck?: boolean;
 }
 
 const handler = async (req: Request): Promise<Response> => {
-  // Handle CORS preflight - MUST be first and return 200 OK
-  // This must be handled before any other code to ensure CORS works
+  // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
-    return new Response("ok", { 
+    return new Response(null, { 
       status: 200,
       headers: corsHeaders 
     });
   }
 
   try {
-    // Verify user is authenticated and is admin
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ 
-          error: "Unauthorized",
-          message: "Authentication required"
-        }),
-        { status: 401, headers: { "Content-Type": "application/json", ...corsHeaders } }
-      );
-    }
-
-    // Initialize Supabase client to verify user
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Get user from token
-    const token = authHeader.replace("Bearer ", "");
-    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
+    // Get admin user from auth header
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      console.error("[send-email] No Authorization header provided");
+      return new Response(
+        JSON.stringify({ success: false, error: "Unauthorized: No authorization header" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
-    if (userError || !user) {
+    // Extract token (handle both "Bearer token" and just "token" formats)
+    let token = authHeader.startsWith("Bearer ") 
+      ? authHeader.replace("Bearer ", "").trim()
+      : authHeader.trim();
+    
+    console.log("[send-email] Verifying token...");
+    
+    // Verify the user token using service role client
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+
+    if (authError || !user) {
+      console.error("[send-email] Auth verification failed:", authError);
       return new Response(
         JSON.stringify({ 
           error: "Unauthorized",
-          message: "Invalid authentication token"
+          message: "Invalid or expired token. Please sign in again."
         }),
         { status: 401, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }
 
-    // Check if user is admin
+    console.log("[send-email] User authenticated:", user.id, user.email);
+
+    // Check if user is admin using RPC function (more reliable)
     const { data: isAdmin, error: roleError } = await supabase.rpc("has_role", {
       _user_id: user.id,
       _role: "admin"
     });
 
     if (roleError || !isAdmin) {
-      return new Response(
-        JSON.stringify({ 
-          error: "Forbidden",
-          message: "Admin access required"
-        }),
-        { status: 403, headers: { "Content-Type": "application/json", ...corsHeaders } }
-      );
+      console.error("[send-email] Admin check failed:", { isAdmin, roleError });
+      // Fallback to direct query if RPC fails
+      const { data: adminRole } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user.id)
+        .eq("role", "admin")
+        .maybeSingle();
+      
+      if (!adminRole) {
+        console.error("[send-email] User is not admin:", user.id);
+        return new Response(
+          JSON.stringify({ 
+            error: "Forbidden",
+            message: "Admin access required"
+          }),
+          { status: 403, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
+      }
     }
+
+    console.log("[send-email] Admin role verified for user:", user.id);
 
     let requestBody: SendEmailRequest;
     try {
@@ -452,7 +472,7 @@ const handler = async (req: Request): Promise<Response> => {
       );
     }
 
-    const { template, to, data, customSubject, customHtml, senderId } = requestBody;
+    const { template, to, data, customSubject, customHtml, senderId, bypassStatusCheck } = requestBody;
 
     if (!template || !to) {
       return new Response(
@@ -533,15 +553,70 @@ const handler = async (req: Request): Promise<Response> => {
 
     let emailTemplate;
 
-    // Generate template based on type
-    switch (template) {
+    // ✅ FIX: Try to get template from database first (admin customizations)
+    let dbTemplate = null;
+    try {
+      const { data: templateData, error: templateError } = await supabase
+        .from('email_templates')
+        .select('subject, html_content, is_active')
+        .eq('template_key', template)
+        .single();
+      
+      if (!templateError && templateData) {
+        // If template is explicitly disabled in database, SKIP SENDING (unless bypassed for testing)
+        if (templateData.is_active === false && !bypassStatusCheck) {
+          console.log(`[send-email] Skipping email: ${template} is disabled in settings`);
+          return new Response(
+            JSON.stringify({ 
+              success: true, 
+              message: `Email sending skipped: ${template} is disabled by admin`,
+              skipped: true 
+            }),
+            { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
+          );
+        }
+        dbTemplate = templateData;
+        console.log(`[send-email] Using database template for: ${template}`);
+      }
+    } catch (dbError) {
+      console.warn(`[send-email] Database template lookup failed, using fallback:`, dbError);
+    }
+
+    // If database template exists, use it (with variable replacement)
+    if (dbTemplate) {
+      // Simple variable replacement for database templates
+      // Note: Database templates use {{variable}} syntax (not Handlebars)
+      let dbSubject = dbTemplate.subject;
+      let dbHtml = dbTemplate.html_content;
+      
+      // Replace template variables with escaped values
+      for (const [key, value] of Object.entries(data)) {
+        const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
+        const escapedValue = escapeHtml(String(value || ''));
+        dbSubject = dbSubject.replace(regex, escapedValue);
+        dbHtml = dbHtml.replace(regex, escapedValue);
+      }
+      
+      // Remove any remaining {{#if}} blocks (simple cleanup)
+      dbSubject = dbSubject.replace(/\{\{#if\s+\w+\}\}[\s\S]*?\{\{\/if\}\}/g, '');
+      dbHtml = dbHtml.replace(/\{\{#if\s+\w+\}\}[\s\S]*?\{\{\/if\}\}/g, '');
+      
+      emailTemplate = {
+        subject: dbSubject,
+        html: dbHtml,
+        text: undefined,
+      };
+    } else {
+      // Fallback to hardcoded templates
+      // Generate template based on type
+      switch (template) {
       case 'alert':
         emailTemplate = EmailTemplates.alert({
           severity: (data.severity as 'info' | 'warning' | 'error' | 'critical') || 'info',
-          title: (data.title as string) || 'Alert',
-          message: (data.message as string) || '',
-          vehicleName: data.vehicleName as string | undefined,
-          timestamp: data.timestamp as string | undefined,
+          title: escapeHtml((data.title as string) || 'Alert'),
+          message: escapeHtml((data.message as string) || ''),
+          vehicleName: data.vehicleName ? escapeHtml(data.vehicleName as string) : undefined,
+          timestamp: data.timestamp ? escapeHtml(data.timestamp as string) : undefined,
           metadata: data.metadata as Record<string, unknown> | undefined,
         });
         break;
@@ -554,9 +629,9 @@ const handler = async (req: Request): Promise<Response> => {
           );
         }
         emailTemplate = EmailTemplates.passwordReset({
-          resetLink: data.resetLink as string,
-          userName: data.userName as string | undefined,
-          expiresIn: data.expiresIn as string | undefined,
+          resetLink: data.resetLink as string, // URLs don't need escaping
+          userName: data.userName ? escapeHtml(data.userName as string) : undefined,
+          expiresIn: data.expiresIn ? escapeHtml(data.expiresIn as string) : undefined,
         });
         break;
 
@@ -568,8 +643,8 @@ const handler = async (req: Request): Promise<Response> => {
           );
         }
         emailTemplate = EmailTemplates.welcome({
-          userName: data.userName as string,
-          loginLink: data.loginLink as string | undefined,
+          userName: escapeHtml(data.userName as string),
+          loginLink: data.loginLink as string | undefined, // URLs don't need escaping
         });
         break;
 
@@ -581,15 +656,15 @@ const handler = async (req: Request): Promise<Response> => {
           );
         }
         emailTemplate = EmailTemplates.tripSummary({
-          userName: data.userName as string,
-          vehicleName: data.vehicleName as string,
-          date: data.date as string,
-          distance: data.distance as string,
-          duration: data.duration as string,
-          startLocation: data.startLocation as string | undefined,
-          endLocation: data.endLocation as string | undefined,
-          maxSpeed: data.maxSpeed as string | undefined,
-          avgSpeed: data.avgSpeed as string | undefined,
+          userName: escapeHtml(data.userName as string),
+          vehicleName: escapeHtml(data.vehicleName as string),
+          date: escapeHtml(data.date as string),
+          distance: escapeHtml(data.distance as string),
+          duration: escapeHtml(data.duration as string),
+          startLocation: data.startLocation ? escapeHtml(data.startLocation as string) : undefined,
+          endLocation: data.endLocation ? escapeHtml(data.endLocation as string) : undefined,
+          maxSpeed: data.maxSpeed ? escapeHtml(data.maxSpeed as string) : undefined,
+          avgSpeed: data.avgSpeed ? escapeHtml(data.avgSpeed as string) : undefined,
         });
         break;
 
@@ -601,10 +676,10 @@ const handler = async (req: Request): Promise<Response> => {
           );
         }
         emailTemplate = EmailTemplates.systemNotification({
-          title: data.title as string,
-          message: data.message as string,
-          actionLink: data.actionLink as string | undefined,
-          actionText: data.actionText as string | undefined,
+          title: escapeHtml(data.title as string),
+          message: escapeHtml(data.message as string),
+          actionLink: data.actionLink as string | undefined, // URLs don't need escaping
+          actionText: data.actionText ? escapeHtml(data.actionText as string) : undefined,
         });
         break;
 
@@ -613,14 +688,40 @@ const handler = async (req: Request): Promise<Response> => {
           JSON.stringify({ error: `Unknown template: ${template}` }),
           { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
         );
+      }
     }
 
     // Override with custom values if provided
-    const subject = customSubject || emailTemplate.subject;
-    const html = customHtml || emailTemplate.html;
+    // ✅ FIX: Sanitize custom HTML and escape custom subject to prevent XSS
+    const subject = customSubject ? escapeHtml(customSubject) : emailTemplate.subject;
+    // ✅ FIX: Always sanitize HTML (even from templates) to be safe
+    const html = sanitizeHtml(customHtml || emailTemplate.html);
 
-    // Get sender ID from request if provided (already extracted above)
+    // ✅ FIX: Validate sender ID format
     const finalSenderId = senderId || (data.senderId as string | undefined);
+    if (finalSenderId) {
+      const senderValidation = validateSenderId(finalSenderId);
+      if (!senderValidation.valid) {
+        await logEmailAttempt(
+          emailValidation.validEmails[0],
+          subject,
+          template,
+          'validation_failed',
+          senderValidation.error || 'Invalid sender ID format',
+          user.id,
+          null,
+          supabase
+        );
+        
+        return new Response(
+          JSON.stringify({
+            error: senderValidation.error || 'Invalid sender ID format',
+            success: false,
+          }),
+          { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
+      }
+    }
 
     // Send email
     try {

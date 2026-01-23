@@ -10,7 +10,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Mail, Save, RotateCcw, Eye, Send, Loader2 } from "lucide-react";
+import { Mail, Save, RotateCcw, Eye, Send, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 
 interface EmailTemplate {
   id: string;
@@ -23,6 +24,13 @@ interface EmailTemplate {
   variables: string[];
   sender_id: string | null;
   is_active: boolean;
+}
+
+// Validate test email (align with backend validateEmail)
+function isValidTestEmail(email: string): boolean {
+  const s = (email || "").trim();
+  if (!s || s.length > 254) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s) && !/[\r\n<>]/.test(s);
 }
 
 // Sample data for template preview
@@ -251,6 +259,7 @@ export default function AdminEmailTemplates() {
           html_content: editedTemplate.html_content,
           text_content: editedTemplate.text_content,
           sender_id: editedTemplate.sender_id || null,
+          is_active: editedTemplate.is_active,
           updated_at: new Date().toISOString(),
           updated_by: user?.id || null,
         })
@@ -276,22 +285,24 @@ export default function AdminEmailTemplates() {
   };
 
   const handleSendTestEmail = async () => {
-    if (!editedTemplate || !testEmailAddress) {
+    const trimmedEmail = (testEmailAddress || "").trim();
+    if (!editedTemplate || !trimmedEmail) {
       toast.error("Please enter a test email address");
       return;
     }
 
-    if (!testEmailAddress.includes('@')) {
-      toast.error("Please enter a valid email address");
+    if (!isValidTestEmail(trimmedEmail)) {
+      toast.error("Please enter a valid email address (e.g. name@example.com)");
       return;
     }
 
     setSendingTest(true);
     try {
-      // Get session to ensure we have auth token
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      // ✅ FIX: Always refresh session before invoke (gateway verify_jwt can reset to true on deploy)
+      const { data: { session } } = await supabase.auth.refreshSession();
+      const currentSession = session ?? (await supabase.auth.getSession()).data?.session;
       
-      if (!session || !session.access_token) {
+      if (!currentSession?.access_token) {
         toast.error("Authentication required. Please sign in again.");
         setSendingTest(false);
         return;
@@ -302,21 +313,34 @@ export default function AdminEmailTemplates() {
       const processedHtml = replaceTemplateVariables(editedTemplate.html_content, sampleData);
       const wrappedHtml = wrapInEmailTemplate(processedHtml);
 
-      const testData = {
-        ...sampleData,
-        ...(editedTemplate.sender_id && { senderId: editedTemplate.sender_id })
-      };
+      // ✅ FIX: vehicle_assignment maps to systemNotification; backend requires title, message, actionLink, actionText
+      const isVehicleAssignment = editedTemplate.template_key === 'vehicle_assignment';
+      const templateForInvoke = isVehicleAssignment ? 'systemNotification' : editedTemplate.template_key;
+      const testData: Record<string, string | undefined> = isVehicleAssignment
+        ? {
+            title: "New Vehicle(s) Assigned",
+            message: `Hello ${sampleData.userName ?? 'User'}, ${sampleData.vehicleCount ?? '1'} vehicle(s) have been assigned to your account. You can view them in your dashboard.`,
+            actionLink: sampleData.actionLink ?? "https://app.example.com/fleet",
+            actionText: "View Vehicles",
+            ...(editedTemplate.sender_id && { senderId: editedTemplate.sender_id }),
+          }
+        : {
+            ...sampleData,
+            ...(editedTemplate.sender_id && { senderId: editedTemplate.sender_id }),
+          };
 
+      // ✅ FIX: Pass Authorization explicitly (gateway verify_jwt may be true; use fresh token)
       const { data, error } = await supabase.functions.invoke('send-email', {
         body: {
-          template: editedTemplate.template_key === 'vehicle_assignment' ? 'systemNotification' : editedTemplate.template_key,
-          to: testEmailAddress,
+          template: templateForInvoke,
+          to: trimmedEmail,
           data: testData,
           customSubject: processedSubject,
           customHtml: wrappedHtml,
+          bypassStatusCheck: true, // Always allow test emails
         },
         headers: {
-          Authorization: `Bearer ${session.access_token}`,
+          Authorization: `Bearer ${currentSession.access_token}`,
         },
       });
 
@@ -325,7 +349,7 @@ export default function AdminEmailTemplates() {
         
         // Check for specific error types
         if (error.message?.includes('401') || error.message?.includes('Unauthorized')) {
-          throw new Error('Authentication failed. Please make sure you are logged in as an admin and have the correct permissions.');
+          throw new Error('Authentication failed. Please sign in again as an admin and try again.');
         }
         
         if (error.message?.includes('CORS') || error.message?.includes('preflight')) {
@@ -336,19 +360,40 @@ export default function AdminEmailTemplates() {
           throw new Error('Access denied: Admin access is required to send test emails. Please check that your user has the admin role.');
         }
         
+        // 429 rate limit – use resetAt from response body when available
+        const isRateLimit = error.message?.includes('429') || /rate limit/i.test(error.message ?? '');
+        if (isRateLimit && data?.resetAt) {
+          const resetAt = new Date(data.resetAt);
+          const secs = Math.max(1, Math.ceil((resetAt.getTime() - Date.now()) / 1000));
+          throw new Error(`Rate limit exceeded. Try again in ${secs} second${secs !== 1 ? 's' : ''}.`);
+        }
+        if (isRateLimit) {
+          throw new Error('Rate limit exceeded. Please wait a minute before sending another test email.');
+        }
+        
         throw error;
       }
 
       if (data?.error) {
+        // 429 may also come as data.error (e.g. when status not propagated)
+        const isRateLimit = data?.resetAt != null || (typeof data?.error === 'string' && /rate limit|429/i.test(data.error));
+        if (isRateLimit && data?.resetAt) {
+          const resetAt = new Date(data.resetAt);
+          const secs = Math.max(1, Math.ceil((resetAt.getTime() - Date.now()) / 1000));
+          throw new Error(`Rate limit exceeded. Try again in ${secs} second${secs !== 1 ? 's' : ''}.`);
+        }
+        if (isRateLimit) {
+          throw new Error('Rate limit exceeded. Please wait a minute before sending another test email.');
+        }
         throw new Error(data.error || data.message || 'Failed to send email');
       }
       
       if (data?.success !== false) {
-        toast.success(`Test email sent to ${testEmailAddress}`);
+        toast.success(`Test email sent to ${trimmedEmail}`);
         setTestEmailDialogOpen(false);
         setTestEmailAddress("");
       } else {
-        throw new Error(data.error || data.message || 'Failed to send email');
+        throw new Error(data?.error || data?.message || 'Failed to send email');
       }
     } catch (err: any) {
       console.error('Test email exception:', err);
@@ -521,7 +566,7 @@ export default function AdminEmailTemplates() {
                         </Button>
                         <Button
                           onClick={handleSendTestEmail}
-                          disabled={sendingTest || !testEmailAddress}
+                          disabled={sendingTest || !(testEmailAddress || "").trim() || !isValidTestEmail(testEmailAddress)}
                         >
                           {sendingTest ? (
                             <>
@@ -550,6 +595,36 @@ export default function AdminEmailTemplates() {
                   </TabsList>
                   
                   <TabsContent value="edit" className="space-y-4 mt-4">
+                    {/* Status Toggle */}
+                    <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg border">
+                      <div className="space-y-0.5">
+                        <Label className="text-base">Active Status</Label>
+                        <p className="text-sm text-muted-foreground">
+                          {editedTemplate.is_active 
+                            ? "This email type is currently enabled and will be sent to customers."
+                            : "This email type is currently disabled and will NOT be sent."}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {editedTemplate.is_active ? (
+                          <Badge className="bg-green-500 hover:bg-green-600 gap-1">
+                            <CheckCircle2 className="h-3 w-3" /> Enabled
+                          </Badge>
+                        ) : (
+                          <Badge variant="destructive" className="gap-1">
+                            <XCircle className="h-3 w-3" /> Disabled
+                          </Badge>
+                        )}
+                        <Switch 
+                          checked={editedTemplate.is_active}
+                          onCheckedChange={(checked) => setEditedTemplate({
+                            ...editedTemplate,
+                            is_active: checked
+                          })}
+                        />
+                      </div>
+                    </div>
+
                     {/* Available Variables */}
                     {editedTemplate.variables && editedTemplate.variables.length > 0 && (
                       <div className="p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-900">

@@ -90,9 +90,10 @@ export default function AdminWallets() {
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Set New User Bonus</DialogTitle>
-                <DialogDescription>
-                  This amount will be automatically credited to new user wallets upon registration.
-                </DialogDescription>
+              <DialogDescription>
+                This amount will be automatically credited to new user wallets upon registration. 
+                New users will receive an email notification when their welcome bonus is applied.
+              </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
@@ -277,6 +278,13 @@ export default function AdminWallets() {
                   onChange={(e) => setAdjustDescription(e.target.value)}
                 />
               </div>
+              {adjustType === "credit" && (
+                <div className="rounded-lg bg-muted p-3">
+                  <p className="text-sm text-muted-foreground">
+                    💡 An email notification will be sent to the user when their wallet is credited.
+                  </p>
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setAdjustDialogOpen(false)}>

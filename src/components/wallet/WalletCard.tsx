@@ -38,14 +38,14 @@ export function WalletCard({
   return (
     <Card className="border-0 bg-card shadow-neumorphic rounded-2xl overflow-hidden">
       {/* Gradient accent bar */}
-      <div className={cn(
-        "h-1",
-        isNegative 
-          ? "bg-gradient-to-r from-destructive to-destructive/50"
-          : isLow
-          ? "bg-gradient-to-r from-accent to-accent/50"
-          : "bg-gradient-to-r from-status-active to-status-active/50"
-      )} />
+      <div 
+        className="h-1"
+        style={{
+          background: "unset",
+          backgroundColor: "unset",
+          backgroundImage: "none"
+        }}
+      />
       
       <CardHeader className="pb-2 pt-4">
         <CardTitle className="text-sm font-medium text-muted-foreground flex items-center justify-between">
