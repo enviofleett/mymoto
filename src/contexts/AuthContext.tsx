@@ -50,18 +50,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const checkProviderRole = async (userId: string) => {
+    // IMPORTANT:
+    // Do NOT filter by role=eq.service_provider at the DB level.
+    // If the `app_role` enum in the target DB doesn't include 'service_provider',
+    // PostgREST will return 400 (invalid input value for enum app_role).
+    // Instead, fetch the user's roles and check in JS.
     const { data, error } = await supabase
       .from('user_roles')
       .select('role')
-      .eq('user_id', userId)
-      .eq('role', 'service_provider')
-      .maybeSingle();
+      .eq('user_id', userId);
     
     if (error) {
       console.error('Error checking provider role:', error);
       return false;
     }
-    return !!data;
+    
+    const roles = (data || []) as Array<{ role: string }>;
+    return roles.some((r) => r.role === 'service_provider' || r.role === 'provider');
   };
 
 
