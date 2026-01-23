@@ -3,10 +3,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
-import { Send, Bot, User, Loader2, Car, MapPin, ExternalLink, Battery, Gauge, Power, Navigation } from "lucide-react";
+import { Send, Bot, User, Loader2, Car, MapPin, ExternalLink, Battery, Gauge, Power, Navigation, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 interface ChatMessage {
   id: string;
@@ -32,7 +33,7 @@ function LocationCard({ lat, lon, address }: LocationData) {
         <img
           src={staticMapUrl}
           alt="Location map"
-          className="w-full h-full object-cover"
+          className="max-w-full max-h-full w-auto h-auto object-contain rounded-full"
           onError={(e) => {
             (e.target as HTMLImageElement).src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><rect width="300" height="200" fill="%23e5e7eb"/><text x="50%" y="50%" text-anchor="middle" fill="%236b7280" font-family="sans-serif" font-size="14">Map Preview</text></svg>';
           }}
@@ -270,9 +271,11 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
       return (data as ChatMessage[]) || [];
     },
     enabled: !!deviceId && !!user?.id,
-    staleTime: 0, // Always consider data stale to refetch on mount
-    refetchOnMount: true, // Refetch when component mounts
-    refetchOnWindowFocus: true, // Refetch when window regains focus
+    staleTime: 5 * 60 * 1000, // 5 minutes - data fresh for longer (realtime handles updates)
+    gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
+    refetchOnWindowFocus: false, // ✅ FIX #8: Realtime subscription handles updates
+    refetchOnMount: false, // Don't refetch on mount if we have cached data
+    refetchOnReconnect: false, // Don't refetch on reconnect (realtime handles it)
   });
 
   // Fetch current vehicle telemetry for context
@@ -299,11 +302,14 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
     }
   }, [historyData]);
 
-  // Set up realtime subscription for new messages
+  // ✅ FIX #4: Set up realtime subscription with proper cleanup
   useEffect(() => {
     if (!user?.id || !deviceId) return;
     
-    const channel = supabase
+    let mounted = true; // ✅ FIX #4: Track if component is mounted
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    
+    channel = supabase
       .channel(`vehicle_chat:${deviceId}:${user.id}`)
       .on(
         'postgres_changes',
@@ -314,25 +320,50 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
           filter: `device_id=eq.${deviceId}`
         },
         (payload) => {
+          if (!mounted) return; // ✅ FIX #4: Don't update if unmounted
+          
           const newMessage = payload.new as ChatMessage;
           // Only add messages for this user
           if (newMessage.user_id === user.id) {
             setMessages(prev => {
-              // Avoid duplicates
-              if (prev.some(m => m.id === newMessage.id)) return prev;
-              return [...prev, newMessage];
+              // ✅ FIX #2: Better deduplication using Set
+              const messageIds = new Set(prev.map(m => m.id));
+              if (messageIds.has(newMessage.id)) {
+                return prev; // Already exists
+              }
+              
+              // Remove temp messages with matching content
+              const filtered = prev.filter(m => {
+                if (!m.id.startsWith('temp-')) return true;
+                if (m.role === newMessage.role && m.content === newMessage.content) {
+                  return false; // Remove matching temp message
+                }
+                return true;
+              });
+              
+              // Add new message in chronological order
+              const updated = [...filtered, newMessage];
+              updated.sort((a, b) => 
+                new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+              );
+              
+              return updated;
             });
-            // Refetch history to ensure we have the latest
-            refetchHistory();
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (!mounted) return;
+        console.log('[Chat] Realtime subscription status:', status);
+      });
 
     return () => {
-      supabase.removeChannel(channel);
+      mounted = false; // ✅ FIX #4: Mark as unmounted
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
     };
-  }, [deviceId, user?.id, refetchHistory]);
+  }, [deviceId, user?.id]);
 
   // Reset avatar error state when avatarUrl changes (e.g., switching vehicles)
   useEffect(() => {
@@ -344,22 +375,20 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingContent]);
 
-  const handleSend = async () => {
-    if (!input.trim() || !user) return;
+  // ✅ FIX #5: Retry logic with exponential backoff
+  const sendWithRetry = async (
+    userMessage: string,
+    tempUserMsg: ChatMessage,
+    retryCount = 0
+  ): Promise<void> => {
+    const MAX_RETRIES = 3;
+    const INITIAL_RETRY_DELAY = 1000;
+    const MAX_RETRY_DELAY = 10000;
 
-    const userMessage = input.trim();
-    setInput("");
-    setLoading(true);
-    setStreamingContent("");
-
-    // Optimistic UI - add user message immediately
-    const tempUserMsg: ChatMessage = {
-      id: `temp-${Date.now()}`,
-      role: 'user',
-      content: userMessage,
-      created_at: new Date().toISOString()
-    };
-    setMessages(prev => [...prev, tempUserMsg]);
+    // ✅ FIX #1: Add AbortController with timeout
+    const controller = new AbortController();
+    const REQUEST_TIMEOUT = 30000;
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
     try {
       // Build rich context payload with live telemetry and client timestamp
@@ -400,21 +429,39 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`
         },
-        body: JSON.stringify(contextPayload)
+        body: JSON.stringify(contextPayload),
+        signal: controller.signal // ✅ FIX #1: Add abort signal
       });
+      
+      clearTimeout(timeoutId); // Clear timeout on success
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || 'Failed to get response');
       }
 
-      // Handle streaming response
-      const reader = response.body?.getReader();
+      if (!response.body) {
+        throw new Error('No response body from server');
+      }
+
+      // ✅ FIX #7: Handle streaming response with timeout
+      const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let fullResponse = '';
       let buffer = '';
+      let streamStartTime = Date.now();
+      const STREAM_TIMEOUT = 60000; // 60 seconds
+      const MAX_ITERATIONS = 10000;
+      let iterationCount = 0;
 
-      while (reader) {
+      while (iterationCount < MAX_ITERATIONS) {
+        // Check for stream timeout
+        if (Date.now() - streamStartTime > STREAM_TIMEOUT) {
+          console.warn('[Chat] Stream timeout after 60s, closing stream');
+          reader.cancel();
+          throw new Error('Stream timeout: Response took too long');
+        }
+
         const { done, value } = await reader.read();
         if (done) break;
 
@@ -435,45 +482,68 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
             } catch {}
           }
         }
+        
+        iterationCount++;
       }
+      
+      if (iterationCount >= MAX_ITERATIONS) {
+        console.warn('[Chat] Stream iteration limit reached, closing stream');
+        reader.cancel();
+        throw new Error('Stream iteration limit reached');
+      }
+      
+      reader.releaseLock();
 
       // Clear streaming content (message will come via realtime subscription)
       setStreamingContent("");
       
-      // Wait a moment for database save to complete, then refetch
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Invalidate and refetch chat history to ensure messages are loaded
-      await refetchHistory();
-      
-      // Verify messages were saved (check if our optimistic message was replaced with real one)
-      const { data: verifyData } = await (supabase as any)
-        .from('vehicle_chat_history')
-        .select('id, content, created_at')
-        .eq('device_id', deviceId)
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(2);
-      
-      if (verifyData && verifyData.length >= 2) {
-        // Messages were saved successfully
-        console.log('Chat messages verified in database');
-      } else {
-        console.warn('Warning: Chat messages may not have been saved to database');
-        toast({
-          title: "Warning",
-          description: "Your message was sent but may not have been saved. Please refresh the page.",
-          variant: "default"
-        });
-      }
-
     } catch (err) {
+      clearTimeout(timeoutId); // ✅ FIX #1: Clear timeout on error
+      
       console.error('Chat error:', err);
+      
+      // ✅ FIX #1: Handle timeout errors
+      const isTimeout = err instanceof Error && (
+        err.name === 'AbortError' || 
+        err.message.includes('timeout') ||
+        err.message.includes('took too long')
+      );
+      
+      // ✅ FIX #5: Retry logic for network errors
+      const isNetworkError = err instanceof Error && (
+        err.message.includes('Failed to fetch') ||
+        err.message.includes('NetworkError') ||
+        err.message.includes('network') ||
+        (!isTimeout && retryCount < MAX_RETRIES)
+      );
+      
+      if (isNetworkError && retryCount < MAX_RETRIES) {
+        const retryDelay = Math.min(
+          INITIAL_RETRY_DELAY * Math.pow(2, retryCount),
+          MAX_RETRY_DELAY
+        );
+        
+        console.log(`[Chat] Retrying in ${retryDelay}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+        
+        toast({
+          title: "Retrying...",
+          description: `Connection issue. Retrying in ${Math.round(retryDelay / 1000)}s...`,
+          variant: "default",
+        });
+        
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+        return sendWithRetry(userMessage, tempUserMsg, retryCount + 1);
+      }
+      
+      // Final error - no more retries
       toast({
-        title: "Error",
-        description: err instanceof Error ? err.message : "Failed to send message",
+        title: isTimeout ? "Request Timeout" : "Error",
+        description: isTimeout 
+          ? "The request took too long. Please try again."
+          : err instanceof Error ? err.message : "Failed to send message",
         variant: "destructive"
       });
+      
       // Remove optimistic message on error
       setMessages(prev => prev.filter(m => m.id !== tempUserMsg.id));
     } finally {
@@ -481,7 +551,38 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
     }
   };
 
+  const handleSend = async () => {
+    if (!input.trim() || !user) return;
+    if (loading) return; // Prevent multiple simultaneous sends
+
+    const userMessage = input.trim();
+    setInput("");
+    setLoading(true);
+    setStreamingContent("");
+
+    // Optimistic UI - add user message immediately
+    const tempUserMsg: ChatMessage = {
+      id: `temp-${Date.now()}-${Math.random()}`,
+      role: 'user',
+      content: userMessage,
+      created_at: new Date().toISOString()
+    };
+    setMessages(prev => [...prev, tempUserMsg]);
+
+    await sendWithRetry(userMessage, tempUserMsg, 0);
+  };
+
   return (
+    <ErrorBoundary
+      fallback={
+        <div className="flex flex-col h-[400px] items-center justify-center p-4">
+          <AlertTriangle className="h-8 w-8 text-destructive mb-2" />
+          <p className="text-sm text-muted-foreground text-center">
+            Chat error. Please refresh.
+          </p>
+        </div>
+      }
+    >
     <div className="flex flex-col h-[400px]">
       {/* Live telemetry indicator */}
       {vehicleContext && (
@@ -522,12 +623,14 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
           ) : messages.length === 0 && !loading ? (
             <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
               {avatarUrl && !avatarError ? (
-                <img 
-                  src={avatarUrl} 
-                  alt={displayName} 
-                  className="h-12 w-12 rounded-full object-cover mb-3" 
-                  onError={() => setAvatarError(true)}
-                />
+                <div className="h-12 w-12 rounded-full bg-secondary flex items-center justify-center overflow-hidden mb-3">
+                  <img 
+                    src={avatarUrl} 
+                    alt={displayName} 
+                    className="max-w-full max-h-full w-auto h-auto object-contain rounded-full" 
+                    onError={() => setAvatarError(true)}
+                  />
+                </div>
               ) : (
                 <Car className="h-12 w-12 mb-3 text-primary/50" />
               )}
@@ -549,7 +652,7 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
                     <img 
                       src={avatarUrl} 
                       alt={displayName} 
-                      className="h-full w-full object-cover"
+                      className="max-w-full max-h-full w-auto h-auto object-contain rounded-full"
                       onError={() => setAvatarError(true)}
                     />
                   ) : (
@@ -582,7 +685,7 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
                   <img 
                     src={avatarUrl} 
                     alt={displayName} 
-                    className="h-full w-full object-cover"
+                    className="max-w-full max-h-full w-auto h-auto object-contain rounded-full"
                     onError={() => setAvatarError(true)}
                   />
                 ) : (
@@ -625,5 +728,6 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
         </Button>
       </div>
     </div>
+    </ErrorBoundary>
   );
 }

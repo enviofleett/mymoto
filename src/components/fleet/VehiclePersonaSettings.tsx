@@ -29,7 +29,6 @@ const LANGUAGES = [
   { value: 'yoruba', label: 'Yoruba', sample: 'Ẹ kú àárọ̀! Mo jẹ́ ọkọ̀ rẹ̀.' },
   { value: 'hausa', label: 'Hausa', sample: 'Sannu! Ni ne mota ka mai magana.' },
   { value: 'igbo', label: 'Igbo', sample: 'Ndewo! Abụ m ụgbọala gị.' },
-  { value: 'french', label: 'French', sample: 'Bonjour! Je suis votre compagnon de véhicule.' },
 ];
 
 const PERSONALITIES = [
@@ -198,7 +197,31 @@ export function VehiclePersonaSettings({ deviceId, vehicleName }: VehiclePersona
         }
       }
 
-      // Step 2: Save LLM settings
+      // Step 2: Validate values before saving
+      const validLanguages = ['english', 'pidgin', 'yoruba', 'hausa', 'igbo'];
+      const validPersonalities = ['casual', 'professional', 'funny'];
+      
+      if (!validLanguages.includes(language)) {
+        toast({
+          title: "Invalid Language",
+          description: `Language "${language}" is not supported. Please select a valid option.`,
+          variant: "destructive"
+        });
+        setSaving(false);
+        return;
+      }
+      
+      if (!validPersonalities.includes(personality)) {
+        toast({
+          title: "Invalid Personality",
+          description: `Personality "${personality}" is not supported. Please select a valid option.`,
+          variant: "destructive"
+        });
+        setSaving(false);
+        return;
+      }
+
+      // Step 3: Save LLM settings
       // Ensure llm_enabled is never null/undefined - always true or false (explicit user choice)
       const { error } = await (supabase as any)
         .from('vehicle_llm_settings')
@@ -213,6 +236,56 @@ export function VehiclePersonaSettings({ deviceId, vehicleName }: VehiclePersona
         }, { onConflict: 'device_id' });
 
       if (error) {
+        // Handle constraint violation errors
+        if ('code' in error && error.code === '23514') {
+          // If 'funny' personality mode fails, it means the migration hasn't run yet
+          // Fall back to 'casual' and retry
+          if (personality === 'funny' && error.message?.includes('personality_mode')) {
+            console.warn('Personality mode "funny" not yet supported in database, falling back to "casual"');
+            setPersonality('casual');
+            
+            // Retry with 'casual'
+            const { error: retryError } = await (supabase as any)
+              .from('vehicle_llm_settings')
+              .upsert({
+                device_id: deviceId,
+                nickname: nickname.trim() || null,
+                language_preference: language,
+                personality_mode: 'casual',
+                llm_enabled: llmEnabled ?? true,
+                avatar_url: avatarUrl,
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'device_id' });
+            
+            if (retryError) {
+              throw retryError;
+            }
+            
+            toast({
+              title: "Saved with fallback",
+              description: "Personality set to 'casual' (database migration pending for 'funny' mode)",
+              variant: "default"
+            });
+            fetchSettings();
+            setSaving(false);
+            return;
+          }
+          
+          const constraintName = error.message?.includes('language_preference') 
+            ? 'language preference' 
+            : error.message?.includes('personality_mode')
+            ? 'personality mode'
+            : 'setting';
+          
+          toast({
+            title: "Invalid Setting Value",
+            description: `The selected ${constraintName} is not supported. Please contact support if this persists.`,
+            variant: "destructive"
+          });
+          setSaving(false);
+          return;
+        }
+        
         // Handle RLS policy errors specifically
         if ('code' in error && error.code === '42501') {
           toast({

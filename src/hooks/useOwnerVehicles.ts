@@ -29,71 +29,115 @@ export interface OwnerVehicle {
 async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
   console.log("[useOwnerVehicles] Starting fetch for userId:", userId);
   
-  // First get the profile for this user
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("id, name, email")
+  // Check if user is admin
+  const { data: adminRole } = await supabase
+    .from("user_roles")
+    .select("role")
     .eq("user_id", userId)
+    .eq("role", "admin")
     .maybeSingle();
-
-  console.log("[useOwnerVehicles] Profile lookup result:", { profile, profileError });
-
-  let profileId = profile?.id;
-
-  if (profileError || !profile) {
-    // Try by email
-    console.log("[useOwnerVehicles] No profile by user_id, trying email lookup...");
-    const { data: { user } } = await supabase.auth.getUser();
-    console.log("[useOwnerVehicles] Auth user:", user?.email);
+  
+  const isAdmin = !!adminRole;
+  console.log("[useOwnerVehicles] User is admin:", isAdmin);
+  
+  let deviceIds: string[] = [];
+  let assignments: any[] = [];
+  
+  if (isAdmin) {
+    // Admins see ALL vehicles - fetch all device_ids from vehicles table
+    console.log("[useOwnerVehicles] Admin user - fetching all vehicles");
+    const { data: allVehicles, error: vehiclesError } = await (supabase as any)
+      .from("vehicles")
+      .select("device_id, device_name");
     
-    if (user?.email) {
-      const { data: emailProfile, error: emailError } = await supabase
-        .from("profiles")
-        .select("id, name, email")
-        .eq("email", user.email)
-        .maybeSingle();
+    if (vehiclesError) {
+      console.error("[useOwnerVehicles] Error fetching all vehicles:", vehiclesError);
+      throw vehiclesError;
+    }
+    
+    deviceIds = (allVehicles || []).map((v: any) => v.device_id);
+    // Create mock assignments for admin (so the mapping logic works)
+    assignments = (allVehicles || []).map((v: any) => ({
+      device_id: v.device_id,
+      vehicle_alias: v.device_name
+    }));
+    
+    console.log("[useOwnerVehicles] Admin - found", deviceIds.length, "vehicles");
+  } else {
+    // Regular users - fetch only assigned vehicles
+    // First get the profile for this user
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("id, name, email")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    console.log("[useOwnerVehicles] Profile lookup result:", { profile, profileError });
+
+    let profileId = profile?.id;
+
+    if (profileError || !profile) {
+      // Try by email
+      console.log("[useOwnerVehicles] No profile by user_id, trying email lookup...");
+      const { data: { user } } = await supabase.auth.getUser();
+      console.log("[useOwnerVehicles] Auth user:", user?.email);
       
-      console.log("[useOwnerVehicles] Email profile lookup:", { emailProfile, emailError });
-      
-      if (!emailProfile) {
-        console.warn("[useOwnerVehicles] No profile found for user");
+      if (user?.email) {
+        const { data: emailProfile, error: emailError } = await supabase
+          .from("profiles")
+          .select("id, name, email")
+          .eq("email", user.email)
+          .maybeSingle();
+        
+        console.log("[useOwnerVehicles] Email profile lookup:", { emailProfile, emailError });
+        
+        if (!emailProfile) {
+          console.warn("[useOwnerVehicles] No profile found for user");
+          return [];
+        }
+        profileId = emailProfile.id;
+      } else {
+        console.warn("[useOwnerVehicles] No email available for fallback lookup");
         return [];
       }
-      profileId = emailProfile.id;
-    } else {
-      console.warn("[useOwnerVehicles] No email available for fallback lookup");
+    }
+
+    if (!profileId) {
+      console.warn("[useOwnerVehicles] No profileId available");
       return [];
     }
-  }
+    
+    console.log("[useOwnerVehicles] Using profileId:", profileId);
 
-  if (!profileId) {
-    console.warn("[useOwnerVehicles] No profileId available");
+    // Fetch assignments for this profile
+    const { data: userAssignments, error } = await (supabase as any)
+      .from("vehicle_assignments")
+      .select(`
+        device_id,
+        vehicle_alias
+      `)
+      .eq("profile_id", profileId);
+
+    console.log("[useOwnerVehicles] Assignments query:", { assignments: userAssignments, error, count: userAssignments?.length });
+
+    if (error) {
+      console.error("[useOwnerVehicles] Assignments error:", error);
+      throw error;
+    }
+    if (!userAssignments || userAssignments.length === 0) {
+      console.warn("[useOwnerVehicles] No vehicle assignments found for profile:", profileId);
+      return [];
+    }
+
+    assignments = userAssignments;
+    deviceIds = (userAssignments as any[]).map((a: any) => a.device_id);
+    console.log("[useOwnerVehicles] Regular user - found", deviceIds.length, "assigned vehicles");
+  }
+  
+  if (deviceIds.length === 0) {
     return [];
   }
   
-  console.log("[useOwnerVehicles] Using profileId:", profileId);
-
-  // Fetch assignments for this profile
-  const { data: assignments, error } = await (supabase as any)
-    .from("vehicle_assignments")
-    .select(`
-      device_id,
-      vehicle_alias
-    `)
-    .eq("profile_id", profileId);
-
-  console.log("[useOwnerVehicles] Assignments query:", { assignments, error, count: assignments?.length });
-
-  if (error) {
-    console.error("[useOwnerVehicles] Assignments error:", error);
-    throw error;
-  }
-  if (!assignments || assignments.length === 0) {
-    console.warn("[useOwnerVehicles] No vehicle assignments found for profile:", profileId);
-    return [];
-  }
-
-  const deviceIds = (assignments as any[]).map((a: any) => a.device_id);
   console.log("[useOwnerVehicles] Fetching data for deviceIds:", deviceIds);
 
   // Fetch vehicle info
@@ -187,10 +231,10 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
 }
 
 export function useOwnerVehicles() {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
 
   return useQuery({
-    queryKey: ["owner-vehicles", user?.id],
+    queryKey: ["owner-vehicles", user?.id, isAdmin],
     queryFn: () => fetchOwnerVehicles(user!.id),
     enabled: !!user,
     staleTime: 30 * 1000, // 30 seconds

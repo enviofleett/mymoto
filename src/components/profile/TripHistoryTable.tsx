@@ -18,6 +18,7 @@ import {
   Truck
 } from "lucide-react";
 import { format, formatDistanceToNow, subDays } from "date-fns";
+import { formatToLagosTime } from "@/utils/timezone";
 
 interface TripRecord {
   id: string;
@@ -194,8 +195,7 @@ export function TripHistoryTable({ deviceIds, vehicles }: TripHistoryTableProps)
                       <TableCell>
                         <div className="flex flex-col">
                           <span className="text-sm">
-                            {new Date(trip.gps_time).toLocaleString('en-US', {
-                              timeZone: 'Africa/Lagos',
+                            {formatToLagosTime(trip.gps_time, {
                               month: 'short',
                               day: 'numeric',
                               hour: '2-digit',

@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -15,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { ChatMessageContent } from "@/components/chat/ChatMessageContent";
 import { format } from "date-fns";
 import { useQuery } from "@tanstack/react-query";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 interface ChatMessage {
   id: string;
@@ -76,134 +78,171 @@ export default function OwnerChatDetail() {
     refetchOnReconnect: false, // Don't refetch on reconnect (realtime handles it)
   });
 
-  // ✅ FIX: Merge history data with existing messages (don't overwrite temp messages)
+  // ✅ FIX #2: Improved history merge with better deduplication
   useEffect(() => {
-    // Don't merge if we're currently sending a message (to avoid race conditions)
-    if (isSendingRef.current) {
-      console.log('[Chat] Skipping history merge - message sending in progress');
-      return;
-    }
+    if (!historyData) return;
     
-    if (historyData && historyData.length > 0) {
-      setMessages(prev => {
-        // Merge strategy: Keep temp messages, merge DB messages by ID
-        const dbMessageIds = new Set(historyData.map(m => m.id));
-        const tempMessages = prev.filter(m => m.id.startsWith('temp-'));
-        const existingDbMessages = prev.filter(m => !m.id.startsWith('temp-') && dbMessageIds.has(m.id));
-        const newDbMessages = historyData.filter(m => !existingDbMessages.some(ex => ex.id === m.id));
+    setMessages(prev => {
+      // ✅ FIX #2: Use Set for O(1) lookup instead of array filtering
+      const existingIds = new Set(prev.map(m => m.id));
+      const historyIds = new Set(historyData.map(m => m.id));
+      
+      // Separate temp messages from DB messages
+      const tempMessages = prev.filter(m => m.id.startsWith('temp-'));
+      const existingDbMessages = prev.filter(m => !m.id.startsWith('temp-'));
+      
+      // Find new messages from history that don't exist yet
+      const newDbMessages = historyData.filter(m => !existingIds.has(m.id));
+      
+      // Combine: existing DB messages, new DB messages, temp messages
+      const merged = [...existingDbMessages, ...newDbMessages, ...tempMessages];
+      
+      // ✅ FIX: Sort by created_at to maintain chronological order
+      // If timestamps are identical or very close, ensure user messages come before assistant messages
+      merged.sort((a, b) => {
+        const timeA = new Date(a.created_at).getTime();
+        const timeB = new Date(b.created_at).getTime();
+        const diff = timeA - timeB;
         
-        // Combine: existing DB messages (keep order), new DB messages, temp messages
-        const merged = [...existingDbMessages, ...newDbMessages, ...tempMessages];
-        
-        // Sort by created_at to maintain chronological order
-        merged.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-        
-        console.log('[Chat] Merging history:', {
-          historyCount: historyData.length,
-          prevCount: prev.length,
-          tempCount: tempMessages.length,
-          mergedCount: merged.length,
-          isSending: isSendingRef.current
-        });
-        
-        return merged;
-      });
-    } else if (historyData && historyData.length === 0) {
-      // Only clear if we have no temp messages (initial load)
-      setMessages(prev => {
-        const hasTempMessages = prev.some(m => m.id.startsWith('temp-'));
-        if (!hasTempMessages && !isSendingRef.current) {
-          return [];
+        // If timestamps are within 100ms of each other, use role as tiebreaker
+        // User messages should come before assistant messages
+        if (Math.abs(diff) < 100) {
+          if (a.role === 'user' && b.role === 'assistant') return -1;
+          if (a.role === 'assistant' && b.role === 'user') return 1;
         }
-        // Keep temp messages even if history is empty
-        return prev.filter(m => m.id.startsWith('temp-'));
+        
+        return diff;
       });
-    }
+      
+      // ✅ FIX #2: Final deduplication pass (shouldn't be needed, but safety check)
+      const deduplicated: ChatMessage[] = [];
+      const seenIds = new Set<string>();
+      for (const msg of merged) {
+        if (!seenIds.has(msg.id)) {
+          seenIds.add(msg.id);
+          deduplicated.push(msg);
+        }
+      }
+      
+      console.log('[Chat] Merging history:', {
+        historyCount: historyData.length,
+        prevCount: prev.length,
+        tempCount: tempMessages.length,
+        newCount: newDbMessages.length,
+        mergedCount: deduplicated.length
+      });
+      
+      return deduplicated;
+    });
   }, [historyData]);
 
-  // ✅ FIX: Set up realtime subscription for new messages
+  // ✅ FIX #4: Set up realtime subscription with proper cleanup
   useEffect(() => {
     if (!user?.id || !deviceId) return;
     
     console.log('[Chat] Setting up realtime subscription for:', { deviceId, userId: user.id });
     
-    const channel = supabase
-      .channel(`vehicle_chat:${deviceId}:${user.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'vehicle_chat_history',
-          filter: `device_id=eq.${deviceId}`
-        },
-        (payload) => {
-          console.log('[Chat] Realtime event received:', {
-            event: payload.eventType,
-            table: payload.table,
-            new: payload.new
-          });
-          
-          const newMessage = payload.new as ChatMessage;
-          console.log('[Chat] New message from realtime:', {
-            id: newMessage.id,
-            role: newMessage.role,
-            content: newMessage.content?.substring(0, 50) + '...',
-            userId: newMessage.user_id,
-            matchesCurrentUser: newMessage.user_id === user.id
-          });
-          
-          // Only add messages for this user
-          if (newMessage.user_id === user.id) {
-            setMessages(prev => {
-              // ✅ FIX: Replace temporary user messages with real DB messages
-              // Check if this is a user message that matches a temporary one
-              if (newMessage.role === 'user') {
-                console.log('[Chat] Processing user message from realtime');
-                // Find and remove temporary user message with matching content
-                const filtered = prev.filter(m => 
-                  !(m.id.startsWith('temp-') && m.role === 'user' && m.content === newMessage.content)
-                );
-                // Avoid duplicates - check by ID
-                if (filtered.some(m => m.id === newMessage.id)) {
-                  console.log('[Chat] User message already exists, skipping');
-                  return filtered;
-                }
-                console.log('[Chat] Adding user message from realtime');
-                return [...filtered, newMessage];
-              } else {
-                // Assistant messages - replace temporary messages with real DB message
-                console.log('[Chat] Processing assistant message from realtime:', newMessage.id);
-                // Remove any temporary assistant messages with matching content
-                const filtered = prev.filter(m => 
-                  !(m.id.startsWith('temp-assistant-') && m.role === 'assistant' && m.content === newMessage.content)
-                );
-                // Avoid duplicates - check by ID
-                if (filtered.some(m => m.id === newMessage.id)) {
-                  console.log('[Chat] Assistant message already exists, skipping');
-                  return filtered;
-                }
-                console.log('[Chat] Adding assistant message from realtime, replacing temp');
-                return [...filtered, newMessage];
-              }
+    let mounted = true; // ✅ FIX #4: Track if component is mounted
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    
+    const setupSubscription = async () => {
+      channel = supabase
+        .channel(`vehicle_chat:${deviceId}:${user.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'vehicle_chat_history',
+            filter: `device_id=eq.${deviceId}`
+          },
+          (payload) => {
+            if (!mounted) return; // ✅ FIX #4: Don't update if unmounted
+            
+            console.log('[Chat] Realtime event received:', {
+              event: payload.eventType,
+              table: payload.table,
+              new: payload.new
             });
-          } else {
-            console.log('[Chat] Message user_id does not match current user, ignoring');
+            
+            const newMessage = payload.new as ChatMessage;
+            console.log('[Chat] New message from realtime:', {
+              id: newMessage.id,
+              role: newMessage.role,
+              content: newMessage.content?.substring(0, 50) + '...',
+              userId: newMessage.user_id,
+              matchesCurrentUser: newMessage.user_id === user.id
+            });
+            
+            // Only add messages for this user
+            if (newMessage.user_id === user.id) {
+              setMessages(prev => {
+                // ✅ FIX #2: Better deduplication using Set for message IDs
+                const messageIds = new Set(prev.map(m => m.id));
+                
+                // Skip if message already exists
+                if (messageIds.has(newMessage.id)) {
+                  console.log('[Chat] Message already exists, skipping');
+                  return prev;
+                }
+                
+                // Remove temporary messages with matching content
+                const filtered = prev.filter(m => {
+                  // Keep if it's not a temp message
+                  if (!m.id.startsWith('temp-')) return true;
+                  
+                  // Remove temp messages that match the new message
+                  if (m.role === newMessage.role && m.content === newMessage.content) {
+                    console.log('[Chat] Removing temp message:', m.id);
+                    return false;
+                  }
+                  
+                  return true;
+                });
+                
+                // ✅ FIX: Add new message in chronological order with role-based tiebreaker
+                const updated = [...filtered, newMessage];
+                updated.sort((a, b) => {
+                  const timeA = new Date(a.created_at).getTime();
+                  const timeB = new Date(b.created_at).getTime();
+                  const diff = timeA - timeB;
+                  
+                  // If timestamps are within 100ms of each other, use role as tiebreaker
+                  if (Math.abs(diff) < 100) {
+                    if (a.role === 'user' && b.role === 'assistant') return -1;
+                    if (a.role === 'assistant' && b.role === 'user') return 1;
+                  }
+                  
+                  return diff;
+                });
+                
+                return updated;
+              });
+            } else {
+              console.log('[Chat] Message user_id does not match current user, ignoring');
+            }
           }
-        }
-      )
-      .subscribe((status) => {
-        console.log('[Chat] Realtime subscription status:', status);
-        if (status === 'SUBSCRIBED') {
-          console.log('[Chat] ✅ Realtime subscription active');
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('[Chat] ❌ Realtime subscription error');
-        }
-      });
+        )
+        .subscribe((status) => {
+          if (!mounted) return;
+          
+          console.log('[Chat] Realtime subscription status:', status);
+          if (status === 'SUBSCRIBED') {
+            console.log('[Chat] ✅ Realtime subscription active');
+          } else if (status === 'CHANNEL_ERROR') {
+            console.error('[Chat] ❌ Realtime subscription error');
+          }
+        });
+    };
+    
+    setupSubscription();
 
     return () => {
-      console.log('[Chat] Cleaning up realtime subscription');
-      supabase.removeChannel(channel);
+      mounted = false; // ✅ FIX #4: Mark as unmounted
+      if (channel) {
+        console.log('[Chat] Cleaning up realtime subscription');
+        supabase.removeChannel(channel);
+      }
     };
   }, [deviceId, user?.id]);
 
@@ -218,9 +257,21 @@ export default function OwnerChatDetail() {
       severity: alert.severity,
     }));
 
-    // Merge and sort by date
+    // ✅ FIX: Merge and sort by date with role-based tiebreaker
     const combined = [...messages, ...alertMessages];
-    combined.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    combined.sort((a, b) => {
+      const timeA = new Date(a.created_at).getTime();
+      const timeB = new Date(b.created_at).getTime();
+      const diff = timeA - timeB;
+      
+      // If timestamps are within 100ms of each other, use role as tiebreaker
+      if (Math.abs(diff) < 100) {
+        if (a.role === 'user' && b.role === 'assistant') return -1;
+        if (a.role === 'assistant' && b.role === 'user') return 1;
+      }
+      
+      return diff;
+    });
     
     // Remove duplicates (same id)
     const seen = new Set<string>();
@@ -235,22 +286,20 @@ export default function OwnerChatDetail() {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingContent]);
 
-  const handleSend = async () => {
-    if (!input.trim() || !user || !deviceId) return;
+  // ✅ FIX #5: Retry logic with exponential backoff
+  const sendWithRetry = async (
+    userMessage: string,
+    tempUserMsg: ChatMessage,
+    retryCount = 0
+  ): Promise<void> => {
+    const MAX_RETRIES = 3;
+    const INITIAL_RETRY_DELAY = 1000; // 1 second
+    const MAX_RETRY_DELAY = 10000; // 10 seconds
 
-    const userMessage = input.trim();
-    setInput("");
-    setLoading(true);
-    setStreamingContent("");
-    isSendingRef.current = true; // Mark that we're sending
-
-    const tempUserMsg: ChatMessage = {
-      id: `temp-${Date.now()}`,
-      role: "user",
-      content: userMessage,
-      created_at: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, tempUserMsg]);
+    // ✅ FIX #1: Add AbortController with timeout
+    const controller = new AbortController();
+    const REQUEST_TIMEOUT = 30000; // 30 seconds
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
     try {
       // Get the session token for proper authorization
@@ -277,7 +326,10 @@ export default function OwnerChatDetail() {
           message: userMessage,
           user_id: user.id,
         }),
+        signal: controller.signal, // ✅ FIX #1: Add abort signal
       });
+      
+      clearTimeout(timeoutId); // Clear timeout on success
 
       console.log('[Chat] Response status:', response.status, response.statusText);
       console.log('[Chat] Response headers:', Object.fromEntries(response.headers.entries()));
@@ -314,9 +366,21 @@ export default function OwnerChatDetail() {
       let fullResponse = "";
       let buffer = "";
       let hasReceivedData = false;
+      let streamStartTime = Date.now();
+      const STREAM_TIMEOUT = 60000; // 60 seconds max for stream
+      const MAX_ITERATIONS = 10000; // Safety limit for iterations
+      let iterationCount = 0;
 
       try {
-        while (true) {
+        // ✅ FIX #7: Add timeout and iteration limit to stream reading
+        while (iterationCount < MAX_ITERATIONS) {
+          // Check for stream timeout
+          if (Date.now() - streamStartTime > STREAM_TIMEOUT) {
+            console.warn('[Chat] Stream timeout after 60s, closing stream');
+            reader.cancel();
+            throw new Error('Stream timeout: Response took too long');
+          }
+
           const { done, value } = await reader.read();
           
           if (done) {
@@ -351,6 +415,14 @@ export default function OwnerChatDetail() {
               }
             }
           }
+          
+          iterationCount++;
+        }
+        
+        if (iterationCount >= MAX_ITERATIONS) {
+          console.warn('[Chat] Stream iteration limit reached, closing stream');
+          reader.cancel();
+          throw new Error('Stream iteration limit reached');
         }
 
         if (!hasReceivedData) {
@@ -400,24 +472,96 @@ export default function OwnerChatDetail() {
         reader.releaseLock();
       }
     } catch (err) {
+      clearTimeout(timeoutId); // ✅ FIX #1: Clear timeout on error
+      
       console.error("Chat error:", err);
+      
+      // ✅ FIX #1: Handle timeout errors specifically
+      const isTimeout = err instanceof Error && (
+        err.name === 'AbortError' || 
+        err.message.includes('timeout') ||
+        err.message.includes('took too long')
+      );
+      
+      // ✅ FIX #5: Retry logic for network errors
+      const isNetworkError = err instanceof Error && (
+        err.message.includes('Failed to fetch') ||
+        err.message.includes('NetworkError') ||
+        err.message.includes('network') ||
+        (!isTimeout && retryCount < MAX_RETRIES)
+      );
+      
+      if (isNetworkError && retryCount < MAX_RETRIES) {
+        const retryDelay = Math.min(
+          INITIAL_RETRY_DELAY * Math.pow(2, retryCount),
+          MAX_RETRY_DELAY
+        );
+        
+        console.log(`[Chat] Retrying in ${retryDelay}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+        
+        toast({
+          title: "Retrying...",
+          description: `Connection issue. Retrying in ${Math.round(retryDelay / 1000)}s...`,
+          variant: "default",
+        });
+        
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+        return sendWithRetry(userMessage, tempUserMsg, retryCount + 1);
+      }
+      
+      // Final error - no more retries
       toast({
-        title: "Error",
-        description: err instanceof Error ? err.message : "Failed to send message",
+        title: isTimeout ? "Request Timeout" : "Error",
+        description: isTimeout 
+          ? "The request took too long. Please try again."
+          : err instanceof Error ? err.message : "Failed to send message",
         variant: "destructive",
       });
+      
       setMessages((prev) => prev.filter((m) => m.id !== tempUserMsg.id));
     } finally {
       setLoading(false);
-      // Clear sending flag after a delay to allow realtime to process
-      setTimeout(() => {
-        isSendingRef.current = false;
-        console.log('[Chat] Message send complete, allowing history merges');
-      }, 3000); // 3 second buffer
+      // ✅ FIX #2: Clear sending flag immediately (realtime will handle deduplication)
+      isSendingRef.current = false;
     }
   };
 
+  const handleSend = async () => {
+    if (!input.trim() || !user || !deviceId) return;
+    if (loading) return; // Prevent multiple simultaneous sends
+
+    const userMessage = input.trim();
+    setInput("");
+    setLoading(true);
+    setStreamingContent("");
+    isSendingRef.current = true; // Mark that we're sending
+
+    const tempUserMsg: ChatMessage = {
+      id: `temp-${Date.now()}-${Math.random()}`,
+      role: "user",
+      content: userMessage,
+      created_at: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, tempUserMsg]);
+
+    await sendWithRetry(userMessage, tempUserMsg, 0);
+  };
+
   return (
+    <ErrorBoundary
+      fallback={
+        <div className="flex flex-col h-screen bg-background items-center justify-center p-4">
+          <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
+          <h2 className="text-lg font-semibold mb-2">Chat Error</h2>
+          <p className="text-sm text-muted-foreground text-center mb-4">
+            Something went wrong with the chat. Please refresh the page.
+          </p>
+          <Button onClick={() => window.location.reload()}>
+            Refresh Page
+          </Button>
+        </div>
+      }
+    >
     <div className="flex flex-col h-screen bg-background">
       {/* Header - Neumorphic styling */}
       <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm pt-[env(safe-area-inset-top)] -mt-[env(safe-area-inset-top)]">
@@ -670,5 +814,6 @@ export default function OwnerChatDetail() {
         </div>
       </div>
     </div>
+    </ErrorBoundary>
   );
 }

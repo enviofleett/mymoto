@@ -17,6 +17,9 @@ CREATE TABLE IF NOT EXISTS public.email_templates (
     updated_by UUID REFERENCES auth.users(id)
 );
 
+-- Ensure is_active is true by default for existing rows if needed
+UPDATE public.email_templates SET is_active = true WHERE is_active IS NULL;
+
 -- Add sender_id column if table already exists
 DO $$ 
 BEGIN

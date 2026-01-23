@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { MapPin, Navigation, Clock, TrendingUp, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { useAddress } from "@/hooks/useAddress";
+import { formatToLagosTime } from "@/utils/timezone";
 
 interface Trip {
   id: string;
@@ -267,8 +268,7 @@ export function VehicleTrips({ deviceId }: VehicleTripsProps) {
                   Start Time
                 </p>
                 <p className="text-sm font-medium">
-                  {new Date(trip.start_time).toLocaleString('en-US', {
-                    timeZone: 'Africa/Lagos',
+                  {formatToLagosTime(trip.start_time, {
                     month: 'short',
                     day: 'numeric',
                     hour: 'numeric',
@@ -284,8 +284,7 @@ export function VehicleTrips({ deviceId }: VehicleTripsProps) {
                     End Time
                   </p>
                   <p className="text-sm font-medium">
-                    {new Date(trip.end_time).toLocaleString('en-US', {
-                      timeZone: 'Africa/Lagos',
+                    {formatToLagosTime(trip.end_time, {
                       month: 'short',
                       day: 'numeric',
                       hour: 'numeric',

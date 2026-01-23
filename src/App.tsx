@@ -3,11 +3,12 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider } from "@/contexts/AuthContext";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import SplashScreen from "@/components/SplashScreen";
 import { TermsChecker } from "@/components/auth/TermsChecker";
+import RatingListener from "@/components/directory/RatingListener";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import ForgotPassword from "./pages/ForgotPassword";
@@ -23,6 +24,7 @@ import AdminAiSettings from "./pages/AdminAiSettings";
 import AdminAssignments from "./pages/AdminAssignments";
 import AdminPrivacySettings from "./pages/AdminPrivacySettings";
 import AdminEmailTemplates from "./pages/AdminEmailTemplates";
+import AdminResources from "./pages/AdminResources";
 import NotificationSettings from "./pages/NotificationSettings";
 import NotFound from "./pages/NotFound";
 import InstallApp from "./pages/InstallApp";
@@ -36,12 +38,43 @@ import OwnerVehicleProfile from "./pages/owner/OwnerVehicleProfile";
 import OwnerWallet from "./pages/owner/OwnerWallet";
 import OwnerProfile from "./pages/owner/OwnerProfile";
 import OwnerNotificationSettings from "./pages/owner/OwnerNotificationSettings";
+import OwnerPrivacy from "./pages/owner/OwnerPrivacy";
+import OwnerResources from "./pages/owner/OwnerResources";
+
+// Partner pages
+import PartnerDashboard from "./pages/partner/PartnerDashboard";
+import PartnerProfile from "./pages/partner/PartnerProfile";
+import PartnerSignup from "./pages/partner/PartnerSignup";
+
+// Directory pages
+import OwnerDirectory from "./pages/owner/OwnerDirectory";
+import AdminDirectory from "./pages/AdminDirectory";
 
 const queryClient = new QueryClient();
 
 // Check if running as installed PWA
 const isPWA = window.matchMedia('(display-mode: standalone)').matches ||
   (window.navigator as any).standalone === true;
+
+// Role-based redirect component
+const RoleBasedRedirect = () => {
+  const { user, isAdmin, isProvider, isLoading, isRoleLoaded } = useAuth();
+  const navigate = useNavigate();
+  
+  useEffect(() => {
+    if (!isLoading && isRoleLoaded && user) {
+      if (isAdmin) {
+        navigate('/', { replace: true });
+      } else if (isProvider) {
+        navigate('/partner/dashboard', { replace: true });
+      } else {
+        navigate('/owner', { replace: true });
+      }
+    }
+  }, [user, isAdmin, isProvider, isLoading, isRoleLoaded, navigate]);
+  
+  return null;
+};
 
 const App = () => {
   const [showSplash, setShowSplash] = useState(isPWA);
@@ -62,6 +95,13 @@ const App = () => {
               <Route path="/login" element={<PwaLogin />} />
               <Route path="/app" element={<InstallApp />} />
               
+              {/* Public Partner Signup */}
+              <Route path="/partner-signup" element={<PartnerSignup />} />
+              <Route path="/partner/signup" element={<PartnerSignup />} />
+              
+              {/* Role-based redirect */}
+              <Route path="/redirect" element={<RoleBasedRedirect />} />
+              
               {/* Admin Dashboard Routes */}
               <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
               <Route path="/fleet" element={<ProtectedRoute><Fleet /></ProtectedRoute>} />
@@ -79,6 +119,12 @@ const App = () => {
               <Route path="/admin/assignments" element={<ProtectedRoute><AdminAssignments /></ProtectedRoute>} />
               <Route path="/admin/privacy-settings" element={<ProtectedRoute><AdminPrivacySettings /></ProtectedRoute>} />
               <Route path="/admin/email-templates" element={<ProtectedRoute><AdminEmailTemplates /></ProtectedRoute>} />
+              <Route path="/admin/resources" element={<ProtectedRoute><AdminResources /></ProtectedRoute>} />
+              <Route path="/admin/directory" element={<ProtectedRoute requireAdmin><AdminDirectory /></ProtectedRoute>} />
+              
+              {/* Partner Routes */}
+              <Route path="/partner/dashboard" element={<ProtectedRoute><PartnerDashboard /></ProtectedRoute>} />
+              <Route path="/partner/profile" element={<ProtectedRoute><PartnerProfile /></ProtectedRoute>} />
               
               {/* Owner PWA Routes */}
               <Route path="/owner" element={<ProtectedRoute><OwnerChat /></ProtectedRoute>} />
@@ -88,9 +134,13 @@ const App = () => {
               <Route path="/owner/wallet" element={<ProtectedRoute><OwnerWallet /></ProtectedRoute>} />
               <Route path="/owner/profile" element={<ProtectedRoute><OwnerProfile /></ProtectedRoute>} />
               <Route path="/owner/notifications" element={<ProtectedRoute><OwnerNotificationSettings /></ProtectedRoute>} />
+              <Route path="/owner/privacy" element={<ProtectedRoute><OwnerPrivacy /></ProtectedRoute>} />
+              <Route path="/owner/resources" element={<ProtectedRoute><OwnerResources /></ProtectedRoute>} />
+              <Route path="/owner/directory" element={<ProtectedRoute><OwnerDirectory /></ProtectedRoute>} />
               
               <Route path="*" element={<NotFound />} />
             </Routes>
+            <RatingListener />
             </TermsChecker>
           </AuthProvider>
         </BrowserRouter>
