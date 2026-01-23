@@ -241,20 +241,18 @@ Deno.serve(async (req) => {
 
         // Insert trips, checking for duplicates
         for (const trip of trips) {
-          // Check if trip already exists (same device, same start time within 1 minute)
-          const tripStartTime = new Date(trip.start_time);
-          const startWindowMin = new Date(tripStartTime.getTime() - 60000).toISOString();
-          const startWindowMax = new Date(tripStartTime.getTime() + 60000).toISOString();
-
+          // FIX: Check for exact duplicate (device_id, start_time, end_time) instead of 1-minute window
           const { data: existing } = await supabase
             .from("vehicle_trips")
             .select("id")
             .eq("device_id", trip.device_id)
-            .gte("start_time", startWindowMin)
-            .lte("start_time", startWindowMax)
-            .limit(1);
+            .eq("start_time", trip.start_time)
+            .eq("end_time", trip.end_time)
+            .limit(1)
+            .maybeSingle();
 
-          if (existing && existing.length > 0) {
+          if (existing) {
+            console.log(`[process-trips] Skipping duplicate trip: ${trip.start_time} to ${trip.end_time} (already exists: ${existing.id})`);
             totalTripsSkipped++;
             continue;
           }
@@ -263,7 +261,13 @@ Deno.serve(async (req) => {
           const { error: insertError } = await supabase.from("vehicle_trips").insert(trip);
 
           if (insertError) {
-            errors.push(`Device ${deviceId} trip insert: ${insertError.message}`);
+            // Check if error is due to unique constraint violation (race condition)
+            if (insertError.message.includes('duplicate key') || insertError.message.includes('unique constraint')) {
+              console.log(`[process-trips] Duplicate trip detected (race condition): ${trip.start_time} to ${trip.end_time}`);
+              totalTripsSkipped++;
+            } else {
+              errors.push(`Device ${deviceId} trip insert: ${insertError.message}`);
+            }
           } else {
             totalTripsCreated++;
           }

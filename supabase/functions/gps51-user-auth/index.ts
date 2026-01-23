@@ -239,7 +239,15 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Upsert vehicle
+        // Get primary admin profile ID (toolbuxdev@gmail.com or first admin)
+        const { data: adminProfiles } = await supabaseAdmin.rpc('get_admin_profile_ids');
+        const primaryAdminProfileId = adminProfiles?.[0]?.profile_id || null;
+        
+        if (!primaryAdminProfileId) {
+          console.warn(`[gps51-user-auth] No admin profile found for vehicle ${deviceId}. Will be assigned via trigger.`);
+        }
+        
+        // Upsert vehicle with primary owner
         const vehicleData = {
           device_id: deviceId,
           device_name: device.devicename || device.name || `Device ${deviceId}`,
@@ -248,6 +256,7 @@ Deno.serve(async (req) => {
           gps_owner: username,
           group_id: group.groupid?.toString() || null,
           group_name: group.groupname || null,
+          primary_owner_profile_id: primaryAdminProfileId, // Ensure primary owner is set
           last_synced_at: new Date().toISOString()
         };
 

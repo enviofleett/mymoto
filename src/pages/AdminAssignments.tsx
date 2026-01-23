@@ -22,7 +22,21 @@ export default function AdminAssignments() {
         },
       });
 
-      if (error) throw error;
+      // Check for Supabase client error first
+      if (error) {
+        throw error;
+      }
+
+      // Check if response data contains an error property
+      if (data && typeof data === 'object' && 'error' in data) {
+        const errorMessage = (data as any).error || 'Unknown error';
+        throw new Error(errorMessage);
+      }
+
+      // Check if data is undefined or null
+      if (!data) {
+        throw new Error('No response data received from GPS51 sync');
+      }
 
       toast.success('Vehicles synced successfully from GPS51');
       // Refresh the page to show updated data
@@ -31,7 +45,8 @@ export default function AdminAssignments() {
       }, 1000);
     } catch (error: any) {
       console.error('Vehicle sync error:', error);
-      toast.error(`Sync failed: ${error.message || 'Unknown error'}`);
+      const errorMessage = error?.message || error?.error || (typeof error === 'string' ? error : 'Unknown error');
+      toast.error(`Sync failed: ${errorMessage}`);
     } finally {
       setSyncing(false);
     }

@@ -194,6 +194,8 @@ const handler = async (req: Request): Promise<Response> => {
       subject: emailTemplate.subject,
       html: emailTemplate.html,
       text: message,
+      supabase,
+      templateKey: 'alert'
     });
 
     // Mark alert as sent for deduplication

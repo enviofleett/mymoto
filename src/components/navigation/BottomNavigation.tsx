@@ -10,7 +10,8 @@ import {
   Settings,
   LogOut,
   Wallet,
-  BellRing
+  BellRing,
+  Building2
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -30,9 +31,9 @@ const mainNavItems = [
 ];
 
 const menuItems = [
-  { title: "Notifications", url: "/notifications", icon: BellRing },
   { title: "Settings", url: "/settings", icon: Settings },
   { title: "Admin Wallets", url: "/admin/wallets", icon: Wallet, adminOnly: true },
+  { title: "Directory", url: "/admin/directory", icon: Building2, adminOnly: true },
 ];
 
 export function BottomNavigation() {

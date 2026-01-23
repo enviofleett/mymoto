@@ -100,13 +100,15 @@ export default function OwnerNotificationSettings() {
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full shadow-neumorphic-sm bg-card p-0.5 shrink-0">
+                      <div className="w-12 h-12 rounded-full shadow-neumorphic-sm bg-card p-0.5 shrink-0 overflow-hidden">
                         {vehicle.avatarUrl ? (
-                          <img
-                            src={vehicle.avatarUrl}
-                            alt={vehicle.name}
-                            className="w-full h-full rounded-full object-cover"
-                          />
+                          <div className="w-full h-full rounded-full bg-secondary flex items-center justify-center overflow-hidden">
+                            <img
+                              src={vehicle.avatarUrl}
+                              alt={vehicle.name}
+                              className="max-w-full max-h-full w-auto h-auto object-contain rounded-full"
+                            />
+                          </div>
                         ) : (
                           <div className="w-full h-full rounded-full bg-secondary flex items-center justify-center">
                             <Car className="h-5 w-5 text-muted-foreground" />

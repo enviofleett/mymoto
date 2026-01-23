@@ -107,6 +107,46 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * c;
 }
 
+// Calculate trip quality score for deduplication
+// Higher score = better data quality (prefer trips with complete data)
+function calculateTripQualityScore(trip: any): number {
+  let score = 0;
+  
+  // Has valid start coordinates (+10 points)
+  if (trip.start_latitude && trip.start_longitude && 
+      trip.start_latitude !== 0 && trip.start_longitude !== 0) {
+    score += 10;
+  }
+  
+  // Has valid end coordinates (+10 points)
+  if (trip.end_latitude && trip.end_longitude && 
+      trip.end_latitude !== 0 && trip.end_longitude !== 0) {
+    score += 10;
+  }
+  
+  // Has non-zero distance (+5 points)
+  if (trip.distance_km && trip.distance_km > 0) {
+    score += 5;
+  }
+  
+  // Has duration (+3 points)
+  if (trip.duration_seconds && trip.duration_seconds > 0) {
+    score += 3;
+  }
+  
+  // Has speed data (+2 points)
+  if (trip.avg_speed && trip.avg_speed > 0) {
+    score += 2;
+  }
+  
+  // Has max speed (+1 point)
+  if (trip.max_speed && trip.max_speed > 0) {
+    score += 1;
+  }
+  
+  return score;
+}
+
 async function fetchVehicleTrips(
   deviceId: string, 
   limit: number = 200,
@@ -124,34 +164,32 @@ async function fetchVehicleTrips(
     .not("start_time", "is", null)
     .not("end_time", "is", null);
 
-  // CRITICAL OPTIMIZATION: If no dateRange provided, prioritize last 24 hours for instant loading
+  // FIX: Apply date range filtering only when explicitly provided
+  // Do NOT auto-filter to last 24 hours - let limit handle the number of trips
   if (dateRange?.from) {
+    // Set to start of day in Africa/Lagos timezone
     const fromDate = new Date(dateRange.from);
-    fromDate.setHours(0, 0, 0, 0);
+    // Use UTC to avoid timezone issues, but set to start of day
+    fromDate.setUTCHours(0, 0, 0, 0);
     query = query.gte("start_time", fromDate.toISOString());
     if (process.env.NODE_ENV === 'development') {
       console.log('[fetchVehicleTrips] Date filter FROM:', fromDate.toISOString());
     }
-  } else {
-    // No explicit date range - prioritize last 24 hours for instant loading
-    const last24Hours = new Date();
-    last24Hours.setHours(last24Hours.getHours() - 24);
-    query = query.gte("start_time", last24Hours.toISOString());
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[fetchVehicleTrips] Auto-filtering last 24 hours for instant load:', last24Hours.toISOString());
-    }
   }
   
   if (dateRange?.to) {
-    // Include entire "to" date by setting to end of day
+    // Include entire "to" date by setting to end of day (start of next day)
     const endDate = new Date(dateRange.to);
-    endDate.setDate(endDate.getDate() + 1);
-    endDate.setHours(0, 0, 0, 0);
+    endDate.setUTCDate(endDate.getUTCDate() + 1);
+    endDate.setUTCHours(0, 0, 0, 0);
     query = query.lt("start_time", endDate.toISOString());
     if (process.env.NODE_ENV === 'development') {
       console.log('[fetchVehicleTrips] Date filter TO:', endDate.toISOString());
     }
   }
+  
+  // If no date range provided, fetch most recent trips up to limit
+  // This ensures users see all recent trips, not just last 24 hours
 
   // Always order by start_time DESC to get newest first, then limit
   const { data, error } = await query
@@ -204,24 +242,110 @@ async function fetchVehicleTrips(
     filteredOut: (data?.length || 0) - filteredTrips.length
   });
   
-  return filteredTrips
+  // FIX: Deduplicate trips - keep only one trip per unique start_time/end_time combination
+  // Use a Map to track seen trips, keeping the one with the most complete data
+  const tripMap = new Map<string, any>();
+  const duplicateIds: string[] = [];
+  
+  filteredTrips.forEach((trip: any) => {
+    // Create a unique key from start_time and end_time
+    // Use ISO strings for exact matching (millisecond precision)
+    const startTime = trip.start_time ? new Date(trip.start_time).toISOString() : '';
+    const endTime = trip.end_time ? new Date(trip.end_time).toISOString() : '';
+    
+    if (!startTime || !endTime) {
+      console.warn(`[fetchVehicleTrips] Skipping trip ${trip.id} with invalid timestamps`);
+      return;
+    }
+    
+    const key = `${startTime}|${endTime}`;
+    
+    const existingTrip = tripMap.get(key);
+    
+    if (!existingTrip) {
+      // First occurrence - add it
+      tripMap.set(key, trip);
+    } else {
+      // Duplicate found - keep the one with better data quality
+      const existingScore = calculateTripQualityScore(existingTrip);
+      const newScore = calculateTripQualityScore(trip);
+      
+      if (newScore > existingScore) {
+        // New trip has better data - replace
+        duplicateIds.push(existingTrip.id);
+        tripMap.set(key, trip);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[fetchVehicleTrips] Replacing duplicate trip ${existingTrip.id} with ${trip.id} (better quality: ${newScore} > ${existingScore})`);
+        }
+      } else if (newScore === existingScore) {
+        // Same quality - prefer newer one, or one with ID (more reliable)
+        const existingCreated = existingTrip.created_at ? new Date(existingTrip.created_at).getTime() : 0;
+        const newCreated = trip.created_at ? new Date(trip.created_at).getTime() : 0;
+        
+        if (newCreated > existingCreated) {
+          duplicateIds.push(existingTrip.id);
+          tripMap.set(key, trip);
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`[fetchVehicleTrips] Replacing duplicate trip ${existingTrip.id} with ${trip.id} (newer: ${new Date(trip.created_at).toISOString()} > ${new Date(existingTrip.created_at).toISOString()})`);
+          }
+        } else {
+          duplicateIds.push(trip.id);
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`[fetchVehicleTrips] Skipping duplicate trip ${trip.id} (keeping ${existingTrip.id}, same quality, older)`);
+          }
+        }
+      } else {
+        // Existing trip is better - keep it
+        duplicateIds.push(trip.id);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[fetchVehicleTrips] Skipping duplicate trip ${trip.id} (keeping ${existingTrip.id}, better quality: ${existingScore} > ${newScore})`);
+        }
+      }
+    }
+  });
+  
+  const deduplicatedTrips = Array.from(tripMap.values());
+  
+  if (deduplicatedTrips.length < filteredTrips.length) {
+    const duplicatesRemoved = filteredTrips.length - deduplicatedTrips.length;
+    console.warn(`[fetchVehicleTrips] Removed ${duplicatesRemoved} duplicate trip(s) for device ${deviceId} (${filteredTrips.length} -> ${deduplicatedTrips.length})`);
+    
+    if (process.env.NODE_ENV === 'development' && duplicateIds.length > 0) {
+      console.warn(`[fetchVehicleTrips] Duplicate trip IDs removed:`, duplicateIds.slice(0, 10), duplicateIds.length > 10 ? `... and ${duplicateIds.length - 10} more` : '');
+    }
+  }
+  
+  return deduplicatedTrips
     .map((trip: any): VehicleTrip => {
-      // Calculate distance if missing or 0
-      let distanceKm = trip.distance_km || 0;
+      // FIX: Improved distance calculation - handle NULL, 0, and missing values
+      let distanceKm = trip.distance_km;
+      
+      // Convert NULL to 0 for easier handling
+      if (distanceKm === null || distanceKm === undefined) {
+        distanceKm = 0;
+      }
+      
+      // Check if we need to calculate distance
+      const needsDistanceCalculation = distanceKm === 0 || distanceKm === null;
       
       // First, try to calculate from GPS coordinates if available
-      const hasValidStartCoords = trip.start_latitude && trip.start_longitude && 
+      const hasValidStartCoords = trip.start_latitude != null && trip.start_longitude != null && 
                                    trip.start_latitude !== 0 && trip.start_longitude !== 0;
-      const hasValidEndCoords = trip.end_latitude && trip.end_longitude && 
+      const hasValidEndCoords = trip.end_latitude != null && trip.end_longitude != null && 
                                  trip.end_latitude !== 0 && trip.end_longitude !== 0;
       
-      if (distanceKm === 0 && hasValidStartCoords && hasValidEndCoords) {
+      if (needsDistanceCalculation && hasValidStartCoords && hasValidEndCoords) {
+        // Calculate distance using Haversine formula
         distanceKm = calculateDistance(
           trip.start_latitude,
           trip.start_longitude,
           trip.end_latitude,
           trip.end_longitude
         );
+        
+        if (process.env.NODE_ENV === 'development' && distanceKm > 0) {
+          console.log(`[fetchVehicleTrips] Calculated distance for trip ${trip.id}: ${distanceKm.toFixed(2)} km`);
+        }
       }
       
       // If distance is still 0 but we have duration and average speed, estimate distance
@@ -229,6 +353,10 @@ async function fetchVehicleTrips(
         // distance = speed (km/h) * time (hours)
         const durationHours = trip.duration_seconds / 3600;
         distanceKm = trip.avg_speed * durationHours;
+        
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[fetchVehicleTrips] Estimated distance from speed for trip ${trip.id}: ${distanceKm.toFixed(2)} km`);
+        }
       }
       
       // If distance is still 0 but we have duration, estimate minimum distance
@@ -237,6 +365,10 @@ async function fetchVehicleTrips(
         const durationHours = trip.duration_seconds / 3600;
         const minSpeedKmh = 5; // Minimum assumed speed for a trip
         distanceKm = minSpeedKmh * durationHours;
+        
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[fetchVehicleTrips] Estimated minimum distance for trip ${trip.id}: ${distanceKm.toFixed(2)} km`);
+        }
       }
 
       return {
@@ -260,7 +392,7 @@ async function fetchVehicleTrips(
 async function fetchVehicleLLMSettings(deviceId: string): Promise<VehicleLLMSettings | null> {
   const { data, error } = await (supabase as any)
     .from("vehicle_llm_settings")
-    .select("device_id, nickname, language_preference, personality_mode, llm_enabled")
+    .select("device_id, nickname, language_preference, personality_mode, llm_enabled, avatar_url")
     .eq("device_id", deviceId)
     .maybeSingle();
 
@@ -502,7 +634,16 @@ async function fetchVehicleMileageDetails(
 
   if (error) {
     // Table doesn't exist yet (migration not applied) - return empty array gracefully
-    if (error.code === 'PGRST205' || error.message?.includes('Could not find the table')) {
+    // Check for various error codes and messages that indicate missing table
+    if (
+      error.code === 'PGRST116' || // PostgREST relation not found
+      error.code === 'PGRST205' || // PostgREST table not found
+      error.message?.includes('404') ||
+      error.message?.includes('Could not find the table') ||
+      error.message?.includes('relation') ||
+      error.message?.includes('does not exist') ||
+      error.message?.includes('not found')
+    ) {
       console.warn("vehicle_mileage_details table not found - migration may not be applied yet. Returning empty array.");
       return [];
     }

@@ -1053,24 +1053,18 @@ Deno.serve(async (req) => {
           }
 
           for (const trip of batch) {
-            const tripStartTime = new Date(trip.start_time);
-            // Check for existing trip within 2 minutes window (GPS51 trips are precise)
-            const startWindowMin = new Date(tripStartTime.getTime() - 2 * 60 * 1000).toISOString();
-            const startWindowMax = new Date(tripStartTime.getTime() + 2 * 60 * 1000).toISOString();
-
-            // Check for existing trip with similar start time AND similar distance
+            // FIX: Check for exact duplicate (device_id, start_time, end_time) instead of fuzzy matching
             const { data: existing } = await supabase
               .from("vehicle_trips")
-              .select("id, distance_km")
+              .select("id")
               .eq("device_id", trip.device_id)
-              .gte("start_time", startWindowMin)
-              .lte("start_time", startWindowMax)
-              .gte("distance_km", trip.distance_km * 0.95) // Tighter match (5% tolerance)
-              .lte("distance_km", trip.distance_km * 1.05)
-              .limit(1);
+              .eq("start_time", trip.start_time)
+              .eq("end_time", trip.end_time)
+              .limit(1)
+              .maybeSingle();
 
-            if (existing && existing.length > 0) {
-              console.log(`[sync-trips-incremental] Skipping duplicate trip: ${trip.start_time} (existing: ${existing[0].id})`);
+            if (existing) {
+              console.log(`[sync-trips-incremental] Skipping duplicate trip: ${trip.start_time} to ${trip.end_time} (existing: ${existing.id})`);
               deviceTripsSkipped++;
               totalTripsSkipped++;
               continue;
@@ -1170,12 +1164,35 @@ Deno.serve(async (req) => {
               }
             }
 
-            // Insert new trip
+            // FIX: Check for duplicate before inserting (exact match on device_id, start_time, end_time)
+            const { data: existingTrip } = await supabase
+              .from("vehicle_trips")
+              .select("id")
+              .eq("device_id", tripToInsert.device_id)
+              .eq("start_time", tripToInsert.start_time)
+              .eq("end_time", tripToInsert.end_time)
+              .limit(1)
+              .maybeSingle();
+
+            if (existingTrip) {
+              // Duplicate found - skip insertion
+              console.log(`[sync-trips-incremental] Skipping duplicate trip: ${trip.start_time} to ${trip.end_time} (already exists: ${existingTrip.id})`);
+              totalTripsSkipped++;
+              continue;
+            }
+
+            // Insert new trip (no duplicate found)
             const { error: insertError } = await supabase.from("vehicle_trips").insert(tripToInsert);
 
             if (insertError) {
-              console.error(`[sync-trips-incremental] Error inserting trip: ${insertError.message}`);
-              errors.push(`Device ${deviceId} trip insert: ${insertError.message}`);
+              // Check if error is due to unique constraint violation (race condition)
+              if (insertError.message.includes('duplicate key') || insertError.message.includes('unique constraint')) {
+                console.log(`[sync-trips-incremental] Duplicate trip detected (race condition): ${trip.start_time} to ${trip.end_time}`);
+                totalTripsSkipped++;
+              } else {
+                console.error(`[sync-trips-incremental] Error inserting trip: ${insertError.message}`);
+                errors.push(`Device ${deviceId} trip insert: ${insertError.message}`);
+              }
             } else {
               console.log(`[sync-trips-incremental] Inserted trip: ${trip.start_time} to ${trip.end_time}, ${trip.distance_km}km`);
               deviceTripsCreated++;

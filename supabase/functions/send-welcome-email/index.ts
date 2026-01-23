@@ -63,6 +63,8 @@ const handler = async (req: Request): Promise<Response> => {
       to: userEmail,
       subject: emailTemplate.subject,
       html: emailTemplate.html,
+      supabase,
+      templateKey: 'welcome'
     });
 
     return new Response(

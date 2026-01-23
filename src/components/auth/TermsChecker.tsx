@@ -18,11 +18,13 @@ export function TermsChecker({ children }: { children: React.ReactNode }) {
     if (!user) return;
 
     try {
-      // Get current active terms version
+      // Get current active terms version (get most recent if multiple exist)
       const { data: termsData } = await (supabase as any)
         .from("privacy_security_terms")
         .select("version")
         .eq("is_active", true)
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (!termsData) {
@@ -75,7 +77,14 @@ export function TermsChecker({ children }: { children: React.ReactNode }) {
             userId={user.id}
           />
         )}
-        {!showTermsDialog && <>{children}</>}
+        {!showTermsDialog && (
+          <div className="flex items-center justify-center min-h-screen">
+            <div className="text-center space-y-2">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+              <p className="text-sm text-muted-foreground">Loading...</p>
+            </div>
+          </div>
+        )}
       </>
     );
   }

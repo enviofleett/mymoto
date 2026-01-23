@@ -23,17 +23,22 @@ const Auth = () => {
   const [success, setSuccess] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  const { signIn, signUp, user, isAdmin, isLoading, isRoleLoaded } = useAuth();
+  const { signIn, signUp, user, isAdmin, isProvider, isLoading, isRoleLoaded } = useAuth();
   const navigate = useNavigate();
   const [isSignUp, setIsSignUp] = useState(false);
 
   useEffect(() => {
     if (user && !isLoading && isRoleLoaded) {
-      // Role-based redirect: admins go to dashboard, owners go to chat
-      const targetPath = isAdmin ? '/' : '/owner';
+      // Role-based redirect: admins go to dashboard, providers go to partner dashboard, owners go to chat
+      let targetPath = '/owner';
+      if (isAdmin) {
+        targetPath = '/';
+      } else if (isProvider) {
+        targetPath = '/partner/dashboard';
+      }
       navigate(targetPath);
     }
-  }, [user, isAdmin, isLoading, isRoleLoaded, navigate]);
+  }, [user, isAdmin, isProvider, isLoading, isRoleLoaded, navigate]);
 
   const validateInput = () => {
     const result = authSchema.safeParse({ email, password });

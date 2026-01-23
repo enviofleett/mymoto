@@ -6,6 +6,7 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   isAdmin: boolean;
+  isProvider: boolean;
   isLoading: boolean;
   isRoleLoaded: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
@@ -29,6 +30,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isProvider, setIsProvider] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isRoleLoaded, setIsRoleLoaded] = useState(false);
 
@@ -47,6 +49,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return !!data;
   };
 
+  const checkProviderRole = async (userId: string) => {
+    const { data, error } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', userId)
+      .eq('role', 'service_provider')
+      .maybeSingle();
+    
+    if (error) {
+      console.error('Error checking provider role:', error);
+      return false;
+    }
+    return !!data;
+  };
+
 
   useEffect(() => {
     // Set up auth state listener FIRST
@@ -55,17 +72,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setSession(session);
         setUser(session?.user ?? null);
         
-        // Defer admin check with setTimeout to prevent deadlock
+        // Defer role checks with setTimeout to prevent deadlock
         if (session?.user) {
           setIsRoleLoaded(false);
           setTimeout(() => {
-            checkAdminRole(session.user.id).then((isAdminResult) => {
+            Promise.all([
+              checkAdminRole(session.user.id),
+              checkProviderRole(session.user.id),
+            ]).then(([isAdminResult, isProviderResult]) => {
               setIsAdmin(isAdminResult);
+              setIsProvider(isProviderResult);
               setIsRoleLoaded(true);
             });
           }, 0);
         } else {
           setIsAdmin(false);
+          setIsProvider(false);
           setIsRoleLoaded(true);
         }
         setIsLoading(false);
@@ -136,7 +158,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, isAdmin, isLoading, isRoleLoaded, signIn, signUp, signOut, resetPassword, updatePassword }}>
+    <AuthContext.Provider value={{ user, session, isAdmin, isProvider, isLoading, isRoleLoaded, signIn, signUp, signOut, resetPassword, updatePassword }}>
       {children}
     </AuthContext.Provider>
   );

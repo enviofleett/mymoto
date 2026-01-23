@@ -9,6 +9,7 @@ export type AlertType =
   | 'rapid_acceleration'
   | 'ignition_on'
   | 'ignition_off'
+  | 'vehicle_moving'
   | 'geofence_enter'
   | 'geofence_exit'
   | 'idle_too_long'
@@ -68,7 +69,13 @@ const DEFAULT_PREFERENCES: NotificationPreferences = {
     warning: { sound: true, push: false },
     info: { sound: false, push: false }
   },
-  alertTypeSettings: {},
+  alertTypeSettings: {
+    // Override defaults for important vehicle events
+    ignition_on: { sound: false, push: true },  // Show push notification, no sound
+    ignition_off: { sound: false, push: true },  // Show push notification, no sound
+    vehicle_moving: { sound: false, push: true }, // Show push notification, no sound
+    overspeeding: { sound: true, push: true },   // Show push with sound (important)
+  },
   aiChatPreferences: {
     ignition_start: false,
     geofence_event: false,
@@ -324,6 +331,7 @@ export const ALERT_TYPE_LABELS: Record<AlertType, string> = {
   rapid_acceleration: 'Rapid Acceleration',
   ignition_on: 'Ignition On',
   ignition_off: 'Ignition Off',
+  vehicle_moving: 'Vehicle Moving',
   geofence_enter: 'Geofence Entry',
   geofence_exit: 'Geofence Exit',
   idle_too_long: 'Extended Idle',
@@ -340,7 +348,8 @@ export const ALERT_TYPE_DESCRIPTIONS: Record<AlertType, string> = {
   harsh_braking: 'Sudden hard braking detected',
   rapid_acceleration: 'Aggressive acceleration detected',
   ignition_on: 'Vehicle ignition turned on',
-  ignition_off: 'Vehicle ignition turned off',
+  ignition_off: 'Vehicle ignition turned off (Power Off)',
+  vehicle_moving: 'Vehicle starts moving',
   geofence_enter: 'Vehicle enters a geofence zone',
   geofence_exit: 'Vehicle leaves a geofence zone',
   idle_too_long: 'Vehicle idle for extended period',

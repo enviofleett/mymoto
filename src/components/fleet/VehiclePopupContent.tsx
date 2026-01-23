@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import { User, Battery, MapPin } from "lucide-react";
+import { User, Battery, MapPin, WifiOff } from "lucide-react";
 import { FleetVehicle } from "@/hooks/useFleetData";
 import { useAddress } from "@/hooks/useAddress";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -26,10 +26,25 @@ export function VehiclePopupContent({ vehicle }: VehiclePopupContentProps) {
     <div className="p-1 min-w-[200px]">
       <div className="flex justify-between items-center mb-2 gap-2">
         <h3 className="font-bold text-sm text-foreground">{vehicle.name}</h3>
-        <Badge variant={getStatusVariant(vehicle.status)} className="text-[10px] h-5">
-          {vehicle.speed} km/h
-        </Badge>
+        <div className="flex items-center gap-1.5">
+          {vehicle.status === 'offline' && (
+            <Badge variant="outline" className="text-[10px] h-5 bg-muted/50 text-muted-foreground border-muted">
+              <WifiOff className="h-2.5 w-2.5 mr-1" />
+              Offline
+            </Badge>
+          )}
+          <Badge variant={getStatusVariant(vehicle.status)} className="text-[10px] h-5">
+            {vehicle.status === 'offline' ? 'N/A' : `${vehicle.speed} km/h`}
+          </Badge>
+        </div>
       </div>
+      
+      {vehicle.status === 'offline' && vehicle.offlineDuration && (
+        <div className="mb-2 text-xs text-muted-foreground flex items-center gap-1">
+          <WifiOff className="h-3 w-3" />
+          <span>Offline for {vehicle.offlineDuration}</span>
+        </div>
+      )}
       
       {/* Address */}
       <div className="flex items-start gap-1.5 mb-2 text-xs text-muted-foreground">

@@ -88,6 +88,7 @@ const ALERT_TYPE_ICONS: Record<AlertType, React.ElementType> = {
   rapid_acceleration: Zap,
   ignition_on: Power,
   ignition_off: Power,
+  vehicle_moving: Navigation,
   geofence_enter: MapPin,
   geofence_exit: MapPin,
   idle_too_long: Clock,

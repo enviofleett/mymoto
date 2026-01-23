@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Shield, Calendar } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { format } from "date-fns";
+import { formatLagosDate } from "@/lib/timezone";
 
 interface TermsAgreementDateProps {
   userId: string | undefined;
@@ -50,7 +50,14 @@ export function TermsAgreementDate({ userId }: TermsAgreementDateProps) {
     <div className="flex items-center gap-2 text-sm text-muted-foreground mt-2 pt-2 border-t border-border/50">
       <Shield className="h-3.5 w-3.5" />
       <span>
-        Terms agreed: {format(new Date(agreementDate), "MMM d, yyyy 'at' h:mm a")}
+        Terms agreed: {formatLagosDate(agreementDate, {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        })}
         {termsVersion && ` (v${termsVersion})`}
       </span>
     </div>

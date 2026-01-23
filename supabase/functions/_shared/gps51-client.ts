@@ -272,8 +272,10 @@ export async function callGps51WithRateLimit(
         console.log(`[GPS51 Client] Retrying ${action} after backoff`);
         return callGps51WithRateLimit(supabase, proxyUrl, action, token, serverid, body, retryAttempt + 1);
       } else {
+        const cause = (result && typeof result === 'object' && 'cause' in result) ? result.cause : "Unknown"
+        const status = (result && typeof result === 'object' && 'status' in result) ? result.status : "Unknown"
         throw new Error(
-          `GPS51 API rate limit error after ${GPS51_RATE_LIMIT.MAX_RETRIES} retries: ${result.cause || "Unknown"} (status: ${result.status})`
+          `GPS51 API rate limit error after ${GPS51_RATE_LIMIT.MAX_RETRIES} retries: ${cause} (status: ${status})`
         );
       }
     }

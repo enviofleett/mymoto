@@ -15,7 +15,8 @@ import {
   Link2,
   Shield,
   Mail,
-  LogOut
+  LogOut,
+  Building2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NavLink } from "@/components/NavLink";
@@ -58,7 +59,7 @@ const ADMIN_NAV_ITEMS = [
     label: "System", 
     path: "/admin/storage", 
     icon: Database,
-    activeMatch: /^\/admin\/(storage|alerts|assignments|privacy-settings|system)/
+    activeMatch: /^\/admin\/(storage|alerts|assignments|privacy-settings|directory|system)/
   },
 ];
 
@@ -66,11 +67,11 @@ const MORE_MENU_ITEMS = [
   { title: "Map", url: "/map", icon: Map },
   { title: "Insights", url: "/insights", icon: BarChart3 },
   { title: "Settings", url: "/settings", icon: Settings },
-  { title: "Notifications", url: "/notifications", icon: BellRing },
   { title: "Alerts", url: "/admin/alerts", icon: Bell },
   { title: "Assignments", url: "/admin/assignments", icon: Link2 },
   { title: "Email Templates", url: "/admin/email-templates", icon: Mail },
   { title: "Privacy & Terms", url: "/admin/privacy-settings", icon: Shield },
+  { title: "Directory", url: "/admin/directory", icon: Building2 },
 ];
 
 export function AdminBottomNav() {

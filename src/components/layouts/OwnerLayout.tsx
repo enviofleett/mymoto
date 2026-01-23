@@ -1,30 +1,39 @@
 import { ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { MessageCircle, Car, Wallet, User, Bell } from "lucide-react";
+import { MessageCircle, Car, Wallet, User, Store, LayoutDashboard, Edit } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { GlobalAlertListener } from "@/components/notifications/GlobalAlertListener";
 import { StickyAlertBanner } from "@/components/notifications/StickyAlertBanner";
 import { useOwnerFooterPadding } from "@/hooks/useFooterPadding";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface OwnerLayoutProps {
   children: ReactNode;
 }
 
-const navItems = [{
+const ownerNavItems = [{
   icon: MessageCircle,
   path: "/owner"
 }, {
   icon: Car,
   path: "/owner/vehicles"
 }, {
+  icon: Store,
+  path: "/owner/directory"
+}, {
   icon: Wallet,
   path: "/owner/wallet"
 }, {
-  icon: Bell,
-  path: "/owner/notifications"
-}, {
   icon: User,
   path: "/owner/profile"
+}];
+
+const partnerNavItems = [{
+  icon: LayoutDashboard,
+  path: "/partner/dashboard"
+}, {
+  icon: Edit,
+  path: "/partner/profile"
 }];
 
 export function OwnerLayout({
@@ -33,13 +42,28 @@ export function OwnerLayout({
   const location = useLocation();
   const navigate = useNavigate();
   const footerPadding = useOwnerFooterPadding();
+  const { isProvider } = useAuth();
+  
+  // Use different nav items based on role
+  const navItems = isProvider ? partnerNavItems : ownerNavItems;
   
   const isActive = (path: string) => {
-    if (path === "/owner") {
-      return location.pathname === "/owner" || location.pathname.startsWith("/owner/chat");
-    }
-    if (path === "/owner/notifications") {
-      return location.pathname === "/owner/notifications";
+    if (isProvider) {
+      // Partner navigation
+      if (path === "/partner/dashboard") {
+        return location.pathname === "/partner/dashboard";
+      }
+      if (path === "/partner/profile") {
+        return location.pathname === "/partner/profile";
+      }
+    } else {
+      // Owner navigation
+      if (path === "/owner") {
+        return location.pathname === "/owner" || location.pathname.startsWith("/owner/chat");
+      }
+      if (path === "/owner/directory") {
+        return location.pathname === "/owner/directory";
+      }
     }
     return location.pathname.startsWith(path);
   };

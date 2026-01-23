@@ -3,7 +3,8 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { cn } from '@/lib/utils';
 import { Card } from '@/components/ui/card';
-import { MapPin, Navigation, ExternalLink } from 'lucide-react';
+import { MapPin, Navigation, ExternalLink, WifiOff } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 
 interface VehicleLocationMapProps {
   latitude: number | null | undefined;
@@ -92,6 +93,18 @@ export function VehicleLocationMap({
 
     const lng = longitude as number;
     const lat = latitude as number;
+
+    // Debug logging for coordinate changes
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[VehicleLocationMap] Coordinates changed:', {
+        latitude: lat,
+        longitude: lng,
+        heading,
+        speed,
+        isOnline,
+        timestamp: new Date().toISOString()
+      });
+    }
 
     // Remove existing marker
     marker.current?.remove();
@@ -296,21 +309,35 @@ export function VehicleLocationMap({
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs font-medium text-muted-foreground">
-                    {vehicleName || 'Vehicle'} • {
-                      !isOnline ? 'Offline' : 
-                      (speed || 0) >= 3 ? 'Moving' : 
-                      'Parked'
-                    }
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-muted-foreground">
+                      {vehicleName || 'Vehicle'} • {
+                        !isOnline ? 'Offline' : 
+                        (speed || 0) >= 3 ? 'Moving' : 
+                        'Parked'
+                      }
+                    </span>
+                    {!isOnline && (
+                      <Badge variant="outline" className="h-4 px-1.5 text-[10px] bg-muted/50 text-muted-foreground border-muted">
+                        <WifiOff className="h-2.5 w-2.5 mr-0.5" />
+                        Offline
+                      </Badge>
+                    )}
+                  </div>
                   {(speed || 0) > 0 && (
                     <span className="text-xs font-bold text-primary">
                       {Math.round(speed || 0)} km/h
                     </span>
                   )}
                 </div>
-                <p className="text-sm font-medium text-foreground truncate">
-                  {address || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`}
+                <p className={cn(
+                  "text-sm font-medium truncate",
+                  !isOnline ? "text-muted-foreground italic" : "text-foreground"
+                )}>
+                  {!isOnline 
+                    ? "Location unavailable (offline)"
+                    : (address || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`)
+                  }
                 </p>
               </div>
               <a

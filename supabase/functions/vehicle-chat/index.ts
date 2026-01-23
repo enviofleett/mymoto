@@ -260,83 +260,102 @@ Return ONLY valid JSON, no other text.`
 Return JSON:`
 
   try {
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        max_tokens: 200,
-        temperature: 0.1,
-        stream: false,
-      }),
-    })
+    // ✅ FIX #6: Add timeout to LLM API call
+    const controller = new AbortController();
+    const TIMEOUT_MS = 20000; // 20 seconds timeout
+    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error('[Date Extraction LLM] API error:', {
-        status: response.status,
-        body: errorText.substring(0, 200),
+    try {
+      const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.5-flash',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          max_tokens: 200,
+          temperature: 0.1,
+          stream: false,
+        }),
+        signal: controller.signal, // ✅ FIX #6: Add abort signal
       })
-      throw new Error(`Lovable API error: ${response.status}`)
+      
+      clearTimeout(timeoutId); // Clear timeout on success
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('[Date Extraction LLM] API error:', {
+          status: response.status,
+          body: errorText.substring(0, 200),
+        })
+        throw new Error(`Lovable API error: ${response.status}`)
+      }
+      const data = await response.json()
+      const text = data.choices?.[0]?.message?.content?.trim() || ''
+
+      if (!text) {
+        throw new Error('Empty response from Lovable API')
+      }
+
+      let jsonText = text
+      const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/)
+      if (jsonMatch) {
+        jsonText = jsonMatch[1]
+      }
+
+      const parsed = JSON.parse(jsonText)
+      
+      const result: DateContext = {
+        hasDateReference: parsed.hasDateReference || false,
+        period: parsed.period || 'none',
+        startDate: parsed.startDate || new Date().toISOString(),
+        endDate: parsed.endDate || new Date().toISOString(),
+        humanReadable: parsed.humanReadable || 'current',
+        timezone: userTimezone,
+        confidence: parsed.confidence || 0.7
+      }
+
+      const startDate = new Date(result.startDate)
+      const endDate = new Date(result.endDate)
+      const nowDate = new Date(nowISO)
+
+      if (startDate > nowDate) {
+        console.warn('[Date Extraction LLM] Start date is in future, adjusting')
+        result.startDate = nowDate.toISOString()
+        result.confidence = (result.confidence || 0.7) * 0.8
+      }
+
+      if (endDate > nowDate) {
+        console.warn('[Date Extraction LLM] End date is in future, adjusting')
+        result.endDate = nowDate.toISOString()
+        result.confidence = (result.confidence || 0.7) * 0.8
+      }
+
+      if (startDate > endDate) {
+        console.warn('[Date Extraction LLM] Start date is after end date, swapping')
+        const temp = result.startDate
+        result.startDate = result.endDate
+        result.endDate = temp
+        result.confidence = (result.confidence || 0.7) * 0.7
+      }
+
+      return result
+    } catch (fetchError: any) {
+      clearTimeout(timeoutId); // Clear timeout on error
+      
+      // ✅ FIX #6: Handle timeout specifically
+      if (fetchError.name === 'AbortError' || fetchError.message?.includes('aborted')) {
+        console.warn('[Date Extraction LLM] Request timeout, falling back to regex');
+        return extractDateContext(message, clientTimestamp, userTimezone);
+      }
+      // Re-throw other errors to be caught by outer catch
+      throw fetchError;
     }
-
-    const data = await response.json()
-    const text = data.choices?.[0]?.message?.content?.trim() || ''
-
-    if (!text) {
-      throw new Error('Empty response from Lovable API')
-    }
-
-    let jsonText = text
-    const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/)
-    if (jsonMatch) {
-      jsonText = jsonMatch[1]
-    }
-
-    const parsed = JSON.parse(jsonText)
-    
-    const result: DateContext = {
-      hasDateReference: parsed.hasDateReference || false,
-      period: parsed.period || 'none',
-      startDate: parsed.startDate || new Date().toISOString(),
-      endDate: parsed.endDate || new Date().toISOString(),
-      humanReadable: parsed.humanReadable || 'current',
-      timezone: userTimezone,
-      confidence: parsed.confidence || 0.7
-    }
-
-    const startDate = new Date(result.startDate)
-    const endDate = new Date(result.endDate)
-    const nowDate = new Date(nowISO)
-
-    if (startDate > nowDate) {
-      console.warn('[Date Extraction LLM] Start date is in future, adjusting')
-      result.startDate = nowDate.toISOString()
-      result.confidence = (result.confidence || 0.7) * 0.8
-    }
-
-    if (endDate > nowDate) {
-      console.warn('[Date Extraction LLM] End date is in future, adjusting')
-      result.endDate = nowDate.toISOString()
-      result.confidence = (result.confidence || 0.7) * 0.8
-    }
-
-    if (startDate > endDate) {
-      console.warn('[Date Extraction LLM] Start date is after end date, swapping')
-      const temp = result.startDate
-      result.startDate = result.endDate
-      result.endDate = temp
-      result.confidence = (result.confidence || 0.7) * 0.7
-    }
-
-    return result
   } catch (error) {
     console.error('[Date Extraction LLM] Error:', error)
     return extractDateContext(message, clientTimestamp, userTimezone)
@@ -1500,39 +1519,58 @@ async function callGeminiAPIStream(
 
   console.log('[LLM Client] Using Lovable AI Gateway');
 
-  const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: config.model || 'google/gemini-2.5-flash',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      max_tokens: config.maxOutputTokens || 2048,
-      temperature: config.temperature ?? 0.7,
-      stream: true,
-    }),
-  });
+  // ✅ FIX #6: Add timeout to streaming LLM call
+  const controller = new AbortController();
+  const TIMEOUT_MS = 45000; // 45 seconds (Supabase has 60s limit, leave buffer)
+  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('[LLM Client] Lovable streaming error:', {
-      status: response.status,
-      body: errorText.substring(0, 200),
+  try {
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: config.model || 'google/gemini-2.5-flash',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        max_tokens: config.maxOutputTokens || 2048,
+        temperature: config.temperature ?? 0.7,
+        stream: true,
+      }),
+      signal: controller.signal, // ✅ FIX #6: Add abort signal
     });
-    throw new Error(`Lovable API error: ${response.status}`);
-  }
 
-  if (!response.body) {
-    throw new Error('Lovable API returned empty response body');
-  }
+    clearTimeout(timeoutId); // Clear timeout on success
 
-  // Return the response stream directly (Lovable uses OpenAI format)
-  return response.body;
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[LLM Client] Lovable streaming error:', {
+        status: response.status,
+        body: errorText.substring(0, 200),
+      });
+      throw new Error(`Lovable API error: ${response.status}`);
+    }
+
+    if (!response.body) {
+      throw new Error('Lovable API returned empty response body');
+    }
+
+    // Return the response stream directly (Lovable uses OpenAI format)
+    return response.body;
+  } catch (fetchError: any) {
+    clearTimeout(timeoutId); // Clear timeout on error
+    
+    // ✅ FIX #6: Handle timeout specifically
+    if (fetchError.name === 'AbortError' || fetchError.message?.includes('aborted')) {
+      console.warn('[LLM Client] Request timeout, throwing timeout error');
+      throw new Error('LLM request timeout: Response took too long');
+    }
+    throw fetchError;
+  }
 }
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -3754,8 +3792,8 @@ IMPORTANT:
             }
           }
 
-          // 10. Save conversation to database (with embeddings for RAG if available)
-          console.log('Saving conversation to chat history...')
+          // 10. Save assistant message to database (user message already saved at start)
+          console.log('Saving assistant response to chat history...')
 
           try {
             // ✅ FIX: Generate embeddings asynchronously and handle errors gracefully
@@ -3771,34 +3809,58 @@ IMPORTANT:
               // Continue without embeddings - RAG will use keyword search instead
             }
 
-            // Save messages with or without embeddings
-            const { error: insertError } = await supabase.from('vehicle_chat_history').insert([
-              {
+            // ✅ FIX: Update user message with embedding if we have it (user message already saved at start)
+            // If user message wasn't saved at start, save it now with a timestamp before assistant message
+            if (!userMessageId) {
+              // User message wasn't saved at start, save it now
+              const userTimestamp = new Date().toISOString();
+              const { error: insertUserError } = await supabase.from('vehicle_chat_history').insert({
                 device_id,
                 user_id,
                 role: 'user',
                 content: message,
-                created_at: new Date().toISOString(),
+                created_at: userTimestamp,
                 embedding: userEmbedding ? formatEmbeddingForPg(userEmbedding) : null
-              },
-              {
-                device_id,
-                user_id,
-                role: 'assistant',
-                content: fullResponse,
-                created_at: new Date().toISOString(),
-                embedding: assistantEmbedding ? formatEmbeddingForPg(assistantEmbedding) : null
+              });
+              
+              if (insertUserError) {
+                console.error('Failed to save user message (fallback):', insertUserError);
+              } else {
+                console.log('User message saved (fallback)');
               }
-            ])
+            } else if (userEmbedding) {
+              // User message exists, just update with embedding
+              const { error: updateUserError } = await supabase
+                .from('vehicle_chat_history')
+                .update({ embedding: formatEmbeddingForPg(userEmbedding) })
+                .eq('id', userMessageId);
+              
+              if (updateUserError) {
+                console.warn('Failed to update user message with embedding:', updateUserError);
+              }
+            }
+
+            // ✅ FIX: Save assistant message with timestamp guaranteed to be after user message
+            // Use a timestamp that's at least 10ms after the current time to ensure proper ordering
+            const assistantTimestamp = new Date(Date.now() + 10).toISOString();
+            
+            const { error: insertError } = await supabase.from('vehicle_chat_history').insert({
+              device_id,
+              user_id,
+              role: 'assistant',
+              content: fullResponse,
+              created_at: assistantTimestamp, // ✅ FIX: Explicit timestamp to ensure ordering
+              embedding: assistantEmbedding ? formatEmbeddingForPg(assistantEmbedding) : null
+            })
 
             if (insertError) {
-              console.error('❌ CRITICAL: Error saving chat history:', insertError)
+              console.error('❌ CRITICAL: Error saving assistant message:', insertError)
               // Log to error tracking service in production
             } else {
-              console.log('✅ Chat history saved successfully' + (userEmbedding ? ' with embeddings' : ''))
+              console.log('✅ Assistant message saved successfully' + (assistantEmbedding ? ' with embedding' : ''))
             }
           } catch (saveError) {
-            console.error('❌ CRITICAL: Failed to save chat history:', saveError)
+            console.error('❌ CRITICAL: Failed to save assistant message:', saveError)
             // Don't throw - streaming already started, just log the error
           }
           

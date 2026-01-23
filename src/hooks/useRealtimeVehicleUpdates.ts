@@ -13,7 +13,12 @@ export function useRealtimeVehicleUpdates(deviceId: string | null) {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    if (!deviceId) return;
+    if (!deviceId) {
+      console.log(`[Realtime] Skipping subscription - deviceId is null/undefined`);
+      return;
+    }
+
+    console.log(`[Realtime] 🔵 Setting up subscription for device: ${deviceId}`);
 
     const channel = supabase
       .channel(`vehicle-realtime-${deviceId}`)
@@ -27,12 +32,45 @@ export function useRealtimeVehicleUpdates(deviceId: string | null) {
           filter: `device_id=eq.${deviceId}` 
         },
         (payload) => {
+          console.log(`[Realtime] Position update received for ${deviceId}:`, {
+            event: payload.eventType,
+            new: payload.new,
+            old: payload.old,
+            timestamp: new Date().toISOString()
+          });
+          
+          // Verify we have the required data
+          if (!payload.new || !payload.new.device_id) {
+            console.error(`[Realtime] Invalid payload - missing device_id:`, payload);
+            return;
+          }
+          
+          // Check if REPLICA IDENTITY is FULL (we need all columns)
+          if (!payload.new.latitude && !payload.new.longitude && !payload.new.gps_time) {
+            console.warn(`[Realtime] Payload missing location data. REPLICA IDENTITY might not be FULL.`, payload.new);
+            console.warn(`[Realtime] Run: ALTER TABLE vehicle_positions REPLICA IDENTITY FULL;`);
+            // Still try to update with what we have
+          }
+          
           // Map raw DB data to the VehicleLiveData interface
           const mappedData = mapToVehicleLiveData(payload.new);
+          
+          console.log(`[Realtime] Mapped data:`, {
+            deviceId: mappedData.deviceId,
+            latitude: mappedData.latitude,
+            longitude: mappedData.longitude,
+            lastUpdate: mappedData.lastUpdate,
+            speed: mappedData.speed
+          });
           
           // Update vehicle position cache directly
           // This matches the key used in useVehicleLiveData
           queryClient.setQueryData(['vehicle-live-data', deviceId], mappedData);
+          
+          // Force a refetch to ensure UI updates
+          queryClient.invalidateQueries({ queryKey: ['vehicle-live-data', deviceId] });
+          
+          console.log(`[Realtime] ✅ Cache updated and invalidated for ${deviceId}`);
         }
       )
       // New events (alerts) - show toast notification
@@ -66,9 +104,25 @@ export function useRealtimeVehicleUpdates(deviceId: string | null) {
           queryClient.invalidateQueries({ queryKey: ['proactive-events'] });
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log(`[Realtime] 📡 Subscription status for ${deviceId}:`, status);
+        if (status === 'SUBSCRIBED') {
+          console.log(`[Realtime] ✅ Successfully subscribed to vehicle_positions updates for ${deviceId}`);
+          console.log(`[Realtime] 🎯 Waiting for position updates...`);
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error(`[Realtime] ❌ Channel error for ${deviceId}. Realtime may not be enabled for vehicle_positions table.`);
+          console.error(`[Realtime] Run this migration: ALTER PUBLICATION supabase_realtime ADD TABLE vehicle_positions;`);
+        } else if (status === 'TIMED_OUT') {
+          console.warn(`[Realtime] ⚠️ Subscription timed out for ${deviceId}`);
+        } else if (status === 'CLOSED') {
+          console.warn(`[Realtime] ⚠️ Subscription closed for ${deviceId}`);
+        } else {
+          console.log(`[Realtime] ℹ️ Subscription status: ${status} for ${deviceId}`);
+        }
+      });
 
     return () => {
+      console.log(`[Realtime] Cleaning up subscription for ${deviceId}`);
       supabase.removeChannel(channel);
     };
   }, [deviceId, queryClient]);

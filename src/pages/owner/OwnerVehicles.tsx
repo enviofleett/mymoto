@@ -91,13 +91,15 @@ function VehicleCard({ vehicle, onClick }: { vehicle: OwnerVehicle; onClick: () 
       <div className="flex items-center gap-3">
         {/* Vehicle Icon/Avatar with neumorphic container */}
         <div className="relative shrink-0">
-          <div className="w-14 h-14 rounded-full shadow-neumorphic-sm bg-card p-0.5">
+          <div className="w-14 h-14 rounded-full shadow-neumorphic-sm bg-card p-0.5 overflow-hidden">
             {vehicle.avatarUrl ? (
-              <img 
-                src={vehicle.avatarUrl}
-                alt={vehicle.name}
-                className="w-full h-full rounded-full object-cover"
-              />
+              <div className="w-full h-full rounded-full bg-secondary flex items-center justify-center overflow-hidden">
+                <img 
+                  src={vehicle.avatarUrl}
+                  alt={vehicle.name}
+                  className="max-w-full max-h-full w-auto h-auto object-contain rounded-full"
+                />
+              </div>
             ) : (
               <div className="w-full h-full rounded-full bg-secondary flex items-center justify-center">
                 <Car className="h-6 w-6 text-muted-foreground" />
@@ -132,16 +134,17 @@ function VehicleCard({ vehicle, onClick }: { vehicle: OwnerVehicle; onClick: () 
         <div className="flex items-center gap-2 shrink-0">
           <HealthDot battery={vehicle.battery} />
           <Badge 
-            variant="secondary" 
+            variant={vehicle.status === "offline" ? "outline" : "secondary"}
             className={cn(
-              "text-[10px] uppercase font-medium px-2 py-0.5 rounded-lg border-0 shadow-neumorphic-sm bg-card",
+              "text-[10px] uppercase font-medium px-2 py-0.5 rounded-lg border-0 shadow-neumorphic-sm bg-card flex items-center gap-1",
               vehicle.status === "online" 
                 ? "text-status-active" 
                 : vehicle.status === "charging"
                 ? "text-accent"
-                : "text-muted-foreground"
+                : "text-muted-foreground bg-muted/50"
             )}
           >
+            {vehicle.status === "offline" && <WifiOff className="h-2.5 w-2.5" />}
             {vehicle.status}
           </Badge>
           <ChevronRight className="h-4 w-4 text-muted-foreground" />

@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -11,7 +10,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ShieldAlert, ShieldCheck, Loader2, Power } from "lucide-react";
+import { Loader2, Power, PowerOff, WifiOff } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 import { useVehicleCommand } from "@/hooks/useVehicleProfile";
 
@@ -29,10 +29,6 @@ export function EngineControlCard({
   const [showConfirm, setShowConfirm] = useState(false);
   const [pendingCommand, setPendingCommand] = useState<"immobilize_engine" | "demobilize_engine" | null>(null);
   const { mutate: executeCommand, isPending: isCommandPending } = useVehicleCommand();
-
-  // Note: True relay status is not always available in basic GPS heartbeat.
-  // We use ignition status only as a safety warning.
-  const isEngineRunning = ignitionOn === true;
 
   const handleCommandRequest = (command: "immobilize_engine" | "demobilize_engine") => {
     setPendingCommand(command);
@@ -55,57 +51,62 @@ export function EngineControlCard({
   return (
     <>
       <Card className="border-0 bg-card shadow-neumorphic rounded-xl">
-        <CardContent className="p-4">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-full shadow-neumorphic-sm bg-card flex items-center justify-center">
-              <ShieldCheck className="h-5 w-5 text-primary" />
-            </div>
+        <CardContent className="p-6">
+          <div className="flex items-center justify-center mb-6">
             <span className="font-medium text-foreground">Security Control</span>
           </div>
 
-          <div className="flex flex-col gap-3">
-            {/* Demobilize (Enable) Button */}
+          {!isOnline && (
+            <Alert className="mb-4 bg-muted/50 border-muted">
+              <WifiOff className="h-4 w-4" />
+              <AlertDescription className="text-sm">
+                Vehicle is offline. Engine controls are unavailable until the vehicle reconnects.
+              </AlertDescription>
+            </Alert>
+          )}
+          
+          <div className="flex items-center justify-center gap-6">
+            {/* Engine On Button */}
             <button
               onClick={() => handleCommandRequest("demobilize_engine")}
               disabled={isCommandPending || !isOnline}
               className={cn(
-                "w-full py-3 rounded-xl font-medium transition-all duration-200 flex items-center justify-center",
+                "w-16 h-16 rounded-full transition-all duration-200 flex items-center justify-center",
                 "shadow-neumorphic-sm bg-card text-green-500",
                 "hover:shadow-neumorphic active:shadow-neumorphic-inset",
-                "disabled:opacity-50 disabled:cursor-not-allowed"
+                "disabled:opacity-50 disabled:cursor-not-allowed",
+                "focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
               )}
+              aria-label="Engine On"
+              title={!isOnline ? "Vehicle is offline" : "Engine On"}
             >
               {isCommandPending && pendingCommand === "demobilize_engine" ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                <Loader2 className="h-6 w-6 animate-spin" />
               ) : (
-                <Power className="h-4 w-4 mr-2" />
+                <Power className="h-6 w-6" />
               )}
-              Mobilize (Enable Engine)
             </button>
 
-            {/* Immobilize (Disable) Button - Destructive Style */}
+            {/* Engine Off Button */}
             <button
               onClick={() => handleCommandRequest("immobilize_engine")}
               disabled={isCommandPending || !isOnline}
               className={cn(
-                "w-full py-3 rounded-xl font-medium transition-all duration-200 flex items-center justify-center",
+                "w-16 h-16 rounded-full transition-all duration-200 flex items-center justify-center",
                 "shadow-neumorphic-sm bg-card text-destructive",
                 "hover:shadow-neumorphic active:shadow-neumorphic-inset",
-                "disabled:opacity-50 disabled:cursor-not-allowed"
+                "disabled:opacity-50 disabled:cursor-not-allowed",
+                "focus:outline-none focus:ring-2 focus:ring-destructive focus:ring-offset-2"
               )}
+              aria-label="Engine Off"
+              title={!isOnline ? "Vehicle is offline" : "Engine Off"}
             >
               {isCommandPending && pendingCommand === "immobilize_engine" ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                <Loader2 className="h-6 w-6 animate-spin" />
               ) : (
-                <ShieldAlert className="h-4 w-4 mr-2" />
+                <PowerOff className="h-6 w-6" />
               )}
-              Immobilize (Cut Fuel)
             </button>
-          </div>
-
-          <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
-             <span>Status: {isOnline ? "Connected" : "Offline"}</span>
-             {isEngineRunning && <span className="text-yellow-500 font-medium">⚠ Ignition On</span>}
           </div>
         </CardContent>
       </Card>

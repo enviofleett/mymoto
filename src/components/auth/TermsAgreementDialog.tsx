@@ -33,10 +33,13 @@ export function TermsAgreementDialog({ open, onAgreed, userId }: TermsAgreementD
   const fetchTerms = async () => {
     setIsLoading(true);
     try {
+      // Get most recent active terms (in case multiple are active)
       const { data, error } = await (supabase as any)
         .from("privacy_security_terms")
-        .select("terms_content, version")
+        .select("terms_content, version, updated_at")
         .eq("is_active", true)
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (error && error.code !== 'PGRST116') {
@@ -114,53 +117,60 @@ export function TermsAgreementDialog({ open, onAgreed, userId }: TermsAgreementD
   };
 
   return (
-    <Dialog open={open} onOpenChange={() => {}}>
-      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-xl">
-            <Shield className="h-5 w-5 text-primary" />
-            Privacy & Security Terms
+    <Dialog 
+      open={open} 
+      onOpenChange={() => {}} // Prevent closing without agreeing
+    >
+      <DialogContent className="w-[95vw] max-w-3xl h-[90vh] max-h-[90vh] flex flex-col p-4 sm:p-6 m-4">
+        <DialogHeader className="flex-shrink-0 pb-2">
+          <DialogTitle className="flex items-center gap-2 text-lg sm:text-xl">
+            <Shield className="h-5 w-5 text-primary flex-shrink-0" />
+            <span>Privacy & Security Terms</span>
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-xs sm:text-sm mt-1">
             Please read and agree to our Privacy & Security Terms to continue using MyMoto.
             {version && (
-              <span className="block mt-1 text-xs">
-                Version {version} • Last updated: {format(new Date(), "MMMM d, yyyy")}
+              <span className="block mt-1 text-xs text-muted-foreground">
+                Version {version}
               </span>
             )}
           </DialogDescription>
         </DialogHeader>
 
-        <Separator />
+        <Separator className="flex-shrink-0" />
 
-        <ScrollArea className="flex-1 pr-4">
-          {isLoading ? (
-            <div className="flex items-center justify-center h-64">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : (
-            <div className="prose prose-sm max-w-none dark:prose-invert">
-              <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground bg-muted/30 p-4 rounded-lg">
-                {terms}
-              </pre>
-            </div>
-          )}
-        </ScrollArea>
+        {/* Scrollable Terms Content */}
+        <div className="flex-1 min-h-0 overflow-hidden mt-2">
+          <ScrollArea className="h-full w-full pr-2 sm:pr-4">
+            {isLoading ? (
+              <div className="flex items-center justify-center h-full min-h-[200px]">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
+              <div className="prose prose-sm max-w-none dark:prose-invert">
+                <pre className="whitespace-pre-wrap font-sans text-xs sm:text-sm leading-relaxed text-foreground bg-muted/30 p-3 sm:p-4 rounded-lg break-words">
+                  {terms}
+                </pre>
+              </div>
+            )}
+          </ScrollArea>
+        </div>
 
-        <Separator />
+        <Separator className="flex-shrink-0 mt-2" />
 
-        <div className="space-y-4">
-          <div className="flex items-start space-x-3">
+        {/* Agreement Checkbox Section */}
+        <div className="flex-shrink-0 space-y-3 sm:space-y-4 mt-3 sm:mt-4">
+          <div className="flex items-start space-x-2 sm:space-x-3">
             <Checkbox
               id="agree-terms"
               checked={agreed}
               onCheckedChange={(checked) => setAgreed(checked === true)}
               disabled={isLoading || isSaving}
-              className="mt-1"
+              className="mt-0.5 sm:mt-1 flex-shrink-0"
             />
             <Label
               htmlFor="agree-terms"
-              className="text-sm leading-relaxed cursor-pointer"
+              className="text-xs sm:text-sm leading-relaxed cursor-pointer"
             >
               I have read, understood, and agree to the Privacy & Security Terms outlined above.
               I acknowledge that my data will be processed according to these terms.
@@ -168,18 +178,19 @@ export function TermsAgreementDialog({ open, onAgreed, userId }: TermsAgreementD
           </div>
 
           {!agreed && (
-            <div className="flex items-center gap-2 text-sm text-destructive">
-              <AlertCircle className="h-4 w-4" />
+            <div className="flex items-center gap-2 text-xs sm:text-sm text-destructive">
+              <AlertCircle className="h-4 w-4 flex-shrink-0" />
               <span>You must agree to the terms to continue.</span>
             </div>
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="flex-shrink-0 mt-3 sm:mt-4">
           <Button
             onClick={handleAgree}
             disabled={!agreed || isLoading || isSaving}
             className="w-full sm:w-auto"
+            size="default"
           >
             {isSaving ? (
               <>

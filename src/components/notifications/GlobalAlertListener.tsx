@@ -81,6 +81,29 @@ export function GlobalAlertListener() {
     }
   }, []);
 
+  // Normalize event type to match notification preference keys
+  const normalizeEventType = useCallback((eventType: string): AlertType => {
+    // Map database event types to notification preference keys
+    const typeMap: Record<string, AlertType> = {
+      'ignition_off': 'ignition_off', // Keep for compatibility
+      'power_off': 'ignition_off',     // Map power_off alias to ignition_off
+      'ignition_on': 'ignition_on',
+      'vehicle_moving': 'vehicle_moving',
+      'overspeeding': 'overspeeding',
+      'low_battery': 'low_battery',
+      'critical_battery': 'critical_battery',
+      'harsh_braking': 'harsh_braking',
+      'rapid_acceleration': 'rapid_acceleration',
+      'geofence_enter': 'geofence_enter',
+      'geofence_exit': 'geofence_exit',
+      'idle_too_long': 'idle_too_long',
+      'offline': 'offline',
+      'online': 'online',
+    };
+    
+    return (typeMap[eventType] || eventType) as AlertType;
+  }, []);
+
   // Handle new event from realtime subscription
   const handleNewEvent = useCallback((event: ProactiveEvent) => {
     // CRITICAL: Filter by user's vehicle assignments
@@ -92,7 +115,8 @@ export function GlobalAlertListener() {
 
     console.log('[GlobalAlertListener] New alert for user vehicle:', event.event_type, event.severity, event.device_id);
 
-    const alertType = event.event_type as AlertType;
+    // Normalize event type to match notification preferences
+    const alertType = normalizeEventType(event.event_type) as AlertType;
     const severity = event.severity as SeverityLevel;
 
     // Play sound based on preferences
@@ -115,6 +139,16 @@ export function GlobalAlertListener() {
         title: event.title,
         description: event.message
       });
+    } else if (severity === 'info') {
+      // Show info notifications if user has enabled push for this alert type
+      // This ensures ignition_on/ignition_off show up when enabled
+      if (shouldShowPush(alertType, severity)) {
+        toast({
+          title: event.title,
+          description: event.message,
+          variant: "default"
+        });
+      }
     }
 
     // Show push notification based on preferences
@@ -136,7 +170,7 @@ export function GlobalAlertListener() {
         }
       });
     }
-  }, [toast, playAlertSound, showNotification, permission, shouldPlaySound, shouldShowPush, preferences.soundVolume, sendEmailNotification, isAdmin, userDeviceIds, getVibrationPattern]);
+  }, [toast, playAlertSound, showNotification, permission, shouldPlaySound, shouldShowPush, preferences.soundVolume, sendEmailNotification, isAdmin, userDeviceIds, getVibrationPattern, normalizeEventType]);
 
   useEffect(() => {
     console.log('[GlobalAlertListener] Setting up realtime subscription');
@@ -157,6 +191,12 @@ export function GlobalAlertListener() {
       )
       .subscribe((status) => {
         console.log('[GlobalAlertListener] Subscription status:', status);
+        if (status === 'SUBSCRIBED') {
+          console.log('[GlobalAlertListener] ✅ Successfully subscribed to proactive_vehicle_events');
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.error('[GlobalAlertListener] ❌ Subscription error:', status);
+          // Could add retry logic here
+        }
       });
 
     return () => {

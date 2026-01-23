@@ -8,8 +8,8 @@ import { VitePWA } from "vite-plugin-pwa";
 export default defineConfig(({ mode }) => ({
   server: {
     host: "0.0.0.0", // Listen on all interfaces (more reliable than "::")
-    port: 8080,
-    strictPort: false, // Try next available port if 8080 is busy
+    port: 8081,
+    strictPort: false, // Try next available port if 8081 is busy
   },
   build: {
     rollupOptions: {

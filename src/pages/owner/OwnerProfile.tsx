@@ -23,6 +23,7 @@ import {
   User,
   Phone,
   Pencil,
+  BookOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -55,6 +56,7 @@ export default function OwnerProfile() {
     { icon: Bell, label: "Notifications", path: "/owner/notifications" },
     { icon: Shield, label: "Privacy & Security", path: "/owner/privacy" },
     { icon: HelpCircle, label: "Help & Support", path: "/owner/help" },
+    { icon: BookOpen, label: "Resources", path: "/owner/resources" },
   ];
 
   return (
@@ -167,13 +169,15 @@ export default function OwnerProfile() {
                         key={vehicle.deviceId}
                         className="flex items-center gap-3 p-2 rounded-lg shadow-neumorphic-inset bg-card"
                       >
-                        <div className="w-10 h-10 rounded-full shadow-neumorphic-sm bg-card p-0.5 shrink-0">
+                        <div className="w-10 h-10 rounded-full shadow-neumorphic-sm bg-card p-0.5 shrink-0 overflow-hidden">
                           {vehicle.avatarUrl ? (
-                            <img 
-                              src={vehicle.avatarUrl}
-                              alt={vehicle.name}
-                              className="w-full h-full rounded-full object-cover"
-                            />
+                            <div className="w-full h-full rounded-full bg-secondary flex items-center justify-center overflow-hidden">
+                              <img 
+                                src={vehicle.avatarUrl}
+                                alt={vehicle.name}
+                                className="max-w-full max-h-full w-auto h-auto object-contain rounded-full"
+                              />
+                            </div>
                           ) : (
                             <div className="w-full h-full rounded-full bg-secondary flex items-center justify-center">
                               <Car className="h-4 w-4 text-muted-foreground" />

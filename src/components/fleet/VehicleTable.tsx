@@ -9,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FleetVehicle } from "@/hooks/useFleetData";
 import { usePrefetchVehicleDetails } from "@/hooks/useVehicleDetails";
-import { UserPlus, BatteryLow, BatteryMedium, BatteryFull, Power, AlertTriangle, Gauge, Search, Filter, Eye, Truck, Plus } from "lucide-react";
+import { UserPlus, BatteryLow, BatteryMedium, BatteryFull, Power, AlertTriangle, Gauge, Search, Filter, Eye, Truck, Plus, WifiOff } from "lucide-react";
 import { AssignDriverDialog } from "./AssignDriverDialog";
 import { VehicleDetailsModal } from "./VehicleDetailsModal";
 import { LocationCell } from "./LocationCell";
@@ -141,10 +141,16 @@ export function VehicleTable({ vehicles, loading, onAssignmentChange, onVehicleS
         return <Badge variant="secondary">Stopped</Badge>;
       case 'offline':
         return (
-          <div className="flex items-center gap-1">
-            <Badge variant="outline" className="text-muted-foreground">Offline</Badge>
+          <div className="flex items-center gap-1.5">
+            <Badge 
+              variant="outline" 
+              className="bg-muted/50 text-muted-foreground border-muted flex items-center gap-1"
+            >
+              <WifiOff className="h-3 w-3" />
+              Offline
+            </Badge>
             {vehicle.offlineDuration && (
-              <span className="text-xs text-muted-foreground">({vehicle.offlineDuration})</span>
+              <span className="text-xs text-destructive/80 font-medium">({vehicle.offlineDuration})</span>
             )}
           </div>
         );

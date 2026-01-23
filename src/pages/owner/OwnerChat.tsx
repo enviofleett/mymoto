@@ -26,10 +26,20 @@ function VehicleChatItem({
   return <button onClick={onClick} className="w-full flex items-center gap-3 p-4 bg-card shadow-neumorphic-sm rounded-xl hover:shadow-neumorphic transition-all duration-200 active:shadow-neumorphic-inset text-left">
       {/* Vehicle Icon/Avatar with neumorphic container */}
       <div className="relative shrink-0">
-        <div className="w-14 h-14 rounded-full shadow-neumorphic-sm bg-card p-0.5">
-          {vehicle.avatarUrl ? <img src={vehicle.avatarUrl} alt={vehicle.name} className="w-full h-full rounded-full object-cover" /> : <div className="w-full h-full rounded-full bg-secondary flex items-center justify-center">
+        <div className="w-14 h-14 rounded-full shadow-neumorphic-sm bg-card p-0.5 overflow-hidden">
+          {vehicle.avatarUrl ? (
+            <div className="w-full h-full rounded-full bg-secondary flex items-center justify-center overflow-hidden">
+              <img 
+                src={vehicle.avatarUrl} 
+                alt={vehicle.name} 
+                className="max-w-full max-h-full w-auto h-auto object-contain rounded-full" 
+              />
+            </div>
+          ) : (
+            <div className="w-full h-full rounded-full bg-secondary flex items-center justify-center">
               <Car className="h-6 w-6 text-muted-foreground" />
-            </div>}
+            </div>
+          )}
         </div>
         <div className={cn("absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-card transition-all duration-300", getStatusColor())} />
       </div>

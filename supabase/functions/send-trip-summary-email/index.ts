@@ -127,6 +127,8 @@ const handler = async (req: Request): Promise<Response> => {
       to: recipientEmail,
       subject: emailTemplate.subject,
       html: emailTemplate.html,
+      supabase,
+      templateKey: 'tripSummary'
     });
 
     return new Response(

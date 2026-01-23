@@ -309,18 +309,36 @@ async function detectAndInsertTrips(
   
   console.log(`Detected ${trips.length} trips from position history`)
   
-  // Insert trips (avoid duplicates based on start_time)
+  // FIX: Insert trips with proper duplicate checking (device_id, start_time, end_time)
   if (trips.length > 0) {
     for (const trip of trips) {
+      // Check for exact duplicate first
+      const { data: existing } = await supabase
+        .from('vehicle_trips')
+        .select('id')
+        .eq('device_id', trip.device_id)
+        .eq('start_time', trip.start_time)
+        .eq('end_time', trip.end_time)
+        .limit(1)
+        .maybeSingle();
+      
+      if (existing) {
+        console.log(`[gps-history-backfill] Skipping duplicate trip: ${trip.start_time} to ${trip.end_time}`);
+        continue;
+      }
+      
+      // Insert new trip
       const { error } = await supabase
         .from('vehicle_trips')
-        .upsert(trip, { 
-          onConflict: 'device_id,start_time',
-          ignoreDuplicates: true 
-        })
+        .insert(trip);
       
       if (error) {
-        console.error('Trip insert error:', error)
+        // Check if error is due to unique constraint violation (race condition)
+        if (error.message.includes('duplicate key') || error.message.includes('unique constraint')) {
+          console.log(`[gps-history-backfill] Duplicate trip detected (race condition): ${trip.start_time} to ${trip.end_time}`);
+        } else {
+          console.error('Trip insert error:', error);
+        }
       }
     }
   }

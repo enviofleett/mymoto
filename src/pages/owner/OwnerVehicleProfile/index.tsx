@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { TripPlaybackDialog } from "@/components/profile/TripPlaybackDialog";
 import { VehiclePersonaSettings } from "@/components/fleet/VehiclePersonaSettings";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { useVehicleLiveData } from "@/hooks/useVehicleLiveData";
 import { useAddress } from "@/hooks/useAddress";
@@ -29,6 +30,7 @@ import {
   useTriggerTripSync,
   useRealtimeTripUpdates,
 } from "@/hooks/useTripSync";
+import { useRealtimeVehicleUpdates } from "@/hooks/useRealtimeVehicleUpdates";
 import { supabase } from "@/integrations/supabase/client";
 
 // Import sub-components
@@ -75,9 +77,13 @@ export default function OwnerVehicleProfile() {
     refetch: refetchLive,
   } = useVehicleLiveData(deviceId);
 
+  // Enable realtime updates for instant location updates
+  useRealtimeVehicleUpdates(deviceId);
+
   const { 
     data: llmSettings, 
     error: llmError,
+    isLoading: llmLoading,
     refetch: refetchProfile 
   } = useVehicleLLMSettings(deviceId, true);
 
@@ -126,18 +132,21 @@ export default function OwnerVehicleProfile() {
   const { 
     data: mileageStats, 
     error: mileageError,
+    isLoading: mileageLoading,
     refetch: refetchMileage 
   } = useMileageStats(deviceId, true);
   
   const { 
     data: dailyMileage, 
     error: dailyMileageError,
+    isLoading: dailyMileageLoading,
     refetch: refetchDaily 
   } = useDailyMileage(deviceId, true);
   
   const { 
     data: dailyStats, 
     error: dailyStatsError,
+    isLoading: dailyStatsLoading,
     refetch: refetchDailyStats 
   } = useVehicleDailyStats(deviceId, 30, true);
 
@@ -200,11 +209,26 @@ export default function OwnerVehicleProfile() {
         refetchDailyStats(),
       ]);
 
-      // Check for any failures
+      // Check for any failures and provide user feedback
       const failures = refetchResults.filter(r => r.status === 'rejected');
+      const successCount = refetchResults.length - failures.length;
+      
       if (failures.length > 0) {
         if (process.env.NODE_ENV === 'development') {
           console.warn('Some data failed to refresh:', failures);
+        }
+        
+        // Show warning if some (but not all) data failed
+        if (successCount > 0) {
+          toast.warning("Partially refreshed", {
+            description: `${successCount} of ${refetchResults.length} data sources refreshed. Some data may be outdated.`
+          });
+        } else {
+          // All data failed
+          toast.error("Refresh failed", {
+            description: "Unable to refresh vehicle data. Please try again."
+          });
+          throw new Error("All data refresh operations failed");
         }
       }
 
@@ -216,10 +240,12 @@ export default function OwnerVehicleProfile() {
         console.warn('Background sync error:', error);
       });
 
-      // Step 3: Show success immediately
-      toast.success("Refreshed", { 
-        description: "Syncing new data in background..." 
-      });
+      // Step 3: Show success immediately (only if no failures or partial success was already shown)
+      if (failures.length === 0) {
+        toast.success("Refreshed", { 
+          description: "Syncing new data in background..." 
+        });
+      }
     } catch (error) {
       toast.error("Failed to refresh", { 
         description: error instanceof Error ? error.message : "Unknown error" 
@@ -300,11 +326,21 @@ export default function OwnerVehicleProfile() {
   // Display values with safe fallbacks
   const displayName = llmSettings?.nickname || deviceId;
   const vehicleName = deviceId;
-  const avatarUrl = llmSettings?.avatar_url || null;
+  // Ensure avatar URL is valid (not empty string)
+  const avatarUrl = (llmSettings?.avatar_url && llmSettings.avatar_url.trim() !== '') 
+    ? llmSettings.avatar_url 
+    : null;
   const personalityMode = llmSettings?.personality_mode || null;
+  
+  // Debug logging in development
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[OwnerVehicleProfile] Avatar URL:', avatarUrl);
+  }
 
   // CRITICAL FIX #3: Unified loading and error states - NOW AFTER ALL HOOKS
+  // Check if any critical data is still loading
   const isInitialLoading = liveLoading && !liveData;
+  const isAnyDataLoading = liveLoading || tripsLoading || eventsLoading || llmLoading || mileageLoading || dailyMileageLoading || dailyStatsLoading;
   const hasCriticalError = liveError !== null && liveError !== undefined;
   const hasNoData = !liveLoading && !liveData && !liveError;
   
@@ -370,13 +406,14 @@ export default function OwnerVehicleProfile() {
 
   return (
     <OwnerLayout>
-      <PullToRefresh
-        isPulling={isPulling}
-        pullProgress={pullDistance / 80}
-        isRefreshing={isRefreshing}
-      />
+      <ErrorBoundary>
+        <PullToRefresh
+          isPulling={isPulling}
+          pullProgress={pullDistance / 80}
+          isRefreshing={isRefreshing}
+        />
 
-      <div {...pullHandlers} className="flex flex-col min-h-full overflow-y-auto">
+        <div {...pullHandlers} className="flex flex-col min-h-full overflow-y-auto">
         {/* Header */}
         <ProfileHeader
           displayName={displayName}
@@ -407,12 +444,17 @@ export default function OwnerVehicleProfile() {
             />
 
             {/* Current Status */}
-            <CurrentStatusCard status={status} speed={liveData?.speed ?? null} />
+            <CurrentStatusCard 
+              status={status} 
+              speed={liveData?.speed ?? null} 
+              lastUpdate={liveData?.lastUpdate ?? null}
+            />
 
             {/* Status Metrics */}
-            <StatusMetricsRow
+            <StatusMetricsRow 
               battery={liveData?.batteryPercent ?? null}
               totalMileage={liveData?.totalMileageKm ?? null}
+              isOnline={isOnline}
             />
 
             {/* Engine Control */}
@@ -471,9 +513,11 @@ export default function OwnerVehicleProfile() {
         open={settingsOpen} 
         onOpenChange={(open) => {
           setSettingsOpen(open);
-          // Refetch profile data when dialog closes to get updated settings
+          // Refetch profile data when dialog closes to get updated settings (including avatar)
           if (!open) {
             refetchProfile();
+            // Also invalidate the query cache to force a fresh fetch
+            queryClient.invalidateQueries({ queryKey: ["vehicle-llm-settings", deviceId] });
           }
         }}
       >
@@ -488,8 +532,9 @@ export default function OwnerVehicleProfile() {
             deviceId={deviceId} 
             vehicleName={displayName}
           />
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
+      </ErrorBoundary>
     </OwnerLayout>
   );
 }

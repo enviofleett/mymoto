@@ -52,7 +52,7 @@ export function useWallet() {
           .select()
           .single();
 
-      if (!createError && newWallet) {
+          if (!createError && newWallet) {
           setWallet({
             id: (newWallet as any).id,
             balance: parseFloat(String((newWallet as any).balance)) || 0,

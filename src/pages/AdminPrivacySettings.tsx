@@ -49,10 +49,13 @@ export default function AdminPrivacySettings() {
     setIsLoading(true);
     setError(null);
     try {
+      // Get the most recent active term (in case multiple are active)
       const { data, error: queryError } = await (supabase as any)
         .from("privacy_security_terms")
         .select("*")
         .eq("is_active", true)
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (queryError) {

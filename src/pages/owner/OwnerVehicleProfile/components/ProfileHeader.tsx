@@ -1,7 +1,10 @@
-import { ArrowLeft, Settings, Car } from "lucide-react";
+import { useState } from "react";
+import { ArrowLeft, Settings, Car, WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { getPersonalityLabel } from "@/hooks/useVehicleProfile";
+import { formatUpdatedTime, getOfflineDuration } from "@/utils/timezone";
+import { Badge } from "@/components/ui/badge";
 
 interface ProfileHeaderProps {
   displayName: string;
@@ -25,6 +28,7 @@ export function ProfileHeader({
   onSettings,
 }: ProfileHeaderProps) {
   const showOriginalName = displayName !== vehicleName;
+  const [imageError, setImageError] = useState(false);
 
   return (
     <>
@@ -49,24 +53,39 @@ export function ProfileHeader({
       {/* Profile Section - Premium styling */}
       <div className="flex flex-col items-center py-6 px-4">
         <div className="relative mb-4">
-          {/* Neumorphic avatar container */}
-          <div className="w-24 h-24 rounded-full shadow-neumorphic p-1 bg-card">
-            {avatarUrl ? (
-              <img 
-                src={avatarUrl} 
-                alt={displayName}
-                className="w-full h-full rounded-full object-cover"
-              />
+          {/* Neumorphic avatar container - Increased by 20% (from 96px to 115px) */}
+          <div className="relative w-[115px] h-[115px] rounded-full shadow-neumorphic p-1 bg-card overflow-hidden">
+            {avatarUrl && !imageError ? (
+              <div className="w-full h-full rounded-full bg-secondary flex items-center justify-center overflow-hidden">
+                <img 
+                  src={avatarUrl} 
+                  alt={displayName}
+                  className="max-w-full max-h-full w-auto h-auto object-contain rounded-full"
+                  loading="eager"
+                  decoding="async"
+                  crossOrigin="anonymous"
+                  onError={(e) => {
+                    console.warn('[ProfileHeader] Failed to load avatar image:', avatarUrl);
+                    setImageError(true);
+                  }}
+                  onLoad={() => {
+                    setImageError(false);
+                    if (process.env.NODE_ENV === 'development') {
+                      console.log('[ProfileHeader] Avatar image loaded successfully:', avatarUrl);
+                    }
+                  }}
+                />
+              </div>
             ) : (
               <div className="w-full h-full rounded-full bg-secondary flex items-center justify-center">
-                <Car className="h-10 w-10 text-muted-foreground" />
+                <Car className="h-14 w-14 text-muted-foreground" />
               </div>
             )}
           </div>
-          {/* Status indicator with glow */}
+          {/* Status indicator with glow - Scaled proportionally */}
           <div
             className={cn(
-              "absolute bottom-1 right-1 w-5 h-5 rounded-full border-[3px] border-card transition-all duration-300",
+              "absolute bottom-1 right-1 w-6 h-6 rounded-full border-[3px] border-card transition-all duration-300",
               status === "online"
                 ? "bg-status-active shadow-[0_0_12px_hsl(142_70%_50%/0.6)]"
                 : status === "charging"
@@ -90,8 +109,17 @@ export function ProfileHeader({
         )}
         {lastUpdate && (
           <p className="text-[11px] text-muted-foreground mt-1">
-            Updated {format(lastUpdate, "MMM d, HH:mm")}
+            Updated {formatUpdatedTime(lastUpdate)}
           </p>
+        )}
+        {status === 'offline' && lastUpdate && (
+          <Badge 
+            variant="outline" 
+            className="mt-2 bg-muted/50 text-muted-foreground border-muted flex items-center gap-1.5"
+          >
+            <WifiOff className="h-3 w-3" />
+            <span>Offline {getOfflineDuration(lastUpdate) ? `for ${getOfflineDuration(lastUpdate)}` : ''}</span>
+          </Badge>
         )}
       </div>
     </>

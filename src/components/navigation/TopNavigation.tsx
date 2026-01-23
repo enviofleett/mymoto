@@ -13,7 +13,9 @@ import {
   Bell,
   BellRing,
   Link2,
-  Shield
+  Shield,
+  BookOpen,
+  Building2
 } from "lucide-react";
 import { ConnectionStatus } from "@/hooks/useFleetData";
 
@@ -26,7 +28,6 @@ const navItems = [
   { title: "Fleet", url: "/fleet", icon: Truck },
   { title: "Map", url: "/map", icon: Map },
   { title: "Insights", url: "/insights", icon: Brain },
-  { title: "Notifications", url: "/notifications", icon: BellRing },
   { title: "Settings", url: "/settings", icon: Settings },
 ];
 
@@ -147,6 +148,22 @@ export function TopNavigation({ connectionStatus }: TopNavigationProps) {
               >
                 <Shield className="h-4 w-4" />
                 <span>Privacy & Terms</span>
+              </NavLink>
+              <NavLink
+                to="/admin/resources"
+                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground rounded-md transition-colors hover:text-foreground hover:bg-muted"
+                activeClassName="text-primary bg-primary/10"
+              >
+                <BookOpen className="h-4 w-4" />
+                <span>Resources</span>
+              </NavLink>
+              <NavLink
+                to="/admin/directory"
+                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground rounded-md transition-colors hover:text-foreground hover:bg-muted"
+                activeClassName="text-primary bg-primary/10"
+              >
+                <Building2 className="h-4 w-4" />
+                <span>Directory</span>
               </NavLink>
             </>
           )}

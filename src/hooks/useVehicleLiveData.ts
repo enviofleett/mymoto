@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { parseSupabaseTimestamp } from "@/utils/timezone";
 
 /**
  * Fleet-scale safe live vehicle data interface.
@@ -43,8 +44,8 @@ export function mapToVehicleLiveData(data: any): VehicleLiveData {
     isOverspeeding: data.is_overspeeding ?? false,
     totalMileageKm: mileageKm,
     statusText: data.status_text ?? null,
-    lastUpdate: data.gps_time ? new Date(data.gps_time) : null,
-    lastSyncedAt: data.last_synced_at ? new Date(data.last_synced_at) : null,
+    lastUpdate: parseSupabaseTimestamp(data.gps_time),
+    lastSyncedAt: parseSupabaseTimestamp(data.last_synced_at),
     syncPriority: data.sync_priority ?? 'normal',
   };
 }
