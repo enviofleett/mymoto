@@ -40,7 +40,6 @@ import { useAddress } from "@/hooks/useAddress";
 import { useAuth } from "@/contexts/AuthContext";
 import { VehicleNotificationSettings } from "@/components/fleet/VehicleNotificationSettings";
 import { TripSyncProgress } from "@/components/fleet/TripSyncProgress";
-import { formatToLagosTime } from "@/utils/timezone";
 
 interface ReportsSectionProps {
   deviceId: string;
@@ -108,47 +107,10 @@ export function ReportsSection({
     
     // CRITICAL FIX: Include ALL trips that have start_time and end_time, even if coordinates are 0
     // This allows trips with missing GPS data to still be displayed
-    let validTrips = trips.filter(trip => {
+    const validTrips = trips.filter(trip => {
       // Only require start_time and end_time - coordinates can be 0 (missing GPS data)
       return trip.start_time && trip.end_time;
     });
-    
-    // FIX: Additional deduplication at UI level (defense in depth)
-    // Remove any remaining duplicates based on trip ID or start_time/end_time
-    const seenTripIds = new Set<string>();
-    const seenTripKeys = new Set<string>();
-    const deduplicatedTrips: VehicleTrip[] = [];
-    
-    validTrips.forEach(trip => {
-      // Check by ID first (most reliable)
-      if (trip.id && seenTripIds.has(trip.id)) {
-        if (process.env.NODE_ENV === 'development') {
-          console.warn(`[ReportsSection] Duplicate trip ID detected: ${trip.id}, skipping`);
-        }
-        return;
-      }
-      
-      // Check by start_time/end_time combination
-      const tripKey = `${trip.start_time}|${trip.end_time}`;
-      if (seenTripKeys.has(tripKey)) {
-        if (process.env.NODE_ENV === 'development') {
-          console.warn(`[ReportsSection] Duplicate trip time detected: ${trip.start_time} to ${trip.end_time}, skipping trip ${trip.id}`);
-        }
-        return;
-      }
-      
-      // Add to seen sets and include in result
-      if (trip.id) seenTripIds.add(trip.id);
-      seenTripKeys.add(tripKey);
-      deduplicatedTrips.push(trip);
-    });
-    
-    if (deduplicatedTrips.length < validTrips.length) {
-      const duplicatesRemoved = validTrips.length - deduplicatedTrips.length;
-      console.warn(`[ReportsSection] Removed ${duplicatesRemoved} duplicate trip(s) at UI level (${validTrips.length} -> ${deduplicatedTrips.length})`);
-    }
-    
-    validTrips = deduplicatedTrips;
     
     if (process.env.NODE_ENV === 'development') {
       console.log('[ReportsSection] Trip filtering:', {
@@ -167,208 +129,79 @@ export function ReportsSection({
     }
     
     const groups: { date: Date; label: string; trips: VehicleTrip[] }[] = [];
-    
-    // FIX: Use Africa/Lagos timezone for date comparisons (consistent with app timezone)
-    // Get current date in Africa/Lagos timezone
+    // Use current date in UTC to avoid timezone issues
     const now = new Date();
-    const lagosToday = new Date(now.toLocaleString("en-US", { timeZone: "Africa/Lagos" }));
-    const todayDateStr = lagosToday.toISOString().split('T')[0]; // YYYY-MM-DD
-    
-    // Get yesterday in Lagos timezone
-    const lagosYesterday = new Date(lagosToday);
-    lagosYesterday.setDate(lagosYesterday.getDate() - 1);
-    const yesterdayDateStr = lagosYesterday.toISOString().split('T')[0];
+    const today = new Date(Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate()
+    ));
     
     validTrips.forEach(trip => {
-      // FIX: Extract date from trip start_time and convert to Lagos timezone for grouping
-      // Parse the trip start_time and convert to Lagos timezone
-      const tripDate = new Date(trip.start_time);
-      const tripDateInLagos = new Date(tripDate.toLocaleString("en-US", { timeZone: "Africa/Lagos" }));
-      const tripDateStr = tripDateInLagos.toISOString().split('T')[0]; // YYYY-MM-DD in Lagos timezone
-      
-      // Use the date string as the key for grouping (consistent timezone)
+      // CRITICAL FIX: Parse date directly from ISO string to avoid timezone conversion issues
+      // Extract YYYY-MM-DD from ISO string (e.g., "2026-01-14T06:36:33+00:00" -> "2026-01-14")
+      const tripDateStr = trip.start_time.split('T')[0];
       const [year, month, day] = tripDateStr.split('-').map(Number);
-      const tripDateForGrouping = new Date(Date.UTC(year, month - 1, day));
+      const tripDateUTC = new Date(Date.UTC(year, month - 1, day));
       
-      // Find existing group by comparing date strings (timezone-aware)
+      // Find existing group by comparing UTC dates
       const existingGroup = groups.find(g => {
-        const groupDateStr = g.date.toISOString().split('T')[0];
-        return groupDateStr === tripDateStr;
+        return g.date.getTime() === tripDateUTC.getTime();
       });
       
       if (existingGroup) {
         existingGroup.trips.push(trip);
       } else {
         let label: string;
+        // Compare with today using UTC dates
+        const todayUTC = new Date(Date.UTC(
+          today.getUTCFullYear(),
+          today.getUTCMonth(),
+          today.getUTCDate()
+        ));
+        const yesterdayUTC = new Date(todayUTC);
+        yesterdayUTC.setUTCDate(yesterdayUTC.getUTCDate() - 1);
         
-        // Compare with today/yesterday using Lagos timezone dates
-        if (tripDateStr === todayDateStr) {
+        if (tripDateUTC.getTime() === todayUTC.getTime()) {
           label = "Today";
-        } else if (tripDateStr === yesterdayDateStr) {
+        } else if (tripDateUTC.getTime() === yesterdayUTC.getTime()) {
           label = "Yesterday";
         } else {
-          // Format using the trip date in Lagos timezone for display
-          label = format(tripDateInLagos, "EEE, MMM d");
+          // Format using the original trip date for display
+          const tripDateForDisplay = new Date(trip.start_time);
+          label = format(tripDateForDisplay, "EEE, MMM d");
         }
-        groups.push({ date: tripDateForGrouping, label, trips: [trip] });
+        groups.push({ date: tripDateUTC, label, trips: [trip] });
         if (process.env.NODE_ENV === 'development') {
           console.log('[ReportsSection] Created group:', label, 'date:', tripDateStr, 'trips:', 1);
         }
       }
     });
     
-      // Sort trips within each day by start_time ASC (earliest first = Trip 1)
-      groups.forEach(group => {
-        group.trips.sort((a, b) => {
-          const timeA = new Date(a.start_time).getTime();
-          const timeB = new Date(b.start_time).getTime();
-          
-          // Primary sort: by start_time
-          if (timeA !== timeB) {
-            return timeA - timeB;
-          }
-          
-          // If start_time is identical, sort by end_time
-          const endTimeA = new Date(a.end_time).getTime();
-          const endTimeB = new Date(b.end_time).getTime();
-          return endTimeA - endTimeB;
-        });
-        
-        // Calculate trip quality score (higher = better)
-        const getTripQualityScore = (trip: VehicleTrip): number => {
-          let score = 0;
-          
-          // Has valid start coordinates (+10 points)
-          if (trip.start_latitude && trip.start_longitude && 
-              trip.start_latitude !== 0 && trip.start_longitude !== 0) {
-            score += 10;
-          }
-          
-          // Has valid end coordinates (+10 points)
-          if (trip.end_latitude && trip.end_longitude && 
-              trip.end_latitude !== 0 && trip.end_longitude !== 0) {
-            score += 10;
-          }
-          
-          // Has distance data (+5 points)
-          if (trip.distance_km && trip.distance_km > 0) {
-            score += 5;
-          }
-          
-          // Longer duration = more complete trip (+1 point per minute, max 20)
-          const duration = trip.duration_seconds 
-            ? trip.duration_seconds / 60 
-            : (new Date(trip.end_time).getTime() - new Date(trip.start_time).getTime()) / 60000;
-          score += Math.min(Math.floor(duration), 20);
-          
-          return score;
-        };
-        
-        // Filter out overlapping trips - keep the one with better quality
-        const filteredTrips: VehicleTrip[] = [];
-        const tripStartTimes = new Map<VehicleTrip, number>();
-        const tripEndTimes = new Map<VehicleTrip, number>();
-        
-        // Pre-calculate times for efficiency
-        group.trips.forEach(trip => {
-          tripStartTimes.set(trip, new Date(trip.start_time).getTime());
-          tripEndTimes.set(trip, new Date(trip.end_time).getTime());
-        });
-        
-        group.trips.forEach(trip => {
-          const tripStart = tripStartTimes.get(trip)!;
-          const tripEnd = tripEndTimes.get(trip)!;
-          
-          // Skip invalid trips (end before start)
-          if (tripEnd < tripStart) {
-            if (process.env.NODE_ENV === 'development') {
-              console.warn(`[ReportsSection] Skipping invalid trip: end time before start time`, trip);
-            }
-            return;
-          }
-          
-          // Check for overlaps with already included trips
-          let hasOverlap = false;
-          let shouldKeep = true;
-          
-          for (const existingTrip of filteredTrips) {
-            const existingStart = tripStartTimes.get(existingTrip)!;
-            const existingEnd = tripEndTimes.get(existingTrip)!;
-            
-            // Check if trips overlap (one starts before the other ends)
-            const overlaps = (tripStart < existingEnd && tripEnd > existingStart);
-            
-            if (overlaps) {
-              hasOverlap = true;
-              
-              // Compare quality scores - keep the better one
-              const tripScore = getTripQualityScore(trip);
-              const existingScore = getTripQualityScore(existingTrip);
-              
-              if (tripScore > existingScore) {
-                // This trip is better - remove the existing one and keep this
-                const index = filteredTrips.indexOf(existingTrip);
-                filteredTrips.splice(index, 1);
-                if (process.env.NODE_ENV === 'development') {
-                  console.log(`[ReportsSection] Removing overlapping trip (score: ${existingScore}) in favor of better trip (score: ${tripScore})`);
-                }
-              } else {
-                // Existing trip is better or equal - skip this one
-                shouldKeep = false;
-                if (process.env.NODE_ENV === 'development') {
-                  console.log(`[ReportsSection] Skipping overlapping trip (score: ${tripScore}) - keeping existing trip (score: ${existingScore})`);
-                }
-                break;
-              }
-            }
-          }
-          
-          if (shouldKeep && !hasOverlap) {
-            filteredTrips.push(trip);
-          } else if (shouldKeep && hasOverlap) {
-            // We already removed the overlapping trip above, so add this one
-            filteredTrips.push(trip);
-          }
-        });
-        
-        // Replace trips with filtered list
-        const removedCount = group.trips.length - filteredTrips.length;
-        if (removedCount > 0) {
-          if (process.env.NODE_ENV === 'development') {
-            console.log(`[ReportsSection] Removed ${removedCount} overlapping trip(s) from ${group.label}`);
-          }
-        }
-        group.trips = filteredTrips;
-        
-        // FIX: Validate trip ordering after filtering
-        if (process.env.NODE_ENV === 'development') {
-          for (let i = 1; i < group.trips.length; i++) {
-            const prevTrip = group.trips[i - 1];
-            const currentTrip = group.trips[i];
-            const prevEnd = tripEndTimes.get(prevTrip)!;
-            const currentStart = tripStartTimes.get(currentTrip)!;
-            
-            if (prevEnd > currentStart) {
-              console.warn(`[ReportsSection] CONTRADICTION DETECTED: Trip ${i} ends at ${prevTrip.end_time} but Trip ${i + 1} starts at ${currentTrip.start_time} (overlap of ${(prevEnd - currentStart) / 1000}s)`);
-            }
-          }
-        }
-      });
+    // Sort trips within each day by start_time ASC (earliest first = Trip 1)
+    groups.forEach(group => {
+      group.trips.sort((a, b) => 
+        new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
+      );
+    });
     
     // Sort days by date DESC (latest day first)
     const sortedGroups = groups.sort((a, b) => b.date.getTime() - a.date.getTime());
     
     if (process.env.NODE_ENV === 'development') {
-      const totalTripsInGroups = sortedGroups.reduce((sum, g) => sum + g.trips.length, 0);
-      const removedTrips = validTrips.length - totalTripsInGroups;
-      
-      if (removedTrips > 0) {
-        console.log(`[ReportsSection] Removed ${removedTrips} overlapping trip(s) during filtering (${validTrips.length} → ${totalTripsInGroups})`);
-      }
-      
       console.log('[ReportsSection] Final grouped days:', sortedGroups.map(g => 
         `${g.label} (${g.trips.length} trips, date: ${g.date.toISOString().split('T')[0]})`
       ));
+      
+      // CRITICAL DEBUG: Verify all trips are included
+      const totalTripsInGroups = sortedGroups.reduce((sum, g) => sum + g.trips.length, 0);
+      if (totalTripsInGroups !== validTrips.length) {
+        console.error('[ReportsSection] TRIP COUNT MISMATCH!', {
+          validTrips: validTrips.length,
+          groupedTrips: totalTripsInGroups,
+          missing: validTrips.length - totalTripsInGroups
+        });
+      }
     }
     
     return sortedGroups;
@@ -424,23 +257,6 @@ export function ReportsSection({
   };
 
   const allTripsCount = trips?.length ?? 0;
-  
-  // Calculate pending trips countdown if syncing
-  const pendingTripsCountdown = useMemo(() => {
-    if (!syncStatus || syncStatus.sync_status !== 'processing') {
-      return null;
-    }
-    
-    const tripsTotal = syncStatus.trips_total ?? 0;
-    const tripsProcessed = syncStatus.trips_processed ?? 0;
-    
-    if (tripsTotal === 0 || tripsProcessed >= tripsTotal) {
-      return null; // No pending trips or sync complete
-    }
-    
-    const remaining = tripsTotal - tripsProcessed;
-    return remaining;
-  }, [syncStatus]);
   const allTripsDistance = trips?.reduce((sum, t) => sum + t.distance_km, 0) ?? 0;
 
   return (
@@ -608,8 +424,6 @@ export function ReportsSection({
                           trip={trip}
                           index={index}
                           onPlayTrip={onPlayTrip}
-                          previousTrip={index > 0 ? group.trips[index - 1] : undefined}
-                          nextTrip={index < group.trips.length - 1 ? group.trips[index + 1] : undefined}
                         />
                       ))}
                     </div>
@@ -629,25 +443,10 @@ export function ReportsSection({
             </div>
 
             <div className="flex items-center justify-between mt-4 pt-3 border-t border-border">
-              <span className="text-sm text-muted-foreground">
-                {pendingTripsCountdown ? 'Syncing trips' : 'Total trips'}
-              </span>
-              <div className="flex items-center gap-2">
-                {pendingTripsCountdown ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground px-2 py-1 bg-primary/10 text-primary rounded-full font-medium tabular-nums animate-pulse">
-                      {pendingTripsCountdown} remaining
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      ({syncStatus?.trips_processed ?? 0}/{syncStatus?.trips_total ?? 0} processed)
-                    </span>
-                  </div>
-                ) : (
-                  <>
-                    <span className="font-medium">{allTripsCount} trips</span>
-                    <span className="text-primary ml-2">{allTripsDistance.toFixed(1)} km</span>
-                  </>
-                )}
+              <span className="text-sm text-muted-foreground">Total trips</span>
+              <div>
+                <span className="font-medium">{allTripsCount} trips</span>
+                <span className="text-primary ml-2">{allTripsDistance.toFixed(1)} km</span>
               </div>
             </div>
           </TabsContent>
@@ -682,7 +481,8 @@ export function ReportsSection({
                             <div className="font-medium text-foreground">{event.title}</div>
                             <div className="text-sm text-muted-foreground truncate">{event.message}</div>
                             <div className="text-xs text-muted-foreground mt-1">
-                              {formatToLagosTime(event.created_at, {
+                              {new Date(event.created_at).toLocaleString('en-US', {
+                                timeZone: 'Africa/Lagos',
                                 hour: 'numeric',
                                 minute: '2-digit',
                                 hour12: true,
@@ -736,15 +536,11 @@ export function ReportsSection({
 function TripCard({ 
   trip, 
   index, 
-  onPlayTrip,
-  previousTrip,
-  nextTrip
+  onPlayTrip 
 }: { 
   trip: VehicleTrip; 
   index: number; 
   onPlayTrip: (trip: VehicleTrip) => void;
-  previousTrip?: VehicleTrip;
-  nextTrip?: VehicleTrip;
 }) {
   // Only fetch addresses if coordinates are valid (not 0,0)
   const hasValidStartCoords = trip.start_latitude && trip.start_longitude && 
@@ -754,37 +550,6 @@ function TripCard({
   
   // Check if trip can be played back (needs valid GPS coordinates)
   const canPlayback = hasValidStartCoords && hasValidEndCoords;
-  
-  // FIX: Detect contradictions with adjacent trips
-  const hasContradiction = useMemo(() => {
-    if (!previousTrip && !nextTrip) return false;
-    
-    const tripStart = new Date(trip.start_time).getTime();
-    const tripEnd = new Date(trip.end_time).getTime();
-    
-    // Check if this trip overlaps with previous trip
-    if (previousTrip) {
-      const prevEnd = new Date(previousTrip.end_time).getTime();
-      if (prevEnd > tripStart) {
-        return true; // Previous trip ends after this one starts
-      }
-    }
-    
-    // Check if this trip overlaps with next trip
-    if (nextTrip) {
-      const nextStart = new Date(nextTrip.start_time).getTime();
-      if (tripEnd > nextStart) {
-        return true; // This trip ends after next one starts
-      }
-    }
-    
-    // Check if end time is before start time (invalid trip)
-    if (tripEnd < tripStart) {
-      return true;
-    }
-    
-    return false;
-  }, [trip, previousTrip, nextTrip]);
   
   const { address: startAddress, isLoading: startLoading } = useAddress(
     hasValidStartCoords ? trip.start_latitude : null, 
@@ -805,13 +570,7 @@ function TripCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <span className="text-sm font-medium">Trip {index + 1}</span>
-            {hasContradiction && (
-              <Badge variant="destructive" className="text-xs">
-                <AlertTriangle className="h-3 w-3 mr-1" />
-                Time conflict
-              </Badge>
-            )}
-            {!canPlayback && !hasContradiction && (
+            {!canPlayback && (
               <Badge variant="outline" className="text-xs border-orange-500/50 text-orange-600">
                 <AlertTriangle className="h-3 w-3 mr-1" />
                 GPS incomplete
@@ -829,27 +588,17 @@ function TripCard({
             )}
           </div>
           <div className="text-xs text-muted-foreground">
-            {formatToLagosTime(trip.start_time, {
+            {new Date(trip.start_time).toLocaleString('en-US', {
+              timeZone: 'Africa/Lagos',
               hour: 'numeric',
               minute: '2-digit',
               hour12: true,
-            })} - {formatToLagosTime(trip.end_time, {
+            })} - {new Date(trip.end_time).toLocaleString('en-US', {
+              timeZone: 'Africa/Lagos',
               hour: 'numeric',
               minute: '2-digit',
               hour12: true,
             })}
-            {hasContradiction && (
-              <div className="text-destructive mt-1 text-[10px] flex items-center gap-1">
-                <AlertTriangle className="h-3 w-3" />
-                <span>
-                  {previousTrip && new Date(previousTrip.end_time).getTime() > new Date(trip.start_time).getTime() 
-                    ? `Overlaps with Trip ${index} (ends ${formatDistanceToNow(new Date(previousTrip.end_time), { addSuffix: true })})`
-                    : nextTrip && new Date(trip.end_time).getTime() > new Date(nextTrip.start_time).getTime()
-                    ? `Overlaps with Trip ${index + 2} (starts ${formatDistanceToNow(new Date(nextTrip.start_time), { addSuffix: true })})`
-                    : 'Invalid time range'}
-                </span>
-              </div>
-            )}
           </div>
         </div>
         <div className="text-right shrink-0 flex items-center gap-2">

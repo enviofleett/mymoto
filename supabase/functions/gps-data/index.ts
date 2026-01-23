@@ -91,15 +91,6 @@ async function callGps51(proxyUrl: string, action: string, token: string, server
 
 // Sync vehicles from querymonitorlist - batch insert
 async function syncVehicles(supabase: any, devices: any[]) {
-  // Get primary admin profile ID (toolbuxdev@gmail.com or first admin)
-  // This ensures all vehicles have a primary owner
-  const { data: adminProfiles } = await supabase.rpc('get_admin_profile_ids');
-  const primaryAdminProfileId = adminProfiles?.[0]?.profile_id || null;
-  
-  if (!primaryAdminProfileId) {
-    console.warn('[syncVehicles] No admin profile found. Vehicles will be assigned via trigger.');
-  }
-  
   const vehicleData = devices.map(device => ({
     device_id: device.deviceid,
     device_name: device.devicename || device.deviceid,
@@ -108,7 +99,6 @@ async function syncVehicles(supabase: any, devices: any[]) {
     device_type: device.devicetype,
     sim_number: device.simnumber,
     gps_owner: device.creater || null,  // GPS51 account owner
-    primary_owner_profile_id: primaryAdminProfileId, // Ensure primary owner is set
     last_synced_at: new Date().toISOString()
   }))
   
@@ -116,10 +106,6 @@ async function syncVehicles(supabase: any, devices: any[]) {
   for (let i = 0; i < vehicleData.length; i += BATCH_SIZE) {
     const batch = vehicleData.slice(i, i + BATCH_SIZE)
     await supabase.from('vehicles').upsert(batch, { onConflict: 'device_id' })
-  }
-  
-  if (primaryAdminProfileId) {
-    console.log(`[syncVehicles] Synced ${devices.length} vehicles with primary owner: ${primaryAdminProfileId}`);
   }
 }
 
@@ -192,34 +178,15 @@ async function syncPositions(supabase: any, records: any[]) {
   })
 
   // Batch upsert positions (always update current position)
-  console.log(`[syncPositions] About to upsert ${positions.length} positions in ${Math.ceil(positions.length / BATCH_SIZE)} batches`)
-  console.log(`[syncPositions] Sample position:`, JSON.stringify(positions[0], null, 2))
-  
-  let totalUpserted = 0
   for (let i = 0; i < positions.length; i += BATCH_SIZE) {
     const batch = positions.slice(i, i + BATCH_SIZE)
-    const batchNum = Math.floor(i / BATCH_SIZE) + 1
-    
-    console.log(`[syncPositions] Upserting batch ${batchNum}: ${batch.length} records`)
-    
-    const { data, error, count } = await supabase
-      .from('vehicle_positions')
-      .upsert(batch, { 
-        onConflict: 'device_id',
-        ignoreDuplicates: false 
-      })
-      .select()
-    
-    if (error) {
-      console.error(`[syncPositions] Batch ${batchNum} upsert ERROR:`, error)
-      throw error
-    }
-    
-    console.log(`[syncPositions] Batch ${batchNum} result: count=${count}, data rows=${data?.length || 0}`)
-    totalUpserted += (count || data?.length || batch.length)
+    await supabase.from('vehicle_positions').upsert(batch, { 
+      onConflict: 'device_id',
+      ignoreDuplicates: false 
+    })
   }
   
-  console.log(`[syncPositions] ✅ Successfully upserted ${totalUpserted}/${positions.length} positions (${positions.filter(p => p.sync_priority === 'high').length} moving)`)
+  console.log(`[syncPositions] Updated ${positions.length} positions (${positions.filter(p => p.sync_priority === 'high').length} moving)`)
 
   // SMART HISTORY: Only record if position changed significantly (>50m) or 5 min elapsed
   const validPositions = positions.filter(p => p.latitude && p.longitude)
@@ -288,18 +255,14 @@ async function syncPositions(supabase: any, records: any[]) {
   const ALERT_COOLDOWN_MS = 30 * 60 * 1000 // 30 minutes
   const recentCutoff = new Date(Date.now() - ALERT_COOLDOWN_MS).toISOString()
   
-  // Fetch previous ignition states and speeds for change detection
+  // Fetch previous ignition states for change detection
   const { data: prevPositions } = await supabase
     .from('vehicle_positions')
-    .select('device_id, ignition_on, speed')
+    .select('device_id, ignition_on')
     .in('device_id', positions.map(p => p.device_id))
   
   const prevIgnitionMap = new Map<string, boolean | null>(
     (prevPositions || []).map((p: any) => [p.device_id, p.ignition_on])
-  )
-  
-  const prevSpeedMap = new Map<string, number | null>(
-    (prevPositions || []).map((p: any) => [p.device_id, p.speed])
   )
   
   const eventsToInsert: Array<{
@@ -370,30 +333,7 @@ async function syncPositions(supabase: any, records: any[]) {
       })
     }
 
-    // 5. VEHICLE MOVING DETECTION (speed transitions from <=5 to >5 km/h)
-    // This detects when vehicle actually starts moving, not just when ignition turns on
-    const prevSpeed = prevSpeedMap.get(pos.device_id) ?? null
-    const movementThreshold = 5 // km/h
-    if (pos.ignition_on === true && 
-        pos.speed !== null && pos.speed > movementThreshold && 
-        (prevSpeed === null || prevSpeed <= movementThreshold)) {
-      eventsToInsert.push({
-        device_id: pos.device_id,
-        event_type: 'vehicle_moving',
-        severity: 'info',
-        title: 'Vehicle Started Moving',
-        message: `Vehicle is now moving at ${Math.round(pos.speed)} km/h`,
-        metadata: { 
-          speed: pos.speed,
-          previous_speed: prevSpeed,
-          lat: pos.latitude, 
-          lon: pos.longitude, 
-          detected_by: 'gps-data' 
-        }
-      })
-    }
-
-    // 6. IGNITION OFF DETECTION (state change from on -> off)
+    // 5. IGNITION OFF DETECTION (state change from on -> off)
     if (pos.ignition_on === false && prevIgnition === true) {
       eventsToInsert.push({
         device_id: pos.device_id,
@@ -602,22 +542,12 @@ serve(async (req) => {
     const apiResponse = gps51Result.result
     const duration = gps51Result.duration || 0
 
-    // Ensure apiResponse is an object with safe property access
-    if (typeof apiResponse !== 'object' || apiResponse === null) {
-      throw new Error(`GPS51 API returned invalid response type: ${typeof apiResponse}`)
-    }
-
-    // Safely access status property
-    const responseStatus = (apiResponse && typeof apiResponse === 'object' && 'status' in apiResponse) 
-      ? (apiResponse.status ?? 0) 
-      : 0
-
     // Log the API call
-    await logApiCall(supabase, action, finalBody, responseStatus, apiResponse, null, duration)
+    await logApiCall(supabase, action, finalBody, apiResponse.status ?? 0, apiResponse, null, duration)
 
-    // Check for token refresh errors (only if status exists and is a number)
-    if (typeof responseStatus === 'number' && TOKEN_REFRESH_ERRORS.includes(responseStatus)) {
-      throw new Error(`Token error ${responseStatus}: Admin refresh required`)
+    // Check for token refresh errors
+    if (TOKEN_REFRESH_ERRORS.includes(apiResponse.status)) {
+      throw new Error(`Token error ${apiResponse.status}: Admin refresh required`)
     }
 
     // Sync data to database based on action

@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { parseSupabaseTimestamp } from "@/utils/timezone";
 
 /**
  * Fleet-scale safe live vehicle data interface.
@@ -44,8 +43,8 @@ export function mapToVehicleLiveData(data: any): VehicleLiveData {
     isOverspeeding: data.is_overspeeding ?? false,
     totalMileageKm: mileageKm,
     statusText: data.status_text ?? null,
-    lastUpdate: parseSupabaseTimestamp(data.gps_time),
-    lastSyncedAt: parseSupabaseTimestamp(data.last_synced_at),
+    lastUpdate: data.gps_time ? new Date(data.gps_time) : null,
+    lastSyncedAt: data.last_synced_at ? new Date(data.last_synced_at) : null,
     syncPriority: data.sync_priority ?? 'normal',
   };
 }
@@ -101,10 +100,9 @@ export function useVehicleLiveData(deviceId: string | null) {
     queryKey: ['vehicle-live-data', deviceId],
     queryFn: () => fetchVehicleLiveData(deviceId!),
     enabled: !!deviceId,
-    staleTime: 30 * 1000, // 30 seconds - realtime updates will override with fresh data
-    gcTime: 48 * 60 * 60 * 1000, // Keep in cache for 48 hours
-    refetchInterval: false, // Disable polling - rely on realtime updates only
-    refetchOnWindowFocus: true, // Refetch on focus as fallback for realtime
+    staleTime: 24 * 60 * 60 * 1000, // Fresh for 24 hours (cached data loads instantly)
+    gcTime: 48 * 60 * 60 * 1000,    // Keep in cache for 48 hours
+    refetchInterval: 15 * 1000,     // Poll DB every 15 seconds for fresh data
     retry: 2,
     retryDelay: 1000,
     placeholderData: (previousData) => previousData, // Show cached data instantly while fresh data loads

@@ -193,149 +193,66 @@ export interface IgnitionDetectionResult {
 }
 
 /**
- * GPS51 ACC detection result with confidence scoring
+ * Check if JT808 status bitmask indicates ACC ON
  * 
- * GPS51 extends JT/T 808 with a 32-bit status field:
- * - Lower 16 bits: Standard JT808 status (bit 0 = ACC)
- * - Upper 16 bits: Extended GPS51 status (bit 0 = extended ACC)
+ * Enhanced implementation that tests multiple bit positions:
+ * - Bit 0 (0x01): Common ACC bit in many JT808 implementations
+ * - Bit 1 (0x02): Alternative ACC bit position
+ * - Bit 2 (0x04): Some devices use this for ACC
+ * - Bit 3 (0x08): Less common but used by some devices
+ * 
+ * Also validates that status value is reasonable (not all zeros/ones which might indicate invalid data).
+ * 
+ * Returns true if any of the common patterns match and status appears valid.
  */
-interface AccDetectionResult {
-  acc_detected: boolean;
-  confidence: number; // 0.0 to 1.0
-  base_acc: boolean; // JT808 base ACC bit (bit 0 of lower 16 bits)
-  extended_acc: boolean; // GPS51 extended ACC bit (bit 0 of upper 16 bits)
-  base_status: number; // Lower 16 bits (JT808 status)
-  extended_status: number; // Upper 16 bits (GPS51 extended)
-}
-
-/**
- * Check GPS51/JT808 status for ACC (ignition) detection
- * 
- * GPS51 Protocol:
- * - Status is a 32-bit integer (not just 16-bit)
- * - Base JT808 status = status & 0xFFFF (lower 16 bits, bit 0 = ACC)
- * - Extended GPS51 status = status >>> 16 (upper 16 bits, bit 0 = extended ACC)
- * 
- * Confidence Scoring:
- * - Base JT808 ACC bit (bit 0): +0.6 confidence
- * - Extended GPS51 ACC bit (bit 16): +0.2 confidence
- * - Speed > 3 km/h: +0.2 confidence (added by caller)
- * - Total confidence >= 0.5 → ignition ON
- * 
- * Example values:
- * - 262150 (0x40006) = base=6 (0x0006), extended=4 (0x0004)
- *   - Base bit 0: OFF (0x0006 & 0x01 = 0)
- *   - Extended bit 0: OFF (0x0004 & 0x01 = 0)
- * - 262151 (0x40007) = base=7 (0x0007), extended=4 (0x0004)
- *   - Base bit 0: ON (0x0007 & 0x01 = 1) → confidence 0.6
- * - 65537 (0x10001) = base=1 (0x0001), extended=1 (0x0001)
- *   - Base bit 0: ON → confidence 0.6
- *   - Extended bit 0: ON → confidence 0.8 total
- */
-function checkJt808AccBit(
-  status: number | string | null | undefined,
-  speedKmh: number = 0
-): AccDetectionResult {
-  // Default result: no ACC detected, zero confidence
-  const defaultResult: AccDetectionResult = {
-    acc_detected: false,
-    confidence: 0.0,
-    base_acc: false,
-    extended_acc: false,
-    base_status: 0,
-    extended_status: 0,
-  };
-
-  if (status === null || status === undefined) return defaultResult;
+function checkJt808AccBit(status: number | string | null | undefined): boolean {
+  if (status === null || status === undefined) return false;
   
-  // Parse string status to number
+  // If status is a string, try to parse it
   if (typeof status === 'string') {
     const numStatus = parseInt(status, 10);
-    if (isNaN(numStatus)) return defaultResult;
+    if (isNaN(numStatus)) return false;
     status = numStatus;
   }
 
-  // Validate status is a valid number
-  if (typeof status !== 'number' || isNaN(status)) return defaultResult;
+  // Ensure status is a valid number
+  if (typeof status !== 'number' || isNaN(status)) return false;
 
-  // Reject negative values (invalid)
+  // Validate status value is reasonable (not all zeros or all ones which might indicate invalid data)
+  // Status should be a byte value (0-255), but we allow up to 65535 for extended status fields
+  // Some devices may send larger values - clamp them instead of rejecting
   if (status < 0) {
-    return defaultResult;
+    console.warn(`[checkJt808AccBit] Negative status value: ${status}, treating as invalid`);
+    return false;
   }
   
-  // Treat status as 32-bit unsigned integer
-  // GPS51 extends JT808 with upper 16 bits for extended status
-  const status32 = status >>> 0; // Ensure unsigned 32-bit integer
+  // For values > 65535, they might be bit-packed differently - try to extract meaningful bits
+  // by taking modulo or bitwise operations, but log a warning
+  if (status > 65535) {
+    console.warn(`[checkJt808AccBit] Status value ${status} exceeds expected range (0-65535), attempting bit extraction`);
+    // Try to extract lower 16 bits which might contain the ACC information
+    const clampedStatus = status & 0xFFFF; // Take lower 16 bits
+    status = clampedStatus;
+  }
+
+  // Test multiple JT808 ACC bit patterns (bit 0, 1, 2, or 3)
+  // Bit 0 (0x01): Most common ACC bit position
+  // Bit 1 (0x02): Alternative position used by some devices
+  // Bit 2 (0x04): Less common but used by some implementations
+  // Bit 3 (0x08): Additional pattern for some device types
+  const ACC_BIT_MASKS = [0x01, 0x02, 0x04, 0x08];
   
-  // Extract base JT808 status (lower 16 bits) and extended GPS51 status (upper 16 bits)
-  const baseStatus = status32 & 0xFFFF; // Lower 16 bits (standard JT808)
-  const extendedStatus = status32 >>> 16; // Upper 16 bits (GPS51 extended)
-  
-  // Check ACC bit in base JT808 status (bit 0)
-  // JT808 standard: bit 0 = ACC (ignition) status
-  const baseAcc = (baseStatus & 0x01) === 0x01;
-  
-  // Check ACC bit in extended GPS51 status (bit 0 of upper 16 bits)
-  // GPS51 extension: bit 16 (bit 0 of extended) = extended ACC indicator
-  const extendedAcc = (extendedStatus & 0x01) === 0x01;
-  
-  // Calculate confidence score
-  let confidence = 0.0;
-  
-  // Base JT808 ACC bit: +0.6 confidence (most reliable)
-  if (baseAcc) {
-    confidence += 0.6;
+  for (const mask of ACC_BIT_MASKS) {
+    if ((status & mask) === mask) {
+      // Log when ACC is detected via status bit for debugging
+      if (process.env.NODE_ENV === 'development' || Deno.env.get('LOG_IGNITION_DETECTION') === 'true') {
+        console.log(`[checkJt808AccBit] ACC ON detected via bit mask 0x${mask.toString(16)} (status=${status}, binary=${status.toString(2)})`);
+      }
+      return true;
+    }
   }
   
-  // Extended GPS51 ACC bit: +0.2 confidence (supplementary signal)
-  if (extendedAcc) {
-    confidence += 0.2;
-  }
-  
-  // Speed > 3 km/h: +0.2 confidence (vehicle is moving, likely ignition on)
-  if (speedKmh > 3) {
-    confidence += 0.2;
-  }
-  
-  // Cap confidence at 1.0
-  confidence = Math.min(confidence, 1.0);
-  
-  // Determine ACC status: require confidence >= 0.5
-  const accDetected = confidence >= 0.5;
-  
-  // Log conflicts: when confidence < 0.5 BUT signals disagree
-  // This indicates potential issue with status field interpretation
-  if (confidence < 0.5 && (baseAcc || extendedAcc || speedKmh > 3)) {
-    // Signals conflict: some signals say ON, but confidence too low
-    const signals = [];
-    if (baseAcc) signals.push('base_acc=ON');
-    if (extendedAcc) signals.push('ext_acc=ON');
-    if (speedKmh > 3) signals.push(`speed=${speedKmh}km/h`);
-    
-    console.warn(
-      `[checkJt808AccBit] Low confidence ACC detection (${confidence.toFixed(2)}): ` +
-      `status=${status32} (base=0x${baseStatus.toString(16)}, ext=0x${extendedStatus.toString(16)}), ` +
-      `signals=[${signals.join(', ')}]`
-    );
-  }
-  
-  // Debug logging when ACC detected (only if logging enabled)
-  if (accDetected && Deno.env.get('LOG_IGNITION_DETECTION') === 'true') {
-    console.log(
-      `[checkJt808AccBit] ACC ON detected: confidence=${confidence.toFixed(2)}, ` +
-      `status=${status32} (base=0x${baseStatus.toString(16)}, ext=0x${extendedStatus.toString(16)}), ` +
-      `base_acc=${baseAcc}, ext_acc=${extendedAcc}, speed=${speedKmh}km/h`
-    );
-  }
-  
-  return {
-    acc_detected: accDetected,
-    confidence,
-    base_acc: baseAcc,
-    extended_acc: extendedAcc,
-    base_status: baseStatus,
-    extended_status: extendedStatus,
-  };
+  return false;
 }
 
 /**
@@ -395,18 +312,14 @@ function parseAccFromString(strstatus: string | null | undefined): boolean {
 /**
  * Detect ignition status using multi-signal confidence scoring
  * 
- * Enhanced GPS51/JT808 implementation with 32-bit status support.
+ * Enhanced implementation that prioritizes JT808 status bits over string parsing
+ * and returns detailed detection results with confidence scoring.
  * 
  * Detection priority:
- * 1. GPS51/JT808 status bits (base + extended, confidence-based)
+ * 1. JT808 status bit (highest confidence - 1.0)
  * 2. String parsing (high confidence - 0.8-0.9)
- * 3. Speed inference (fallback, low confidence)
- * 
- * Confidence scoring:
- * - Base JT808 ACC (bit 0): +0.6
- * - Extended GPS51 ACC (bit 16): +0.2
- * - Speed > 3 km/h: +0.2
- * - Threshold: ignition_on = confidence >= 0.5
+ * 3. Speed inference (low confidence - 0.3-0.5)
+ * 4. Multi-signal (combines signals - 0.6-0.8)
  * 
  * Returns detailed result with confidence and detection method for monitoring.
  */
@@ -416,30 +329,38 @@ export function detectIgnition(
 ): IgnitionDetectionResult {
   const signals: IgnitionDetectionResult['signals'] = {};
   
-  // Priority 1: GPS51/JT808 status bit detection (with confidence scoring)
-  // This now handles 32-bit status values with base + extended ACC bits
-  if (raw.status !== null && raw.status !== undefined) {
-    const accResult = checkJt808AccBit(raw.status, speedKmh);
+  // Priority 1: JT808 status bit (most reliable if available and meaningful)
+  // Only use status bit if it provides meaningful ACC information
+  // If status byte exists but doesn't have ACC bits, continue to other signals
+  const statusBitResult = raw.status !== null && raw.status !== undefined 
+    ? checkJt808AccBit(raw.status) 
+    : null;
+  
+  // Only use status bit result if it's explicitly true (ACC ON detected)
+  // If status bit is false, it might mean:
+  // 1. ACC OFF explicitly (if device uses status byte for ACC)
+  // 2. Status byte doesn't contain ACC information (continue to other signals)
+  // We can't distinguish these cases reliably, so only trust explicit ACC ON
+  if (statusBitResult === true) {
+    signals.status_bit = true;
     
-    // Record the status bit signal
-    signals.status_bit = accResult.acc_detected;
-    
-    // If confidence >= 0.5, trust the status bit result
-    // This handles cases where base ACC, extended ACC, and/or speed combine
-    if (accResult.confidence >= 0.5) {
-      return {
-        ignition_on: accResult.acc_detected,
-        confidence: accResult.confidence,
-        detection_method: 'status_bit',
-        signals
-      };
-    }
-    
-    // If confidence < 0.5, continue to other detection methods
-    // But keep the partial confidence from status bits for potential combination
+    // Explicit ACC ON from status bit - highest confidence
+    return {
+      ignition_on: true,
+      confidence: 1.0,
+      detection_method: 'status_bit',
+      signals
+    };
   }
   
-  // Priority 2: String parsing (fallback if status bit insufficient)
+  // If status bit exists but is false, we can't be certain it means ACC OFF
+  // (it might just mean the status byte doesn't contain ACC info)
+  // So we record the signal but continue to check other methods
+  if (statusBitResult === false) {
+    signals.status_bit = false;
+  }
+  
+  // Priority 2: String parsing (fallback if status bit not available)
   const strstatus = raw.strstatus || raw.strstatusen || '';
   
   if (strstatus) {

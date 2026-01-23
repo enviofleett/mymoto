@@ -1,17 +1,12 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { WifiOff } from "lucide-react";
-import { getOfflineDuration } from "@/utils/timezone";
 
 interface CurrentStatusCardProps {
   status: 'online' | 'charging' | 'offline';
   speed: number | null;
-  lastUpdate?: Date | null;
 }
 
-export function CurrentStatusCard({ status, speed, lastUpdate }: CurrentStatusCardProps) {
-  const offlineDuration = status === 'offline' && lastUpdate ? getOfflineDuration(lastUpdate) : null;
-  
+export function CurrentStatusCard({ status, speed }: CurrentStatusCardProps) {
   const getStatusInfo = () => {
     switch (status) {
       case 'online':
@@ -32,7 +27,7 @@ export function CurrentStatusCard({ status, speed, lastUpdate }: CurrentStatusCa
         return {
           icon: "💤",
           label: "Offline",
-          description: offlineDuration ? `Offline for ${offlineDuration}` : "Vehicle is offline - no GPS connection",
+          description: "Vehicle is offline",
           bgColor: "bg-muted",
         };
     }
@@ -51,19 +46,9 @@ export function CurrentStatusCard({ status, speed, lastUpdate }: CurrentStatusCa
           )}>
             <span className="text-2xl">{statusInfo.icon}</span>
           </div>
-          <div className="flex-1">
-            <div className="flex items-center gap-2">
-              <span className="font-medium text-foreground capitalize">{statusInfo.label}</span>
-              {status === 'offline' && (
-                <WifiOff className="h-4 w-4 text-muted-foreground" />
-              )}
-            </div>
-            <div className={cn(
-              "text-sm",
-              status === 'offline' ? "text-destructive/80 font-medium" : "text-muted-foreground"
-            )}>
-              {statusInfo.description}
-            </div>
+          <div>
+            <div className="font-medium text-foreground capitalize">{statusInfo.label}</div>
+            <div className="text-sm text-muted-foreground">{statusInfo.description}</div>
           </div>
         </div>
       </CardContent>
