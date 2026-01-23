@@ -1,0 +1,23 @@
+Fix and test realtime vehicle location updates on the vehicle profile page.
+
+STEPS:
+
+1. Apply database fix in Supabase SQL Editor:
+   ALTER PUBLICATION supabase_realtime ADD TABLE vehicle_positions;
+   ALTER TABLE vehicle_positions REPLICA IDENTITY FULL;
+
+2. Verify fix worked:
+   SELECT tablename FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'vehicle_positions';
+   (Should return 1 row)
+
+3. Test in browser:
+   - Navigate to /owner/vehicle/:deviceId (singular "vehicle")
+   - Open console (F12)
+   - Look for: "[Realtime] ✅ Successfully subscribed to vehicle_positions updates for [deviceId]"
+   - Wait 60s for GPS sync OR manually update DB:
+     UPDATE vehicle_positions SET latitude = latitude + 0.0001 WHERE device_id = 'YOUR_ID';
+   - Verify console shows: "[Realtime] Position update received for [deviceId]:"
+   - Verify console shows: "[Realtime] ✅ Cache updated and invalidated"
+   - Verify map updates instantly without refresh
+
+Expected: Map marker moves in < 1 second when database updates. No page refresh needed.
