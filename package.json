@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:open": "./scripts/start-and-open.sh",
+    "dev:vehicle": "./scripts/start-and-open.sh /owner/vehicle/358657105966092",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",

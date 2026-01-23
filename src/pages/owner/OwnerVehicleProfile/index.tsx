@@ -78,7 +78,10 @@ export default function OwnerVehicleProfile() {
   } = useVehicleLiveData(deviceId);
 
   // Enable realtime updates for instant location updates
+  // DEBUG: Log before calling hook to verify it's being called
+  console.log('[OwnerVehicleProfile] About to call useRealtimeVehicleUpdates with deviceId:', deviceId, 'type:', typeof deviceId);
   useRealtimeVehicleUpdates(deviceId);
+  console.log('[OwnerVehicleProfile] useRealtimeVehicleUpdates hook called');
 
   const { 
     data: llmSettings, 

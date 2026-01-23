@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -12,13 +12,24 @@ import { mapToVehicleLiveData } from './useVehicleLiveData';
 export function useRealtimeVehicleUpdates(deviceId: string | null) {
   const queryClient = useQueryClient();
 
-  useEffect(() => {
+  // DEBUG: Log hook entry
+  console.log(`[Realtime] 🔵 Hook called with deviceId: ${deviceId}, type: ${typeof deviceId}, truthy: ${!!deviceId}`);
+  console.log(`[Realtime] 🔵 About to call useEffect, queryClient:`, !!queryClient);
+  console.log(`[Realtime] 🔵 useEffect function exists:`, typeof useEffect === 'function');
+  console.log(`[Realtime] 🔵 useLayoutEffect function exists:`, typeof useLayoutEffect === 'function');
+
+  // Try useLayoutEffect first (runs synchronously)
+  useLayoutEffect(() => {
+    console.log(`[Realtime] 🔵✅✅✅ useLayoutEffect RUNNING NOW (SYNC), deviceId: ${deviceId}, type: ${typeof deviceId}`);
+    console.log(`[Realtime] 🔵✅✅✅ useLayoutEffect timestamp:`, new Date().toISOString());
+    console.trace(`[Realtime] useLayoutEffect call stack:`);
+    
     if (!deviceId) {
-      console.log(`[Realtime] Skipping subscription - deviceId is null/undefined`);
+      console.log(`[Realtime] ⚠️ Skipping subscription - deviceId is null/undefined`);
       return;
     }
 
-    console.log(`[Realtime] 🔵 Setting up subscription for device: ${deviceId}`);
+    console.log(`[Realtime] 🔵 Setting up subscription for device: ${deviceId} (from useLayoutEffect)`);
 
     const channel = supabase
       .channel(`vehicle-realtime-${deviceId}`)
@@ -126,6 +137,9 @@ export function useRealtimeVehicleUpdates(deviceId: string | null) {
       supabase.removeChannel(channel);
     };
   }, [deviceId, queryClient]);
+  
+  // DEBUG: Log after useLayoutEffect call
+  console.log(`[Realtime] 🔵 useLayoutEffect call completed (effect will run synchronously after render)`);
 }
 
 /**
