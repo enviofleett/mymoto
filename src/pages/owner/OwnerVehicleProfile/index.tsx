@@ -77,11 +77,29 @@ export default function OwnerVehicleProfile() {
     refetch: refetchLive,
   } = useVehicleLiveData(deviceId);
 
+  // DEBUG: Log liveData changes for realtime updates
+  if (process.env.NODE_ENV === 'development') {
+    useEffect(() => {
+      if (liveData?.lastUpdate) {
+        const formatted = new Intl.DateTimeFormat('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+          timeZone: 'Africa/Lagos'
+        }).format(liveData.lastUpdate);
+        console.log(`[OwnerVehicleProfile] liveData.lastUpdate changed:`, {
+          timestamp: liveData.lastUpdate.toISOString(),
+          formatted: formatted,
+          deviceId: deviceId
+        });
+      }
+    }, [liveData?.lastUpdate?.getTime(), deviceId]);
+  }
+
   // Enable realtime updates for instant location updates
-  // DEBUG: Log before calling hook to verify it's being called
-  console.log('[OwnerVehicleProfile] About to call useRealtimeVehicleUpdates with deviceId:', deviceId, 'type:', typeof deviceId);
   useRealtimeVehicleUpdates(deviceId);
-  console.log('[OwnerVehicleProfile] useRealtimeVehicleUpdates hook called');
 
   const { 
     data: llmSettings, 
@@ -194,64 +212,41 @@ export default function OwnerVehicleProfile() {
     triggerSync({ deviceId, forceFullSync: true });
   }, [deviceId, triggerSync]);
 
-  // Optimized pull-to-refresh: Show DB data instantly, sync in background
+  // Optimized pull-to-refresh: Sync first, then show fresh data
   const handleRefresh = useCallback(async () => {
     if (!deviceId) return;
 
     setIsRefreshing(true);
     
     try {
-      // Step 1: Immediately refetch from DB (instant response)
-      const refetchResults = await Promise.allSettled([
-        refetchProfile(),
-        refetchLive(),
-        refetchTrips(),  // Shows existing trips immediately
-        refetchEvents(),
-        refetchMileage(),
-        refetchDaily(),
-        refetchDailyStats(),
-      ]);
-
-      // Check for any failures and provide user feedback
-      const failures = refetchResults.filter(r => r.status === 'rejected');
-      const successCount = refetchResults.length - failures.length;
-      
-      if (failures.length > 0) {
-        if (process.env.NODE_ENV === 'development') {
-          console.warn('Some data failed to refresh:', failures);
-        }
-        
-        // Show warning if some (but not all) data failed
-        if (successCount > 0) {
-          toast.warning("Partially refreshed", {
-            description: `${successCount} of ${refetchResults.length} data sources refreshed. Some data may be outdated.`
-          });
-        } else {
-          // All data failed
-          toast.error("Refresh failed", {
-            description: "Unable to refresh vehicle data. Please try again."
-          });
-          throw new Error("All data refresh operations failed");
-        }
-      }
-
-      // Step 2: Trigger background sync (don't wait - fire-and-forget)
-      supabase.functions.invoke("sync-trips-incremental", {
+      // Step 1: Trigger sync FIRST (wait for completion)
+      // This ensures we have the latest data before showing it to the user
+      await supabase.functions.invoke("sync-trips-incremental", {
         body: { device_ids: [deviceId], force_full_sync: false },
-      }).catch((error) => {
-        // Log but don't block UI
-        console.warn('Background sync error:', error);
       });
-
-      // Step 3: Show success immediately (only if no failures or partial success was already shown)
-      if (failures.length === 0) {
-        toast.success("Refreshed", { 
-          description: "Syncing new data in background..." 
-        });
-      }
+      
+      // Step 2: Small delay for database propagation (500ms)
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Step 3: Invalidate all queries to trigger fresh fetches
+      // Using invalidateQueries is more efficient than individual refetch calls
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["vehicle-trips", deviceId] }),
+        queryClient.invalidateQueries({ queryKey: ["vehicle-events", deviceId] }),
+        queryClient.invalidateQueries({ queryKey: ["vehicle-live-data", deviceId] }),
+        queryClient.invalidateQueries({ queryKey: ["mileage-stats", deviceId] }),
+        queryClient.invalidateQueries({ queryKey: ["daily-mileage", deviceId] }),
+        queryClient.invalidateQueries({ queryKey: ["vehicle-daily-stats", deviceId] }),
+        queryClient.invalidateQueries({ queryKey: ["vehicle-llm-settings", deviceId] }),
+      ]);
+      
+      // Update sessionStorage to reset cooldown
+      sessionStorage.setItem(`vehicle-sync-${deviceId}`, Date.now().toString());
+      
+      toast.success("Refreshed", { description: "Latest data loaded" });
     } catch (error) {
-      toast.error("Failed to refresh", { 
-        description: error instanceof Error ? error.message : "Unknown error" 
+      toast.error("Refresh failed", { 
+        description: error instanceof Error ? error.message : "Try again" 
       });
       
       if (process.env.NODE_ENV === 'development') {
@@ -260,71 +255,75 @@ export default function OwnerVehicleProfile() {
     } finally {
       setIsRefreshing(false);
     }
-  }, [
-    deviceId,
-    queryClient,
-    refetchProfile,
-    refetchLive,
-    refetchTrips,
-    refetchEvents,
-    refetchMileage,
-    refetchDaily,
-    refetchDailyStats,
-  ]);
+  }, [deviceId, queryClient]);
 
   // Pull-to-refresh setup
   const { pullDistance, isPulling, handlers: pullHandlers } = usePullToRefresh({
     onRefresh: handleRefresh,
   });
 
-  // Auto-sync on page load (CRITICAL FIX #4: Auto-sync implementation)
-  const hasAutoSyncedRef = useRef(false);
+  // Auto-sync on page load with cooldown to prevent excessive syncing
   const [isAutoSyncing, setIsAutoSyncing] = useState(false);
   
   useEffect(() => {
-    // Only auto-sync once per mount, and only if deviceId exists
-    if (!deviceId || hasAutoSyncedRef.current) return;
+    if (!deviceId) return;
     
-    // Mark as synced immediately to prevent duplicate calls
-    hasAutoSyncedRef.current = true;
+    // Use sessionStorage to track syncs across page mounts
+    const lastSyncKey = `vehicle-sync-${deviceId}`;
+    const lastSyncStr = sessionStorage.getItem(lastSyncKey);
+    const lastSyncTime = lastSyncStr ? parseInt(lastSyncStr, 10) : 0;
+    const now = Date.now();
     
-    // Small delay to ensure page is fully loaded before syncing
-    const timeoutId = setTimeout(() => {
+    // Only sync if more than 5 minutes since last sync
+    const SYNC_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+    const timeSinceLastSync = now - lastSyncTime;
+    
+    if (timeSinceLastSync < SYNC_COOLDOWN_MS) {
       if (process.env.NODE_ENV === 'development') {
-        console.log('[VehicleProfile] Auto-syncing trips on page load');
+        const minutesRemaining = Math.ceil((SYNC_COOLDOWN_MS - timeSinceLastSync) / 60000);
+        console.log(`[VehicleProfile] Skipping auto-sync - cooldown active (${minutesRemaining}m remaining)`);
       }
-      
-      setIsAutoSyncing(true);
-      
-      // Trigger incremental sync (not full sync) to get latest trips
-      // Use mutate with callbacks to handle auto-sync state
-      triggerSync(
-        { deviceId, forceFullSync: false },
-        {
-          onSuccess: () => {
-            setIsAutoSyncing(false);
-            if (process.env.NODE_ENV === 'development') {
-              console.log('[VehicleProfile] Auto-sync completed successfully');
-            }
-            // Invalidate queries to refresh data after sync
-            queryClient.invalidateQueries({ queryKey: ["vehicle-trips", deviceId] });
-            queryClient.invalidateQueries({ queryKey: ["vehicle-daily-stats", deviceId] });
-          },
-          onError: (error) => {
-            setIsAutoSyncing(false);
-            // Don't show error toast for auto-sync failures (silent failure)
-            if (process.env.NODE_ENV === 'development') {
-              console.warn('[VehicleProfile] Auto-sync failed:', error);
-            }
-          },
-        }
-      );
-    }, 500); // 500ms delay to let page render first
+      return;
+    }
     
-    return () => {
-      clearTimeout(timeoutId);
-    };
-  }, [deviceId, triggerSync, queryClient]);
+    // Check if sync is already in progress
+    if (syncStatus?.sync_status === 'processing') {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[VehicleProfile] Skipping auto-sync - sync already in progress');
+      }
+      return;
+    }
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[VehicleProfile] Auto-syncing trips on page load');
+    }
+    
+    setIsAutoSyncing(true);
+    sessionStorage.setItem(lastSyncKey, now.toString());
+    
+    // Trigger incremental sync (not full sync) to get latest trips
+    triggerSync(
+      { deviceId, forceFullSync: false },
+      {
+        onSuccess: () => {
+          setIsAutoSyncing(false);
+          if (process.env.NODE_ENV === 'development') {
+            console.log('[VehicleProfile] Auto-sync completed successfully');
+          }
+          // Invalidate queries to refresh data after sync
+          queryClient.invalidateQueries({ queryKey: ["vehicle-trips", deviceId] });
+          queryClient.invalidateQueries({ queryKey: ["vehicle-daily-stats", deviceId] });
+        },
+        onError: (error) => {
+          setIsAutoSyncing(false);
+          // Don't show error toast for auto-sync failures (silent failure)
+          if (process.env.NODE_ENV === 'development') {
+            console.warn('[VehicleProfile] Auto-sync failed:', error);
+          }
+        },
+      }
+    );
+  }, [deviceId, triggerSync, queryClient, syncStatus]);
 
   // Display values with safe fallbacks
   const displayName = llmSettings?.nickname || deviceId;

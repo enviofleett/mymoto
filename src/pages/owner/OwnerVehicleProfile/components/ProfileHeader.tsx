@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { ArrowLeft, Settings, Car, WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
@@ -29,6 +29,13 @@ export function ProfileHeader({
 }: ProfileHeaderProps) {
   const showOriginalName = displayName !== vehicleName;
   const [imageError, setImageError] = useState(false);
+
+  // Format time directly from lastUpdate prop to ensure realtime updates
+  // Use useMemo with lastUpdate?.getTime() as dependency to ensure it updates
+  const displayTime = useMemo(() => {
+    if (!lastUpdate) return '';
+    return formatUpdatedTime(lastUpdate);
+  }, [lastUpdate?.getTime()]);
 
   return (
     <>
@@ -107,9 +114,9 @@ export function ProfileHeader({
             {getPersonalityLabel(personalityMode)}
           </p>
         )}
-        {lastUpdate && (
-          <p className="text-[11px] text-muted-foreground mt-1">
-            Updated {formatUpdatedTime(lastUpdate)}
+        {displayTime && (
+          <p className="text-[11px] text-muted-foreground mt-1" key={`time-${lastUpdate?.getTime()}`}>
+            Updated {displayTime}
           </p>
         )}
         {status === 'offline' && lastUpdate && (

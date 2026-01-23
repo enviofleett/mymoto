@@ -201,30 +201,15 @@ async function fetchVehicleTrips(
     throw error;
   }
   
-  console.log('[fetchVehicleTrips] Received', data?.length || 0, 'trips from database');
-  
-  if (data && data.length > 0) {
-    const dates = data.map((t: any) => new Date(t.start_time).toISOString().split('T')[0]);
-    const uniqueDates = [...new Set(dates)];
-    console.log('[fetchVehicleTrips] Trip date range:', dates[dates.length - 1], 'to', dates[0]);
-    console.log('[fetchVehicleTrips] Unique dates found:', uniqueDates.sort().reverse());
-    console.log('[fetchVehicleTrips] First trip:', data[0]?.start_time, 'Last trip:', data[data.length - 1]?.start_time);
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[fetchVehicleTrips] Received', data?.length || 0, 'trips from database');
     
-    // CRITICAL DEBUG: Check if we're missing recent trips
-    const today = new Date().toISOString().split('T')[0];
-    const tripsToday = dates.filter(d => d === today).length;
-    const tripsYesterday = dates.filter(d => {
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      return d === yesterday.toISOString().split('T')[0];
-    }).length;
-    console.log('[fetchVehicleTrips] Trips today:', tripsToday, 'Trips yesterday:', tripsYesterday);
-    
-    if (tripsToday === 0 && tripsYesterday === 0 && dates.length > 0) {
-      console.warn('[fetchVehicleTrips] WARNING: No trips from today or yesterday, but have trips from:', uniqueDates[0]);
+    if (data && data.length > 0) {
+      const dates = data.map((t: any) => new Date(t.start_time).toISOString().split('T')[0]);
+      const uniqueDates = [...new Set(dates)];
+      console.log('[fetchVehicleTrips] Trip date range:', dates[dates.length - 1], 'to', dates[0]);
+      console.log('[fetchVehicleTrips] Unique dates found:', uniqueDates.sort().reverse());
     }
-  } else {
-    console.warn('[fetchVehicleTrips] No trips returned from query!');
   }
   
   // Filter and process trips
@@ -236,11 +221,13 @@ async function fetchVehicleTrips(
       return trip.start_time && trip.end_time;
     });
   
-  console.log('[fetchVehicleTrips] After filtering:', {
-    before: data?.length || 0,
-    after: filteredTrips.length,
-    filteredOut: (data?.length || 0) - filteredTrips.length
-  });
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[fetchVehicleTrips] After filtering:', {
+      before: data?.length || 0,
+      after: filteredTrips.length,
+      filteredOut: (data?.length || 0) - filteredTrips.length
+    });
+  }
   
   // FIX: Deduplicate trips - keep only one trip per unique start_time/end_time combination
   // Use a Map to track seen trips, keeping the one with the most complete data
@@ -306,13 +293,9 @@ async function fetchVehicleTrips(
   
   const deduplicatedTrips = Array.from(tripMap.values());
   
-  if (deduplicatedTrips.length < filteredTrips.length) {
+  if (deduplicatedTrips.length < filteredTrips.length && process.env.NODE_ENV === 'development') {
     const duplicatesRemoved = filteredTrips.length - deduplicatedTrips.length;
-    console.warn(`[fetchVehicleTrips] Removed ${duplicatesRemoved} duplicate trip(s) for device ${deviceId} (${filteredTrips.length} -> ${deduplicatedTrips.length})`);
-    
-    if (process.env.NODE_ENV === 'development' && duplicateIds.length > 0) {
-      console.warn(`[fetchVehicleTrips] Duplicate trip IDs removed:`, duplicateIds.slice(0, 10), duplicateIds.length > 10 ? `... and ${duplicateIds.length - 10} more` : '');
-    }
+    console.log(`[fetchVehicleTrips] Removed ${duplicatesRemoved} duplicate trip(s) for device ${deviceId} (${filteredTrips.length} -> ${deduplicatedTrips.length})`);
   }
   
   return deduplicatedTrips

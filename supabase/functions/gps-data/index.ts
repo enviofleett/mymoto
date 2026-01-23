@@ -192,15 +192,34 @@ async function syncPositions(supabase: any, records: any[]) {
   })
 
   // Batch upsert positions (always update current position)
+  console.log(`[syncPositions] About to upsert ${positions.length} positions in ${Math.ceil(positions.length / BATCH_SIZE)} batches`)
+  console.log(`[syncPositions] Sample position:`, JSON.stringify(positions[0], null, 2))
+  
+  let totalUpserted = 0
   for (let i = 0; i < positions.length; i += BATCH_SIZE) {
     const batch = positions.slice(i, i + BATCH_SIZE)
-    await supabase.from('vehicle_positions').upsert(batch, { 
-      onConflict: 'device_id',
-      ignoreDuplicates: false 
-    })
+    const batchNum = Math.floor(i / BATCH_SIZE) + 1
+    
+    console.log(`[syncPositions] Upserting batch ${batchNum}: ${batch.length} records`)
+    
+    const { data, error, count } = await supabase
+      .from('vehicle_positions')
+      .upsert(batch, { 
+        onConflict: 'device_id',
+        ignoreDuplicates: false 
+      })
+      .select()
+    
+    if (error) {
+      console.error(`[syncPositions] Batch ${batchNum} upsert ERROR:`, error)
+      throw error
+    }
+    
+    console.log(`[syncPositions] Batch ${batchNum} result: count=${count}, data rows=${data?.length || 0}`)
+    totalUpserted += (count || data?.length || batch.length)
   }
   
-  console.log(`[syncPositions] Updated ${positions.length} positions (${positions.filter(p => p.sync_priority === 'high').length} moving)`)
+  console.log(`[syncPositions] ✅ Successfully upserted ${totalUpserted}/${positions.length} positions (${positions.filter(p => p.sync_priority === 'high').length} moving)`)
 
   // SMART HISTORY: Only record if position changed significantly (>50m) or 5 min elapsed
   const validPositions = positions.filter(p => p.latitude && p.longitude)

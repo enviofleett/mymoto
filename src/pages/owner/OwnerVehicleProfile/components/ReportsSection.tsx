@@ -359,19 +359,16 @@ export function ReportsSection({
     const sortedGroups = groups.sort((a, b) => b.date.getTime() - a.date.getTime());
     
     if (process.env.NODE_ENV === 'development') {
+      const totalTripsInGroups = sortedGroups.reduce((sum, g) => sum + g.trips.length, 0);
+      const removedTrips = validTrips.length - totalTripsInGroups;
+      
+      if (removedTrips > 0) {
+        console.log(`[ReportsSection] Removed ${removedTrips} overlapping trip(s) during filtering (${validTrips.length} → ${totalTripsInGroups})`);
+      }
+      
       console.log('[ReportsSection] Final grouped days:', sortedGroups.map(g => 
         `${g.label} (${g.trips.length} trips, date: ${g.date.toISOString().split('T')[0]})`
       ));
-      
-      // CRITICAL DEBUG: Verify all trips are included
-      const totalTripsInGroups = sortedGroups.reduce((sum, g) => sum + g.trips.length, 0);
-      if (totalTripsInGroups !== validTrips.length) {
-        console.error('[ReportsSection] TRIP COUNT MISMATCH!', {
-          validTrips: validTrips.length,
-          groupedTrips: totalTripsInGroups,
-          missing: validTrips.length - totalTripsInGroups
-        });
-      }
     }
     
     return sortedGroups;

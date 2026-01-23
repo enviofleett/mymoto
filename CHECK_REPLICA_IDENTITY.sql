@@ -1,19 +1,26 @@
+-- ============================================================================
 -- Check REPLICA IDENTITY for vehicle_positions
--- This determines what data is sent in UPDATE events
+-- ============================================================================
+-- This is the critical setting for realtime to work properly
+-- ============================================================================
 
 SELECT 
-  c.relname AS tablename,
-  CASE c.relreplident
-    WHEN 'd' THEN 'DEFAULT (primary key only)'
-    WHEN 'n' THEN 'NOTHING (no replica identity)'
-    WHEN 'f' THEN 'FULL (all columns) ✅'
-    WHEN 'i' THEN 'INDEX (specific index)'
-  END AS replica_identity,
-  c.relreplident
+  'vehicle_positions' as table_name,
+  CASE relreplident
+    WHEN 'f' THEN '✅ FULL - All columns included in updates (CORRECT)'
+    WHEN 'd' THEN '⚠️ DEFAULT - Only primary key columns (may miss data)'
+    WHEN 'n' THEN '❌ NOTHING - No data in updates (WILL NOT WORK)'
+    WHEN 'i' THEN 'INDEX - Uses index columns'
+    ELSE '❓ UNKNOWN'
+  END as replica_identity_status,
+  relreplident as raw_value
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE n.nspname = 'public'
   AND c.relname = 'vehicle_positions';
 
--- If it's not 'FULL', run this:
+-- ============================================================================
+-- If status is NOT "✅ FULL", run this:
+-- ============================================================================
 -- ALTER TABLE vehicle_positions REPLICA IDENTITY FULL;
+-- ============================================================================

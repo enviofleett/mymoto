@@ -1,8 +1,8 @@
-import { useEffect, useLayoutEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { mapToVehicleLiveData } from './useVehicleLiveData';
+import { mapToVehicleLiveData, type VehicleLiveData } from './useVehicleLiveData';
 
 /**
  * Real-time vehicle updates hook
@@ -11,28 +11,37 @@ import { mapToVehicleLiveData } from './useVehicleLiveData';
  */
 export function useRealtimeVehicleUpdates(deviceId: string | null) {
   const queryClient = useQueryClient();
+  const subscriptionRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const hasSubscribedRef = useRef(false);
 
-  // DEBUG: Log hook entry
-  console.log(`[Realtime] 🔵 Hook called with deviceId: ${deviceId}, type: ${typeof deviceId}, truthy: ${!!deviceId}`);
-  console.log(`[Realtime] 🔵 About to call useEffect, queryClient:`, !!queryClient);
-  console.log(`[Realtime] 🔵 useEffect function exists:`, typeof useEffect === 'function');
-  console.log(`[Realtime] 🔵 useLayoutEffect function exists:`, typeof useLayoutEffect === 'function');
+  // Hook entry logging (development only)
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`[Realtime] Hook called with deviceId: ${deviceId}`);
+  }
 
-  // Try useLayoutEffect first (runs synchronously)
-  useLayoutEffect(() => {
-    console.log(`[Realtime] 🔵✅✅✅ useLayoutEffect RUNNING NOW (SYNC), deviceId: ${deviceId}, type: ${typeof deviceId}`);
-    console.log(`[Realtime] 🔵✅✅✅ useLayoutEffect timestamp:`, new Date().toISOString());
-    console.trace(`[Realtime] useLayoutEffect call stack:`);
+  useEffect(() => {
+    console.log(`[Realtime] 🔍 useEffect running for deviceId: ${deviceId}`);
     
     if (!deviceId) {
-      console.log(`[Realtime] ⚠️ Skipping subscription - deviceId is null/undefined`);
+      console.log(`[Realtime] ❌ Skipping - deviceId is null/undefined`);
       return;
     }
 
-    console.log(`[Realtime] 🔵 Setting up subscription for device: ${deviceId} (from useLayoutEffect)`);
+    // Prevent duplicate subscriptions
+    if (hasSubscribedRef.current) {
+      console.log(`[Realtime] ⚠️ Subscription already exists (hasSubscribedRef.current = true), skipping`);
+      return;
+    }
 
-    const channel = supabase
-      .channel(`vehicle-realtime-${deviceId}`)
+    // Mark as subscribing to prevent race conditions
+    hasSubscribedRef.current = true;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    console.log(`[Realtime] 🚀 Setting up subscription for device: ${deviceId}`);
+    
+    try {
+      channel = supabase
+        .channel(`vehicle-realtime-${deviceId}`)
       // Position updates - instant map/stats refresh
       .on(
         'postgres_changes',
@@ -43,45 +52,30 @@ export function useRealtimeVehicleUpdates(deviceId: string | null) {
           filter: `device_id=eq.${deviceId}` 
         },
         (payload) => {
-          console.log(`[Realtime] Position update received for ${deviceId}:`, {
-            event: payload.eventType,
-            new: payload.new,
-            old: payload.old,
-            timestamp: new Date().toISOString()
-          });
-          
           // Verify we have the required data
           if (!payload.new || !payload.new.device_id) {
-            console.error(`[Realtime] Invalid payload - missing device_id:`, payload);
+            if (process.env.NODE_ENV === 'development') {
+              console.error(`[Realtime] Invalid payload - missing device_id:`, payload);
+            }
             return;
-          }
-          
-          // Check if REPLICA IDENTITY is FULL (we need all columns)
-          if (!payload.new.latitude && !payload.new.longitude && !payload.new.gps_time) {
-            console.warn(`[Realtime] Payload missing location data. REPLICA IDENTITY might not be FULL.`, payload.new);
-            console.warn(`[Realtime] Run: ALTER TABLE vehicle_positions REPLICA IDENTITY FULL;`);
-            // Still try to update with what we have
           }
           
           // Map raw DB data to the VehicleLiveData interface
           const mappedData = mapToVehicleLiveData(payload.new);
           
-          console.log(`[Realtime] Mapped data:`, {
-            deviceId: mappedData.deviceId,
-            latitude: mappedData.latitude,
-            longitude: mappedData.longitude,
-            lastUpdate: mappedData.lastUpdate,
-            speed: mappedData.speed
+          // Update vehicle position cache directly
+          // React Query will automatically notify subscribers - no need for invalidation
+          queryClient.setQueryData(['vehicle-live-data', deviceId], () => {
+            // Always return new object reference to force re-render
+            return { ...mappedData };
           });
           
-          // Update vehicle position cache directly
-          // This matches the key used in useVehicleLiveData
-          queryClient.setQueryData(['vehicle-live-data', deviceId], mappedData);
-          
-          // Force a refetch to ensure UI updates
-          queryClient.invalidateQueries({ queryKey: ['vehicle-live-data', deviceId] });
-          
-          console.log(`[Realtime] ✅ Cache updated and invalidated for ${deviceId}`);
+          console.log(`[Realtime] 🔄 Cache updated for ${deviceId}`, {
+            timestamp: mappedData.lastUpdate?.toISOString(),
+            latitude: mappedData.latitude,
+            longitude: mappedData.longitude,
+            speed: mappedData.speed
+          });
         }
       )
       // New events (alerts) - show toast notification
@@ -115,31 +109,52 @@ export function useRealtimeVehicleUpdates(deviceId: string | null) {
           queryClient.invalidateQueries({ queryKey: ['proactive-events'] });
         }
       )
-      .subscribe((status) => {
+      .subscribe((status, err) => {
         console.log(`[Realtime] 📡 Subscription status for ${deviceId}:`, status);
+        
+        if (err) {
+          console.error(`[Realtime] ❌ Subscription error for ${deviceId}:`, err);
+        }
+        
+        // Only set ref if component is still mounted and subscription succeeded
         if (status === 'SUBSCRIBED') {
+          subscriptionRef.current = channel;
           console.log(`[Realtime] ✅ Successfully subscribed to vehicle_positions updates for ${deviceId}`);
-          console.log(`[Realtime] 🎯 Waiting for position updates...`);
         } else if (status === 'CHANNEL_ERROR') {
-          console.error(`[Realtime] ❌ Channel error for ${deviceId}. Realtime may not be enabled for vehicle_positions table.`);
+          hasSubscribedRef.current = false;
+          console.error(`[Realtime] ❌ CHANNEL_ERROR for ${deviceId}. Realtime may not be enabled for vehicle_positions table.`);
           console.error(`[Realtime] Run this migration: ALTER PUBLICATION supabase_realtime ADD TABLE vehicle_positions;`);
         } else if (status === 'TIMED_OUT') {
-          console.warn(`[Realtime] ⚠️ Subscription timed out for ${deviceId}`);
+          hasSubscribedRef.current = false;
+          console.warn(`[Realtime] ⏱️ TIMED_OUT for ${deviceId}`);
         } else if (status === 'CLOSED') {
-          console.warn(`[Realtime] ⚠️ Subscription closed for ${deviceId}`);
-        } else {
-          console.log(`[Realtime] ℹ️ Subscription status: ${status} for ${deviceId}`);
+          hasSubscribedRef.current = false;
+          subscriptionRef.current = null;
+          console.warn(`[Realtime] 🔴 Subscription CLOSED for ${deviceId}`);
         }
       });
 
-    return () => {
-      console.log(`[Realtime] Cleaning up subscription for ${deviceId}`);
-      supabase.removeChannel(channel);
-    };
-  }, [deviceId, queryClient]);
-  
-  // DEBUG: Log after useLayoutEffect call
-  console.log(`[Realtime] 🔵 useLayoutEffect call completed (effect will run synchronously after render)`);
+      return () => {
+        hasSubscribedRef.current = false;
+        if (channel) {
+          // Unsubscribe synchronously to prevent race conditions
+          try {
+            channel.unsubscribe();
+          } catch (unsubError) {
+            // Ignore errors - channel may already be closed
+          }
+          
+          // Remove channel asynchronously
+          supabase.removeChannel(channel).catch(() => {});
+          subscriptionRef.current = null;
+        }
+      };
+    } catch (error) {
+      hasSubscribedRef.current = false;
+      console.error(`[Realtime] Error in useEffect:`, error);
+      return () => {};
+    }
+  }, [deviceId]); // queryClient is stable, no need in deps
 }
 
 /**
