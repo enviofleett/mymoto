@@ -11,13 +11,20 @@ STEPS:
    (Should return 1 row)
 
 3. Test in browser:
-   - Navigate to /owner/vehicle/:deviceId (singular "vehicle")
+   - Navigate to /owner/vehicles/:deviceId
    - Open console (F12)
-   - Look for: "[Realtime] ✅ Successfully subscribed to vehicle_positions updates for [deviceId]"
+   - Look for: "[Realtime] ✅ Successfully subscribed"
    - Wait 60s for GPS sync OR manually update DB:
      UPDATE vehicle_positions SET latitude = latitude + 0.0001 WHERE device_id = 'YOUR_ID';
-   - Verify console shows: "[Realtime] Position update received for [deviceId]:"
-   - Verify console shows: "[Realtime] ✅ Cache updated and invalidated"
+   - Verify console shows: "[Realtime] Position update received"
    - Verify map updates instantly without refresh
 
-Expected: Map marker moves in < 1 second when database updates. No page refresh needed.
+4. Confirm:
+   - Map marker moves in real-time
+   - Timestamp updates instantly
+   - WebSocket connection in Network tab
+   - Updates work across page refreshes
+
+EXPECTED RESULT: Location updates < 1 second (was 15 seconds with polling)
+
+See CURSOR_PROMPT_FIX_REALTIME_LOCATION.md for detailed testing guide.
