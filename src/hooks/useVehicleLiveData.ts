@@ -17,7 +17,8 @@ export interface VehicleLiveData {
   isOverspeeding: boolean;
   totalMileageKm: number | null;
   statusText: string | null;
-  lastUpdate: Date | null;
+  lastUpdate: Date | null; // vehicle_positions.gps_time ("last update")
+  lastGpsFix: Date | null; // vehicle_positions.gps_fix_time (true fix time)
   lastSyncedAt: Date | null;
   syncPriority: 'high' | 'normal' | 'low';
 }
@@ -44,6 +45,7 @@ export function mapToVehicleLiveData(data: any): VehicleLiveData {
     totalMileageKm: mileageKm,
     statusText: data.status_text ?? null,
     lastUpdate: data.gps_time ? new Date(data.gps_time) : null,
+    lastGpsFix: data.gps_fix_time ? new Date(data.gps_fix_time) : null,
     lastSyncedAt: data.last_synced_at ? new Date(data.last_synced_at) : null,
     syncPriority: data.sync_priority ?? 'normal',
   };

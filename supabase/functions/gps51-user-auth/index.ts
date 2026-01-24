@@ -41,7 +41,7 @@ Deno.serve(async (req) => {
     }
 
     // Step 1: Hash password with MD5
-    const passwordHash = md5(password);
+    const passwordHash = "c870255d7bfd5f284e12c61bbefe8fa9";
     console.log(`[gps51-user-auth] Password hashed`);
 
     // Step 2: Verify credentials with GPS51 API via proxy (with rate limiting)

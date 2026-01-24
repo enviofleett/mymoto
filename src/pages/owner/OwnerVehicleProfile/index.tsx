@@ -390,6 +390,7 @@ export default function OwnerVehicleProfile() {
           personalityMode={personalityMode}
           status={status}
           lastUpdate={liveData?.lastUpdate ?? null}
+          lastGpsFix={liveData?.lastGpsFix ?? null}
           lastSyncedAt={liveData?.lastSyncedAt ?? null}
           onBack={() => navigate("/owner/vehicles")}
           onSettings={() => setSettingsOpen(true)}

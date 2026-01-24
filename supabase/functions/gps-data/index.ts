@@ -195,7 +195,12 @@ async function syncPositions(supabase: any, records: any[]) {
       is_overspeeding: record.currentoverspeedstate === 1,
       total_mileage: record.totaldistance,
       status_text: record.strstatus, // Keep raw status_text for debugging (not exposed to frontend)
+      // gps_time = "last update" (GPS51 updatetime/arrivedtime), used for freshness
       gps_time: normalized.last_updated_at,
+      // gps_fix_time = true GPS fix time (GPS51 validpoistiontime) when available
+      gps_fix_time: normalized.gps_fix_at ?? null,
+      location_source: (record.gotsrc ?? null),
+      gps_valid_num: (record.gpsvalidnum ?? null),
       cached_at: now,
       last_synced_at: now,
       sync_priority: syncPriority
@@ -291,7 +296,10 @@ async function syncPositions(supabase: any, records: any[]) {
     ignition_on: p.ignition_on,
     ignition_confidence: p.ignition_confidence || null,
     ignition_detection_method: p.ignition_detection_method || null,
-    gps_time: p.gps_time
+    gps_time: p.gps_time,
+    gps_fix_time: (p as any).gps_fix_time ?? null,
+    location_source: (p as any).location_source ?? null,
+    gps_valid_num: (p as any).gps_valid_num ?? null,
   }))
 
   console.log(`Smart history: ${historyRecords.length}/${validPositions.length} positions recorded`)

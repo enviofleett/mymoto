@@ -41,10 +41,17 @@ export interface Gps51RawData {
   voltagepercent?: number; // Battery percentage (0-100)
   exvoltage?: number; // External voltage
   rxlevel?: number; // Signal strength (0-31 or 0-99)
+  // GPS51 timestamps are typically "long" UTC values but can arrive as strings.
+  // lastposition fields: devicetime, arrivedtime, updatetime, validpoistiontime
   devicetime?: string | number;
+  arrivedtime?: string | number;
   updatetime?: string | number;
+  validpoistiontime?: string | number;
   gpstime?: string | number;
   time?: string | number;
+  gotsrc?: string | null; // gps, wifi, cell/LBS
+  gpsvalidnum?: number; // satellite count
+  reportmode?: number | string;
   currentoverspeedstate?: number; // 0 or 1
   totaldistance?: number; // Total mileage in meters
 }
@@ -76,8 +83,17 @@ export interface NormalizedVehicleState {
   heading: number | null;
   altitude: number | null;
   is_online: boolean;
+  /**
+   * "Last update" time for freshness/online calculations.
+   * Prefer GPS51 updatetime/arrivedtime (server-side update), not "GPS fix time".
+   */
   last_updated_at: string; // ISO8601
   timestamp_source: 'gps' | 'server';
+  /**
+   * True GPS fix time (GPS51 validpoistiontime) when available and plausible.
+   * May be null for LBS/cell updates or devices with bad GPS clocks.
+   */
+  gps_fix_at?: string | null; // ISO8601 or null
   data_quality: 'high' | 'medium' | 'low';
 }
 
@@ -777,43 +793,77 @@ export function normalizeTimestamp(raw: Gps51RawData): {
   timestamp: string;
   source: 'gps' | 'server';
 } {
-  // Priority: GPS time > device time > update time > server time
-  const gpsTime = raw.gpstime || raw.devicetime;
-  const serverTime = raw.updatetime || raw.time;
+  const parsed = parseGps51Timestamp(
+    raw.updatetime ?? raw.arrivedtime ?? raw.devicetime ?? raw.time ?? null
+  );
 
-  if (gpsTime) {
-    try {
-      const date = new Date(gpsTime);
-      if (!isNaN(date.getTime())) {
-        return {
-          timestamp: date.toISOString(),
-          source: 'gps',
-        };
-      }
-    } catch (e) {
-      // Invalid GPS time, fall through
-    }
+  if (parsed) {
+    return { timestamp: parsed.toISOString(), source: 'server' };
   }
 
-  if (serverTime) {
-    try {
-      const date = new Date(serverTime);
-      if (!isNaN(date.getTime())) {
-        return {
-          timestamp: date.toISOString(),
-          source: 'server',
-        };
-      }
-    } catch (e) {
-      // Invalid server time, fall through
-    }
+  // Fallback to current time (server)
+  return { timestamp: new Date().toISOString(), source: 'server' };
+}
+
+// ----------------------------------------------------------------------------
+// GPS51 timestamp parsing helpers
+// ----------------------------------------------------------------------------
+
+const GPS51_MIN_TS_MS = Date.parse('2000-01-01T00:00:00Z');
+const GPS51_MAX_FUTURE_SKEW_MS = 5 * 60 * 1000; // 5 minutes
+
+function isSaneTimestampMs(ms: number): boolean {
+  return ms >= GPS51_MIN_TS_MS && ms <= Date.now() + GPS51_MAX_FUTURE_SKEW_MS;
+}
+
+/**
+ * GPS51 docs say timestamps are "long UTC format".
+ * In practice this can be:
+ * - milliseconds since epoch (13 digits)
+ * - seconds since epoch (10 digits)
+ * - numeric strings
+ * - occasionally date strings
+ */
+export function parseGps51Timestamp(value: unknown): Date | null {
+  if (value === null || value === undefined) return null;
+
+  // Numeric (or numeric string)
+  const asString = typeof value === 'string' ? value.trim() : null;
+  const isDigitsOnly = asString ? /^[0-9]+$/.test(asString) : false;
+
+  let ms: number | null = null;
+
+  if (typeof value === 'number' && !isNaN(value)) {
+    ms = normalizeEpochToMs(value);
+  } else if (isDigitsOnly) {
+    const num = Number(asString);
+    if (!isNaN(num)) ms = normalizeEpochToMs(num);
+  } else if (typeof value === 'string' && asString) {
+    const parsedMs = Date.parse(asString);
+    if (!isNaN(parsedMs)) ms = parsedMs;
   }
 
-  // Fallback to current time
-  return {
-    timestamp: new Date().toISOString(),
-    source: 'server',
-  };
+  if (ms === null || !isFinite(ms)) return null;
+  if (!isSaneTimestampMs(ms)) return null;
+
+  const d = new Date(ms);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function normalizeEpochToMs(epoch: number): number {
+  const abs = Math.abs(epoch);
+
+  // seconds (10 digits-ish)
+  if (abs > 1e9 && abs < 1e11) return epoch * 1000;
+
+  // milliseconds (13 digits-ish)
+  if (abs >= 1e11 && abs < 1e14) return epoch;
+
+  // microseconds (16 digits-ish) -> ms
+  if (abs >= 1e14 && abs < 1e17) return Math.floor(epoch / 1000);
+
+  // Fall back (will be filtered by sanity check)
+  return epoch;
 }
 
 // ============================================================================
@@ -920,6 +970,10 @@ export function normalizeVehicleTelemetry(
   const timestampDate = new Date(timestamp);
   const isOnline = Date.now() - timestampDate.getTime() < offlineThresholdMs;
 
+  // True GPS fix time (validpoistiontime) if present and plausible
+  const gpsFix = parseGps51Timestamp(raw.validpoistiontime ?? raw.gpstime ?? null);
+  const gpsFixAt = gpsFix ? gpsFix.toISOString() : null;
+
   // Build normalized state
   const normalized: NormalizedVehicleState = {
     vehicle_id: vehicleId,
@@ -937,6 +991,7 @@ export function normalizeVehicleTelemetry(
     is_online: isOnline,
     last_updated_at: timestamp,
     timestamp_source: source,
+    gps_fix_at: gpsFixAt,
     data_quality: 'medium', // Will be calculated below
   };
 
