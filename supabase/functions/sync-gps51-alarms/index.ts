@@ -1,6 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callGps51WithRateLimit, getValidGps51Token } from "../_shared/gps51-client.ts";
+import {
+  parseGps51TimestampToUTC,
+  logTimezoneConversion,
+  TIMEZONES,
+} from "../_shared/timezone-utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -9,39 +14,23 @@ const corsHeaders = {
 };
 
 /**
- * Sync GPS51 Alarms - Direct API Sync for 100% Accuracy
+ * Sync GPS51 Alarms - Direct API Sync for 100% Accuracy with Lagos Timezone
  *
  * This function fetches position data from GPS51's lastposition API (Section 4.1)
  * and extracts alarm data to ensure 100% match with GPS51 platform.
  *
+ * Timezone handling:
+ * - GPS51 Platform: GMT+8 (China Standard Time)
+ * - Database Storage: UTC (best practice)
+ * - User Display: GMT+1 (West Africa Time - Lagos)
+ *
+ * Flow: GPS51 (GMT+8) → Convert to UTC → Store in DB → Frontend displays as Lagos (GMT+1)
+ *
  * GPS51 API: action=lastposition
  * Alarm Fields: alarm, stralarm, stralarmsen, videoalarm, strvideoalarm, strvideoalarmen
  *
- * No calculations, just direct extraction and storage.
+ * No calculations, just direct extraction, timezone conversion, and storage.
  */
-
-/**
- * Parse GPS51 timestamp to ISO8601
- */
-function parseGps51Timestamp(ts: any): string | null {
-  if (!ts) return null;
-
-  // If number, check if seconds or milliseconds
-  const num = typeof ts === 'number' ? ts : parseInt(ts);
-  if (isNaN(num)) return null;
-
-  // If less than year 2000 in milliseconds, it's probably seconds
-  const threshold = Date.parse('2000-01-01T00:00:00Z');
-  const timestamp = num < threshold ? num * 1000 : num;
-
-  try {
-    const date = new Date(timestamp);
-    return date.toISOString();
-  } catch (e) {
-    console.warn(`[sync-gps51-alarms] Failed to parse timestamp: ${ts}`, e);
-    return null;
-  }
-}
 
 /**
  * Determine alarm severity based on alarm code
@@ -92,6 +81,7 @@ function determineAlarmSeverity(alarmCode: number, alarmDescription: string): st
 
 /**
  * Convert GPS51 position data to alarm record
+ * Handles timezone conversion: GPS51 (GMT+8) → UTC for database storage
  */
 function extractAlarmFromPosition(position: any) {
   const alarmCode = position.alarm || 0;
@@ -103,11 +93,17 @@ function extractAlarmFromPosition(position: any) {
     return null;
   }
 
-  // Parse timestamp (prefer validpoistiontime for GPS fix, fallback to updatetime)
-  const alarmTime = parseGps51Timestamp(position.validpoistiontime || position.updatetime);
+  // Parse timestamp from GPS51 (GMT+8) and convert to UTC
+  // Prefer validpoistiontime for GPS fix, fallback to updatetime
+  const alarmTime = parseGps51TimestampToUTC(position.validpoistiontime || position.updatetime);
   if (!alarmTime) {
     console.warn('[sync-gps51-alarms] No valid timestamp for alarm, skipping');
     return null;
+  }
+
+  // Log timezone conversion for debugging (first alarm only)
+  if (alarmTime) {
+    logTimezoneConversion('Alarm Time', position.validpoistiontime || position.updatetime, alarmTime);
   }
 
   // Determine severity
@@ -135,7 +131,7 @@ function extractAlarmFromPosition(position: any) {
     altitude: position.altitude || null,
     heading: position.course || null,
     severity,
-    alarm_time: alarmTime,
+    alarm_time: alarmTime,  // UTC timestamp
     gps51_raw_data: position, // Store complete position data
   };
 }

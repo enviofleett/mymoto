@@ -1,6 +1,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callGps51WithRateLimit, getValidGps51Token } from "../_shared/gps51-client.ts";
+import {
+  parseGps51TimestampToUTC,
+  formatDateForGps51,
+  logTimezoneConversion,
+  TIMEZONES,
+} from "../_shared/timezone-utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -9,74 +15,38 @@ const corsHeaders = {
 };
 
 /**
- * Sync GPS51 Trips - Direct API Sync for 100% Accuracy
+ * Sync GPS51 Trips - Direct API Sync for 100% Accuracy with Lagos Timezone
  *
  * This function fetches trip data directly from GPS51's querytrips API (Section 6)
  * and stores it WITHOUT any transformations to ensure 100% match with GPS51 platform.
  *
+ * Timezone handling:
+ * - GPS51 Platform: GMT+8 (China Standard Time)
+ * - Database Storage: UTC (best practice)
+ * - User Display: GMT+1 (West Africa Time - Lagos)
+ *
+ * Flow: GPS51 (GMT+8) → Convert to UTC → Store in DB → Frontend displays as Lagos (GMT+1)
+ *
  * GPS51 API: action=querytrips
  * Purpose: Get exact trip data as shown on GPS51 platform
  *
- * No calculations, no transformations, just direct storage.
+ * No calculations, no transformations, just direct storage with timezone conversion.
  */
-
-/**
- * Parse GPS51 timestamp to ISO8601
- * GPS51 returns timestamps in milliseconds (or seconds if < year 2000)
- */
-function parseGps51Timestamp(ts: any): string | null {
-  if (!ts) return null;
-
-  // If string format "yyyy-MM-dd HH:mm:ss", parse it
-  if (typeof ts === 'string' && ts.includes('-')) {
-    try {
-      // GPS51 timestamps are in GMT+8, convert to UTC
-      const date = new Date(ts + ' GMT+0800');
-      return date.toISOString();
-    } catch (e) {
-      console.warn(`[sync-gps51-trips] Failed to parse timestamp string: ${ts}`, e);
-      return null;
-    }
-  }
-
-  // If number, check if seconds or milliseconds
-  const num = typeof ts === 'number' ? ts : parseInt(ts);
-  if (isNaN(num)) return null;
-
-  // If less than year 2000 in milliseconds, it's probably seconds
-  const threshold = Date.parse('2000-01-01T00:00:00Z');
-  const timestamp = num < threshold ? num * 1000 : num;
-
-  try {
-    return new Date(timestamp).toISOString();
-  } catch (e) {
-    console.warn(`[sync-gps51-trips] Failed to parse timestamp number: ${ts}`, e);
-    return null;
-  }
-}
-
-/**
- * Format date for GPS51 API (yyyy-MM-dd HH:mm:ss)
- */
-function formatDateForGps51(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  const seconds = String(date.getSeconds()).padStart(2, '0');
-
-  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-}
 
 /**
  * Convert GPS51 trip data to database format
- * NO TRANSFORMATIONS - Just unit conversions and field mapping
+ * Handles timezone conversion: GPS51 (GMT+8) → UTC for database storage
+ * NO TRANSFORMATIONS - Just unit conversions, timezone conversion, and field mapping
  */
 function convertGps51TripToDb(trip: any, deviceId: string) {
-  // Parse timestamps
-  const startTime = parseGps51Timestamp(trip.starttime || trip.starttime_str);
-  const endTime = parseGps51Timestamp(trip.endtime || trip.endtime_str);
+  // Parse timestamps from GPS51 (GMT+8) and convert to UTC
+  const startTime = parseGps51TimestampToUTC(trip.starttime || trip.starttime_str);
+  const endTime = parseGps51TimestampToUTC(trip.endtime || trip.endtime_str);
+
+  // Log timezone conversion for debugging (only for first trip)
+  if (startTime) {
+    logTimezoneConversion('Trip Start Time', trip.starttime || trip.starttime_str, startTime);
+  }
 
   // Calculate duration in seconds (if both times available)
   let durationSeconds = null;
@@ -98,8 +68,8 @@ function convertGps51TripToDb(trip: any, deviceId: string) {
 
   return {
     device_id: deviceId,
-    start_time: startTime,
-    end_time: endTime,
+    start_time: startTime,  // UTC timestamp
+    end_time: endTime,      // UTC timestamp
     start_latitude: trip.startlat || trip.startlatitude || null,
     start_longitude: trip.startlon || trip.startlongitude || null,
     end_latitude: trip.endlat || trip.endlatitude || null,
@@ -123,13 +93,14 @@ serve(async (req) => {
   );
 
   try {
-    const { deviceid, begintime, endtime, timezone = 8 } = await req.json();
+    const { deviceid, begintime, endtime, timezone = TIMEZONES.LAGOS } = await req.json();
 
     if (!deviceid) {
       throw new Error('Missing required parameter: deviceid');
     }
 
     // Default to last 7 days if no time range specified
+    // Input times are assumed to be in Lagos timezone (GMT+1) unless specified
     const now = new Date();
     const defaultBeginTime = new Date(now);
     defaultBeginTime.setDate(defaultBeginTime.getDate() - 7);
@@ -143,11 +114,14 @@ serve(async (req) => {
 
     const { token, serverid } = await getValidGps51Token(supabase);
 
-    // Format times for GPS51 API
-    const beginTimeStr = formatDateForGps51(begin);
-    const endTimeStr = formatDateForGps51(end);
+    // Format times for GPS51 API (converts to GPS51 timezone GMT+8)
+    // Input is in UTC, formatDateForGps51 converts UTC → GMT+8
+    const beginTimeStr = formatDateForGps51(begin, TIMEZONES.UTC);
+    const endTimeStr = formatDateForGps51(end, TIMEZONES.UTC);
 
-    console.log(`[sync-gps51-trips] Fetching trips for ${deviceid} from ${beginTimeStr} to ${endTimeStr}`);
+    console.log(`[sync-gps51-trips] Fetching trips for ${deviceid}`);
+    console.log(`  Input range (UTC): ${begin.toISOString()} to ${end.toISOString()}`);
+    console.log(`  GPS51 range (GMT+8): ${beginTimeStr} to ${endTimeStr}`);
 
     // Call GPS51 querytrips API (Section 6)
     const result = await callGps51WithRateLimit(
@@ -160,7 +134,7 @@ serve(async (req) => {
         deviceid,
         begintime: beginTimeStr,
         endtime: endTimeStr,
-        timezone, // GMT+8 default
+        timezone: TIMEZONES.GPS51, // GPS51 uses GMT+8
       }
     );
 
