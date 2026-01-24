@@ -44,11 +44,12 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 
 export function VehicleTrips({ deviceId }: VehicleTripsProps) {
   const { data: trips, isLoading } = useQuery({
-    queryKey: ['vehicle-trips', deviceId],
+    queryKey: ['gps51-trips', deviceId],
     queryFn: async () => {
-      // Fetch trips from vehicle_trips table (synced from GPS51)
+      // Fetch trips DIRECTLY from GPS51 data (gps51_trips table)
+      // This ensures 100% match with GPS51 platform
       const { data, error } = await (supabase as any)
-        .from('vehicle_trips')
+        .from('gps51_trips')
         .select('*')
         .eq('device_id', deviceId)
         .not('start_latitude', 'is', null)
@@ -60,13 +61,13 @@ export function VehicleTrips({ deviceId }: VehicleTripsProps) {
 
       if (error) throw error;
       
-      // Map to Trip interface and filter invalid trips
+      // Map to Trip interface - GPS51 data is already accurate, no calculations needed
       const validTrips = (data || [])
         .filter((trip: any) => {
           // Filter out trips with invalid coordinates
-          return trip.start_latitude && 
-                 trip.start_longitude && 
-                 trip.start_latitude !== 0 && 
+          return trip.start_latitude &&
+                 trip.start_longitude &&
+                 trip.start_latitude !== 0 &&
                  trip.start_longitude !== 0 &&
                  trip.end_latitude &&
                  trip.end_longitude &&
@@ -76,43 +77,11 @@ export function VehicleTrips({ deviceId }: VehicleTripsProps) {
         .map((trip: any): Trip => {
           const startTime = new Date(trip.start_time);
           const endTime = trip.end_time ? new Date(trip.end_time) : null;
-          const durationMs = endTime ? endTime.getTime() - startTime.getTime() : 0;
-          const durationMinutes = durationMs / 60000;
+          const durationMinutes = trip.duration_seconds ? trip.duration_seconds / 60 : null;
 
-          // Calculate distance if missing or 0
-          let distanceKm = trip.distance_km || 0;
-          
-          // First, try to calculate from GPS coordinates if available
-          const hasValidStartCoords = trip.start_latitude && trip.start_longitude && 
-                                       trip.start_latitude !== 0 && trip.start_longitude !== 0;
-          const hasValidEndCoords = trip.end_latitude && trip.end_longitude && 
-                                     trip.end_latitude !== 0 && trip.end_longitude !== 0;
-          
-          if (distanceKm === 0 && hasValidStartCoords && hasValidEndCoords) {
-            distanceKm = calculateDistance(
-              trip.start_latitude,
-              trip.start_longitude,
-              trip.end_latitude,
-              trip.end_longitude
-            );
-          }
-          
-          // If distance is still 0 but we have duration and average speed, estimate distance
-          const durationSeconds = durationMs / 1000;
-          if (distanceKm === 0 && durationSeconds > 0 && trip.avg_speed && trip.avg_speed > 0) {
-            // distance = speed (km/h) * time (hours)
-            const durationHours = durationSeconds / 3600;
-            distanceKm = trip.avg_speed * durationHours;
-          }
-          
-          // If distance is still 0 but we have duration, estimate minimum distance
-          // Assume minimum speed of 5 km/h for any trip with duration
-          if (distanceKm === 0 && durationSeconds > 0) {
-            const durationHours = durationSeconds / 3600;
-            const minSpeedKmh = 5; // Minimum assumed speed for a trip
-            distanceKm = minSpeedKmh * durationHours;
-          }
-
+          // GPS51 data is already accurate - use it directly (NO calculations)
+          // distance_km is generated column from distance_meters (GPS51's path distance)
+          // avg_speed_kmh and max_speed_kmh are from GPS51 (already converted)
           return {
             id: trip.id,
             start_time: trip.start_time,
@@ -121,10 +90,10 @@ export function VehicleTrips({ deviceId }: VehicleTripsProps) {
             start_longitude: trip.start_longitude,
             end_latitude: trip.end_latitude,
             end_longitude: trip.end_longitude,
-            distance_km: Math.round(distanceKm * 100) / 100, // Round to 2 decimal places
-            avg_speed_kmh: trip.avg_speed ? Math.round(trip.avg_speed) : 0,
-            max_speed_kmh: trip.max_speed ? Math.round(trip.max_speed) : 0,
-            duration_minutes: Math.round(durationMinutes)
+            distance_km: trip.distance_km || 0, // GPS51's calculated distance (most accurate)
+            avg_speed_kmh: Math.round(trip.avg_speed_kmh || 0),
+            max_speed_kmh: Math.round(trip.max_speed_kmh || 0),
+            duration_minutes: durationMinutes ? Math.round(durationMinutes) : null
           };
         });
 

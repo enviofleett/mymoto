@@ -77,3 +77,12 @@ verify_jwt = false
 
 [functions.send-provider-approval-email]
 verify_jwt = false
+
+[functions.sync-gps51-trips]
+verify_jwt = false
+
+[functions.sync-gps51-alarms]
+verify_jwt = false
+
+[functions.fetch-mileage-detail]
+verify_jwt = false
