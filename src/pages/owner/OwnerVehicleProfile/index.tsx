@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { TripPlaybackDialog } from "@/components/profile/TripPlaybackDialog";
 import { VehiclePersonaSettings } from "@/components/fleet/VehiclePersonaSettings";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
-import { useVehicleLiveData } from "@/hooks/useVehicleLiveData";
+import { useVehicleLiveData, useVehicleLiveDataHeartbeat } from "@/hooks/useVehicleLiveData";
 import { useAddress } from "@/hooks/useAddress";
 import {
   useVehicleTrips,
@@ -78,7 +78,8 @@ export default function OwnerVehicleProfile() {
 
   // Phase 2: realtime is gated by feature flag + device allowlist
   // (default OFF -> no behavior change until enabled)
-  useRealtimeVehicleUpdates(deviceId);
+  useRealtimeVehicleUpdates(deviceId, { forceEnable: true });
+  useVehicleLiveDataHeartbeat(deviceId);
 
   const { 
     data: llmSettings, 
@@ -94,13 +95,13 @@ export default function OwnerVehicleProfile() {
   } = useVehicleTrips(
     deviceId,
     dateRange?.from
-      ? { dateRange: { from: dateRange.from, to: dateRange.to ?? dateRange.from } }
-      : { limit: 200 }, // Increased from 50 to 200 to ensure we get all recent trips
+      ? { dateRange: { from: dateRange.from, to: dateRange.to ?? dateRange.from }, live: true }
+      : { limit: 200, live: true },
     true
   );
   
   // DEBUG: Log trips when they change (development only)
-  if (process.env.NODE_ENV === 'development') {
+  if (import.meta.env.DEV) {
     console.log('[OwnerVehicleProfile] Trips data:', {
       count: trips?.length || 0,
       loading: tripsLoading,
@@ -208,7 +209,7 @@ export default function OwnerVehicleProfile() {
       // Check for any failures
       const failures = refetchResults.filter(r => r.status === 'rejected');
       if (failures.length > 0) {
-        if (process.env.NODE_ENV === 'development') {
+        if (import.meta.env.DEV) {
           console.warn('Some data failed to refresh:', failures);
         }
       }
@@ -230,7 +231,7 @@ export default function OwnerVehicleProfile() {
         description: error instanceof Error ? error.message : "Unknown error" 
       });
       
-      if (process.env.NODE_ENV === 'development') {
+      if (import.meta.env.DEV) {
         console.error('Refresh error:', error);
       }
     } finally {
@@ -279,7 +280,7 @@ export default function OwnerVehicleProfile() {
         {
           onSuccess: () => {
             setIsAutoSyncing(false);
-            if (process.env.NODE_ENV === 'development') {
+            if (import.meta.env.DEV) {
               console.log('[VehicleProfile] Auto-sync completed successfully');
             }
             // Invalidate queries to refresh data after sync
@@ -289,7 +290,7 @@ export default function OwnerVehicleProfile() {
           onError: (error) => {
             setIsAutoSyncing(false);
             // Don't show error toast for auto-sync failures (silent failure)
-            if (process.env.NODE_ENV === 'development') {
+            if (import.meta.env.DEV) {
               console.warn('[VehicleProfile] Auto-sync failed:', error);
             }
           },
