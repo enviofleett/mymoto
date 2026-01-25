@@ -76,14 +76,15 @@ export default function OwnerVehicleProfile() {
     refetch: refetchLive,
   } = useVehicleLiveData(deviceId);
 
-  // Phase 2: realtime is gated by feature flag + device allowlist
-  // (default OFF -> no behavior change until enabled)
-  useRealtimeVehicleUpdates(deviceId, { forceEnable: true });
+  // CRITICAL FIX #5: Stabilize the realtime options object to prevent re-subscription loops
+  const realtimeOptions = useMemo(() => ({ forceEnable: true }), []);
+  useRealtimeVehicleUpdates(deviceId, realtimeOptions);
+  
   useVehicleLiveDataHeartbeat(deviceId);
 
   const { 
     data: llmSettings, 
-    error: llmError,
+    error: llmError, 
     refetch: refetchProfile 
   } = useVehicleLLMSettings(deviceId, true);
 
@@ -131,19 +132,19 @@ export default function OwnerVehicleProfile() {
 
   const { 
     data: mileageStats, 
-    error: mileageError,
+    error: mileageError, 
     refetch: refetchMileage 
   } = useMileageStats(deviceId, true);
   
   const { 
     data: dailyMileage, 
-    error: dailyMileageError,
+    error: dailyMileageError, 
     refetch: refetchDaily 
   } = useDailyMileage(deviceId, true);
   
   const { 
     data: dailyStats, 
-    error: dailyStatsError,
+    error: dailyStatsError, 
     refetch: refetchDailyStats 
   } = useVehicleDailyStats(deviceId, 30, true);
 
