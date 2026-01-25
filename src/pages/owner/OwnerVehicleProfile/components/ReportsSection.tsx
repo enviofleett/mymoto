@@ -13,12 +13,10 @@ import {
 import {
   Route,
   Bell,
-  Calendar,
   CalendarIcon,
   Play,
   ExternalLink,
   MapPin,
-  Filter,
   X,
   AlertTriangle,
   Battery,
@@ -31,7 +29,7 @@ import {
   ArrowRight,
   Settings,
 } from "lucide-react";
-import { format, parseISO, isSameDay, differenceInMinutes, formatDistanceToNow } from "date-fns";
+import { format, parseISO, isSameDay, differenceInMinutes, formatDistanceToNow, isToday, isYesterday } from "date-fns";
 import { cn } from "@/lib/utils";
 import type { DateRange } from "react-day-picker";
 import type { VehicleTrip, VehicleEvent } from "@/hooks/useVehicleProfile";
@@ -75,106 +73,37 @@ export function ReportsSection({
   const [isDateFilterOpen, setIsDateFilterOpen] = useState(false);
   const isFilterActive = !!dateRange?.from;
   const { user } = useAuth();
-  
-  // CRITICAL DEBUG: Log trips prop when it changes (development only)
-  if (process.env.NODE_ENV === 'development') {
-    console.log('[ReportsSection] Props received:', {
-      tripsCount: trips?.length || 0,
-      tripsLoading,
-      dateRange: dateRange ? `${dateRange.from?.toISOString()} to ${dateRange.to?.toISOString()}` : 'none',
-      deviceId
-    });
-    
-    if (trips && trips.length > 0) {
-      const tripDates = trips.map(t => t.start_time.split('T')[0]);
-      const uniqueDates = [...new Set(tripDates)];
-      console.log('[ReportsSection] Trip dates in props:', uniqueDates.sort().reverse());
-    }
-  }
-
-  // Group trips by date and sort within each day (earliest first = Trip 1)
+   
+  // Group trips by date using LOCAL TIME (Fixes the UTC/Timezone display bug)
   const groupedTrips = useMemo(() => {
-    if (!trips || trips.length === 0) {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('[ReportsSection] No trips provided to group');
-      }
-      return [];
-    }
+    if (!trips || trips.length === 0) return [];
     
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[ReportsSection] Grouping', trips.length, 'trips');
-    }
-    
-    // CRITICAL FIX: Include ALL trips that have start_time and end_time, even if coordinates are 0
-    // This allows trips with missing GPS data to still be displayed
-    const validTrips = trips.filter(trip => {
-      // Only require start_time and end_time - coordinates can be 0 (missing GPS data)
-      return trip.start_time && trip.end_time;
-    });
-    
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[ReportsSection] Trip filtering:', {
-        total: trips.length,
-        valid: validTrips.length,
-        filteredOut: trips.length - validTrips.length
-      });
-      
-      console.log('[ReportsSection] Valid trips after filtering:', validTrips.length);
-      
-      if (validTrips.length > 0) {
-        const dates = validTrips.map(t => new Date(t.start_time).toISOString().split('T')[0]);
-        const uniqueDates = [...new Set(dates)];
-        console.log('[ReportsSection] Trip dates found:', uniqueDates.sort().reverse());
-      }
-    }
+    // Filter valid trips
+    const validTrips = trips.filter(trip => trip.start_time && trip.end_time);
     
     const groups: { date: Date; label: string; trips: VehicleTrip[] }[] = [];
-    // Use current date in UTC to avoid timezone issues
-    const now = new Date();
-    const today = new Date(Date.UTC(
-      now.getUTCFullYear(),
-      now.getUTCMonth(),
-      now.getUTCDate()
-    ));
     
     validTrips.forEach(trip => {
-      // CRITICAL FIX: Parse date directly from ISO string to avoid timezone conversion issues
-      // Extract YYYY-MM-DD from ISO string (e.g., "2026-01-14T06:36:33+00:00" -> "2026-01-14")
-      const tripDateStr = trip.start_time.split('T')[0];
-      const [year, month, day] = tripDateStr.split('-').map(Number);
-      const tripDateUTC = new Date(Date.UTC(year, month - 1, day));
+      // FIX: Use parseISO to handle the date string correctly in local browser time
+      const tripDate = parseISO(trip.start_time);
       
-      // Find existing group by comparing UTC dates
-      const existingGroup = groups.find(g => {
-        return g.date.getTime() === tripDateUTC.getTime();
-      });
+      // Find existing group by checking if it's the same Local Day
+      const existingGroup = groups.find(g => isSameDay(g.date, tripDate));
       
       if (existingGroup) {
         existingGroup.trips.push(trip);
       } else {
         let label: string;
-        // Compare with today using UTC dates
-        const todayUTC = new Date(Date.UTC(
-          today.getUTCFullYear(),
-          today.getUTCMonth(),
-          today.getUTCDate()
-        ));
-        const yesterdayUTC = new Date(todayUTC);
-        yesterdayUTC.setUTCDate(yesterdayUTC.getUTCDate() - 1);
         
-        if (tripDateUTC.getTime() === todayUTC.getTime()) {
+        if (isToday(tripDate)) {
           label = "Today";
-        } else if (tripDateUTC.getTime() === yesterdayUTC.getTime()) {
+        } else if (isYesterday(tripDate)) {
           label = "Yesterday";
         } else {
-          // Format using the original trip date for display
-          const tripDateForDisplay = new Date(trip.start_time);
-          label = format(tripDateForDisplay, "EEE, MMM d");
+          label = format(tripDate, "EEE, MMM d");
         }
-        groups.push({ date: tripDateUTC, label, trips: [trip] });
-        if (process.env.NODE_ENV === 'development') {
-          console.log('[ReportsSection] Created group:', label, 'date:', tripDateStr, 'trips:', 1);
-        }
+        
+        groups.push({ date: tripDate, label, trips: [trip] });
       }
     });
     
@@ -188,22 +117,6 @@ export function ReportsSection({
     // Sort days by date DESC (latest day first)
     const sortedGroups = groups.sort((a, b) => b.date.getTime() - a.date.getTime());
     
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[ReportsSection] Final grouped days:', sortedGroups.map(g => 
-        `${g.label} (${g.trips.length} trips, date: ${g.date.toISOString().split('T')[0]})`
-      ));
-      
-      // CRITICAL DEBUG: Verify all trips are included
-      const totalTripsInGroups = sortedGroups.reduce((sum, g) => sum + g.trips.length, 0);
-      if (totalTripsInGroups !== validTrips.length) {
-        console.error('[ReportsSection] TRIP COUNT MISMATCH!', {
-          validTrips: validTrips.length,
-          groupedTrips: totalTripsInGroups,
-          missing: validTrips.length - totalTripsInGroups
-        });
-      }
-    }
-    
     return sortedGroups;
   }, [trips]);
 
@@ -212,7 +125,6 @@ export function ReportsSection({
     if (!events || events.length === 0) return [];
     
     const groups: { date: Date; label: string; events: VehicleEvent[] }[] = [];
-    const today = new Date();
     
     events.forEach(event => {
       const eventDate = parseISO(event.created_at);
@@ -222,9 +134,9 @@ export function ReportsSection({
         existingGroup.events.push(event);
       } else {
         let label: string;
-        if (isSameDay(eventDate, today)) {
+        if (isToday(eventDate)) {
           label = "Today";
-        } else if (isSameDay(eventDate, new Date(today.getTime() - 86400000))) {
+        } else if (isYesterday(eventDate)) {
           label = "Yesterday";
         } else {
           label = format(eventDate, "EEE, MMM d");
@@ -235,9 +147,6 @@ export function ReportsSection({
     
     return groups.sort((a, b) => b.date.getTime() - a.date.getTime());
   }, [events]);
-
-  const getGoogleMapsLink = (lat: number, lon: number) => 
-    `https://www.google.com/maps?q=${lat},${lon}`;
 
   const getEventIcon = (eventType: string) => {
     switch (eventType) {
@@ -307,12 +216,7 @@ export function ReportsSection({
                 Sync
               </Button>
             )}
-            {/* Debug: Show trips count */}
-            {process.env.NODE_ENV === 'development' && (
-              <div className="text-xs text-muted-foreground px-2">
-                {trips?.length || 0} trips
-              </div>
-            )}
+            
             {isFilterActive && (
               <Button
                 variant="ghost"
@@ -360,7 +264,7 @@ export function ReportsSection({
           </div>
         </div>
 
-        {/* Sync Status Details - Only show when not processing (to avoid duplication with progress card) */}
+        {/* Sync Status Details */}
         {syncStatus && syncStatus.last_sync_at && syncStatus.sync_status !== 'processing' && (
           <div className="mb-3 p-2 rounded-md bg-muted/30 text-xs text-muted-foreground">
             <div className="flex items-center justify-between">
@@ -406,38 +310,25 @@ export function ReportsSection({
                   <Skeleton className="h-16 w-full" />
                 </div>
               ) : groupedTrips.length > 0 ? (
-                <>
-                  {/* Debug info - remove in production */}
-                  {process.env.NODE_ENV === 'development' && (
-                    <div className="text-xs text-muted-foreground p-2 bg-muted/30 rounded mb-2">
-                      Debug: {trips?.length || 0} trips received, {groupedTrips.length} days grouped
+                groupedTrips.map((group) => (
+                  <div key={group.label} className="space-y-2">
+                    <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      {group.label} ({group.trips.length} trip{group.trips.length !== 1 ? 's' : ''})
                     </div>
-                  )}
-                  {groupedTrips.map((group) => (
-                    <div key={group.label} className="space-y-2">
-                      <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        {group.label} ({group.trips.length} trip{group.trips.length !== 1 ? 's' : ''})
-                      </div>
-                      {group.trips.map((trip, index) => (
-                        <TripCard
-                          key={trip.id}
-                          trip={trip}
-                          index={index}
-                          onPlayTrip={onPlayTrip}
-                        />
-                      ))}
-                    </div>
-                  ))}
-                </>
+                    {group.trips.map((trip, index) => (
+                      <TripCard
+                        key={trip.id}
+                        trip={trip}
+                        index={index}
+                        onPlayTrip={onPlayTrip}
+                      />
+                    ))}
+                  </div>
+                ))
               ) : (
                 <div className="text-center py-6 text-muted-foreground">
                   <Route className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">No trips recorded yet</p>
-                  {process.env.NODE_ENV === 'development' && trips && trips.length > 0 && (
-                    <p className="text-xs text-red-500 mt-2">
-                      Debug: {trips.length} trips received but none grouped. Check console.
-                    </p>
-                  )}
+                  <p className="text-sm">No trips recorded {isFilterActive ? 'for this period' : 'yet'}</p>
                 </div>
               )}
             </div>
@@ -481,12 +372,7 @@ export function ReportsSection({
                             <div className="font-medium text-foreground">{event.title}</div>
                             <div className="text-sm text-muted-foreground truncate">{event.message}</div>
                             <div className="text-xs text-muted-foreground mt-1">
-                              {new Date(event.created_at).toLocaleString('en-US', {
-                                timeZone: 'Africa/Lagos',
-                                hour: 'numeric',
-                                minute: '2-digit',
-                                hour12: true,
-                              })}
+                              {format(parseISO(event.created_at), 'h:mm a')}
                             </div>
                           </div>
                         </div>
@@ -542,13 +428,11 @@ function TripCard({
   index: number; 
   onPlayTrip: (trip: VehicleTrip) => void;
 }) {
-  // Only fetch addresses if coordinates are valid (not 0,0)
   const hasValidStartCoords = trip.start_latitude && trip.start_longitude && 
                              trip.start_latitude !== 0 && trip.start_longitude !== 0;
   const hasValidEndCoords = trip.end_latitude && trip.end_longitude && 
-                             trip.end_latitude !== 0 && trip.end_longitude !== 0;
+                           trip.end_latitude !== 0 && trip.end_longitude !== 0;
   
-  // Check if trip can be played back (needs valid GPS coordinates)
   const canPlayback = hasValidStartCoords && hasValidEndCoords;
   
   const { address: startAddress, isLoading: startLoading } = useAddress(
@@ -588,17 +472,7 @@ function TripCard({
             )}
           </div>
           <div className="text-xs text-muted-foreground">
-            {new Date(trip.start_time).toLocaleString('en-US', {
-              timeZone: 'Africa/Lagos',
-              hour: 'numeric',
-              minute: '2-digit',
-              hour12: true,
-            })} - {new Date(trip.end_time).toLocaleString('en-US', {
-              timeZone: 'Africa/Lagos',
-              hour: 'numeric',
-              minute: '2-digit',
-              hour12: true,
-            })}
+            {format(parseISO(trip.start_time), 'h:mm a')} - {format(parseISO(trip.end_time), 'h:mm a')}
           </div>
         </div>
         <div className="text-right shrink-0 flex items-center gap-2">
@@ -607,7 +481,6 @@ function TripCard({
               {trip.distance_km > 0 ? (
                 <>
                   {trip.distance_km.toFixed(1)} km
-                  {/* Show estimated indicator if distance was calculated from duration */}
                   {!hasValidStartCoords || !hasValidEndCoords ? (
                     <span className="text-xs text-muted-foreground ml-1">(est.)</span>
                   ) : null}
