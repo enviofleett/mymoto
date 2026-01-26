@@ -112,7 +112,7 @@ async function fetchVehicleTrips(
   limit: number = 200,
   dateRange?: TripDateRange
 ): Promise<VehicleTrip[]> {
-  if (process.env.NODE_ENV === 'development') {
+  if (import.meta.env.DEV) {
     console.log('[fetchVehicleTrips] Fetching trips for device:', deviceId, 'limit:', limit, 'dateRange:', dateRange);
   }
   
@@ -124,21 +124,14 @@ async function fetchVehicleTrips(
     .not("start_time", "is", null)
     .not("end_time", "is", null);
 
-  // CRITICAL OPTIMIZATION: If no dateRange provided, prioritize last 24 hours for instant loading
+  // Apply date range filter only if explicitly provided
+  // When no dateRange is provided, fetch the most recent trips up to the limit (no time restriction)
   if (dateRange?.from) {
     const fromDate = new Date(dateRange.from);
     fromDate.setHours(0, 0, 0, 0);
     query = query.gte("start_time", fromDate.toISOString());
-    if (process.env.NODE_ENV === 'development') {
+    if (import.meta.env.DEV) {
       console.log('[fetchVehicleTrips] Date filter FROM:', fromDate.toISOString());
-    }
-  } else {
-    // No explicit date range - prioritize last 24 hours for instant loading
-    const last24Hours = new Date();
-    last24Hours.setHours(last24Hours.getHours() - 24);
-    query = query.gte("start_time", last24Hours.toISOString());
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[fetchVehicleTrips] Auto-filtering last 24 hours for instant load:', last24Hours.toISOString());
     }
   }
   
@@ -148,7 +141,7 @@ async function fetchVehicleTrips(
     endDate.setDate(endDate.getDate() + 1);
     endDate.setHours(0, 0, 0, 0);
     query = query.lt("start_time", endDate.toISOString());
-    if (process.env.NODE_ENV === 'development') {
+    if (import.meta.env.DEV) {
       console.log('[fetchVehicleTrips] Date filter TO:', endDate.toISOString());
     }
   }
@@ -157,9 +150,12 @@ async function fetchVehicleTrips(
   const { data, error } = await query
     .order("start_time", { ascending: false })
     .limit(limit);
+  
 
   if (error) {
-    console.error('[fetchVehicleTrips] Query error:', error);
+    if (import.meta.env.DEV) {
+      console.error('[fetchVehicleTrips] Query error:', error);
+    }
     throw error;
   }
   
@@ -168,9 +164,11 @@ async function fetchVehicleTrips(
   if (data && data.length > 0) {
     const dates = data.map((t: any) => new Date(t.start_time).toISOString().split('T')[0]);
     const uniqueDates = [...new Set(dates)];
-    console.log('[fetchVehicleTrips] Trip date range:', dates[dates.length - 1], 'to', dates[0]);
-    console.log('[fetchVehicleTrips] Unique dates found:', uniqueDates.sort().reverse());
-    console.log('[fetchVehicleTrips] First trip:', data[0]?.start_time, 'Last trip:', data[data.length - 1]?.start_time);
+    if (import.meta.env.DEV) {
+      console.log('[fetchVehicleTrips] Trip date range:', dates[dates.length - 1], 'to', dates[0]);
+      console.log('[fetchVehicleTrips] Unique dates found:', uniqueDates.sort().reverse());
+      console.log('[fetchVehicleTrips] First trip:', data[0]?.start_time, 'Last trip:', data[data.length - 1]?.start_time);
+    }
     
     // CRITICAL DEBUG: Check if we're missing recent trips
     const today = new Date().toISOString().split('T')[0];
@@ -180,13 +178,19 @@ async function fetchVehicleTrips(
       yesterday.setDate(yesterday.getDate() - 1);
       return d === yesterday.toISOString().split('T')[0];
     }).length;
-    console.log('[fetchVehicleTrips] Trips today:', tripsToday, 'Trips yesterday:', tripsYesterday);
+    if (import.meta.env.DEV) {
+      console.log('[fetchVehicleTrips] Trips today:', tripsToday, 'Trips yesterday:', tripsYesterday);
+    }
     
     if (tripsToday === 0 && tripsYesterday === 0 && dates.length > 0) {
-      console.warn('[fetchVehicleTrips] WARNING: No trips from today or yesterday, but have trips from:', uniqueDates[0]);
+      if (import.meta.env.DEV) {
+        console.warn('[fetchVehicleTrips] WARNING: No trips from today or yesterday, but have trips from:', uniqueDates[0]);
+      }
     }
   } else {
-    console.warn('[fetchVehicleTrips] No trips returned from query!');
+    if (import.meta.env.DEV) {
+      console.warn('[fetchVehicleTrips] No trips returned from query!');
+    }
   }
   
   // Filter and process trips
@@ -198,11 +202,13 @@ async function fetchVehicleTrips(
       return trip.start_time && trip.end_time;
     });
   
-  console.log('[fetchVehicleTrips] After filtering:', {
-    before: data?.length || 0,
-    after: filteredTrips.length,
-    filteredOut: (data?.length || 0) - filteredTrips.length
-  });
+  if (import.meta.env.DEV) {
+    console.log('[fetchVehicleTrips] After filtering:', {
+      before: data?.length || 0,
+      after: filteredTrips.length,
+      filteredOut: (data?.length || 0) - filteredTrips.length
+    });
+  }
   
   return filteredTrips
     .map((trip: any): VehicleTrip => {
@@ -354,26 +360,27 @@ async function executeVehicleCommand(payload: CommandPayload): Promise<{ success
 export interface TripFilterOptions {
   dateRange?: TripDateRange;
   limit?: number;
+  /** When true, poll every 30s on vehicle profile so trips/stats stay live. */
+  live?: boolean;
 }
 
 export function useVehicleTrips(
-  deviceId: string | null, 
+  deviceId: string | null,
   options: TripFilterOptions = {},
   enabled: boolean = true
 ) {
-  const { dateRange, limit = 200 } = options; // Increased default limit from 50 to 200
-  
+  const { dateRange, limit = 200, live = false } = options;
+
   return useQuery({
     queryKey: ["vehicle-trips", deviceId, dateRange?.from?.toISOString(), dateRange?.to?.toISOString(), limit],
     queryFn: () => fetchVehicleTrips(deviceId!, limit, dateRange),
     enabled: enabled && !!deviceId,
-    staleTime: 24 * 60 * 60 * 1000, // Fresh for 24 hours (data from last 24h loads instantly)
-    gcTime: 48 * 60 * 60 * 1000, // Keep in cache for 48 hours
-    // Refetch on window focus to ensure latest trips are shown
+    staleTime: live ? 30 * 1000 : 24 * 60 * 60 * 1000,
+    gcTime: 48 * 60 * 60 * 1000,
     refetchOnWindowFocus: true,
-    // Refetch on reconnect to get latest trips
     refetchOnReconnect: true,
-    // Use placeholderData to show cached data instantly while fresh data loads
+    refetchInterval: live ? 30 * 1000 : false,
+    refetchIntervalInBackground: live,
     placeholderData: (previousData) => previousData,
   });
 }
@@ -393,14 +400,10 @@ async function fetchVehicleEvents(
     .select("*")
     .eq("device_id", deviceId);
 
-  // CRITICAL OPTIMIZATION: If no dateRange provided, prioritize last 24 hours
+  // Apply date range filter only if explicitly provided
+  // When no dateRange is provided, fetch the most recent events up to the limit (no time restriction)
   if (dateRange?.from) {
     query = query.gte("created_at", dateRange.from.toISOString());
-  } else {
-    // Auto-filter last 24 hours for instant loading
-    const last24Hours = new Date();
-    last24Hours.setHours(last24Hours.getHours() - 24);
-    query = query.gte("created_at", last24Hours.toISOString());
   }
   
   if (dateRange?.to) {
@@ -485,32 +488,62 @@ async function fetchVehicleMileageDetails(
   startDate?: string,
   endDate?: string
 ): Promise<VehicleMileageDetail[]> {
-  let query = (supabase as any)
-    .from("vehicle_mileage_details")
-    .select("*")
-    .eq("device_id", deviceId)
-    .order("statisticsday", { ascending: false });
+  try {
+    let query = (supabase as any)
+      .from('vehicle_mileage_details')
+      .select('*')
+      .eq('device_id', deviceId);
 
-  if (startDate) {
-    query = query.gte("statisticsday", startDate);
-  }
-  if (endDate) {
-    query = query.lte("statisticsday", endDate);
-  }
-
-  const { data, error } = await query;
-
-  if (error) {
-    // Table doesn't exist yet (migration not applied) - return empty array gracefully
-    if (error.code === 'PGRST205' || error.message?.includes('Could not find the table')) {
-      console.warn("vehicle_mileage_details table not found - migration may not be applied yet. Returning empty array.");
-      return [];
+    // Apply date filters if provided
+    if (startDate) {
+      query = query.gte('statisticsday', startDate);
     }
-    console.error("Error fetching mileage details:", error);
-    throw error;
-  }
+    
+    if (endDate) {
+      query = query.lte('statisticsday', endDate);
+    }
 
-  return (data || []) as VehicleMileageDetail[];
+    const { data, error } = await query
+      .order('statisticsday', { ascending: false });
+
+    if (error) {
+      // Gracefully handle if table doesn't exist (migration not applied)
+      if (error.code === 'PGRST205' || error.message?.includes('Could not find') || error.message?.includes('does not exist')) {
+        if (import.meta.env.DEV) {
+          console.warn('[fetchVehicleMileageDetails] Table not found, returning empty array:', error.message);
+        }
+        return [];
+      }
+      throw error;
+    }
+
+    if (import.meta.env.DEV) {
+      console.log(`[fetchVehicleMileageDetails] Fetched ${data?.length || 0} mileage records for ${deviceId}`);
+    }
+
+    // Map database rows to VehicleMileageDetail interface
+    return (data || []).map((row: any): VehicleMileageDetail => ({
+      id: row.id,
+      device_id: row.device_id,
+      statisticsday: row.statisticsday,
+      totaldistance: row.totaldistance,
+      oilper100km: row.oilper100km,
+      runoilper100km: row.runoilper100km,
+      oilperhour: row.oilperhour,
+      estimated_fuel_consumption_combined: row.estimated_fuel_consumption_combined,
+      estimated_fuel_consumption_city: row.estimated_fuel_consumption_city,
+      estimated_fuel_consumption_highway: row.estimated_fuel_consumption_highway,
+      fuel_consumption_variance: row.fuel_consumption_variance,
+      leakoil: row.leakoil,
+      totalacc: row.totalacc,
+    }));
+  } catch (error) {
+    // Catch any unexpected errors and return empty array gracefully
+    if (import.meta.env.DEV) {
+      console.error('[fetchVehicleMileageDetails] Error fetching mileage details:', error);
+    }
+    return [];
+  }
 }
 
 export function useVehicleMileageDetails(
