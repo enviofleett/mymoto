@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -73,8 +73,31 @@ export function ReportsSection({
   const [isDateFilterOpen, setIsDateFilterOpen] = useState(false);
   const isFilterActive = !!dateRange?.from;
   const { user } = useAuth();
+<<<<<<< HEAD
    
   // Group trips by date using LOCAL TIME (Fixes the UTC/Timezone display bug)
+=======
+  
+  // CRITICAL DEBUG: Log trips prop when it changes (development only) - MOVED TO useEffect to prevent render-loop logging
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[ReportsSection] Props received:', {
+        tripsCount: trips?.length || 0,
+        tripsLoading,
+        dateRange: dateRange ? `${dateRange.from?.toISOString()} to ${dateRange.to?.toISOString()}` : 'none',
+        deviceId
+      });
+      
+      if (trips && trips.length > 0) {
+        const tripDates = trips.map(t => t.start_time.split('T')[0]);
+        const uniqueDates = [...new Set(tripDates)];
+        console.log('[ReportsSection] Trip dates in props:', uniqueDates.sort().reverse());
+      }
+    }
+  }, [trips, tripsLoading, dateRange, deviceId]);
+
+  // Group trips by date and sort within each day (earliest first = Trip 1)
+>>>>>>> 7960e14 (feat: Add GPS51 trip source tracking and 24-hour sync improvements)
   const groupedTrips = useMemo(() => {
     if (!trips || trips.length === 0) return [];
     

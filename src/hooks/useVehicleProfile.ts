@@ -120,6 +120,7 @@ async function fetchVehicleTrips(
     .from("vehicle_trips")
     .select("*")
     .eq("device_id", deviceId)
+    .eq("source", "gps51") // CRITICAL: Only show GPS51 trips for 100% parity
     // Only require start_time and end_time - coordinates might be missing (0,0) for some trips
     .not("start_time", "is", null)
     .not("end_time", "is", null);

@@ -540,6 +540,98 @@ async function fetchTripsFromGps51(
     });
 }
 
+/**
+ * Sync official GPS51 trip report after a trip ends
+ * This is called asynchronously (non-blocking) after trip insertion
+ * GPS51 might need time to process the trip, so we retry with exponential backoff
+ */
+async function syncOfficialTripReport(
+  supabase: any,
+  deviceId: string,
+  tripEndTime: string,
+  retryAttempt: number = 0
+): Promise<void> {
+  const MAX_RETRIES = 3;
+  const INITIAL_DELAY_MS = 5000; // 5 seconds initial delay
+  const MAX_DELAY_MS = 60000; // 60 seconds max delay
+  
+  try {
+    // Parse trip end time to get the date
+    const endDate = new Date(tripEndTime);
+    const dateStr = endDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+    
+    // Wait before syncing to give GPS51 time to process the trip
+    // Exponential backoff: 5s, 15s, 45s
+    const delay = Math.min(INITIAL_DELAY_MS * Math.pow(3, retryAttempt), MAX_DELAY_MS);
+    if (retryAttempt > 0 || delay > 0) {
+      console.log(`[syncOfficialTripReport] Waiting ${delay / 1000}s before sync (attempt ${retryAttempt + 1}/${MAX_RETRIES + 1})`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+    
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    
+    if (!supabaseUrl || !serviceRoleKey) {
+      console.warn(`[syncOfficialTripReport] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY, skipping sync`);
+      return;
+    }
+    
+    console.log(`[syncOfficialTripReport] Syncing official GPS51 report for ${deviceId} on ${dateStr} (attempt ${retryAttempt + 1})`);
+    
+    // Call sync-official-reports function
+    const response = await fetch(`${supabaseUrl}/functions/v1/sync-official-reports`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${serviceRoleKey}`,
+      },
+      body: JSON.stringify({
+        device_id: deviceId,
+        date: dateStr,
+      }),
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      const tripsUpserted = result.trips?.upserted || 0;
+      const mileageUpserted = result.mileage?.upserted || 0;
+      
+      // If no trips were found, GPS51 might not have processed it yet - retry
+      if (tripsUpserted === 0 && retryAttempt < MAX_RETRIES) {
+        console.log(`[syncOfficialTripReport] No trips found in GPS51 yet, retrying in ${(delay * 3) / 1000}s...`);
+        return syncOfficialTripReport(supabase, deviceId, tripEndTime, retryAttempt + 1);
+      }
+      
+      console.log(`[syncOfficialTripReport] ✅ Synced ${tripsUpserted} trips and ${mileageUpserted} mileage records for ${deviceId} on ${dateStr}`);
+    } else {
+      // If error and we haven't exceeded retries, try again
+      if (retryAttempt < MAX_RETRIES) {
+        console.warn(`[syncOfficialTripReport] ⚠️ Sync failed, retrying... (${result.error || 'Unknown error'})`);
+        return syncOfficialTripReport(supabase, deviceId, tripEndTime, retryAttempt + 1);
+      } else {
+        console.warn(`[syncOfficialTripReport] ⚠️ Sync failed after ${MAX_RETRIES + 1} attempts: ${result.error || 'Unknown error'}`);
+      }
+    }
+  } catch (error) {
+    // If error and we haven't exceeded retries, try again
+    if (retryAttempt < MAX_RETRIES) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.warn(`[syncOfficialTripReport] Error (will retry): ${errorMessage}`);
+      return syncOfficialTripReport(supabase, deviceId, tripEndTime, retryAttempt + 1);
+    } else {
+      // Log final error but don't throw - this is non-blocking
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.warn(`[syncOfficialTripReport] Error syncing official report after ${MAX_RETRIES + 1} attempts (non-blocking): ${errorMessage}`);
+    }
+  }
+}
+
 // Haversine formula to calculate distance between two GPS points
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371; // Earth's radius in km
@@ -561,22 +653,41 @@ function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
   if (positions.length < 2) return [];
 
   const trips: TripData[] = [];
-  let currentTrip: { points: PositionPoint[] } | null = null;
-  const SPEED_THRESHOLD = 1; // km/h - lowered to catch slow starts
-  const MIN_TRIP_DISTANCE = 0.1; // km - lowered to catch short trips (GPS51 shows 0.56km trips)
-  const STOP_DURATION_MS = 5 * 60 * 1000; // 5 minutes of no movement = trip end (increased)
+  let currentTrip: { 
+    points: PositionPoint[];
+    startOdometer?: number | null; // Track odometer at trip start for mileage calculation
+    lastMovingTime?: number; // Track last time vehicle was moving (for idle timeout)
+  } | null = null;
+  
+  // GPS51/JT808 Standard Trip Detection Parameters
+  const MIN_TRIP_DISTANCE = 0.1; // km - minimum trip distance (100 meters)
+  const IDLE_TIMEOUT_MS = 180 * 1000; // 180 seconds (3 minutes) - GPS51 standard idle timeout
   const MAX_TIME_GAP_MS = 30 * 60 * 1000; // 30 minutes - if gap is larger, end trip
+  const SPEED_THRESHOLD = 0.1; // km/h - very low threshold for movement detection (only for idle timeout)
 
-  // Check if we have USABLE ignition data (at least some true values with sufficient confidence)
-  // Confidence threshold: >= 0.5 (medium confidence) to ensure reliable trip detection
-  const MIN_IGNITION_CONFIDENCE = 0.5;
-  const hasIgnitionTrue = positions.some(p => {
+  // CRITICAL: Check if we have reliable ACC/ignition data from hardware
+  // We require ACC bit detection (status_bit method) OR explicit string parsing
+  // Speed-based inference is NOT acceptable for trip detection (GPS drift causes ghost trips)
+  const MIN_IGNITION_CONFIDENCE = 0.5; // Minimum confidence for ACC bit detection
+  const hasHardwareAcc = positions.some(p => {
+    // Require either:
+    // 1. Status bit detection (hardware ACC line) with sufficient confidence
+    // 2. Explicit string parsing (ACC ON/OFF from strstatus)
+    const isStatusBit = p.ignition_detection_method === 'status_bit';
+    const isStringParse = p.ignition_detection_method === 'string_parse';
     const hasConfidence = p.ignition_confidence !== null && p.ignition_confidence !== undefined;
     const confidenceOk = hasConfidence ? p.ignition_confidence! >= MIN_IGNITION_CONFIDENCE : false;
-    return p.ignition_on === true && (confidenceOk || !hasConfidence); // Allow if no confidence data (backward compat)
+    
+    return p.ignition_on === true && (
+      (isStatusBit && confidenceOk) || // Hardware ACC bit with confidence
+      (isStringParse && confidenceOk)  // Explicit ACC string with confidence
+    );
   });
   const hasIgnitionData = positions.some(p => p.ignition_on !== null && p.ignition_on !== undefined);
-  const useIgnitionDetection = hasIgnitionData && hasIgnitionTrue; // Only use if we have actual true values with sufficient confidence
+  
+  // ONLY use ignition detection if we have hardware ACC data (status_bit or string_parse)
+  // Do NOT use speed-based inference for trip detection (causes false trips from GPS drift)
+  const useIgnitionDetection = hasIgnitionData && hasHardwareAcc;
 
   // Log low-confidence ignition states for review
   const lowConfidenceCount = positions.filter(p => 
@@ -608,36 +719,63 @@ function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
       ? new Date(point.gps_time).getTime() - new Date(prevPoint.gps_time).getTime()
       : 0;
 
-    // IGNITION-BASED DETECTION (Primary - matches GPS51)
+    // GPS51/JT808 STANDARD TRIP DETECTION (ACC Bit-Based)
     if (useIgnitionDetection) {
-      // Check ignition with confidence threshold (>= 0.5 for reliable detection)
+      // Check ignition with confidence threshold (>= 0.5 for reliable hardware ACC detection)
       const hasConfidence = point.ignition_confidence !== null && point.ignition_confidence !== undefined;
-      const confidenceOk = hasConfidence ? point.ignition_confidence! >= MIN_IGNITION_CONFIDENCE : true; // Allow if no confidence data (backward compat)
+      const confidenceOk = hasConfidence ? point.ignition_confidence! >= MIN_IGNITION_CONFIDENCE : false;
       const ignitionOn = point.ignition_on === true && confidenceOk;
       
       const prevHasConfidence = prevPoint ? (prevPoint.ignition_confidence !== null && prevPoint.ignition_confidence !== undefined) : false;
-      const prevConfidenceOk = prevPoint && prevHasConfidence ? prevPoint.ignition_confidence! >= MIN_IGNITION_CONFIDENCE : true;
+      const prevConfidenceOk = prevPoint && prevHasConfidence ? prevPoint.ignition_confidence! >= MIN_IGNITION_CONFIDENCE : false;
       const prevIgnitionOn = prevPoint ? (prevPoint.ignition_on === true && prevConfidenceOk) : false;
 
-      // Trip START: Ignition turns ON (false -> true) with sufficient confidence
+      // GPS51 Standard: Trip START = ACC transitions from 0 to 1 (immediate, no speed requirement)
       if (ignitionOn && !prevIgnitionOn && !currentTrip) {
         const confidenceInfo = hasConfidence ? ` (confidence: ${point.ignition_confidence!.toFixed(2)}, method: ${point.ignition_detection_method || 'unknown'})` : '';
-        currentTrip = { points: [point] };
-        console.log(`[extractTripsFromHistory] Trip START (ignition ON) at ${point.gps_time}${confidenceInfo}`);
+        currentTrip = { 
+          points: [point],
+          startOdometer: null, // Will be set if odometer data available
+          lastMovingTime: normalizedSpeed > SPEED_THRESHOLD ? new Date(point.gps_time).getTime() : null
+        };
+        console.log(`[extractTripsFromHistory] ✅ Trip START (ACC ON) at ${point.gps_time}${confidenceInfo}`);
       }
 
-      // Continue trip while ignition is ON
+      // Continue trip while ACC is ON (even if speed = 0, e.g., at traffic light)
       if (currentTrip && ignitionOn) {
         currentTrip.points.push(point);
+        
+        // Track last moving time for idle timeout detection
+        if (normalizedSpeed > SPEED_THRESHOLD) {
+          currentTrip.lastMovingTime = new Date(point.gps_time).getTime();
+        }
       }
 
-      // Trip END: Ignition turns OFF (true -> false) OR large time gap
+      // GPS51 Standard: Trip END conditions:
+      // 1. ACC transitions from 1 to 0 (key off) - PRIMARY
+      // 2. Speed = 0 for > 180 seconds (3 minutes idle timeout) - SECONDARY
+      // 3. Large time gap (> 30 minutes) - SAFETY
+      // 4. Last point in data - COMPLETION
+      const isIdle = normalizedSpeed <= SPEED_THRESHOLD;
+      const idleDuration = currentTrip?.lastMovingTime 
+        ? new Date(point.gps_time).getTime() - currentTrip.lastMovingTime
+        : timeGap; // If never moved, use time gap
+      const idleTimeoutExceeded = isIdle && idleDuration > IDLE_TIMEOUT_MS;
+      
       const shouldEndTrip =
         currentTrip &&
-        ((prevIgnitionOn && !ignitionOn) ||
-          (timeGap > MAX_TIME_GAP_MS) ||
-          (timeGap > STOP_DURATION_MS && !ignitionOn) ||
-          i === positions.length - 1);
+        (
+          (prevIgnitionOn && !ignitionOn) ||        // ACC 1→0 (key off) - PRIMARY
+          idleTimeoutExceeded ||                     // Speed=0 for >180s - SECONDARY (GPS51 standard)
+          (timeGap > MAX_TIME_GAP_MS) ||             // Large time gap - SAFETY
+          (i === positions.length - 1)              // Last point - COMPLETION
+        );
+      
+      if (shouldEndTrip && prevIgnitionOn && !ignitionOn) {
+        console.log(`[extractTripsFromHistory] ✅ Trip END (ACC OFF) at ${point.gps_time}`);
+      } else if (shouldEndTrip && idleTimeoutExceeded) {
+        console.log(`[extractTripsFromHistory] ✅ Trip END (idle timeout: ${Math.round(idleDuration / 1000)}s > 180s) at ${point.gps_time}`);
+      }
 
       if (shouldEndTrip && currentTrip && currentTrip.points.length >= 2) {
         const tripPoints = currentTrip.points;
@@ -645,11 +783,19 @@ function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
         const endPoint = tripPoints[tripPoints.length - 1];
 
         // Calculate total distance
+        // GPS51 Standard: Prefer odometer/totaldistance delta if available (more accurate than Haversine)
+        // Fallback: Haversine formula (point-to-point, less accurate but available)
         let totalDistance = 0;
         let maxSpeed = 0;
         let totalSpeed = 0;
         let speedCount = 0;
 
+        // TODO: If position_history gets odometer/totaldistance field, use delta calculation:
+        // const odometerDelta = (endPoint.odometer || 0) - (startPoint.odometer || 0);
+        // if (odometerDelta > 0) totalDistance = odometerDelta / 1000; // Convert meters to km
+        // else { /* fallback to Haversine below */ }
+
+        // Fallback: Haversine calculation (point-to-point, accumulates along path)
         for (let j = 1; j < tripPoints.length; j++) {
           const p1 = tripPoints[j - 1];
           const p2 = tripPoints[j];
@@ -726,10 +872,13 @@ function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
         currentTrip = null;
       }
     } else {
-      // IMPROVED SPEED-BASED DETECTION (When no ignition data)
-      // Uses distance-based movement detection to catch all trips
+      // FALLBACK: Speed-based detection (ONLY when NO hardware ACC data available)
+      // WARNING: This is less accurate than ACC-based detection and may miss trips or create false trips from GPS drift
+      // GPS51 standard is ACC-based - speed-based is a last resort
+      console.warn(`[extractTripsFromHistory] ⚠️ No hardware ACC data available - using speed-based detection (less accurate)`);
+      
       const DISTANCE_THRESHOLD = 0.05; // 50 meters - significant movement
-      const MIN_MOVEMENT_SPEED = 0.5; // km/h - very low threshold
+      const MIN_MOVEMENT_SPEED = 1.0; // km/h - require actual movement (not GPS drift)
       
       // Calculate distance from previous point
       let distanceFromPrev = 0;
@@ -740,39 +889,54 @@ function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
         );
       }
 
-      // Detect movement: either speed > threshold OR significant distance change
-      const hasMovement = normalizedSpeed > MIN_MOVEMENT_SPEED || distanceFromPrev > DISTANCE_THRESHOLD;
+      // Detect movement: require BOTH speed AND distance (reduces GPS drift false positives)
+      // GPS drift alone (speed=0 but coordinates change slightly) should NOT start a trip
+      const hasMovement = normalizedSpeed > MIN_MOVEMENT_SPEED && distanceFromPrev > DISTANCE_THRESHOLD;
       const hadMovement = prevPoint && (
-        prevNormalizedSpeed > MIN_MOVEMENT_SPEED || 
+        prevNormalizedSpeed > MIN_MOVEMENT_SPEED && 
         (i > 1 && calculateDistance(
           positions[i-2].latitude, positions[i-2].longitude,
           prevPoint.latitude, prevPoint.longitude
         ) > DISTANCE_THRESHOLD)
       );
 
-      // Start new trip when movement begins
+      // Start new trip when movement begins (BOTH speed AND distance required)
       if (hasMovement && !currentTrip) {
-        currentTrip = { points: [point] };
-        console.log(`[extractTripsFromHistory] Trip START (movement detected) at ${point.gps_time}, speed: ${normalizedSpeed.toFixed(2)} km/h, dist: ${distanceFromPrev.toFixed(3)} km`);
+        currentTrip = { 
+          points: [point],
+          startOdometer: null,
+          lastMovingTime: new Date(point.gps_time).getTime()
+        };
+        console.log(`[extractTripsFromHistory] ⚠️ Trip START (speed-based fallback) at ${point.gps_time}, speed: ${normalizedSpeed.toFixed(2)} km/h, dist: ${distanceFromPrev.toFixed(3)} km`);
       }
 
-      // Continue trip while there's any movement or we're still in motion
-      if (currentTrip && (hasMovement || normalizedSpeed > 0 || distanceFromPrev > 0.01)) {
+      // Continue trip while there's movement (BOTH speed AND distance)
+      if (currentTrip && hasMovement) {
         currentTrip.points.push(point);
+        currentTrip.lastMovingTime = new Date(point.gps_time).getTime();
       }
 
-      // End trip conditions:
-      // 1. Was moving, now stopped for > STOP_DURATION
-      // 2. Large time gap (> MAX_TIME_GAP)
-      // 3. Last point in data
-      const isStopped = !hasMovement && normalizedSpeed <= 0.1 && distanceFromPrev < 0.01;
-      const wasStopped = prevPoint && !hadMovement && prevNormalizedSpeed <= 0.1;
+      // Trip END conditions (GPS51 standard: 180 seconds idle timeout):
+      // 1. Was moving, now stopped for > 180 seconds (3 minutes) - GPS51 standard
+      // 2. Large time gap (> 30 minutes) - SAFETY
+      // 3. Last point in data - COMPLETION
+      const isStopped = !hasMovement;
+      const idleDuration = currentTrip?.lastMovingTime 
+        ? new Date(point.gps_time).getTime() - currentTrip.lastMovingTime
+        : timeGap;
+      const idleTimeoutExceeded = isStopped && idleDuration > IDLE_TIMEOUT_MS;
       
       const shouldEndTrip =
         currentTrip &&
-        ((hadMovement && isStopped && timeGap > STOP_DURATION_MS) ||
-          (timeGap > MAX_TIME_GAP_MS) ||
-          (i === positions.length - 1));
+        (
+          idleTimeoutExceeded ||                     // Speed=0 for >180s - GPS51 standard
+          (timeGap > MAX_TIME_GAP_MS) ||             // Large time gap - SAFETY
+          (i === positions.length - 1)              // Last point - COMPLETION
+        );
+      
+      if (shouldEndTrip && idleTimeoutExceeded) {
+        console.log(`[extractTripsFromHistory] ⚠️ Trip END (speed-based idle timeout: ${Math.round(idleDuration / 1000)}s > 180s) at ${point.gps_time}`);
+      }
 
       if (shouldEndTrip && currentTrip && currentTrip.points.length >= 2) {
         const tripPoints = currentTrip.points;
@@ -976,10 +1140,10 @@ Deno.serve(async (req) => {
         let endDate: Date = new Date(); // End at now
 
         if (!syncStatus || forceFullSync) {
-          // FIX: Extended from 3 days to 30 days for comprehensive historical data
-          // First sync or force full sync: look back 30 days
-          startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-          console.log(`[sync-trips-incremental] Full sync for ${deviceId}, processing last 30 days (extended from 3 for comprehensive history)`);
+          // Only sync last 24 hours - no historical backfill
+          // First sync or force full sync: look back 24 hours
+          startDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
+          console.log(`[sync-trips-incremental] Full sync for ${deviceId}, processing last 24 hours (no backfill)`);
 
           // Initialize sync status
           await supabase
@@ -1103,7 +1267,10 @@ Deno.serve(async (req) => {
             }
 
             // CRITICAL FIX: Backfill missing coordinates from position_history before inserting
-            let tripToInsert = { ...trip };
+            let tripToInsert = { 
+              ...trip,
+              source: 'gps51' as const, // Mark as GPS51 trip for 100% parity verification
+            };
             if (trip.start_latitude === 0 || trip.start_longitude === 0 || 
                 trip.end_latitude === 0 || trip.end_longitude === 0) {
               console.log(`[sync-trips-incremental] Backfilling coordinates for trip: ${trip.start_time}`);
@@ -1185,6 +1352,21 @@ Deno.serve(async (req) => {
               console.log(`[sync-trips-incremental] Inserted trip: ${trip.start_time} to ${trip.end_time}, ${trip.distance_km}km`);
               deviceTripsCreated++;
               totalTripsCreated++;
+              
+              // Trigger sync of official GPS51 trip report (non-blocking)
+              // Only sync trips that ended in the last 24 hours (no historical backfill)
+              const tripEndTime = new Date(trip.end_time);
+              const now = new Date();
+              const hoursSinceEnd = (now.getTime() - tripEndTime.getTime()) / (1000 * 60 * 60);
+              
+              if (hoursSinceEnd <= 24) {
+                syncOfficialTripReport(supabase, deviceId, trip.end_time).catch(err => {
+                  // Log error but don't block trip insertion
+                  console.warn(`[sync-trips-incremental] Failed to sync official trip report (non-blocking): ${err.message}`);
+                });
+              } else {
+                console.log(`[sync-trips-incremental] Skipping sync for historical trip (ended ${hoursSinceEnd.toFixed(1)} hours ago, > 24h limit)`);
+              }
             }
           }
           

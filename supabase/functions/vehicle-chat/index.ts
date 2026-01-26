@@ -2727,6 +2727,36 @@ serve(async (req) => {
       .order('gps_time', { ascending: false })
       .limit(10)
 
+    // 4.65. Fetch last 5 completed trips (for ## RECENT TRIPS context)
+    let last5Trips: any[] = []
+    try {
+      const { data: tripsData } = await supabase
+        .from('vehicle_trips')
+        .select('id, start_time, end_time, distance_km, duration_seconds')
+        .eq('device_id', device_id)
+        .not('end_time', 'is', null)
+        .order('start_time', { ascending: false })
+        .limit(5)
+      last5Trips = tripsData || []
+    } catch (e) {
+      console.warn('[vehicle-chat] Failed to fetch last 5 trips:', e)
+    }
+
+    // 4.66. Fetch unacknowledged alerts (for ## ACTIVE SECURITY ALERTS context)
+    let unackAlerts: any[] = []
+    try {
+      const { data: alertsData } = await supabase
+        .from('proactive_vehicle_events')
+        .select('id, title, message, severity, created_at')
+        .eq('device_id', device_id)
+        .eq('acknowledged', false)
+        .order('created_at', { ascending: false })
+        .limit(10)
+      unackAlerts = alertsData || []
+    } catch (e) {
+      console.warn('[vehicle-chat] Failed to fetch unacknowledged alerts:', e)
+    }
+
     // 4.5. Extract date context from user message for historical queries (Enhanced V2)
     // Enforce Lagos timezone across all date operations
     const DEFAULT_TIMEZONE = 'Africa/Lagos'
@@ -3545,6 +3575,24 @@ RECENT ACTIVITY (last ${history?.length || 0} position updates):
 ${history?.slice(0, 5).map((h, i) =>
   `  ${i + 1}. Speed: ${h.speed}km/h, Battery: ${h.battery_percent}%, Ignition: ${h.ignition_on ? 'ON' : 'OFF'}, Time: ${h.gps_time}`
 ).join('\n') || 'No recent history'}
+
+## RECENT TRIPS (last 5 completed)
+${last5Trips.length > 0 ? last5Trips.map((t: any, i: number) => {
+  const start = t.start_time ? new Date(t.start_time).toLocaleString() : '?'
+  const end = t.end_time ? new Date(t.end_time).toLocaleString() : '?'
+  const km = typeof t.distance_km === 'number' ? t.distance_km.toFixed(1) : (t.distance_km ?? '?')
+  const min = t.duration_seconds != null ? Math.round(t.duration_seconds / 60) : '?'
+  return `  ${i + 1}. ${start} → ${end}: ${km} km, ${min} min`
+}).join('\n') : '  None.'}
+
+## ACTIVE SECURITY ALERTS (unacknowledged)
+${unackAlerts.length > 0 ? unackAlerts.map((a: any, i: number) => {
+  const sev = a.severity || 'info'
+  const title = a.title || 'Alert'
+  const msg = a.message || ''
+  const at = a.created_at ? new Date(a.created_at).toLocaleString() : ''
+  return `  ${i + 1}. [${sev}] ${title}: ${msg}${at ? ` (${at})` : ''}`
+}).join('\n') : '  None.'}
 
 ${healthMetrics && healthMetrics.length > 0 ? `VEHICLE HEALTH:
 - Overall Health Score: ${healthMetrics[0].overall_health_score}/100 (${healthMetrics[0].trend})

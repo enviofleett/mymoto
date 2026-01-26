@@ -26,7 +26,7 @@ import {
   Calendar, AlertTriangle, Navigation, Car, UserPlus, UserMinus,
   History, Clock, Building2, MessageSquare, Settings2
 } from "lucide-react";
-import { formatToLagosTime } from "@/utils/timezone";
+import { formatLagosDate } from "@/lib/timezone";
 
 interface VehicleDetailsModalProps {
   open: boolean;
@@ -155,7 +155,7 @@ export function VehicleDetailsModal({
 
   const formatTime = (timeString: string) => {
     // Use timezone utility for Lagos timezone
-    return formatToLagosTime(timeString, {
+    return formatLagosDate(timeString, {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',

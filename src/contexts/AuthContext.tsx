@@ -100,7 +100,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
 
     // THEN check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
@@ -122,24 +122,72 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    return { error: error as Error | null };
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      
+      if (error) {
+        // Handle specific error types
+        if (error.message.includes('Failed to fetch') || error.message.includes('ERR_CONNECTION_CLOSED')) {
+          return { 
+            error: new Error('Network error: Unable to connect to server. Please check your internet connection and try again.') 
+          };
+        }
+        return { error: error as Error };
+      }
+      
+      return { error: null };
+    } catch (err) {
+      // Handle network errors and other exceptions
+      if (err instanceof Error) {
+        if (err.message.includes('Failed to fetch') || err.message.includes('ERR_CONNECTION_CLOSED')) {
+          return { 
+            error: new Error('Network error: Unable to connect to server. Please check your internet connection and try again.') 
+          };
+        }
+        return { error: err };
+      }
+      return { error: new Error('An unexpected error occurred. Please try again.') };
+    }
   };
 
   const signUp = async (email: string, password: string) => {
-    const redirectUrl = `${window.location.origin}/`;
-    
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: redirectUrl,
-      },
-    });
-    return { error: error as Error | null };
+    try {
+      const redirectUrl = `${window.location.origin}/`;
+      
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: redirectUrl,
+        },
+      });
+      
+      if (error) {
+        // Handle specific error types
+        if (error.message.includes('Failed to fetch') || error.message.includes('ERR_CONNECTION_CLOSED')) {
+          return { 
+            error: new Error('Network error: Unable to connect to server. Please check your internet connection and try again.') 
+          };
+        }
+        return { error: error as Error };
+      }
+      
+      return { error: null };
+    } catch (err) {
+      // Handle network errors and other exceptions
+      if (err instanceof Error) {
+        if (err.message.includes('Failed to fetch') || err.message.includes('ERR_CONNECTION_CLOSED')) {
+          return { 
+            error: new Error('Network error: Unable to connect to server. Please check your internet connection and try again.') 
+          };
+        }
+        return { error: err };
+      }
+      return { error: new Error('An unexpected error occurred. Please try again.') };
+    }
   };
 
   const signOut = async () => {

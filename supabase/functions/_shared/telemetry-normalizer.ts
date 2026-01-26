@@ -153,37 +153,39 @@ export function normalizeSpeed(rawSpeed: number | null | undefined): number {
   // Clamp negative values to 0
   const speed = Math.max(0, numSpeed);
 
-  // Detect unit: if speed > 200, assume it's m/h (200 km/h is reasonable max)
-  // GPS51 typically returns m/h, so values > 200 are likely m/h
-  const speedKmh = speed > 200 ? speed / 1000 : speed;
+  // Detect unit and normalize:
+  // - Values > 100,000: Definitely m/h (divide by 1000)
+  // - Values > 200: Likely m/h (divide by 1000)
+  // - Values <= 200: Assume already km/h
+  // This handles edge cases like 1,000,000 m/h correctly
+  let speedKmh: number;
+  if (speed > 100000) {
+    // Extremely high values are definitely m/h (e.g., 1,000,000 m/h = 1000 km/h)
+    speedKmh = speed / 1000;
+  } else if (speed > 200) {
+    // High values are likely m/h (GPS51 standard)
+    speedKmh = speed / 1000;
+  } else {
+    // Values <= 200 are likely already km/h
+    speedKmh = speed;
+  }
 
   // Apply threshold: < 3 km/h = stationary (GPS drift/noise)
   if (speedKmh < 3) {
     return 0;
   }
 
-  // Clamp unrealistic speeds (e.g., GPS jumps)
-  const clampedSpeed = Math.min(speedKmh, 300); // Max 300 km/h
+  // Clamp unrealistic speeds (e.g., GPS jumps) to max 300 km/h
+  const clampedSpeed = Math.min(speedKmh, 300);
 
   // Round to 1 decimal place
   const result = Math.round(clampedSpeed * 10) / 10;
   
-  // Debug: Log if we get a speed > 200 after normalization (shouldn't happen unless raw was > 200000)
-  if (result > 200) {
+  // Debug: Log if we get an unusually high speed after normalization (but not 300, which is the clamped max)
+  // This helps identify GPS data quality issues
+  // Note: 300 km/h is the safety clamp, so it's expected for very high raw values (e.g., 1,000,000 m/h)
+  if (result > 200 && result < 300) {
     console.warn(`[normalizeSpeed] High normalized speed: raw=${rawSpeed}, normalized=${result} km/h`);
-  }
-  
-  // Safety check: If result is between 200-1000, this is definitely wrong (should be m/h)
-  // This shouldn't happen, but if it does, the original raw speed was likely in m/h
-  // and we need to normalize it again
-  if (result > 200 && result < 1000) {
-    console.error(`[normalizeSpeed] ERROR: Speed ${result} is in m/h range but wasn't normalized! raw=${rawSpeed}`);
-    // Force normalize: divide by 1000, apply threshold, clamp
-    const forcedNormalized = result / 1000;
-    if (forcedNormalized < 3) {
-      return 0;
-    }
-    return Math.round(Math.min(forcedNormalized, 300) * 10) / 10;
   }
   
   return result;
@@ -209,65 +211,101 @@ export interface IgnitionDetectionResult {
 }
 
 /**
- * Check if JT808 status bitmask indicates ACC ON
+ * Check if JT808/GPS51 status bitmask indicates ACC ON
  * 
- * Enhanced implementation that tests multiple bit positions:
- * - Bit 0 (0x01): Common ACC bit in many JT808 implementations
- * - Bit 1 (0x02): Alternative ACC bit position
- * - Bit 2 (0x04): Some devices use this for ACC
- * - Bit 3 (0x08): Less common but used by some devices
+ * PRODUCTION-READY: Handles 32-bit GPS51 status fields (e.g., 262151, 262150)
  * 
- * Also validates that status value is reasonable (not all zeros/ones which might indicate invalid data).
+ * GPS51 extends JT808 with 32-bit status field structure:
+ * - Lower 16 bits (0xFFFF): Base JT808 status (ACC bit typically at bit 0)
+ * - Upper 16 bits (>>> 16): Extended GPS51 status (ACC bit may also be at bit 16)
  * 
- * Returns true if any of the common patterns match and status appears valid.
+ * Detection priority:
+ * 1. Base status bit 0 (0x01) - Most common ACC bit position
+ * 2. Extended status bit 0 (bit 16 overall, 0x00010000) - GPS51 extended
+ * 3. Alternative base positions (bits 1, 2, 3) - Device-specific variations
+ * 
+ * Returns true if ACC bit is set in either base or extended status.
+ * 
+ * CRITICAL: No range restrictions - accepts full 32-bit unsigned integer range (0 to 4,294,967,295)
  */
 function checkJt808AccBit(status: number | string | null | undefined): boolean {
   if (status === null || status === undefined) return false;
   
-  // If status is a string, try to parse it
+  // Parse string to number if needed
+  let statusNum: number;
   if (typeof status === 'string') {
-    const numStatus = parseInt(status, 10);
-    if (isNaN(numStatus)) return false;
-    status = numStatus;
-  }
-
-  // Ensure status is a valid number
-  if (typeof status !== 'number' || isNaN(status)) return false;
-
-  // Validate status value is reasonable (not all zeros or all ones which might indicate invalid data)
-  // Status should be a byte value (0-255), but we allow up to 65535 for extended status fields
-  // Some devices may send larger values - clamp them instead of rejecting
-  if (status < 0) {
-    console.warn(`[checkJt808AccBit] Negative status value: ${status}, treating as invalid`);
+    const parsed = parseInt(status, 10);
+    if (isNaN(parsed)) return false;
+    statusNum = parsed;
+  } else if (typeof status === 'number') {
+    statusNum = status;
+  } else {
     return false;
   }
-  
-  // For values > 65535, they might be bit-packed differently - try to extract meaningful bits
-  // by taking modulo or bitwise operations, but log a warning
-  if (status > 65535) {
-    console.warn(`[checkJt808AccBit] Status value ${status} exceeds expected range (0-65535), attempting bit extraction`);
-    // Try to extract lower 16 bits which might contain the ACC information
-    const clampedStatus = status & 0xFFFF; // Take lower 16 bits
-    status = clampedStatus;
-  }
 
-  // Test multiple JT808 ACC bit patterns (bit 0, 1, 2, or 3)
-  // Bit 0 (0x01): Most common ACC bit position
-  // Bit 1 (0x02): Alternative position used by some devices
-  // Bit 2 (0x04): Less common but used by some implementations
-  // Bit 3 (0x08): Additional pattern for some device types
-  const ACC_BIT_MASKS = [0x01, 0x02, 0x04, 0x08];
+  // CRITICAL FIX: Convert to unsigned 32-bit integer IMMEDIATELY
+  // This handles:
+  // - Large values (262150, 262151, etc.) - no warnings
+  // - Negative values (converts to positive via >>> 0)
+  // - Values > 2^31 (becomes unsigned)
+  // The >>> 0 operator ensures we get a valid unsigned 32-bit integer (0 to 4,294,967,295)
+  const status32 = statusNum >>> 0;
   
-  for (const mask of ACC_BIT_MASKS) {
-    if ((status & mask) === mask) {
-      // Log when ACC is detected via status bit for debugging
-      if (process.env.NODE_ENV === 'development' || Deno.env.get('LOG_IGNITION_DETECTION') === 'true') {
-        console.log(`[checkJt808AccBit] ACC ON detected via bit mask 0x${mask.toString(16)} (status=${status}, binary=${status.toString(2)})`);
+  // After >>> 0 conversion, status32 is always >= 0 and <= 4294967295
+  // No need to check for negative values or range limits
+  
+  // Extract base status (lower 16 bits) and extended status (upper 16 bits)
+  const baseStatus = status32 & 0xFFFF;       // Lower 16 bits (JT808 base)
+  const extendedStatus = status32 >>> 16;     // Upper 16 bits (GPS51 extended)
+  
+  // Helper function for safe debug logging check (import.meta.env may be undefined in Edge Functions)
+  const shouldLog = (): boolean => {
+    try {
+      // Check if LOG_IGNITION_DETECTION environment variable is set
+      if (Deno.env.get('LOG_IGNITION_DETECTION') === 'true') {
+        return true;
+      }
+      // Safely check import.meta.env.DEV (may not exist in Edge Functions)
+      if (typeof import.meta !== 'undefined' && import.meta.env?.DEV === true) {
+        return true;
+      }
+    } catch {
+      // Silently ignore if import.meta is not available
+    }
+    return false;
+  };
+
+  // Primary: Check base status bit 0 (0x01) - Most common ACC bit position
+  // This is the standard JT808 ACC bit
+  if ((baseStatus & 0x01) === 0x01) {
+    if (shouldLog()) {
+      console.log(`[checkJt808AccBit] ACC ON detected: base bit 0 (status=${status32}, base=0x${baseStatus.toString(16)}, ext=0x${extendedStatus.toString(16)})`);
+    }
+    return true;
+  }
+  
+  // Secondary: Check extended status bit 0 (bit 16 overall, 0x00010000) - GPS51 extended ACC
+  // Some GPS51 devices use the extended status field for ACC
+  if ((extendedStatus & 0x01) === 0x01) {
+    if (shouldLog()) {
+      console.log(`[checkJt808AccBit] ACC ON detected: extended bit 0 (status=${status32}, base=0x${baseStatus.toString(16)}, ext=0x${extendedStatus.toString(16)})`);
+    }
+    return true;
+  }
+  
+  // Fallback: Check alternative base bit positions (device-specific variations)
+  // Bit 1 (0x02), Bit 2 (0x04), Bit 3 (0x08) - less common but used by some devices
+  const ALT_ACC_BIT_MASKS = [0x02, 0x04, 0x08];
+  for (const mask of ALT_ACC_BIT_MASKS) {
+    if ((baseStatus & mask) === mask) {
+      if (shouldLog()) {
+        console.log(`[checkJt808AccBit] ACC ON detected: alternative bit 0x${mask.toString(16)} (status=${status32}, base=0x${baseStatus.toString(16)})`);
       }
       return true;
     }
   }
   
+  // No ACC bit detected
   return false;
 }
 

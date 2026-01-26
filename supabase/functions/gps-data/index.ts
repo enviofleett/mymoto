@@ -135,24 +135,35 @@ async function syncPositions(supabase: any, records: any[]) {
       offlineThresholdMs: OFFLINE_THRESHOLD_MS,
     });
     
-    // Log low-confidence ignition detection for debugging
-    if (normalized.ignition_confidence !== undefined && normalized.ignition_confidence < 0.5) {
+    // Log low-confidence ignition detection only if we expected to have data but don't
+    // Don't warn for devices that legitimately have no ACC data (status=0, no ACC in strstatus, no speed)
+    // Only warn if we have some signals but confidence is still low (indicates a problem)
+    const hasStatusData = record.status !== null && record.status !== undefined;
+    const hasStrStatusData = record.strstatus || record.strstatusen;
+    const hasSpeedData = record.speed !== null && record.speed !== undefined && (record.speed > 0 || normalized.speed_kmh > 0);
+    const hasAnyData = hasStatusData || hasStrStatusData || hasSpeedData;
+    
+    // Only warn if:
+    // 1. We have some data (status, strstatus, or speed)
+    // 2. Confidence is low (< 0.5)
+    // 3. Method is not 'unknown' (unknown means no data at all, which is OK)
+    // This prevents warnings for devices that simply don't support ACC detection
+    if (normalized.ignition_confidence !== undefined && 
+        normalized.ignition_confidence < 0.5 && 
+        normalized.ignition_detection_method !== 'unknown' &&
+        hasAnyData) {
       console.warn(`[syncPositions] Low ignition confidence (${normalized.ignition_confidence.toFixed(2)}) for device=${record.deviceid}, method=${normalized.ignition_detection_method}, status=${record.status}, strstatus=${record.strstatus}`);
     }
     
-    // Debug: Log if speed > 200 after normalization (shouldn't happen unless raw was > 200000)
-    if (normalized.speed_kmh > 200) {
+    // Debug: Log if speed is unusually high after normalization (helps identify GPS data quality issues)
+    // Note: 300 km/h is the clamped maximum, so speeds at exactly 300 are expected for very high raw values
+    if (normalized.speed_kmh > 200 && normalized.speed_kmh < 300) {
       console.log(`[syncPositions] High speed detected: device=${record.deviceid}, raw_speed=${record.speed}, normalized=${normalized.speed_kmh} km/h`);
     }
     
-    // Safety check: If normalized speed is between 200-1000, this is definitely wrong
-    if (normalized.speed_kmh > 200 && normalized.speed_kmh < 1000) {
-      console.error(`[syncPositions] ERROR: Device ${record.deviceid} has unnormalized speed ${normalized.speed_kmh}! Raw speed was ${record.speed}. Forcing correction...`);
-      // Force normalize: divide by 1000 and apply threshold
-      const correctedSpeed = normalized.speed_kmh / 1000;
-      normalized.speed_kmh = correctedSpeed < 3 ? 0 : Math.min(correctedSpeed, 300);
-      console.log(`[syncPositions] Corrected speed for ${record.deviceid}: ${normalized.speed_kmh} km/h`);
-    }
+    // Note: Speed normalization is handled by normalizeSpeed() in telemetry-normalizer.ts
+    // No need for additional correction here - the normalized value is already correct
+    // (300 km/h is the clamped maximum for safety, not an error)
     
     // FLEET-SCALE: Determine sync priority based on vehicle movement
     // Moving vehicles (>3 km/h) get high priority for more frequent syncs

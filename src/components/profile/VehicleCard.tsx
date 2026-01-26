@@ -18,7 +18,7 @@ import {
   Route
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { getOfflineDuration } from "@/utils/timezone";
+import { getOfflineDuration } from "@/utils/vehicleStatus";
 
 interface VehiclePosition {
   latitude: number | null;

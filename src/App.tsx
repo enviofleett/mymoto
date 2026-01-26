@@ -8,6 +8,7 @@ import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import SplashScreen from "@/components/SplashScreen";
 import { TermsChecker } from "@/components/auth/TermsChecker";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import RatingListener from "@/components/directory/RatingListener";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
@@ -50,7 +51,18 @@ import PartnerSignup from "./pages/partner/PartnerSignup";
 import OwnerDirectory from "./pages/owner/OwnerDirectory";
 import AdminDirectory from "./pages/AdminDirectory";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      onError: (error) => {
+      },
+    },
+    mutations: {
+      onError: (error) => {
+      },
+    },
+  },
+});
 
 // Check if running as installed PWA
 const isPWA = window.matchMedia('(display-mode: standalone)').matches ||
@@ -79,15 +91,29 @@ const RoleBasedRedirect = () => {
 const App = () => {
   const [showSplash, setShowSplash] = useState(isPWA);
 
+  useEffect(() => {
+    const handleOnline = () => {
+    };
+    const handleOffline = () => {
+    };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <AuthProvider>
-            <TermsChecker>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <AuthProvider>
+              <TermsChecker>
             <Routes>
               <Route path="/auth" element={<Auth />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -146,6 +172,7 @@ const App = () => {
         </BrowserRouter>
       </TooltipProvider>
     </QueryClientProvider>
+    </ErrorBoundary>
   );
 };
 

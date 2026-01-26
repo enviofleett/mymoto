@@ -1,4 +1,5 @@
-import { useEffect, useCallback, useState } from "react";
+import { useEffect, useCallback, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useNotifications } from "@/hooks/useNotifications";
@@ -31,11 +32,13 @@ interface ProactiveEvent {
  * - Toast notifications for in-app feedback
  */
 export function GlobalAlertListener() {
+  const navigate = useNavigate();
   const { toast } = useToast();
   const { showNotification, playAlertSound, permission } = useNotifications();
   const { shouldPlaySound, shouldShowPush, preferences } = useNotificationPreferences();
   const { user, isAdmin } = useAuth();
   const { data: ownerVehicles } = useOwnerVehicles();
+  const authRedirectedRef = useRef(false);
   
   // Get list of device IDs for user's assigned vehicles
   const userDeviceIds = ownerVehicles?.map(v => v.deviceId) || [];
@@ -172,8 +175,24 @@ export function GlobalAlertListener() {
     }
   }, [toast, playAlertSound, showNotification, permission, shouldPlaySound, shouldShowPush, preferences.soundVolume, sendEmailNotification, isAdmin, userDeviceIds, getVibrationPattern, normalizeEventType]);
 
+  // Use ref to store the latest handleNewEvent to avoid re-subscribing
+  const handleNewEventRef = useRef(handleNewEvent);
   useEffect(() => {
-    console.log('[GlobalAlertListener] Setting up realtime subscription');
+    handleNewEventRef.current = handleNewEvent;
+  }, [handleNewEvent]);
+
+  useEffect(() => {
+    if (!user) {
+      if (import.meta.env.DEV) {
+        console.log('[GlobalAlertListener] No user, skipping realtime subscription');
+      }
+      return;
+    }
+
+    authRedirectedRef.current = false;
+    if (import.meta.env.DEV) {
+      console.log('[GlobalAlertListener] Setting up realtime subscription');
+    }
 
     const channel = supabase
       .channel('global_proactive_alerts')
@@ -186,24 +205,44 @@ export function GlobalAlertListener() {
         },
         (payload) => {
           const newEvent = payload.new as ProactiveEvent;
-          handleNewEvent(newEvent);
+          handleNewEventRef.current(newEvent);
         }
       )
-      .subscribe((status) => {
-        console.log('[GlobalAlertListener] Subscription status:', status);
+      .subscribe(async (status) => {
+        if (import.meta.env.DEV) {
+          console.log('[GlobalAlertListener] Subscription status:', status);
+        }
         if (status === 'SUBSCRIBED') {
-          console.log('[GlobalAlertListener] ✅ Successfully subscribed to proactive_vehicle_events');
-        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          if (import.meta.env.DEV) {
+            console.log('[GlobalAlertListener] ✅ Successfully subscribed to proactive_vehicle_events');
+          }
+          return;
+        }
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           console.error('[GlobalAlertListener] ❌ Subscription error:', status);
-          // Could add retry logic here
+          const { data: { session }, error } = await supabase.auth.getSession();
+          if (error || !session) {
+            if (!authRedirectedRef.current) {
+              authRedirectedRef.current = true;
+              console.error('[GlobalAlertListener] Auth invalid on channel error, redirecting to /auth');
+              navigate('/auth', { replace: true });
+            }
+            return;
+          }
         }
       });
 
     return () => {
-      console.log('[GlobalAlertListener] Cleaning up subscription');
-      supabase.removeChannel(channel);
+      if (import.meta.env.DEV) {
+        console.log('[GlobalAlertListener] Cleaning up subscription');
+      }
+      try {
+        supabase.removeChannel(channel);
+      } catch {
+        /* ignore */
+      }
     };
-  }, [handleNewEvent]);
+  }, [user, navigate]);
 
   // This component renders nothing - it's just a listener
   return null;

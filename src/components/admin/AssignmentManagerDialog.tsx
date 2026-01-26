@@ -381,9 +381,6 @@ export function AssignmentManagerDialog({
       const originalAssignedCount = assignedVehicles.length + removeVehicles.length;
       const isNewUser = originalAssignedCount === 0;
 
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/6471c9be-8210-40bb-9684-44414c3d01cc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AssignmentManagerDialog.tsx:384',message:'Before assignMutation.mutateAsync',data:{addVehicles,profileId:selectedProfile.id,selectedProfile:selectedProfile?{id:selectedProfile.id,name:selectedProfile.name,email:selectedProfile.email}:null,vehicleAliases:Object.keys(vehicleAliases||{}),profileIdType:typeof selectedProfile.id,profileIdValid:selectedProfile.id&&selectedProfile.id.length>0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B,C'})}).catch(()=>{});
-      // #endregion
       await assignMutation.mutateAsync({
         deviceIds: addVehicles,
         profileId: selectedProfile.id,

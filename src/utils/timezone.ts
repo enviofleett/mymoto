@@ -42,17 +42,41 @@ export function formatLagosTime(
 
   switch (format) {
     case 'full':
-      return \`\${year}-\${month}-\${day} \${hours}:\${minutes}:\${seconds} WAT\`;
+      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds} WAT`;
     case 'date':
-      return \`\${year}-\${month}-\${day}\`;
+      return `${year}-${month}-${day}`;
     case 'time':
-      return \`\${hours}:\${minutes}:\${seconds}\`;
+      return `${hours}:${minutes}:${seconds}`;
     case 'short':
-      return \`\${year}-\${month}-\${day} \${hours}:\${minutes}\`;
+      return `${year}-${month}-${day} ${hours}:${minutes}`;
     case 'datetime':
     default:
-      return \`\${year}-\${month}-\${day} \${hours}:\${minutes}:\${seconds}\`;
+      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
   }
+}
+
+/**
+ * Format UTC timestamp for display in Lagos timezone with Intl.DateTimeFormatOptions
+ * This is the function that components use with options like { month: 'short', day: 'numeric', ... }
+ */
+export function formatToLagosTime(
+  utcTimestamp: string | Date,
+  options: Intl.DateTimeFormatOptions = {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  }
+): string {
+  const dateObj = utcTimestamp instanceof Date ? utcTimestamp : new Date(utcTimestamp);
+  
+  // Use Intl.DateTimeFormat with Africa/Lagos timezone
+  return new Intl.DateTimeFormat('en-US', {
+    ...options,
+    timeZone: 'Africa/Lagos',
+  }).format(dateObj);
 }
 
 /**
@@ -69,9 +93,9 @@ export function formatLagosTimeRelative(utcTimestamp: string | Date): string {
   const diffDays = Math.floor(diffHours / 24);
 
   if (diffSeconds < 60) return 'Just now';
-  if (diffMinutes < 60) return \`\${diffMinutes} minute\${diffMinutes !== 1 ? 's' : ''} ago\`;
-  if (diffHours < 24) return \`\${diffHours} hour\${diffHours !== 1 ? 's' : ''} ago\`;
-  if (diffDays < 7) return \`\${diffDays} day\${diffDays !== 1 ? 's' : ''} ago\`;
+  if (diffMinutes < 60) return `${diffMinutes} minute${diffMinutes !== 1 ? 's' : ''} ago`;
+  if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+  if (diffDays < 7) return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
 
   return formatLagosTime(utcTimestamp, 'short');
 }
@@ -92,9 +116,9 @@ export function formatDuration(durationSeconds: number): string {
   const seconds = durationSeconds % 60;
 
   const parts: string[] = [];
-  if (hours > 0) parts.push(\`\${hours}h\`);
-  if (minutes > 0) parts.push(\`\${minutes}m\`);
-  if (seconds > 0 || parts.length === 0) parts.push(\`\${seconds}s\`);
+  if (hours > 0) parts.push(`${hours}h`);
+  if (minutes > 0) parts.push(`${minutes}m`);
+  if (seconds > 0 || parts.length === 0) parts.push(`${seconds}s`);
 
   return parts.join(' ');
 }

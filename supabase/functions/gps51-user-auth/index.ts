@@ -2,6 +2,11 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import blueimp_md5 from 'https://esm.sh/blueimp-md5@2.19.0';
 import { callGps51LoginWithRateLimit, callGps51WithRateLimit } from "../_shared/gps51-client.ts";
 
+// MD5 hash function using blueimp-md5 library
+function md5(text: string): string {
+  return blueimp_md5(text);
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -41,7 +46,8 @@ Deno.serve(async (req) => {
     }
 
     // Step 1: Hash password with MD5
-    const passwordHash = "c870255d7bfd5f284e12c61bbefe8fa9";
+    // SECURITY FIX: Hash the password from the request, not a hardcoded value
+    const passwordHash = md5(password);
     console.log(`[gps51-user-auth] Password hashed`);
 
     // Step 2: Verify credentials with GPS51 API via proxy (with rate limiting)

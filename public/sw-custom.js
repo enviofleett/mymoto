@@ -6,19 +6,16 @@ let badgeCount = 0;
 
 // Initialize badge on install
 self.addEventListener('install', (event) => {
-  console.log('[SW] Service worker installing...');
   self.skipWaiting(); // Activate immediately
 });
 
 // Activate service worker
 self.addEventListener('activate', (event) => {
-  console.log('[SW] Service worker activating...');
   event.waitUntil(self.clients.claim()); // Take control of all pages
 });
 
 // Handle notification click - navigate to appropriate page
 self.addEventListener('notificationclick', (event) => {
-  console.log('[SW] Notification clicked:', event.notification.data);
   
   event.notification.close(); // Close the notification
   
@@ -60,7 +57,6 @@ self.addEventListener('notificationclick', (event) => {
 
 // Handle notification close/dismiss - decrement badge
 self.addEventListener('notificationclose', (event) => {
-  console.log('[SW] Notification dismissed:', event.notification.data);
   
   // Decrement badge when notification is dismissed
   if (badgeCount > 0) {
@@ -71,7 +67,6 @@ self.addEventListener('notificationclose', (event) => {
 
 // Handle messages from main app (for badge management)
 self.addEventListener('message', (event) => {
-  console.log('[SW] Message received:', event.data);
   
   const { type, count } = event.data || {};
   
@@ -92,7 +87,6 @@ self.addEventListener('message', (event) => {
       break;
       
     default:
-      console.log('[SW] Unknown message type:', type);
   }
 });
 
@@ -101,25 +95,21 @@ function updateBadge(count) {
   if ('setAppBadge' in self.registration) {
     if (count > 0) {
       self.registration.setAppBadge(count).then(() => {
-        console.log('[SW] Badge updated to:', count);
       }).catch((err) => {
         console.error('[SW] Error updating badge:', err);
       });
     } else {
       self.registration.clearAppBadge().then(() => {
-        console.log('[SW] Badge cleared');
       }).catch((err) => {
         console.error('[SW] Error clearing badge:', err);
       });
     }
   } else {
-    console.log('[SW] Badge API not supported');
   }
 }
 
 // Handle push events (for future web push integration)
 self.addEventListener('push', (event) => {
-  console.log('[SW] Push event received:', event);
   
   // Future: Handle web push notifications here
   // For now, notifications are triggered from the main app
@@ -127,7 +117,6 @@ self.addEventListener('push', (event) => {
   if (event.data) {
     try {
       const data = event.data.json();
-      console.log('[SW] Push data:', data);
       
       // Increment badge on push
       badgeCount++;
@@ -159,9 +148,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     clients.matchAll().then((clientList) => {
       // Sync badge count from main app if needed
-      console.log('[SW] Service worker activated, badge count:', badgeCount);
     })
   );
 });
 
-console.log('[SW] Custom service worker loaded');

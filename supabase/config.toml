@@ -86,3 +86,6 @@ verify_jwt = false
 
 [functions.fetch-mileage-detail]
 verify_jwt = false
+
+[functions.sync-official-reports]
+verify_jwt = false

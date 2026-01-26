@@ -32,13 +32,76 @@ async function fetchTripSyncStatus(deviceId: string): Promise<TripSyncStatus | n
     return null;
   }
 
-  return data as TripSyncStatus | null;
+  if (!data) return null;
+
+  const status = data as TripSyncStatus;
+  
+  // CRITICAL FIX: Detect and reset stuck sync statuses
+  // A sync is "stuck" if it's been "processing" for more than 10 minutes
+  if (status.sync_status === "processing" && status.updated_at) {
+    const updatedAt = new Date(status.updated_at);
+    const now = new Date();
+    const minutesStuck = (now.getTime() - updatedAt.getTime()) / (1000 * 60);
+    
+    if (minutesStuck > 10) {
+      console.warn(`[useTripSync] Detected stuck sync status for device ${deviceId} (stuck for ${minutesStuck.toFixed(1)} minutes). Resetting in database...`);
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/6471c9be-8210-40bb-9684-44414c3d01cc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useTripSync.ts:47',message:'Detected stuck sync, calling RPC to reset',data:{deviceId,minutesStuck:minutesStuck.toFixed(1),updatedAt:status.updated_at},timestamp:Date.now(),sessionId:'debug-session',runId:'fix-stuck',hypothesisId:'B1'})}).catch(()=>{});
+      // #endregion
+      
+      // Call RPC function to reset stuck status in database
+      try {
+        const { data: resetResult, error: resetError } = await (supabase as any)
+          .rpc('reset_stuck_sync_status', { p_device_id: deviceId });
+        
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/6471c9be-8210-40bb-9684-44414c3d01cc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useTripSync.ts:55',message:'RPC reset response',data:{deviceId,success:resetResult?.success,error:resetError?.message,result:resetResult},timestamp:Date.now(),sessionId:'debug-session',runId:'fix-stuck',hypothesisId:'B1'})}).catch(()=>{});
+        // #endregion
+        
+        if (resetError) {
+          // Check if RPC function doesn't exist yet (graceful degradation)
+          if (resetError.message?.includes('function') && resetError.message?.includes('does not exist')) {
+            console.warn(`[useTripSync] RPC function not found. Please run migration 20260126000000_reset_stuck_sync_status.sql. Using frontend-only reset.`);
+            // Fall through to frontend-only reset
+          } else {
+            console.error(`[useTripSync] Failed to reset stuck sync status:`, resetError);
+            // Fall through to frontend-only reset
+          }
+        } else if (resetResult?.success) {
+          console.log(`[useTripSync] Successfully reset stuck sync status in database:`, resetResult.message);
+          
+          // Return reset status (will be fetched fresh on next query)
+          return {
+            ...status,
+            sync_status: "idle" as const,
+            error_message: resetResult.message || `Previous sync was stuck for ${minutesStuck.toFixed(1)} minutes and has been reset`,
+          };
+        }
+      } catch (err) {
+        console.error(`[useTripSync] Error calling reset RPC:`, err);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/6471c9be-8210-40bb-9684-44414c3d01cc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useTripSync.ts:70',message:'RPC reset exception',data:{deviceId,error:err instanceof Error?err.message:'Unknown'},timestamp:Date.now(),sessionId:'debug-session',runId:'fix-stuck',hypothesisId:'B1'})}).catch(()=>{});
+        // #endregion
+      }
+      
+      // Fallback: return reset status even if RPC call failed (frontend-only)
+      return {
+        ...status,
+        sync_status: "idle" as const,
+        error_message: `Previous sync was stuck for ${minutesStuck.toFixed(1)} minutes and has been reset`,
+      };
+    }
+  }
+
+  return status;
 }
 
 // Trigger manual sync
 async function triggerTripSync(deviceId: string, forceFullSync: boolean = false): Promise<any> {
   // Get the current session - refresh if needed
   let { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  
   
   // If no session, try to get user to ensure we're authenticated
   if (!session) {
@@ -66,6 +129,7 @@ async function triggerTripSync(deviceId: string, forceFullSync: boolean = false)
     },
   });
 
+
   if (error) {
     // Provide more helpful error messages
     if (error.message?.includes("401") || error.message?.includes("Unauthorized")) {
@@ -83,11 +147,11 @@ export function useTripSyncStatus(deviceId: string | null, enabled: boolean = tr
     queryKey: ["trip-sync-status", deviceId],
     queryFn: () => fetchTripSyncStatus(deviceId!),
     enabled: enabled && !!deviceId,
-    staleTime: 2 * 1000, // Fresh for 2 seconds (more frequent updates)
+    staleTime: 5 * 1000, // Increased to 5 seconds to reduce refetch frequency
     refetchInterval: (query) => {
-      // Auto-refetch more frequently if status is "processing" for better UX
+      // CRITICAL FIX: Only refetch every 5 seconds when processing (was 2s), and every 30s when idle
       const status = query.state.data?.sync_status;
-      return status === "processing" ? 2000 : false; // Every 2 seconds for real-time feel
+      return status === "processing" ? 5000 : (status === "idle" ? 30000 : false);
     },
   });
 }
