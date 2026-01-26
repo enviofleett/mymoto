@@ -73,10 +73,6 @@ export function ReportsSection({
   const [isDateFilterOpen, setIsDateFilterOpen] = useState(false);
   const isFilterActive = !!dateRange?.from;
   const { user } = useAuth();
-<<<<<<< HEAD
-   
-  // Group trips by date using LOCAL TIME (Fixes the UTC/Timezone display bug)
-=======
   
   // CRITICAL DEBUG: Log trips prop when it changes (development only) - MOVED TO useEffect to prevent render-loop logging
   useEffect(() => {
@@ -97,7 +93,7 @@ export function ReportsSection({
   }, [trips, tripsLoading, dateRange, deviceId]);
 
   // Group trips by date and sort within each day (earliest first = Trip 1)
->>>>>>> 7960e14 (feat: Add GPS51 trip source tracking and 24-hour sync improvements)
+  // Uses LOCAL TIME to fix UTC/Timezone display bug
   const groupedTrips = useMemo(() => {
     if (!trips || trips.length === 0) return [];
     
