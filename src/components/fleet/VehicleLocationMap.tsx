@@ -66,12 +66,9 @@ export function VehicleLocationMap({
       return;
     }
 
-<<<<<<< HEAD
-=======
     if (import.meta.env.DEV) {
       console.log('[VehicleLocationMap] Initializing map with coordinates:', { latitude, longitude });
     }
->>>>>>> 7960e14 (feat: Add GPS51 trip source tracking and 24-hour sync improvements)
     mapboxgl.accessToken = token;
 
     map.current = new mapboxgl.Map({
@@ -117,70 +114,12 @@ export function VehicleLocationMap({
     const lat = latitude as number;
     const lng = longitude as number;
 
-<<<<<<< HEAD
-    // A. Update Camera (Smooth Pan)
-    map.current.flyTo({
-      center: [lng, lat],
-      bearing: (speed || 0) > 5 ? (heading || 0) : map.current.getBearing(), // Only rotate if moving
-      zoom: 16,
-      speed: 1.5, // Make it snappier
-      curve: 1,
-      essential: true
-    });
-
-    // B. Create Marker Element if it doesn't exist
-    if (!markerElement.current) {
-      const el = document.createElement('div');
-      el.className = 'vehicle-car-marker';
-      markerElement.current = el;
-      
-      marker.current = new mapboxgl.Marker({ element: el, anchor: 'center' })
-        .setLngLat([lng, lat])
-        .addTo(map.current);
-    }
-
-    // C. Update Marker Content (DOM Manipulation is faster than re-creating)
-    if (markerElement.current && marker.current) {
-      // Move marker
-      marker.current.setLngLat([lng, lat]);
-
-      // Calculate status for styling
-      const currentSpeed = speed || 0;
-      const isParked = isOnline && currentSpeed < 3;
-      const isMoving = isOnline && currentSpeed >= 3;
-      
-      let statusClass = !isOnline ? 'offline' : (isParked ? 'parked' : 'moving');
-      const rotation = isMoving ? (heading || 0) : 0;
-
-      // Update inner HTML
-      markerElement.current.innerHTML = `
-        <div class="car-marker-container" style="transform: rotate(${rotation}deg)">
-          <div class="car-pulse ${statusClass}"></div>
-          <div class="car-icon ${statusClass}">
-            ${isParked || !isOnline ? 
-              `<div class="status-dot"></div>` : 
-              `<svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
-                <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/>
-              </svg>`
-            }
-          </div>
-          ${isMoving ? `<div class="speed-badge">${Math.round(currentSpeed)}</div>` : ''}
-        </div>
-      `;
-    }
-
-=======
     // CRITICAL FIX: Use very small threshold for realtime updates (0.000001 = ~0.11 meters)
     // This ensures even tiny movements from GPS updates are reflected immediately
     const COORD_THRESHOLD = 0.000001; // ~0.11 meters - sensitive enough for realtime tracking
     const coordsChanged = !lastCoordinates.current || 
       Math.abs(lastCoordinates.current.lat - lat) > COORD_THRESHOLD || 
       Math.abs(lastCoordinates.current.lng - lng) > COORD_THRESHOLD;
-
-    // CRITICAL FIX: Always update marker for realtime updates
-    // Even if coordinates haven't changed significantly, speed/heading/status might have
-    // This ensures the UI reflects the latest vehicle state immediately
-    const shouldUpdateMarker = true; // Always update for realtime responsiveness
 
     // Update last known coordinates
     lastCoordinates.current = { lat, lng };
@@ -198,7 +137,35 @@ export function VehicleLocationMap({
       });
     }
 
-    // CRITICAL FIX: Always update marker for realtime responsiveness
+    // A. Update Camera (Smooth Pan) - only if coordinates changed significantly
+    if (coordsChanged) {
+      const distance = lastCoordinates.current 
+        ? Math.sqrt(
+            Math.pow((lastCoordinates.current.lat - lat) * 111, 2) + 
+            Math.pow((lastCoordinates.current.lng - lng) * 111 * Math.cos(lat * Math.PI / 180), 2)
+          )
+        : Infinity;
+      
+      // Only fly/pan if movement is significant (> 10 meters)
+      if (distance > 0.01) {
+        map.current.flyTo({
+          center: [lng, lat],
+          bearing: (speed || 0) > 5 ? (heading || 0) : map.current.getBearing(), // Only rotate if moving
+          zoom: 16,
+          speed: 1.5, // Make it snappier
+          curve: 1,
+          essential: true
+        });
+      } else {
+        // Small movement - just update marker position smoothly
+        map.current.easeTo({
+          center: [lng, lat],
+          duration: 500,
+        });
+      }
+    }
+
+    // B. Always update marker for realtime responsiveness
     // Remove existing marker to recreate with latest state
     marker.current?.remove();
 
@@ -240,33 +207,6 @@ export function VehicleLocationMap({
     marker.current = new mapboxgl.Marker({ element: el, anchor: 'center' })
       .setLngLat([lng, lat])
       .addTo(map.current);
-
-    // Pan to new location if coordinates changed significantly
-    // For small movements (parked vehicle), just update marker position
-    if (coordsChanged) {
-      const distance = lastCoordinates.current 
-        ? Math.sqrt(
-            Math.pow((lastCoordinates.current.lat - lat) * 111, 2) + 
-            Math.pow((lastCoordinates.current.lng - lng) * 111 * Math.cos(lat * Math.PI / 180), 2)
-          )
-        : Infinity;
-      
-      // Only fly/pan if movement is significant (> 10 meters)
-      if (distance > 0.01) {
-        map.current.flyTo({
-          center: [lng, lat],
-          duration: 1000,
-          essential: true,
-        });
-      } else {
-        // Small movement - just update marker position smoothly
-        map.current.easeTo({
-          center: [lng, lat],
-          duration: 500,
-        });
-      }
-    }
->>>>>>> 7960e14 (feat: Add GPS51 trip source tracking and 24-hour sync improvements)
   }, [latitude, longitude, heading, speed, isOnline, mapLoaded, hasValidCoordinates]);
 
   // Google Maps fallback link
