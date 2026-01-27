@@ -6,10 +6,10 @@ import { getPersonalityLabel } from "@/hooks/useVehicleProfile";
 interface ProfileHeaderProps {
   displayName: string;
   vehicleName: string;
+  plateNumber: string; // Add plate number prop
   avatarUrl: string | null;
   personalityMode: string | null;
   status: 'online' | 'charging' | 'offline';
-  lastUpdate: Date | null; // last update (gps_time)
   lastGpsFix?: Date | null; // true GPS fix (gps_fix_time)
   lastSyncedAt?: Date | null; // backend sync heartbeat
   onBack: () => void;
@@ -19,10 +19,10 @@ interface ProfileHeaderProps {
 export function ProfileHeader({
   displayName,
   vehicleName,
+  plateNumber, // Destructure new prop
   avatarUrl,
   personalityMode,
   status,
-  lastUpdate,
   lastGpsFix,
   lastSyncedAt,
   onBack,
@@ -83,7 +83,7 @@ export function ProfileHeader({
           {displayName}
           {showOriginalName && (
             <span className="text-muted-foreground font-normal text-sm ml-1">
-              ({vehicleName})
+              ({plateNumber}) {/* Display plateNumber instead of vehicleName */}
             </span>
           )}
         </h1>
@@ -96,16 +96,6 @@ export function ProfileHeader({
           {lastSyncedAt && (
             <p>
               Last synced {format(lastSyncedAt, "MMM d, HH:mm")}
-            </p>
-          )}
-          {lastUpdate && (
-            <p>
-              Last update {format(lastUpdate, "MMM d, HH:mm")}
-            </p>
-          )}
-          {lastGpsFix && (
-            <p>
-              Last GPS fix {format(lastGpsFix, "MMM d, HH:mm")}
             </p>
           )}
         </div>

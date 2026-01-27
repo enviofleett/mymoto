@@ -35,6 +35,9 @@ export function VehicleLocationMap({
   isRefreshing,
   onRefresh,
 }: VehicleLocationMapProps) {
+  if (import.meta.env.DEV) {
+    console.log('[VehicleLocationMap] Props:', { latitude, longitude, heading, speed, address, vehicleName, isOnline, isRefreshing });
+  }
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const marker = useRef<mapboxgl.Marker | null>(null);

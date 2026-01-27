@@ -31,6 +31,7 @@ import {
 } from "@/hooks/useTripSync";
 import { useRealtimeVehicleUpdates } from "@/hooks/useRealtimeVehicleUpdates";
 import { supabase } from "@/integrations/supabase/client";
+import { useOwnerVehicles } from "@/hooks/useOwnerVehicles";
 
 // Import sub-components
 import { ProfileHeader } from "./components/ProfileHeader";
@@ -265,7 +266,7 @@ export default function OwnerVehicleProfile() {
           if (import.meta.env.DEV) {
             console.log('[handleRefresh] ✅ GPS sync completed, refetched live data');
           }
-        }, 1500); // Wait 1.5 seconds for GPS sync to complete
+        }, 3000); // Wait 3 seconds for GPS sync to complete
       }).catch((error) => {
         // Non-critical: GPS sync failure doesn't break UI
         console.warn('[handleRefresh] GPS sync error (non-critical):', error);
@@ -364,8 +365,12 @@ export default function OwnerVehicleProfile() {
   }, [deviceId, triggerSync, queryClient]);
 
   // Display values with safe fallbacks - reconnected
-  const displayName = llmSettings?.nickname || deviceId;
-  const vehicleName = deviceId;
+  const { data: ownerVehicles } = useOwnerVehicles();
+  const vehicle = ownerVehicles?.find((v) => v.deviceId === deviceId);
+
+  const displayName = llmSettings?.nickname || vehicle?.plateNumber || deviceId;
+  const plateNumber = vehicle?.plateNumber || deviceId;
+  const vehicleName = deviceId; // Re-introduce vehicleName as deviceId
   const avatarUrl = llmSettings?.avatar_url || null;
   const personalityMode = llmSettings?.personality_mode || null;
 
@@ -450,22 +455,18 @@ export default function OwnerVehicleProfile() {
           avatarUrl={avatarUrl}
           personalityMode={personalityMode}
           status={status}
-          lastUpdate={liveData?.lastUpdate ?? null}
           lastGpsFix={liveData?.lastGpsFix ?? null}
           lastSyncedAt={liveData?.lastSyncedAt ?? null}
           onBack={() => navigate("/owner/vehicles")}
-          onSettings={() => setSettingsOpen(true)}
-        />
+              onSettings={() => setSettingsOpen(true)}
+              plateNumber={plateNumber}
+              vehicleName={vehicleName} // Pass vehicleName to ProfileHeader
+            />
 
         {/* Main Content */}
         <ScrollArea className="flex-1">
           <div className="px-4 pb-8 space-y-4">
             {/* Map Section */}
-            {import.meta.env.DEV && liveData && (
-              <div className="text-xs text-muted-foreground px-4 mb-2">
-                DEBUG: LiveData lat={liveData.latitude?.toFixed(6)}, lng={liveData.longitude?.toFixed(6)}, speed={liveData.speed}, heading={liveData.heading}
-              </div>
-            )}
             <VehicleMapSection
               latitude={liveData?.latitude ?? null}
               longitude={liveData?.longitude ?? null}

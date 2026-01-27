@@ -63,7 +63,7 @@ export function EngineControlCard({
             <span className="font-medium text-foreground">Security Control</span>
           </div>
 
-          <div className="flex flex-col gap-3">
+          <div className="flex gap-3">
             {/* Demobilize (Enable) Button */}
             <button
               onClick={() => handleCommandRequest("demobilize_engine")}
@@ -80,7 +80,7 @@ export function EngineControlCard({
               ) : (
                 <Power className="h-4 w-4 mr-2" />
               )}
-              Mobilize (Enable Engine)
+              Mobilize
             </button>
 
             {/* Immobilize (Disable) Button - Destructive Style */}
@@ -99,7 +99,7 @@ export function EngineControlCard({
               ) : (
                 <ShieldAlert className="h-4 w-4 mr-2" />
               )}
-              Immobilize (Cut Fuel)
+              Immobilize
             </button>
           </div>
 
