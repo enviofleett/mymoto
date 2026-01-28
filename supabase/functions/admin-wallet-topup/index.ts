@@ -118,41 +118,37 @@ Deno.serve(async (req) => {
     const userName = profile?.name || targetUser.email?.split("@")[0] || "User";
     const userEmail = targetUser.email || profile?.email;
 
-    // Update wallet balance
-    const currentBalance = parseFloat(String(wallet.balance)) || 0;
-    const newBalance = currentBalance + amount;
+    // Use atomic RPC function
+    const reference = `admin_topup_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    
+    const { data: rpcResult, error: rpcError } = await supabase.rpc("credit_wallet_atomic", {
+      p_user_id: wallet.user_id,
+      p_amount: amount,
+      p_reference: reference,
+      p_description: description || `Admin top-up by ${adminUser.email}`,
+      p_metadata: {
+        admin_id: adminUser.id,
+        admin_email: adminUser.email,
+        wallet_id: wallet_id
+      }
+    });
 
-    const { error: updateError } = await supabase
-      .from("wallets")
-      .update({ balance: newBalance })
-      .eq("id", wallet_id);
-
-    if (updateError) {
+    if (rpcError) {
+      console.error("RPC Error processing admin top-up:", rpcError);
       return new Response(
-        JSON.stringify({ success: false, error: "Failed to update wallet balance" }),
+        JSON.stringify({ success: false, error: rpcError.message }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Create transaction record
-    const { error: txError } = await supabase
-      .from("wallet_transactions")
-      .insert({
-        wallet_id: wallet_id,
-        amount: amount,
-        type: "credit",
-        description: description || `Admin top-up by ${adminUser.email}`,
-        reference: `admin_topup_${Date.now()}`,
-        metadata: {
-          admin_id: adminUser.id,
-          admin_email: adminUser.email,
-        },
-      });
-
-    if (txError) {
-      console.error("Failed to create transaction record:", txError);
-      // Continue even if transaction record fails - balance was already updated
+    if (!rpcResult.success) {
+      return new Response(
+        JSON.stringify({ success: false, error: rpcResult.error }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
+
+    const newBalance = rpcResult.new_balance;
 
     // Send email notification if requested and email is configured
     if (send_email !== false && userEmail) {

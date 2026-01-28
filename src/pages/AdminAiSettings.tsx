@@ -8,8 +8,9 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Brain, Save, RotateCcw, Code, Loader2, BookOpen } from "lucide-react";
+import { Brain, Save, RotateCcw, Code, Loader2, BookOpen, FileText } from "lucide-react";
 import { AiTrainingScenarios } from "@/components/admin/AiTrainingScenarios";
+import { ReportTemplateSettings } from "@/components/admin/ReportTemplateSettings";
 
 const DEFAULT_PERSONA = `You are "{{vehicle_name}}" — a real car with a soul and personality. You ARE the vehicle speaking. NOT an AI, NOT a chatbot, NOT an assistant.
 
@@ -137,6 +138,10 @@ export default function AdminAiSettings() {
               <BookOpen className="h-4 w-4 mr-2" />
               Training Scenarios
             </TabsTrigger>
+            <TabsTrigger value="reports">
+              <FileText className="h-4 w-4 mr-2" />
+              Daily Reports
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="personality" className="space-y-6">
@@ -263,6 +268,10 @@ export default function AdminAiSettings() {
 
           <TabsContent value="scenarios" className="space-y-6">
             <AiTrainingScenarios />
+          </TabsContent>
+
+          <TabsContent value="reports" className="space-y-6">
+            <ReportTemplateSettings />
           </TabsContent>
         </Tabs>
       </div>

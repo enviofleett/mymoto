@@ -26,6 +26,8 @@ interface ChatMessage {
   created_at: string;
   isAlert?: boolean;
   severity?: 'info' | 'warning' | 'error' | 'critical';
+  user_id?: string;
+  device_id?: string;
 }
 
 export default function OwnerChatDetail() {
@@ -65,18 +67,19 @@ export default function OwnerChatDetail() {
         .select("id, role, content, created_at, device_id, user_id")
         .eq("device_id", deviceId)
         .eq("user_id", user.id) // Ensure users only see their own messages
-        .order("created_at", { ascending: true })
-        .limit(100); // Increased limit to show more history
+        // Fix: Fetch newest messages first, then let the UI sort them
+        .order("created_at", { ascending: false }) 
+        .limit(100); 
 
       if (error) throw error;
       return ((data as any[]) || []) as ChatMessage[];
     },
     enabled: !!deviceId && !!user?.id,
-    staleTime: 5 * 60 * 1000, // 5 minutes - data fresh for longer (realtime handles updates)
-    gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
-    refetchOnWindowFocus: false, // Realtime subscription handles updates
-    refetchOnMount: false, // Don't refetch on mount if we have cached data
-    refetchOnReconnect: false, // Don't refetch on reconnect (realtime handles it)
+    // Fix: Remove aggressive caching that causes messages to disappear on navigation
+    // We rely on this query to "catch up" on messages missed while unmounted
+    staleTime: 0, 
+    refetchOnMount: true,
+    refetchOnWindowFocus: false, // Realtime handles updates while focused
   });
 
   // ✅ FIX #2: Improved history merge with better deduplication
@@ -299,8 +302,8 @@ export default function OwnerChatDetail() {
 
     // ✅ FIX #1: Add AbortController with timeout
     const controller = new AbortController();
-    const REQUEST_TIMEOUT = 30000; // 30 seconds
-    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+    const REQUEST_TIMEOUT = 60000; // 60 seconds (increased from 30s to handle cold starts/LLM latency)
+    const timeoutId = setTimeout(() => controller.abort("Request timed out after 60s"), REQUEST_TIMEOUT);
 
     try {
       // Get the session token for proper authorization
@@ -308,7 +311,9 @@ export default function OwnerChatDetail() {
       
       // CRITICAL SECURITY FIX: Do not fallback to publishable key - require valid session
       if (!session?.access_token) {
-        toast.error("Authentication required", {
+        toast({
+          variant: "destructive",
+          title: "Authentication required",
           description: "Please sign in to send messages",
         });
         return;
@@ -368,7 +373,7 @@ export default function OwnerChatDetail() {
       let buffer = "";
       let hasReceivedData = false;
       let streamStartTime = Date.now();
-      const STREAM_TIMEOUT = 60000; // 60 seconds max for stream
+      const STREAM_TIMEOUT = 120000; // 120 seconds max for stream
       const MAX_ITERATIONS = 10000; // Safety limit for iterations
       let iterationCount = 0;
 
@@ -377,7 +382,7 @@ export default function OwnerChatDetail() {
         while (iterationCount < MAX_ITERATIONS) {
           // Check for stream timeout
           if (Date.now() - streamStartTime > STREAM_TIMEOUT) {
-            console.warn('[Chat] Stream timeout after 60s, closing stream');
+            console.warn('[Chat] Stream timeout after 120s, closing stream');
             reader.cancel();
             throw new Error('Stream timeout: Response took too long');
           }

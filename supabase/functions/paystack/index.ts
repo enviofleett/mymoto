@@ -221,69 +221,38 @@ Deno.serve(async (req) => {
       const userId = metadata?.user_id;
       const amountNgn = amount / 100;
 
-      // Get user's wallet
-      const { data: wallet } = await supabase
-        .from("wallets")
-        .select("id, balance")
-        .eq("user_id", userId)
-        .single();
+      // Use atomic RPC function
+      const { data: rpcResult, error: rpcError } = await supabase.rpc("credit_wallet_atomic", {
+        p_user_id: userId,
+        p_amount: amountNgn,
+        p_reference: reference,
+        p_description: "Wallet top-up via Paystack",
+        p_metadata: { paystack_data: result.data }
+      });
 
-      if (!wallet) {
+      if (rpcError) {
+        console.error("RPC Error verifying payment:", rpcError);
         return new Response(
-          JSON.stringify({ success: false, error: "Wallet not found" }),
+          JSON.stringify({ success: false, error: rpcError.message }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      if (!rpcResult.success) {
+        if (rpcResult.already_processed) {
+           return new Response(
+            JSON.stringify({ success: true, message: "Already credited", amount: amountNgn }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        return new Response(
+          JSON.stringify({ success: false, error: rpcResult.error }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      // Check if already processed
-      const { data: existingTx } = await supabase
-        .from("wallet_transactions")
-        .select("id")
-        .eq("reference", reference)
-        .single();
-
-      if (existingTx) {
-        return new Response(
-          JSON.stringify({ success: true, message: "Already credited", amount: amountNgn }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      // Credit wallet
-      const newBalance = parseFloat(wallet.balance) + amountNgn;
-      const { error: updateError } = await supabase
-        .from("wallets")
-        .update({ balance: newBalance })
-        .eq("id", wallet.id);
-
-      if (updateError) {
-        console.error("Failed to update wallet balance:", updateError);
-        return new Response(
-          JSON.stringify({ success: false, error: "Failed to update wallet" }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      const { error: insertError } = await supabase.from("wallet_transactions").insert({
-        wallet_id: wallet.id,
-        amount: amountNgn,
-        type: "credit",
-        description: "Wallet top-up via Paystack",
-        reference,
-        metadata: { paystack_data: result.data },
-      });
-
-      if (insertError) {
-        console.error("Failed to insert transaction record:", insertError);
-        // Note: Wallet was already updated - this is a critical inconsistency
-        return new Response(
-          JSON.stringify({ success: false, error: "Failed to record transaction" }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
       return new Response(
-        JSON.stringify({ success: true, amount: amountNgn, new_balance: newBalance }),
+        JSON.stringify({ success: true, amount: amountNgn, new_balance: rpcResult.new_balance }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

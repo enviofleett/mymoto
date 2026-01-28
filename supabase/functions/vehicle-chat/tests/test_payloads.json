@@ -1,0 +1,57 @@
+[
+  {
+    "name": "Location Query",
+    "description": "Get current vehicle location",
+    "payload": {
+      "messages": [
+        { "role": "user", "content": "Where is my vehicle right now?" }
+      ],
+      "device_id": "test-device-123",
+      "user_id": "test-user"
+    }
+  },
+  {
+    "name": "Last Trip Query",
+    "description": "Fetch details about the most recent trip",
+    "payload": {
+      "messages": [
+        { "role": "user", "content": "Show me my last trip" }
+      ],
+      "device_id": "test-device-123",
+      "user_id": "test-user"
+    }
+  },
+  {
+    "name": "Yesterday's Trips",
+    "description": "Fetch trips from yesterday (date extraction test)",
+    "payload": {
+      "messages": [
+        { "role": "user", "content": "Did I drive anywhere yesterday?" }
+      ],
+      "device_id": "test-device-123",
+      "user_id": "test-user"
+    }
+  },
+  {
+    "name": "Mileage Stats",
+    "description": "Aggregate mileage statistics",
+    "payload": {
+      "messages": [
+        { "role": "user", "content": "What is my total mileage this week?" }
+      ],
+      "device_id": "test-device-123",
+      "user_id": "test-user"
+    }
+  },
+  {
+    "name": "Immobilize Command",
+    "description": "Test command parsing for immobilization",
+    "payload": {
+      "messages": [
+        { "role": "user", "content": "Immobilize the engine" }
+      ],
+      "device_id": "test-device-123",
+      "user_id": "test-user"
+    }
+  }
+]

@@ -13,7 +13,10 @@
  * - Marks messages as proactive (is_proactive: true)
  */
 
+// @ts-ignore
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+declare const Deno: any;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -265,10 +268,12 @@ async function getVehicleAssignments(supabase: any, deviceId: string): Promise<s
     .filter(Boolean) as string[];
 }
 
-Deno.serve(async (req) => {
+Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  let proactiveEvent: ProactiveEvent | undefined;
 
   try {
     const supabase = createClient(
@@ -284,8 +289,7 @@ Deno.serve(async (req) => {
     // Handle different webhook formats:
     // 1. Supabase Edge Functions webhook format: { type: 'INSERT', table: '...', record: {...}, old_record: null }
     // 2. Manual HTTP request format: { event: {...} }
-    let proactiveEvent: ProactiveEvent;
-
+    
     if (body.record) {
       // Format from Supabase Database Webhook (Edge Functions type)
       console.log('[proactive-alarm-to-chat] Using webhook format (record)');
@@ -373,15 +377,6 @@ Deno.serve(async (req) => {
     const personalityMode = (llmSettings?.personality_mode || 'casual').toLowerCase().trim();
     const languagePref = (llmSettings?.language_preference || 'english').toLowerCase().trim();
 
-    // Generate proactive message using LLM
-    const chatMessage = await generateProactiveMessage(
-      supabase,
-      proactiveEvent,
-      vehicleNickname,
-      personalityMode,
-      languagePref
-    );
-
     // Get vehicle assignments to determine which users should receive this
     const userIds = await getVehicleAssignments(supabase, proactiveEvent.device_id);
 
@@ -392,6 +387,43 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    // Check wallet balance for assigned users
+    // At least one user must have positive balance to trigger LLM
+    const { data: eligibleWallets, error: walletError } = await supabase
+      .from('wallets')
+      .select('user_id')
+      .in('user_id', userIds)
+      .gt('balance', 0);
+
+    const eligibleUserIds = eligibleWallets?.map((w: any) => w.user_id) || [];
+
+    if (eligibleUserIds.length === 0) {
+      console.warn(`[proactive-alarm-to-chat] No assigned users have positive wallet balance. Skipping LLM generation.`);
+      // We can still send a basic notification if needed, but for "Proactive Chat" which implies AI, we skip.
+      // Or we could send a fallback non-AI message? 
+      // The requirement says "users without wallet credit wont be able to use the LLM services".
+      // So we should strictly skip the LLM part.
+      return new Response(JSON.stringify({ 
+        success: false, 
+        message: 'Insufficient wallet balance for all assigned users',
+        skipped: true
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    console.log(`[proactive-alarm-to-chat] ${eligibleUserIds.length} users have positive balance. Proceeding with LLM.`);
+
+    // Generate proactive message using LLM
+    const chatMessage = await generateProactiveMessage(
+      supabase,
+      proactiveEvent,
+      vehicleNickname,
+      personalityMode,
+      languagePref
+    );
 
     // Map event_type to preference key (for push/sound notifications)
     const eventTypeToPreference: Record<string, string> = {
@@ -442,13 +474,13 @@ Deno.serve(async (req) => {
             // If explicitly true, include
             if (pref[aiChatPreferenceKey] === true) return true;
             // Default: critical events enabled
-            return ['critical_battery', 'offline', 'anomaly_detected', 'maintenance_due'].includes(proactiveEvent.event_type);
+            return ['critical_battery', 'offline', 'anomaly_detected', 'maintenance_due'].includes(proactiveEvent!.event_type);
           })
           .map((pref: any) => pref.user_id);
 
         // If no preferences exist, use defaults
         if (aiChatPrefs.length === 0) {
-          const defaultEnabled = ['critical_battery', 'offline', 'anomaly_detected', 'maintenance_due'].includes(proactiveEvent.event_type);
+          const defaultEnabled = ['critical_battery', 'offline', 'anomaly_detected', 'maintenance_due'].includes(proactiveEvent!.event_type);
           if (defaultEnabled) {
             aiChatEnabledUserIds = userIds; // Use all users for default-enabled events
           }
@@ -456,7 +488,7 @@ Deno.serve(async (req) => {
       }
     } else {
       // If no preference key mapped, default: critical events enabled
-      const defaultEnabled = ['critical_battery', 'offline', 'anomaly_detected', 'maintenance_due'].includes(proactiveEvent.event_type);
+      const defaultEnabled = ['critical_battery', 'offline', 'anomaly_detected', 'maintenance_due'].includes(proactiveEvent!.event_type);
       if (defaultEnabled) {
         aiChatEnabledUserIds = userIds;
       }
@@ -464,7 +496,7 @@ Deno.serve(async (req) => {
 
     // If no users have AI Chat enabled, skip creating chat messages
     if (aiChatEnabledUserIds.length === 0) {
-      console.log(`[proactive-alarm-to-chat] No users have AI Chat enabled for ${proactiveEvent.event_type} on vehicle ${proactiveEvent.device_id}, skipping chat message creation.`);
+      console.log(`[proactive-alarm-to-chat] No users have AI Chat enabled for ${proactiveEvent!.event_type} on vehicle ${proactiveEvent!.device_id}, skipping chat message creation.`);
       return new Response(JSON.stringify({ 
         success: false, 
         message: 'No users have AI Chat enabled for this event',
@@ -482,13 +514,13 @@ Deno.serve(async (req) => {
     // Insert proactive message into chat history for each enabled user
     const insertPromises = enabledUserIds.map((userId) =>
       supabase.from('vehicle_chat_history').insert({
-        device_id: proactiveEvent.device_id,
+        device_id: proactiveEvent!.device_id,
         user_id: userId,
         role: 'assistant',
         content: chatMessage,
         is_proactive: true,
-        alert_id: proactiveEvent.id,
-        created_at: proactiveEvent.created_at,
+        alert_id: proactiveEvent!.id,
+        created_at: proactiveEvent!.created_at,
       })
     );
 
@@ -514,13 +546,13 @@ Deno.serve(async (req) => {
             notified: true, 
             notified_at: new Date().toISOString() 
           })
-          .eq('id', proactiveEvent.id);
+          .eq('id', proactiveEvent!.id);
 
         if (updateError) {
           // Column might not exist, log but don't fail
           console.warn('[proactive-alarm-to-chat] Could not update notified column (may not exist):', updateError.message);
         } else {
-          console.log(`[proactive-alarm-to-chat] Marked event ${proactiveEvent.id} as notified`);
+          console.log(`[proactive-alarm-to-chat] Marked event ${proactiveEvent!.id} as notified`);
         }
       } catch (updateErr) {
         // Silently handle if column doesn't exist
@@ -528,16 +560,16 @@ Deno.serve(async (req) => {
       }
     } else {
       // No successful inserts - don't mark as notified so it can be retried
-      console.error(`[proactive-alarm-to-chat] No messages posted for event ${proactiveEvent.id}, not marking as notified`);
+      console.error(`[proactive-alarm-to-chat] No messages posted for event ${proactiveEvent!.id}, not marking as notified`);
     }
 
-    console.log(`[proactive-alarm-to-chat] Successfully posted proactive message for event ${proactiveEvent.id} (${successfulInserts}/${enabledUserIds.length} users)`);
+    console.log(`[proactive-alarm-to-chat] Successfully posted proactive message for event ${proactiveEvent!.id} (${successfulInserts}/${enabledUserIds.length} users)`);
 
     return new Response(
       JSON.stringify({
         success: true,
-        event_id: proactiveEvent.id,
-        device_id: proactiveEvent.device_id,
+        event_id: proactiveEvent!.id,
+        device_id: proactiveEvent!.device_id,
         message_posted: chatMessage.substring(0, 100) + '...',
         users_notified: successfulInserts,
         users_total: enabledUserIds.length,

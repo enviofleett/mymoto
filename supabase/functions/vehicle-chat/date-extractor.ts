@@ -8,7 +8,7 @@
 
 export interface DateContext {
   hasDateReference: boolean
-  period: 'today' | 'yesterday' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'custom' | 'none'
+  period: 'today' | 'yesterday' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'custom' | 'last_trip' | 'none'
   startDate: string  // ISO string (UTC)
   endDate: string    // ISO string (UTC)
   humanReadable: string  // e.g., "yesterday", "last 3 days"
@@ -107,6 +107,19 @@ export function extractDateContext(message: string, clientTimestamp?: string, us
   
   // Pattern matching for various date expressions
   
+  // Last trip/journey
+  if (/\b(last|latest|most\s+recent)\s+(trip|journey|drive|travel|ride)\b/i.test(lowerMessage)) {
+    // For last trip, we return a wide search window (30 days) but specific period type
+    const searchStart = subDays(now, 30)
+    return {
+      hasDateReference: true,
+      period: 'last_trip',
+      startDate: startOfDay(searchStart).toISOString(),
+      endDate: endOfDay(now).toISOString(),
+      humanReadable: 'last trip'
+    }
+  }
+
   // Yesterday patterns
   if (/\b(yesterday|yesternight|last\s+night)\b/i.test(lowerMessage)) {
     const yesterday = subDays(now, 1)
@@ -250,6 +263,49 @@ export function extractDateContext(message: string, clientTimestamp?: string, us
     }
   }
   
+  // Specific Date: "Jan 5", "January 5th", "5th of January"
+  // Basic implementation for common month names
+  const monthNames = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december', 'jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+  const monthMap: Record<string, number> = {
+    'january': 0, 'jan': 0, 'february': 1, 'feb': 1, 'march': 2, 'mar': 2, 'april': 3, 'apr': 3, 'may': 4, 'june': 5, 'jun': 5, 'july': 6, 'jul': 6, 'august': 7, 'aug': 7, 'september': 8, 'sep': 8, 'october': 9, 'oct': 9, 'november': 10, 'nov': 10, 'december': 11, 'dec': 11
+  };
+  
+  // Regex to capture "Month Day" or "Day of Month"
+  const datePattern = new RegExp(`\\b(${monthNames.join('|')})\\s+(\\d{1,2})(st|nd|rd|th)?\\b|\\b(\\d{1,2})(st|nd|rd|th)?\\s+of\\s+(${monthNames.join('|')})\\b`, 'i');
+  const dateMatch = lowerMessage.match(datePattern);
+  
+  if (dateMatch) {
+    let monthIndex = -1;
+    let day = -1;
+    
+    if (dateMatch[1]) { // Month Day format
+      monthIndex = monthMap[dateMatch[1].toLowerCase()];
+      day = parseInt(dateMatch[2], 10);
+    } else if (dateMatch[6]) { // Day of Month format
+      monthIndex = monthMap[dateMatch[6].toLowerCase()];
+      day = parseInt(dateMatch[4], 10);
+    }
+    
+    if (monthIndex >= 0 && day > 0 && day <= 31) {
+      let year = now.getFullYear();
+      let targetDate = new Date(Date.UTC(year, monthIndex, day));
+      
+      // If date is in future, assume previous year
+      if (targetDate > now) {
+        year--;
+        targetDate = new Date(Date.UTC(year, monthIndex, day));
+      }
+      
+      return {
+        hasDateReference: true,
+        period: 'custom',
+        startDate: startOfDay(targetDate).toISOString(),
+        endDate: endOfDay(targetDate).toISOString(),
+        humanReadable: `on ${dateMatch[0]}`
+      };
+    }
+  }
+
   // Day name patterns (e.g., "on Monday", "last Tuesday")
   const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
   const dayNameMatch = lowerMessage.match(/\b(on|last|this)?\s*(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/i)
@@ -307,6 +363,7 @@ export function isHistoricalMovementQuery(message: string): boolean {
     /\bwhat\s+distance\s+(did|have)\b/i,
     /\btravel(led|ed)?\b.*\b(yesterday|last|ago|week|month)\b/i,
     /\b(yesterday|last\s+week|last\s+month)\b.*\b(trip|journey|drive|move|travel)\b/i,
+    /\b(last|latest)\s+(trip|journey)\b/i, // Added last trip check
   ]
   
   return patterns.some(p => p.test(message))

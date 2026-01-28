@@ -45,43 +45,79 @@ const getAudioContext = (): AudioContext | null => {
   return audioContext;
 };
 
-// Generate a notification beep sound using Web Audio API
-const playBeep = (frequency: number, duration: number, volume: number = 0.3, pattern: number[] = [1]) => {
+// Generate a unique chime sound (Major Triad: Root, 3rd, 5th)
+const playChime = (baseFreq: number, type: 'info' | 'warning' | 'error' | 'critical', volume: number = 0.5) => {
   const ctx = getAudioContext();
   if (!ctx) return;
 
-  // Resume audio context if suspended (required after user interaction)
+  // Resume audio context if suspended
   if (ctx.state === 'suspended') {
     ctx.resume();
   }
 
-  pattern.forEach((multiplier, index) => {
-    const oscillator = ctx.createOscillator();
-    const gainNode = ctx.createGain();
+  const now = ctx.currentTime;
+  const masterGain = ctx.createGain();
+  masterGain.connect(ctx.destination);
+  masterGain.gain.setValueAtTime(volume, now);
 
-    oscillator.connect(gainNode);
-    gainNode.connect(ctx.destination);
+  // Define notes for the chord based on type
+  let frequencies: number[] = [];
+  let duration = 0.5;
 
-    oscillator.frequency.value = frequency * multiplier;
-    oscillator.type = 'sine';
+  switch (type) {
+    case 'info':
+      // C Major (C5, E5, G5) - Pleasant, informative
+      frequencies = [523.25, 659.25, 783.99]; 
+      duration = 0.6;
+      break;
+    case 'warning':
+      // Diminished (C5, Eb5, Gb5) - Tension, warning
+      frequencies = [523.25, 622.25, 739.99];
+      duration = 0.8;
+      break;
+    case 'error':
+      // Dissonant Cluster - Harsh
+      frequencies = [440, 466.16, 523.25]; // A4, Bb4, C5
+      duration = 0.8;
+      break;
+    case 'critical':
+      // Siren-like Sweep
+      const osc = ctx.createOscillator();
+      osc.connect(masterGain);
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(880, now);
+      osc.frequency.linearRampToValueAtTime(1760, now + 0.5);
+      osc.frequency.linearRampToValueAtTime(880, now + 1.0);
+      
+      masterGain.gain.setValueAtTime(volume, now);
+      masterGain.gain.linearRampToValueAtTime(0, now + 1.2);
+      
+      osc.start(now);
+      osc.stop(now + 1.2);
+      return; // Special handling for critical
+  }
 
-    const startTime = ctx.currentTime + (index * (duration + 0.1));
+  // Play chord
+  frequencies.forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const oscGain = ctx.createGain();
     
-    gainNode.gain.setValueAtTime(0, startTime);
-    gainNode.gain.linearRampToValueAtTime(volume, startTime + 0.01);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
-
-    oscillator.start(startTime);
-    oscillator.stop(startTime + duration);
+    osc.type = i === 0 ? 'sine' : 'triangle'; // Mix waveforms
+    osc.frequency.value = freq;
+    
+    osc.connect(oscGain);
+    oscGain.connect(masterGain);
+    
+    // Stagger starts slightly for "strum" effect
+    const startTime = now + (i * 0.05);
+    
+    oscGain.gain.setValueAtTime(0, startTime);
+    oscGain.gain.linearRampToValueAtTime(1.0 / frequencies.length, startTime + 0.05);
+    oscGain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
+    
+    osc.start(startTime);
+    osc.stop(startTime + duration + 0.1);
   });
-};
-
-// Sound patterns for different severity levels
-const SOUND_PATTERNS: Record<string, { frequency: number; duration: number; volume: number; pattern: number[] }> = {
-  info: { frequency: 440, duration: 0.15, volume: 0.2, pattern: [1] },
-  warning: { frequency: 523, duration: 0.2, volume: 0.3, pattern: [1, 1] },
-  error: { frequency: 659, duration: 0.25, volume: 0.4, pattern: [1, 1, 1] },
-  critical: { frequency: 880, duration: 0.3, volume: 0.5, pattern: [1, 0.8, 1, 0.8] }
 };
 
 export function useNotifications(): UseNotificationsReturn {
@@ -155,9 +191,6 @@ export function useNotifications(): UseNotificationsReturn {
           requireInteraction: options.requireInteraction ?? true,
           data: options.data
         });
-        
-        // Note: Regular Notification API has limited locked screen support
-        // Service worker notifications are preferred for PWA
       }
     } catch (error) {
       console.error('Error showing notification:', error);
@@ -165,9 +198,7 @@ export function useNotifications(): UseNotificationsReturn {
   }, [isSupported, permission]);
 
   const playAlertSound = useCallback((severity: 'info' | 'warning' | 'error' | 'critical', volumeMultiplier: number = 1) => {
-    const pattern = SOUND_PATTERNS[severity] || SOUND_PATTERNS.info;
-    const adjustedVolume = pattern.volume * Math.max(0, Math.min(1, volumeMultiplier));
-    playBeep(pattern.frequency, pattern.duration, adjustedVolume, pattern.pattern);
+    playChime(440, severity, 0.5 * volumeMultiplier);
   }, []);
 
   // ✅ FIX: Badge management functions

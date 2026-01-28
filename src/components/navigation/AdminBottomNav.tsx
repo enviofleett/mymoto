@@ -15,6 +15,7 @@ import {
   Link2,
   Shield,
   Mail,
+  FileText,
   LogOut,
   Building2
 } from "lucide-react";
@@ -70,6 +71,7 @@ const MORE_MENU_ITEMS = [
   { title: "Alerts", url: "/admin/alerts", icon: Bell },
   { title: "Assignments", url: "/admin/assignments", icon: Link2 },
   { title: "Email Templates", url: "/admin/email-templates", icon: Mail },
+  { title: "Report Templates", url: "/admin/report-templates", icon: FileText },
   { title: "Privacy & Terms", url: "/admin/privacy-settings", icon: Shield },
   { title: "Directory", url: "/admin/directory", icon: Building2 },
 ];

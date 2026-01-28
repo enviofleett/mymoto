@@ -65,16 +65,28 @@ export default function PartnerDashboard() {
       if (!user?.id) return null;
       
       const { data, error } = await supabase
+        // @ts-ignore - Table exists but types are outdated
         .from('service_providers')
         .select('*')
         .eq('user_id', user.id)
         .single();
       
       if (error) throw error;
-      return data;
+      return data as any;
     },
     enabled: !!user?.id,
   });
+
+  // Redirect if not found
+  if (!providerLoading && !provider) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-4 text-center">
+        <h2 className="text-2xl font-bold mb-2">Partner Profile Not Found</h2>
+        <p className="text-muted-foreground mb-4">You need to register as a service provider to view this dashboard.</p>
+        <Button onClick={() => navigate('/partner/signup')}>Register Now</Button>
+      </div>
+    );
+  }
 
   // Fetch bookings
   const { data: bookings = [], isLoading: bookingsLoading } = useQuery({

@@ -6,6 +6,7 @@ import { useNotifications } from "@/hooks/useNotifications";
 import { useNotificationPreferences, type AlertType, type SeverityLevel } from "@/hooks/useNotificationPreferences";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOwnerVehicles } from "@/hooks/useOwnerVehicles";
+import { NotificationToast } from "@/components/notifications/NotificationToast";
 
 interface ProactiveEvent {
   id: string;
@@ -127,31 +128,25 @@ export function GlobalAlertListener() {
       playAlertSound(severity, preferences.soundVolume);
     }
 
-    // Show toast for critical/error/warning
+    // Show custom toast for all relevant alerts
+    if (['critical', 'error', 'warning'].includes(severity) || shouldShowPush(alertType, severity)) {
+      toast({
+        // @ts-ignore - Custom component support in sonner
+        action: (
+          <NotificationToast
+            title={event.title}
+            message={event.message}
+            type={severity === 'info' ? 'success' : severity as any} // Map info to success style if desired, or keep info
+          />
+        ),
+        duration: severity === 'critical' ? 10000 : 5000,
+        className: "p-0 bg-transparent border-none shadow-none", // Remove default toast styling
+      });
+    }
+
+    // Trigger email for critical/error
     if (severity === 'critical' || severity === 'error') {
-      toast({
-        title: event.title,
-        description: event.message,
-        variant: "destructive"
-      });
-      
-      // Trigger email for critical/error
       sendEmailNotification(event);
-    } else if (severity === 'warning') {
-      toast({
-        title: event.title,
-        description: event.message
-      });
-    } else if (severity === 'info') {
-      // Show info notifications if user has enabled push for this alert type
-      // This ensures ignition_on/ignition_off show up when enabled
-      if (shouldShowPush(alertType, severity)) {
-        toast({
-          title: event.title,
-          description: event.message,
-          variant: "default"
-        });
-      }
     }
 
     // Show push notification based on preferences

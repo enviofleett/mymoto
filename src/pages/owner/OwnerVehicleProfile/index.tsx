@@ -81,6 +81,34 @@ export default function OwnerVehicleProfile() {
     refetch: refetchLive,
   } = useVehicleLiveData(deviceId);
 
+  // Auto-refresh stale data on mount/update to ensure 100% LIVE data
+  const lastAutoSyncRef = useRef<number>(0);
+  useEffect(() => {
+    if (!liveData?.lastUpdate || !deviceId) return;
+    
+    const now = Date.now();
+    const lastUpdate = liveData.lastUpdate.getTime();
+    const ageSeconds = (now - lastUpdate) / 1000;
+    
+    // If data is stale (> 60s) and we haven't auto-synced in the last 60s
+    if (ageSeconds > 60 && (now - lastAutoSyncRef.current > 60000)) {
+      if (import.meta.env.DEV) {
+        console.log(`[OwnerVehicleProfile] Data is stale (${Math.round(ageSeconds)}s), triggering auto-refresh...`);
+      }
+      lastAutoSyncRef.current = now;
+      
+      supabase.functions.invoke("gps-data", {
+        body: { 
+          action: "lastposition", 
+          body_payload: { deviceids: [deviceId] },
+          use_cache: false 
+        },
+      }).then(() => {
+         if (import.meta.env.DEV) console.log('[OwnerVehicleProfile] Auto-refresh sync initiated');
+      }).catch(err => console.error("Auto-refresh failed:", err));
+    }
+  }, [deviceId, liveData?.lastUpdate]);
+
   // DEBUG: Track liveData changes and data freshness
   useEffect(() => {
     if (liveData && import.meta.env.DEV) {
@@ -258,7 +286,11 @@ export default function OwnerVehicleProfile() {
       }
       
       supabase.functions.invoke("gps-data", {
-        body: { action: "lastposition", use_cache: false }, // Force fresh data
+        body: { 
+          action: "lastposition", 
+          body_payload: { deviceids: [deviceId] }, // Target specific device for faster sync
+          use_cache: false 
+        }, 
       }).then(() => {
         // After GPS sync completes, refetch live data to get fresh GPS coordinates
         setTimeout(() => {

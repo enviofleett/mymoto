@@ -25,6 +25,7 @@ import AdminAiSettings from "./pages/AdminAiSettings";
 import AdminAssignments from "./pages/AdminAssignments";
 import AdminPrivacySettings from "./pages/AdminPrivacySettings";
 import AdminEmailTemplates from "./pages/AdminEmailTemplates";
+import AdminReportTemplates from "./pages/AdminReportTemplates";
 import AdminResources from "./pages/AdminResources";
 import NotificationSettings from "./pages/NotificationSettings";
 import NotFound from "./pages/NotFound";
@@ -145,12 +146,13 @@ const App = () => {
               <Route path="/admin/assignments" element={<ProtectedRoute><AdminAssignments /></ProtectedRoute>} />
               <Route path="/admin/privacy-settings" element={<ProtectedRoute><AdminPrivacySettings /></ProtectedRoute>} />
               <Route path="/admin/email-templates" element={<ProtectedRoute><AdminEmailTemplates /></ProtectedRoute>} />
+              <Route path="/admin/report-templates" element={<ProtectedRoute><AdminReportTemplates /></ProtectedRoute>} />
               <Route path="/admin/resources" element={<ProtectedRoute><AdminResources /></ProtectedRoute>} />
               <Route path="/admin/directory" element={<ProtectedRoute requireAdmin><AdminDirectory /></ProtectedRoute>} />
               
               {/* Partner Routes */}
-              <Route path="/partner/dashboard" element={<ProtectedRoute><PartnerDashboard /></ProtectedRoute>} />
-              <Route path="/partner/profile" element={<ProtectedRoute><PartnerProfile /></ProtectedRoute>} />
+              <Route path="/partner/dashboard" element={<ProtectedRoute requireProvider><PartnerDashboard /></ProtectedRoute>} />
+              <Route path="/partner/profile" element={<ProtectedRoute requireProvider><PartnerProfile /></ProtectedRoute>} />
               
               {/* Owner PWA Routes */}
               <Route path="/owner" element={<ProtectedRoute><OwnerChat /></ProtectedRoute>} />

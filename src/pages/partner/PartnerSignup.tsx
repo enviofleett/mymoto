@@ -38,7 +38,7 @@ export default function PartnerSignup() {
         .order('display_order', { ascending: true });
       
       if (error) throw error;
-      return data;
+      return data as any[];
     },
   });
 
@@ -66,6 +66,7 @@ export default function PartnerSignup() {
 
       // Create provider profile
       const { error: providerError } = await supabase
+        // @ts-ignore - Table exists but types are outdated
         .from('service_providers')
         .insert({
           user_id: authData.user.id,
@@ -89,7 +90,7 @@ export default function PartnerSignup() {
       
       // Redirect to login
       setTimeout(() => {
-        navigate('/login');
+        navigate('/auth');
       }, 2000);
     } catch (error: any) {
       console.error('Signup error:', error);

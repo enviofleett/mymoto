@@ -68,13 +68,15 @@ export interface ConversationContext {
   total_message_count: number;
 }
 
+import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
 /**
  * Build optimized conversation context for LLM
  * Uses sliding window (20 recent messages) + summary of older messages
  * Prevents token overflow while maintaining conversation continuity
  */
 export async function buildConversationContext(
-  supabase: any,
+  supabase: SupabaseClient,
   deviceId: string,
   userId: string
 ): Promise<ConversationContext> {

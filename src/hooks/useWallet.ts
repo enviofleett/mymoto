@@ -112,7 +112,7 @@ export function useWallet() {
     setTopUpLoading(true);
 
     try {
-      const response = await supabase.functions.invoke("paystack", {
+      const response = await supabase.functions.invoke("paystack?action=initialize", {
         body: {
           email: user.email,
           amount,
@@ -148,7 +148,7 @@ export function useWallet() {
 
   const verifyPayment = async (reference: string) => {
     try {
-      const response = await supabase.functions.invoke("paystack", {
+      const response = await supabase.functions.invoke("paystack?action=verify", {
         body: { reference },
         headers: {
           "Content-Type": "application/json",
