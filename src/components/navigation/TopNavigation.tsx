@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
@@ -33,16 +34,15 @@ const navItems = [
 
 export function TopNavigation({ connectionStatus }: TopNavigationProps) {
   const { signOut, isAdmin } = useAuth();
+  const navigate = useNavigate();
 
   const handleLogout = async () => {
     try {
       await signOut();
-      // Use window.location for a hard redirect (more reliable for logout)
-      window.location.href = "/auth";
+      navigate("/auth");
     } catch (error) {
       console.error("Logout error:", error);
-      // Still redirect even if signOut fails
-      window.location.href = "/auth";
+      navigate("/auth");
     }
   };
 

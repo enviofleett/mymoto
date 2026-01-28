@@ -46,18 +46,10 @@ async function fetchTripSyncStatus(deviceId: string): Promise<TripSyncStatus | n
     if (minutesStuck > 10) {
       console.warn(`[useTripSync] Detected stuck sync status for device ${deviceId} (stuck for ${minutesStuck.toFixed(1)} minutes). Resetting in database...`);
       
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/6471c9be-8210-40bb-9684-44414c3d01cc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useTripSync.ts:47',message:'Detected stuck sync, calling RPC to reset',data:{deviceId,minutesStuck:minutesStuck.toFixed(1),updatedAt:status.updated_at},timestamp:Date.now(),sessionId:'debug-session',runId:'fix-stuck',hypothesisId:'B1'})}).catch(()=>{});
-      // #endregion
-      
       // Call RPC function to reset stuck status in database
       try {
         const { data: resetResult, error: resetError } = await (supabase as any)
           .rpc('reset_stuck_sync_status', { p_device_id: deviceId });
-        
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/6471c9be-8210-40bb-9684-44414c3d01cc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useTripSync.ts:55',message:'RPC reset response',data:{deviceId,success:resetResult?.success,error:resetError?.message,result:resetResult},timestamp:Date.now(),sessionId:'debug-session',runId:'fix-stuck',hypothesisId:'B1'})}).catch(()=>{});
-        // #endregion
         
         if (resetError) {
           // Check if RPC function doesn't exist yet (graceful degradation)
@@ -80,9 +72,6 @@ async function fetchTripSyncStatus(deviceId: string): Promise<TripSyncStatus | n
         }
       } catch (err) {
         console.error(`[useTripSync] Error calling reset RPC:`, err);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/6471c9be-8210-40bb-9684-44414c3d01cc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useTripSync.ts:70',message:'RPC reset exception',data:{deviceId,error:err instanceof Error?err.message:'Unknown'},timestamp:Date.now(),sessionId:'debug-session',runId:'fix-stuck',hypothesisId:'B1'})}).catch(()=>{});
-        // #endregion
       }
       
       // Fallback: return reset status even if RPC call failed (frontend-only)

@@ -270,8 +270,7 @@ export function VehicleDetailsModal({
               {vehicle.lastUpdate && (
                 <p className="text-xs text-muted-foreground flex items-center gap-1">
                   <Calendar className="h-3 w-3" />
-                  Last update: {new Date(vehicle.lastUpdate).toLocaleString('en-US', { 
-                    timeZone: 'Africa/Lagos',
+                  Last update: {formatLagosDate(vehicle.lastUpdate, {
                     year: 'numeric',
                     month: 'short',
                     day: 'numeric',

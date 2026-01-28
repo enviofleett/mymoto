@@ -74,35 +74,42 @@ export function VehicleLocationMap({
     }
     mapboxgl.accessToken = token;
 
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/dark-v11', // Optimized dark mode
-      center: [initialLng, initialLat],
-      zoom: hasValidCoordinates ? 16 : 10,
-      pitch: 45,
-      bearing: heading || 0,
-      attributionControl: false,
-      interactive: true,
-    });
+    // FIX: Delay map initialization slightly to prevent Strict Mode double-mount
+    // from triggering immediate abort errors (net::ERR_ABORTED).
+    const initTimer = setTimeout(() => {
+      if (!mapContainer.current) return; // Guard against unmount during timeout
 
-    // Add controls
-    map.current.addControl(
-      new mapboxgl.NavigationControl({ showCompass: true, visualizePitch: true }),
-      'top-right'
-    );
+      map.current = new mapboxgl.Map({
+        container: mapContainer.current,
+        style: 'mapbox://styles/mapbox/dark-v11', // Optimized dark mode
+        center: [initialLng, initialLat],
+        zoom: hasValidCoordinates ? 16 : 10,
+        pitch: 45,
+        bearing: heading || 0,
+        attributionControl: false,
+        interactive: true,
+      });
 
-    map.current.on('load', () => {
-      if (import.meta.env.DEV) {
-        console.log('[VehicleLocationMap] Map loaded successfully');
-      }
-      setMapLoaded(true);
-      // Force resize to prevent blank canvas issues
-      map.current?.resize();
-    });
+      // Add controls
+      map.current.addControl(
+        new mapboxgl.NavigationControl({ showCompass: true, visualizePitch: true }),
+        'top-right'
+      );
 
-    isMapInitialized.current = true;
+      map.current.on('load', () => {
+        if (import.meta.env.DEV) {
+          console.log('[VehicleLocationMap] Map loaded successfully');
+        }
+        setMapLoaded(true);
+        // Force resize to prevent blank canvas issues
+        map.current?.resize();
+      });
+      
+      isMapInitialized.current = true;
+    }, 50); // 50ms delay is enough to skip the Strict Mode immediate unmount
 
     return () => {
+      clearTimeout(initTimer); // Cancel init if unmounted immediately
       marker.current?.remove();
       map.current?.remove();
       map.current = null;

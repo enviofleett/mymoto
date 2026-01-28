@@ -459,9 +459,8 @@ export default function OwnerVehicleProfile() {
           lastSyncedAt={liveData?.lastSyncedAt ?? null}
           onBack={() => navigate("/owner/vehicles")}
               onSettings={() => setSettingsOpen(true)}
-              plateNumber={plateNumber}
-              vehicleName={vehicleName} // Pass vehicleName to ProfileHeader
-            />
+          plateNumber={plateNumber}
+        />
 
         {/* Main Content */}
         <ScrollArea className="flex-1">

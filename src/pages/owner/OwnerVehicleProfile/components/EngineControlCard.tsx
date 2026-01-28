@@ -105,7 +105,6 @@ export function EngineControlCard({
 
           <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
              <span>Status: {isOnline ? "Connected" : "Offline"}</span>
-             {isEngineRunning && <span className="text-yellow-500 font-medium">⚠ Ignition On</span>}
           </div>
         </CardContent>
       </Card>

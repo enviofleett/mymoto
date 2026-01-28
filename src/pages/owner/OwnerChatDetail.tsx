@@ -15,6 +15,7 @@ import { ArrowLeft, Car, User, Send, Loader2, AlertTriangle } from "lucide-react
 import { cn } from "@/lib/utils";
 import { ChatMessageContent } from "@/components/chat/ChatMessageContent";
 import { format } from "date-fns";
+import { formatLagosDate } from "@/lib/timezone";
 import { useQuery } from "@tanstack/react-query";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
@@ -736,8 +737,7 @@ export default function OwnerChatDetail() {
                     "text-[10px] mt-1.5 text-right",
                     msg.role === "user" ? "text-accent-foreground/70" : "text-muted-foreground"
                   )}>
-                    {new Date(msg.created_at).toLocaleString('en-US', {
-                      timeZone: 'Africa/Lagos',
+                    {formatLagosDate(msg.created_at, {
                       month: 'short',
                       day: 'numeric',
                       hour: '2-digit',

@@ -1,5 +1,6 @@
 import { NavLink } from "@/components/NavLink";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { 
   LayoutDashboard, 
   Truck, 
@@ -39,17 +40,16 @@ const menuItems = [
 export function BottomNavigation() {
   const { signOut, isAdmin } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const navigate = useNavigate();
 
   const handleLogout = async () => {
     try {
       setMenuOpen(false);
       await signOut();
-      // Use window.location for a hard redirect (more reliable for logout)
-      window.location.href = "/auth";
+      navigate("/auth");
     } catch (error) {
       console.error("Logout error:", error);
-      // Still redirect even if signOut fails
-      window.location.href = "/auth";
+      navigate("/auth");
     }
   };
 

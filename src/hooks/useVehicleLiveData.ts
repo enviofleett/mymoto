@@ -197,15 +197,13 @@ export function useVehicleLiveDataHeartbeat(deviceId: string | null) {
     // Initial refetch
     refetch();
     document.addEventListener("visibilitychange", onVisibilityChange);
-    // Poll every 10 seconds (matching LIVE_POLL_MS)
-    intervalRef.current = setInterval(refetch, LIVE_POLL_MS);
+    
+    // NOTE: We do NOT set up a duplicate interval here because useVehicleLiveData 
+    // already has refetchInterval: LIVE_POLL_MS. 
+    // This hook is strictly for visibility-based immediate refetching.
 
     return () => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
     };
   }, [deviceId, queryClient]);
 }

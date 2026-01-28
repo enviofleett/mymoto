@@ -84,12 +84,10 @@ export function AdminBottomNav() {
     try {
       setMenuOpen(false);
       await signOut();
-      // Use window.location for a hard redirect (more reliable for logout)
-      window.location.href = "/auth";
+      navigate("/auth");
     } catch (error) {
       console.error("Logout error:", error);
-      // Still redirect even if signOut fails
-      window.location.href = "/auth";
+      navigate("/auth");
     }
   };
 

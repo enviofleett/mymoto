@@ -12,7 +12,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Default port from vite.config.ts
-PORT=8081
+PORT=5173
 BASE_URL="http://localhost:${PORT}"
 URL_PATH="${1:-/}"
 
