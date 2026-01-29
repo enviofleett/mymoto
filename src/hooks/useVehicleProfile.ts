@@ -116,42 +116,18 @@ async function fetchVehicleTrips(
     console.log('[fetchVehicleTrips] Fetching trips for device:', deviceId, 'limit:', limit, 'dateRange:', dateRange);
   }
   
-  let query = (supabase as any)
-    .from("vehicle_trips")
-    .select("*")
-    .eq("device_id", deviceId)
-    .eq("source", "gps51") // CRITICAL: Only show GPS51 trips for 100% parity
-    // Only require start_time and end_time - coordinates might be missing (0,0) for some trips
-    .not("start_time", "is", null)
-    .not("end_time", "is", null);
-
-  // Apply date range filter only if explicitly provided
-  // When no dateRange is provided, fetch the most recent trips up to the limit (no time restriction)
-  if (dateRange?.from) {
-    const fromDate = new Date(dateRange.from);
-    fromDate.setHours(0, 0, 0, 0);
-    query = query.gte("start_time", fromDate.toISOString());
-    if (import.meta.env.DEV) {
-      console.log('[fetchVehicleTrips] Date filter FROM:', fromDate.toISOString());
-    }
-  }
-  
-  if (dateRange?.to) {
-    // Include entire "to" date by setting to end of day
-    const endDate = new Date(dateRange.to);
-    endDate.setDate(endDate.getDate() + 1);
-    endDate.setHours(0, 0, 0, 0);
-    query = query.lt("start_time", endDate.toISOString());
-    if (import.meta.env.DEV) {
-      console.log('[fetchVehicleTrips] Date filter TO:', endDate.toISOString());
-    }
-  }
-
-  // Always order by start_time DESC to get newest first, then limit
-  const { data, error } = await query
-    .order("start_time", { ascending: false })
-    .limit(limit);
-  
+  // Use the optimized RPC function instead of querying the view directly
+  // This pushes the device_id filter down to the base table scan, preventing timeouts
+  const { data, error } = await (supabase as any).rpc('get_vehicle_trips_optimized', {
+    p_device_id: deviceId,
+    p_limit: limit,
+    p_start_date: dateRange?.from ? dateRange.from.toISOString() : null,
+    p_end_date: dateRange?.to ? (() => {
+      const d = new Date(dateRange.to);
+      d.setDate(d.getDate() + 1); // Include the whole day
+      return d.toISOString();
+    })() : null
+  });
 
   if (error) {
     if (import.meta.env.DEV) {

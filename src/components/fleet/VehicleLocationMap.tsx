@@ -106,7 +106,7 @@ export function VehicleLocationMap({
       });
       
       isMapInitialized.current = true;
-    }, 50); // 50ms delay is enough to skip the Strict Mode immediate unmount
+    }, 100); // Increased to 100ms to robustly handle Strict Mode double-invocation
 
     return () => {
       clearTimeout(initTimer); // Cancel init if unmounted immediately

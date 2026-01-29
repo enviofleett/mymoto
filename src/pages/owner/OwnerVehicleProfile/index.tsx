@@ -479,7 +479,7 @@ export default function OwnerVehicleProfile() {
         isRefreshing={isRefreshing}
       />
 
-      <div {...pullHandlers} className="flex flex-col min-h-full overflow-y-auto">
+      <div {...pullHandlers} className="flex flex-col min-h-full w-full max-w-3xl mx-auto space-y-4">
         {/* Header */}
         <ProfileHeader
           displayName={displayName}
@@ -495,10 +495,7 @@ export default function OwnerVehicleProfile() {
         />
 
         {/* Main Content */}
-        <ScrollArea className="flex-1">
-          {/* Increased bottom padding to pb-32 (128px) to ensure content clears the bottom navigation menu 
-              and the last card's full UI curve is visible */}
-          <div className="px-4 pb-32 space-y-4">
+        <div className="flex-1 pb-32 space-y-4">
             {/* Map Section */}
             <VehicleMapSection
               latitude={liveData?.latitude ?? null}
@@ -557,8 +554,7 @@ export default function OwnerVehicleProfile() {
               isRealtimeActive={isSubscribed}
               isAutoSyncing={isAutoSyncing}
             />
-          </div>
-        </ScrollArea>
+        </div>
       </div>
 
       {/* Trip Playback Dialog */}
