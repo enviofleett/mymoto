@@ -271,7 +271,8 @@ async function detectAndInsertTrips(
             distance_km: distance,
             duration_seconds: Math.round(duration),
             avg_speed: duration > 0 ? (distance / (duration / 3600)) : 0,
-            max_speed: 0 // Would need to track during trip
+            max_speed: 0, // Would need to track during trip
+            source: 'position_history'  // Mark as position_history-derived (NOT gps51)
           })
         }
         
@@ -302,7 +303,8 @@ async function detectAndInsertTrips(
         distance_km: distance,
         duration_seconds: Math.round(duration),
         avg_speed: duration > 0 ? (distance / (duration / 3600)) : 0,
-        max_speed: 0
+        max_speed: 0,
+        source: 'position_history'  // Mark as position_history-derived (NOT gps51)
       })
     }
   }
