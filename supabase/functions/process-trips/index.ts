@@ -29,6 +29,7 @@ interface TripData {
   max_speed: number | null;
   avg_speed: number | null;
   duration_seconds: number;
+  source: string;  // CRITICAL: Track data source for filtering
 }
 
 // Haversine formula to calculate distance between two GPS points
@@ -139,6 +140,7 @@ function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
           max_speed: maxSpeed > 0 ? Math.round(maxSpeed * 10) / 10 : null,
           avg_speed: speedCount > 0 ? Math.round((totalSpeed / speedCount) * 10) / 10 : null,
           duration_seconds: durationSeconds,
+          source: 'position_history',  // Mark as position_history-derived (NOT gps51)
         });
       }
 

@@ -2750,12 +2750,14 @@ serve(async (req: Request) => {
       .limit(10)
 
     // 4.65. Fetch last 5 completed trips (for ## RECENT TRIPS context)
+    // CRITICAL: Filter by source='gps51' for 100% GPS51 parity
     let last5Trips: any[] = []
     try {
       const { data: tripsData } = await supabase
         .from('vehicle_trips')
         .select('id, start_time, end_time, distance_km, duration_seconds')
         .eq('device_id', device_id)
+        .eq('source', 'gps51')  // Only GPS51 trips for accuracy
         .not('end_time', 'is', null)
         .order('start_time', { ascending: false })
         .limit(5)
@@ -2965,6 +2967,7 @@ serve(async (req: Request) => {
 
       // ✅ FIX: Fetch trips with timeout protection and optimized column selection
       // Ensure we get all trips in the date range, not just recent ones
+      // CRITICAL: Filter by source='gps51' for 100% GPS51 parity
       try {
         const tripQueryResult = await Promise.race([
           supabase
@@ -2972,6 +2975,7 @@ serve(async (req: Request) => {
             // ✅ Only select needed columns to reduce data transfer and speed up query
             .select('id, start_time, end_time, distance_km, duration_seconds, start_latitude, start_longitude, end_latitude, end_longitude')
             .eq('device_id', device_id)
+            .eq('source', 'gps51')  // Only GPS51 trips for accuracy
             .gte('start_time', dateContext.startDate)
             .lte('end_time', dateContext.endDate)
             .order('start_time', { ascending: false })

@@ -313,10 +313,12 @@ async function getYesterdayStats(
   const yesterdayEnd = new Date(yesterdayStart);
   yesterdayEnd.setHours(23, 59, 59, 999);
 
+  // CRITICAL: Filter by source='gps51' for accurate GPS51 parity
   const { data: trips, error } = await supabase
     .from('vehicle_trips')
     .select('distance_km, duration_seconds')
     .eq('device_id', deviceId)
+    .eq('source', 'gps51')  // Only GPS51 trips for accuracy
     .gte('start_time', yesterdayStart.toISOString())
     .lte('end_time', yesterdayEnd.toISOString());
 

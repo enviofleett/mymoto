@@ -281,11 +281,13 @@ serve(async (req) => {
       tripsToAnalyze = [trip];
     } else {
       // Find trips from the last N hours that haven't been analyzed
+      // CRITICAL: Filter by source='gps51' for accurate GPS51 parity
       const lookbackTime = new Date(Date.now() - lookback_hours * 60 * 60 * 1000).toISOString();
-      
+
       const { data: recentTrips, error } = await supabase
         .from('vehicle_trips')
         .select('id, device_id, start_time, end_time, duration_seconds')
+        .eq('source', 'gps51')  // Only GPS51 trips for accuracy
         .gte('end_time', lookbackTime)
         .order('end_time', { ascending: false })
         .limit(50);
