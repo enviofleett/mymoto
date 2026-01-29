@@ -68,8 +68,8 @@ export function VehiclePersonaSettings({ deviceId, vehicleName }: VehiclePersona
       if (data) {
         setSettings(data as LlmSettings);
         setNickname((data as any).nickname || "");
-        setLanguage((data as any).language_preference);
-        setPersonality((data as any).personality_mode);
+        setLanguage((data as any).language_preference || "english");
+        setPersonality((data as any).personality_mode || "casual");
         // Ensure llm_enabled defaults to true if null/undefined (never auto-disable)
         setLlmEnabled((data as any).llm_enabled ?? true);
         setAvatarUrl((data as any).avatar_url);

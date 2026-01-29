@@ -7,6 +7,7 @@ export interface OwnerProfile {
   name: string;
   phone: string | null;
   email: string | null;
+  avatar_url: string | null;
 }
 
 export function useOwnerProfile() {
@@ -19,7 +20,7 @@ export function useOwnerProfile() {
 
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, name, phone, email")
+        .select("id, name, phone, email, avatar_url")
         .eq("user_id", user.id)
         .maybeSingle();
 

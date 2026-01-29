@@ -26,7 +26,10 @@ CREATE POLICY "Users can view trip sync status for assigned vehicles"
   TO authenticated
   USING (
     device_id IN (
-      SELECT device_id FROM vehicle_assignments WHERE user_id = auth.uid()
+      SELECT va.device_id 
+      FROM vehicle_assignments va
+      JOIN profiles p ON va.profile_id = p.id
+      WHERE p.user_id = auth.uid()
     )
   );
 

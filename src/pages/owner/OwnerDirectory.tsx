@@ -123,7 +123,7 @@ export default function OwnerDirectory() {
 
   return (
     <OwnerLayout>
-      <div className="space-y-4 p-4">
+      <div className="space-y-4 px-4 pb-32 pt-4">
         {/* Header */}
         <div>
           <h1 className="text-2xl font-bold text-foreground">Service Directory</h1>

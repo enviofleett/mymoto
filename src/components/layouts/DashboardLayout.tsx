@@ -46,50 +46,53 @@ export function DashboardLayout({ children, connectionStatus }: DashboardLayoutP
 
       {/* Mobile Header - Simple branding */}
       {/* CRITICAL FIX: z-40 ensures header stays above content but below AdminBottomNav (z-50) */}
-      <header className="md:hidden sticky top-0 z-40 flex-none flex h-14 items-center border-b border-border bg-background/95 backdrop-blur px-4">
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="h-4 w-4 text-primary-foreground"
-            >
-              <path d="M10 17h4V5H2v12h3" />
-              <path d="M20 17h2v-3.34a4 4 0 0 0-1.17-2.83L19 9h-5v8h1" />
-              <circle cx="7.5" cy="17.5" r="2.5" />
-              <circle cx="17.5" cy="17.5" r="2.5" />
-            </svg>
+      {/* Added safe-area-inset-top support to prevent notch cutoff */}
+      <header className="md:hidden sticky top-0 z-40 flex-none border-b border-border bg-background/95 backdrop-blur pt-[env(safe-area-inset-top)]">
+        <div className="flex h-14 items-center px-4">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-4 w-4 text-primary-foreground"
+              >
+                <path d="M10 17h4V5H2v12h3" />
+                <path d="M20 17h2v-3.34a4 4 0 0 0-1.17-2.83L19 9h-5v8h1" />
+                <circle cx="7.5" cy="17.5" r="2.5" />
+                <circle cx="17.5" cy="17.5" r="2.5" />
+              </svg>
+            </div>
+            <span className="font-bold text-foreground">FleetHub</span>
           </div>
-          <span className="font-bold text-foreground">FleetHub</span>
+          {/* Connection Status on Mobile */}
+          {connectionStatus && (
+            <div className="ml-auto">
+              {connectionStatus === "connected" && (
+                <div className="flex items-center gap-1.5 text-xs text-green-400">
+                  <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                  Live
+                </div>
+              )}
+              {connectionStatus === "connecting" && (
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span className="h-2 w-2 rounded-full bg-yellow-500 animate-pulse" />
+                  Connecting
+                </div>
+              )}
+              {connectionStatus === "disconnected" && (
+                <div className="flex items-center gap-1.5 text-xs text-destructive">
+                  <span className="h-2 w-2 rounded-full bg-destructive" />
+                  Offline
+                </div>
+              )}
+            </div>
+          )}
         </div>
-        {/* Connection Status on Mobile */}
-        {connectionStatus && (
-          <div className="ml-auto">
-            {connectionStatus === "connected" && (
-              <div className="flex items-center gap-1.5 text-xs text-green-400">
-                <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                Live
-              </div>
-            )}
-            {connectionStatus === "connecting" && (
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <span className="h-2 w-2 rounded-full bg-yellow-500 animate-pulse" />
-                Connecting
-              </div>
-            )}
-            {connectionStatus === "disconnected" && (
-              <div className="flex items-center gap-1.5 text-xs text-destructive">
-                <span className="h-2 w-2 rounded-full bg-destructive" />
-                Offline
-              </div>
-            )}
-          </div>
-        )}
       </header>
 
       {/* Main Content - Dynamic padding ensures content is never cut off by footer */}

@@ -17,7 +17,8 @@ import {
   Mail,
   FileText,
   LogOut,
-  Building2
+  Building2,
+  BookOpen
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NavLink } from "@/components/NavLink";
@@ -60,7 +61,7 @@ const ADMIN_NAV_ITEMS = [
     label: "System", 
     path: "/admin/storage", 
     icon: Database,
-    activeMatch: /^\/admin\/(storage|alerts|assignments|privacy-settings|directory|system)/
+    activeMatch: /^\/admin\/(storage|alerts|assignments|privacy-settings|directory|system|resources|email-templates|report-templates)/
   },
 ];
 
@@ -72,6 +73,7 @@ const MORE_MENU_ITEMS = [
   { title: "Assignments", url: "/admin/assignments", icon: Link2 },
   { title: "Email Templates", url: "/admin/email-templates", icon: Mail },
   { title: "Report Templates", url: "/admin/report-templates", icon: FileText },
+  { title: "Resources", url: "/admin/resources", icon: BookOpen },
   { title: "Privacy & Terms", url: "/admin/privacy-settings", icon: Shield },
   { title: "Directory", url: "/admin/directory", icon: Building2 },
 ];
@@ -169,8 +171,8 @@ export function AdminBottomNav() {
               </span>
             </button>
           </SheetTrigger>
-          <SheetContent side="bottom" className="h-auto max-h-[70vh] rounded-t-xl">
-            <SheetHeader className="pb-4">
+          <SheetContent side="bottom" className="max-h-[85vh] rounded-t-xl flex flex-col p-0 gap-0">
+            <SheetHeader className="p-4 pt-6 pb-2 text-left border-b border-border/10">
               <SheetTitle className="flex items-center gap-2">
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
                   <MoreHorizontal className="h-4 w-4 text-primary-foreground" />
@@ -178,7 +180,7 @@ export function AdminBottomNav() {
                 More Options
               </SheetTitle>
             </SheetHeader>
-            <div className="space-y-2">
+            <div className="space-y-2 overflow-y-auto flex-1 p-4 pb-8">
               {MORE_MENU_ITEMS.map((item) => {
                 const isActive = location.pathname.startsWith(item.url) || 
                   (item.url === "/" && location.pathname === "/");

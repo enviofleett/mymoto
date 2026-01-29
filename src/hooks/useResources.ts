@@ -208,7 +208,8 @@ export function useCreateCategory() {
       toast.success("Category created successfully");
     },
     onError: (error: Error) => {
-      toast.error("Failed to create category", { description: error.message });
+      console.error("Create Category Error:", error);
+      toast.error("Failed to create category", { description: error.message || "An unknown error occurred" });
     },
   });
 }
@@ -239,7 +240,8 @@ export function useUpdateCategory() {
       toast.success("Category updated successfully");
     },
     onError: (error: Error) => {
-      toast.error("Failed to update category", { description: error.message });
+      console.error("Update Category Error:", error);
+      toast.error("Failed to update category", { description: error.message || "An unknown error occurred" });
     },
   });
 }
@@ -268,7 +270,8 @@ export function useDeleteCategory() {
       toast.success("Category deleted successfully");
     },
     onError: (error: Error) => {
-      toast.error("Failed to delete category", { description: error.message });
+      console.error("Delete Category Error:", error);
+      toast.error("Failed to delete category", { description: error.message || "An unknown error occurred" });
     },
   });
 }
@@ -314,7 +317,8 @@ export function useCreatePost() {
       toast.success("Post created successfully");
     },
     onError: (error: Error) => {
-      toast.error("Failed to create post", { description: error.message });
+      console.error("Create Post Error:", error);
+      toast.error("Failed to create post", { description: error.message || "An unknown error occurred" });
     },
   });
 }
@@ -346,7 +350,8 @@ export function useUpdatePost() {
       toast.success("Post updated successfully");
     },
     onError: (error: Error) => {
-      toast.error("Failed to update post", { description: error.message });
+      console.error("Update Post Error:", error);
+      toast.error("Failed to update post", { description: error.message || "An unknown error occurred" });
     },
   });
 }
@@ -375,7 +380,8 @@ export function useDeletePost() {
       toast.success("Post deleted successfully");
     },
     onError: (error: Error) => {
-      toast.error("Failed to delete post", { description: error.message });
+      console.error("Delete Post Error:", error);
+      toast.error("Failed to delete post", { description: error.message || "An unknown error occurred" });
     },
   });
 }

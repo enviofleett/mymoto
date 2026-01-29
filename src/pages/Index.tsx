@@ -1,4 +1,5 @@
 import { Wifi, MapPin, BatteryWarning, Truck, RefreshCw, UserPlus, Plus, Brain } from "lucide-react";
+import { PullToRefresh } from "@/components/ui/pull-to-refresh";
 import { DashboardLayout } from "@/components/layouts/DashboardLayout";
 import { MetricCard } from "@/components/fleet/MetricCard";
 import { InsightHistory } from "@/components/fleet/InsightHistory";
@@ -44,13 +45,14 @@ const Index = () => {
     },
   ];
 
-  const handleRefreshGPS = () => {
-    refetch();
+  const handleRefreshGPS = async () => {
+    await refetch();
   };
 
   return (
     <DashboardLayout connectionStatus={connectionStatus}>
-      <div className="space-y-6">
+      <PullToRefresh onRefresh={handleRefreshGPS}>
+        <div className="space-y-6">
         {/* Page Header */}
         <div>
           <h1 className="text-2xl font-bold text-foreground">Command Center</h1>
@@ -135,6 +137,7 @@ const Index = () => {
           </CardContent>
         </Card>
       </div>
+      </PullToRefresh>
     </DashboardLayout>
   );
 };

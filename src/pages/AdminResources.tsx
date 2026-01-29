@@ -112,14 +112,19 @@ export default function AdminResources() {
       display_order: categoryOrder,
     };
 
-    if (editingCategory) {
-      await updateCategory.mutateAsync({ id: editingCategory.id, ...data });
-    } else {
-      await createCategory.mutateAsync(data);
-    }
+    try {
+      if (editingCategory) {
+        await updateCategory.mutateAsync({ id: editingCategory.id, ...data });
+      } else {
+        await createCategory.mutateAsync(data);
+      }
 
-    setCategoryDialogOpen(false);
-    resetCategoryForm();
+      setCategoryDialogOpen(false);
+      resetCategoryForm();
+    } catch (error) {
+      console.error("Failed to save category:", error);
+      // Toast is already handled by the hook
+    }
   };
 
   const resetCategoryForm = () => {
@@ -134,7 +139,11 @@ export default function AdminResources() {
     if (!confirm("Are you sure you want to delete this category? Posts in this category will be unassigned.")) {
       return;
     }
-    await deleteCategory.mutateAsync(id);
+    try {
+      await deleteCategory.mutateAsync(id);
+    } catch (error) {
+      console.error("Failed to delete category:", error);
+    }
   };
 
   const handleOpenPostDialog = (post?: ResourcePost) => {
@@ -184,14 +193,18 @@ export default function AdminResources() {
       display_order: postOrder,
     };
 
-    if (editingPost) {
-      await updatePost.mutateAsync({ id: editingPost.id, ...data });
-    } else {
-      await createPost.mutateAsync(data);
-    }
+    try {
+      if (editingPost) {
+        await updatePost.mutateAsync({ id: editingPost.id, ...data });
+      } else {
+        await createPost.mutateAsync(data);
+      }
 
-    setPostDialogOpen(false);
-    resetPostForm();
+      setPostDialogOpen(false);
+      resetPostForm();
+    } catch (error) {
+      console.error("Failed to save post:", error);
+    }
   };
 
   const resetPostForm = () => {
@@ -209,7 +222,11 @@ export default function AdminResources() {
     if (!confirm("Are you sure you want to delete this post?")) {
       return;
     }
-    await deletePost.mutateAsync(id);
+    try {
+      await deletePost.mutateAsync(id);
+    } catch (error) {
+      console.error("Failed to delete post:", error);
+    }
   };
 
   const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>, isFeatured = false) => {

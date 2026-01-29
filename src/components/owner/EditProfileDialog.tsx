@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, User } from "lucide-react";
+import { Loader2, User, Camera } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface EditProfileDialogProps {
@@ -24,6 +24,7 @@ interface UserProfile {
   name: string;
   phone: string | null;
   email: string | null;
+  avatar_url: string | null;
 }
 
 export function EditProfileDialog({ 
@@ -34,9 +35,11 @@ export function EditProfileDialog({
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [displayName, setDisplayName] = useState("");
   const [phone, setPhone] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (open && user) {
@@ -51,7 +54,7 @@ export function EditProfileDialog({
     try {
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, name, phone, email")
+        .select("id, name, phone, email, avatar_url")
         .eq("user_id", user.id)
         .maybeSingle();
 
@@ -61,16 +64,59 @@ export function EditProfileDialog({
         setProfile(data);
         setDisplayName(data.name || "");
         setPhone(data.phone || "");
+        setAvatarUrl(data.avatar_url);
       } else {
         // No profile yet, use email prefix as default name
         setDisplayName(user.email?.split("@")[0] || "");
         setPhone("");
+        setAvatarUrl(null);
       }
     } catch (error) {
       console.error("Error fetching profile:", error);
       toast.error("Failed to load profile");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !user) return;
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please upload an image file");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image must be under 5MB");
+      return;
+    }
+
+    setUploadingAvatar(true);
+    try {
+      const fileExt = file.name.split(".").pop();
+      const fileName = `${Math.random()}.${fileExt}`;
+      const filePath = `profiles/${user.id}/${fileName}`;
+
+      // Upload to storage
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage
+        .from("avatars")
+        .getPublicUrl(filePath);
+
+      setAvatarUrl(urlData.publicUrl);
+      toast.success("Avatar uploaded successfully");
+    } catch (error: any) {
+      console.error("Error uploading avatar:", error);
+      toast.error("Failed to upload avatar");
+    } finally {
+      setUploadingAvatar(false);
     }
   };
 
@@ -90,6 +136,7 @@ export function EditProfileDialog({
           .update({
             name: displayName.trim(),
             phone: phone.trim() || null,
+            avatar_url: avatarUrl,
           })
           .eq("id", profile.id);
 
@@ -103,6 +150,7 @@ export function EditProfileDialog({
             name: displayName.trim(),
             phone: phone.trim() || null,
             email: user.email,
+            avatar_url: avatarUrl,
           });
 
         if (error) throw error;
@@ -138,7 +186,48 @@ export function EditProfileDialog({
             </div>
           </div>
         ) : (
-          <div className="space-y-4 py-2">
+          <div className="space-y-6 py-2">
+            {/* Avatar Upload */}
+            <div className="flex flex-col items-center justify-center gap-3">
+              <div className="relative group">
+                <div className="w-24 h-24 rounded-full shadow-neumorphic bg-card p-1 overflow-hidden">
+                  {avatarUrl ? (
+                    <img 
+                      src={avatarUrl} 
+                      alt="Profile" 
+                      className="w-full h-full rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full rounded-full bg-muted/20 flex items-center justify-center">
+                      <User className="h-10 w-10 text-muted-foreground" />
+                    </div>
+                  )}
+                </div>
+                
+                <label 
+                  htmlFor="avatar-upload" 
+                  className="absolute bottom-0 right-0 w-8 h-8 rounded-full shadow-neumorphic-sm bg-card flex items-center justify-center cursor-pointer hover:text-accent transition-colors"
+                >
+                  {uploadingAvatar ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Camera className="h-4 w-4" />
+                  )}
+                  <input
+                    id="avatar-upload"
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleAvatarUpload}
+                    disabled={uploadingAvatar}
+                  />
+                </label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Tap the camera icon to update your photo
+              </p>
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="displayName" className="text-foreground">Display Name</Label>
               <Input

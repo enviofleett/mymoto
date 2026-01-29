@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
+import { PullToRefresh } from "@/components/ui/pull-to-refresh";
 import { DashboardLayout } from "@/components/layouts/DashboardLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -19,7 +21,8 @@ import {
   Power,
   History,
   Bell,
-  Wallet
+  Wallet,
+  LogOut
 } from "lucide-react";
 import { format } from "date-fns";
 import { VehicleCard } from "@/components/profile/VehicleCard";
@@ -61,7 +64,7 @@ interface AssignedVehicle {
 }
 
 const Profile = () => {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, signOut } = useAuth();
   const [searchParams] = useSearchParams();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [assignedVehicles, setAssignedVehicles] = useState<AssignedVehicle[]>([]);
@@ -69,6 +72,14 @@ const Profile = () => {
   const [playbackVehicle, setPlaybackVehicle] = useState<{ deviceId: string; deviceName: string } | null>(null);
   
   const defaultTab = searchParams.get("tab") || "vehicles";
+
+  const handleLogout = async () => {
+    try {
+      await signOut();
+    } catch (error) {
+      console.error("Error signing out:", error);
+    }
+  };
 
   useEffect(() => {
     if (user) {
@@ -209,8 +220,14 @@ const Profile = () => {
   if (!profile) {
     // For admins, show settings tabs even without a profile
     if (isAdmin) {
+      const handleRefresh = async () => {
+        // For now just wait a bit, as admin profile doesn't have data fetching
+        await new Promise(resolve => setTimeout(resolve, 500));
+      };
+
       return (
         <DashboardLayout>
+          <PullToRefresh onRefresh={handleRefresh}>
           <div className="space-y-6">
             <Card className="border-border bg-card">
               <CardContent className="p-8">
@@ -238,14 +255,37 @@ const Profile = () => {
                   <Mail className="h-4 w-4 mr-2" />
                   Email Settings
                 </TabsTrigger>
+                <TabsTrigger value="logout" className="data-[state=active]:bg-background">
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Logout
+                </TabsTrigger>
               </TabsList>
 
               {/* Email Settings Tab */}
               <TabsContent value="email" className="mt-4">
                 <EmailSettings />
               </TabsContent>
+
+              {/* Logout Tab */}
+              <TabsContent value="logout" className="mt-4">
+                <Card className="border-border bg-card">
+                  <CardContent className="p-8 text-center">
+                    <LogOut className="h-12 w-12 mx-auto text-destructive mb-4" />
+                    <h3 className="text-lg font-medium text-foreground mb-2">Are you sure you want to log out?</h3>
+                    <p className="text-muted-foreground mb-6">You will be redirected to the login page.</p>
+                    <Button 
+                      variant="destructive" 
+                      className="w-full sm:w-auto min-w-[200px]" 
+                      onClick={handleLogout}
+                    >
+                      Log Out
+                    </Button>
+                  </CardContent>
+                </Card>
+              </TabsContent>
             </Tabs>
           </div>
+          </PullToRefresh>
         </DashboardLayout>
       );
     }
@@ -292,9 +332,14 @@ const Profile = () => {
   const movingVehicles = assignedVehicles.filter(v => v.position?.speed && v.position.speed > 0).length;
   const overspeedingCount = assignedVehicles.filter(v => v.position?.is_overspeeding).length;
 
+  const handleRefresh = async () => {
+    await fetchUserData();
+  };
+
   return (
     <DashboardLayout>
-      <div className="space-y-6">
+      <PullToRefresh onRefresh={handleRefresh}>
+        <div className="space-y-6">
         {/* Profile Header */}
         <Card className="border-border bg-gradient-to-br from-card to-card/80">
           <CardContent className="p-6">
@@ -431,6 +476,10 @@ const Profile = () => {
               <Mail className="h-4 w-4 mr-2" />
               Email Settings
             </TabsTrigger>
+            <TabsTrigger value="logout" className="data-[state=active]:bg-background">
+              <LogOut className="h-4 w-4 mr-2" />
+              Logout
+            </TabsTrigger>
           </TabsList>
 
           {/* Vehicles Tab */}
@@ -492,8 +541,27 @@ const Profile = () => {
           <TabsContent value="email" className="mt-4">
             <EmailSettings />
           </TabsContent>
+
+          {/* Logout Tab */}
+          <TabsContent value="logout" className="mt-4">
+            <Card className="border-border bg-card">
+              <CardContent className="p-8 text-center">
+                <LogOut className="h-12 w-12 mx-auto text-destructive mb-4" />
+                <h3 className="text-lg font-medium text-foreground mb-2">Are you sure you want to log out?</h3>
+                <p className="text-muted-foreground mb-6">You will be redirected to the login page.</p>
+                <Button 
+                  variant="destructive" 
+                  className="w-full sm:w-auto min-w-[200px]" 
+                  onClick={handleLogout}
+                >
+                  Log Out
+                </Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
       </div>
+      </PullToRefresh>
     </DashboardLayout>
   );
 };

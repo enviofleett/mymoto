@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { PullToRefresh } from "@/components/ui/pull-to-refresh";
 import { DashboardLayout } from "@/components/layouts/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -142,9 +143,14 @@ const Insights = () => {
     ? Math.round(insights.reduce((acc, i) => acc + i.offline_count, 0) / totalInsights)
     : 0;
 
+  const handleRefresh = async () => {
+    await fetchInsights();
+  };
+
   return (
     <DashboardLayout>
-      <div className="space-y-6">
+      <PullToRefresh onRefresh={handleRefresh}>
+        <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
@@ -498,6 +504,7 @@ const Insights = () => {
           </CardContent>
         </Card>
       </div>
+      </PullToRefresh>
     </DashboardLayout>
   );
 };

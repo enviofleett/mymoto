@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Lock,
   Unlock,
@@ -91,6 +92,40 @@ export function CommandHistory({ deviceId }: CommandHistoryProps) {
     };
   }, [deviceId]);
 
+  const confirmCommand = async (commandId: string) => {
+    try {
+      toast({
+        title: "Confirming Command...",
+        description: "Please wait while we process your request.",
+      });
+
+      const { data, error } = await supabase.functions.invoke('execute-vehicle-command', {
+        body: { command_id: commandId, skip_confirmation: true }
+      });
+      
+      if (error) throw error;
+      
+      if (!data.success) {
+        throw new Error(data.message || "Command confirmation failed");
+      }
+
+      toast({
+        title: "Command Confirmed",
+        description: "The command is now being executed.",
+      });
+      
+      // Refresh list
+      fetchCommands();
+    } catch (error: any) {
+      console.error('Error confirming command:', error);
+      toast({
+        variant: "destructive",
+        title: "Confirmation Failed",
+        description: error.message || "Could not confirm command",
+      });
+    }
+  };
+
   const fetchCommands = async () => {
     setLoading(true);
     try {
@@ -164,6 +199,16 @@ export function CommandHistory({ deviceId }: CommandHistoryProps) {
                     )}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
+                    {command.status === 'pending' && (
+                      <Button 
+                        size="sm" 
+                        variant="default" 
+                        className="h-7 text-xs bg-yellow-600 hover:bg-yellow-700 text-white mr-1 px-2"
+                        onClick={() => confirmCommand(command.id)}
+                      >
+                        Confirm
+                      </Button>
+                    )}
                     {isSuccess && <CheckCircle className="h-4 w-4 text-green-600" />}
                     {isFailed && <AlertOctagon className="h-4 w-4 text-red-600" />}
                     {isPending && <Loader2 className="h-4 w-4 text-yellow-600 animate-spin" />}

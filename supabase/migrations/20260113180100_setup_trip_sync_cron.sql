@@ -1,5 +1,5 @@
 -- Enable pg_cron extension (if not already enabled)
-CREATE EXTENSION IF NOT EXISTS pg_cron;
+-- CREATE EXTENSION IF NOT EXISTS pg_cron;
 
 -- Grant pg_cron permissions to postgres role
 GRANT USAGE ON SCHEMA cron TO postgres;
@@ -28,7 +28,7 @@ SELECT cron.schedule(
 -- Set the Supabase URL and service role key as database settings
 -- These will be used by the cron job to call the Edge Function
 -- Replace these values with your actual Supabase credentials
-ALTER DATABASE postgres SET "app.settings.supabase_url" = 'https://cmvpnsqiefbsqkwnraka.supabase.co';
+-- ALTER DATABASE postgres SET "app.settings.supabase_url" = 'https://cmvpnsqiefbsqkwnraka.supabase.co';
 
 -- Note: The service role key should be set via the Supabase dashboard or CLI
 -- For security, do NOT hardcode it in migrations

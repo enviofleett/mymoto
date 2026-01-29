@@ -18,7 +18,7 @@ export default function OwnerWallet() {
         </div>
 
         {/* Content */}
-        <div className="flex-1 p-4">
+        <div className="flex-1 px-4 pb-32 pt-4">
           <WalletSection />
         </div>
       </div>

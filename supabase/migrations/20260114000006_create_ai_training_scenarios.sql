@@ -1,7 +1,7 @@
 -- AI Training Scenarios System
 -- Allows admins to train the AI on how to respond to specific types of questions
 
-CREATE TABLE public.ai_training_scenarios (
+CREATE TABLE IF NOT EXISTS public.ai_training_scenarios (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   
   -- Scenario identification
@@ -43,22 +43,24 @@ CREATE TABLE public.ai_training_scenarios (
 );
 
 -- Indexes for efficient querying
-CREATE INDEX idx_ai_scenarios_type ON public.ai_training_scenarios(scenario_type, is_active);
-CREATE INDEX idx_ai_scenarios_priority ON public.ai_training_scenarios(priority DESC, is_active);
-CREATE INDEX idx_ai_scenarios_active ON public.ai_training_scenarios(is_active) WHERE is_active = true;
-CREATE INDEX idx_ai_scenarios_tags ON public.ai_training_scenarios USING GIN(tags);
+CREATE INDEX IF NOT EXISTS idx_ai_scenarios_type ON public.ai_training_scenarios(scenario_type, is_active);
+CREATE INDEX IF NOT EXISTS idx_ai_scenarios_priority ON public.ai_training_scenarios(priority DESC, is_active);
+CREATE INDEX IF NOT EXISTS idx_ai_scenarios_active ON public.ai_training_scenarios(is_active) WHERE is_active = true;
+CREATE INDEX IF NOT EXISTS idx_ai_scenarios_tags ON public.ai_training_scenarios USING GIN(tags);
 
 -- Enable RLS
 ALTER TABLE public.ai_training_scenarios ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
 -- Everyone can read active scenarios (needed for AI to use them)
+DROP POLICY IF EXISTS "Anyone can read active scenarios" ON public.ai_training_scenarios;
 CREATE POLICY "Anyone can read active scenarios"
 ON public.ai_training_scenarios
 FOR SELECT
 USING (is_active = true);
 
 -- Admins can manage all scenarios
+DROP POLICY IF EXISTS "Admins can manage scenarios" ON public.ai_training_scenarios;
 CREATE POLICY "Admins can manage scenarios"
 ON public.ai_training_scenarios
 FOR ALL
@@ -66,6 +68,7 @@ USING (has_role(auth.uid(), 'admin'::app_role))
 WITH CHECK (has_role(auth.uid(), 'admin'::app_role));
 
 -- Service role can manage scenarios (for edge functions)
+DROP POLICY IF EXISTS "Service role can manage scenarios" ON public.ai_training_scenarios;
 CREATE POLICY "Service role can manage scenarios"
 ON public.ai_training_scenarios
 FOR ALL
@@ -73,6 +76,7 @@ USING (true)
 WITH CHECK (true);
 
 -- Trigger for updated_at
+DROP TRIGGER IF EXISTS update_ai_scenarios_updated_at ON public.ai_training_scenarios;
 CREATE TRIGGER update_ai_scenarios_updated_at
 BEFORE UPDATE ON public.ai_training_scenarios
 FOR EACH ROW

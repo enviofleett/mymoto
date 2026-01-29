@@ -28,6 +28,7 @@ WHERE event_id IS NOT NULL;
 ALTER TABLE public.edge_function_errors ENABLE ROW LEVEL SECURITY;
 
 -- Service role can manage all error logs
+DROP POLICY IF EXISTS "Service role can manage error logs" ON public.edge_function_errors;
 CREATE POLICY "Service role can manage error logs"
 ON public.edge_function_errors FOR ALL
 TO service_role
@@ -35,6 +36,7 @@ USING (true)
 WITH CHECK (true);
 
 -- Users cannot see error logs (privacy)
+DROP POLICY IF EXISTS "Users cannot see error logs" ON public.edge_function_errors;
 CREATE POLICY "Users cannot see error logs"
 ON public.edge_function_errors FOR SELECT
 TO authenticated

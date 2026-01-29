@@ -8,11 +8,12 @@ const corsHeaders = {
 }
 
 interface CommandRequest {
-  device_id: string
-  command_type: string
+  device_id?: string
+  command_type?: string
   payload?: Record<string, unknown>
   user_id?: string
   skip_confirmation?: boolean
+  command_id?: string
 }
 
 interface CommandResult {
@@ -21,6 +22,8 @@ interface CommandResult {
   command_id?: string
   executed_at?: string
   data?: Record<string, unknown>
+  requires_confirmation?: boolean
+  status?: string
 }
 
 // Commands that require confirmation before execution
@@ -217,19 +220,26 @@ serve(async (req) => {
   }
 
   try {
-    const { device_id, command_type, payload = {}, user_id, skip_confirmation = false }: CommandRequest = await req.json()
+    const body: CommandRequest = await req.json()
+    // Destructure with default values, but allow command_id flow to override validation
+    let { device_id, command_type, payload = {}, user_id, skip_confirmation = false, command_id } = body
 
-    if (!device_id || !command_type) {
+    // Validation: If no command_id, we need device_id and command_type
+    if (!command_id && (!device_id || !command_type)) {
       return new Response(JSON.stringify({ 
         success: false, 
-        message: 'Missing required fields: device_id and command_type' 
+        message: 'Missing required fields: device_id and command_type (or command_id)' 
       }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    console.log(`[Command] Received: ${command_type} for device: ${device_id}`)
+    if (command_id) {
+        console.log(`[Command] Processing existing command: ${command_id}`)
+    } else {
+        console.log(`[Command] Received: ${command_type} for device: ${device_id}`)
+    }
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -263,79 +273,158 @@ serve(async (req) => {
       _role: 'admin'
     })
 
-    if (!isAdmin) {
-      // Check if user has assignment via profiles table
-      // vehicle_assignments.profile_id references profiles.id, and profiles.user_id = auth.uid()
-      // First, get the user's profile_id
-      const { data: userProfile, error: profileError } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('user_id', effectiveUserId)
-        .maybeSingle()
+    // Variable to hold the command log (either new or existing)
+    let commandLog: any = null;
 
-      if (profileError || !userProfile) {
-        console.log(`[Command] No profile found for user ${effectiveUserId}`)
-        return new Response(JSON.stringify({ 
-          success: false, 
-          message: 'You do not have permission to control this vehicle' 
-        }), {
-          status: 403,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    // SCENARIO 1: Confirming an existing pending command
+    if (command_id && skip_confirmation) {
+        // Fetch existing log
+        const { data: existingLog, error: fetchError } = await supabase
+            .from('vehicle_command_logs')
+            .select('*')
+            .eq('id', command_id)
+            .single();
+
+        if (fetchError || !existingLog) {
+            return new Response(JSON.stringify({ 
+                success: false, 
+                message: 'Command not found' 
+            }), {
+                status: 404,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+        }
+
+        // Check ownership/permission for this specific log
+        if (!isAdmin && existingLog.user_id !== effectiveUserId) {
+            return new Response(JSON.stringify({ 
+                success: false, 
+                message: 'Permission denied for this command' 
+            }), {
+                status: 403,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+        }
+
+        // Ensure it is pending
+        if (existingLog.status !== 'pending') {
+            return new Response(JSON.stringify({ 
+                success: false, 
+                message: `Command is not pending (status: ${existingLog.status})` 
+            }), {
+                status: 400, // Bad Request
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+        }
+
+        // Use data from the existing log
+        device_id = existingLog.device_id;
+        command_type = existingLog.command_type;
+        payload = existingLog.payload || {};
+
+        // Update status to executing
+        const { data: updatedLog, error: updateError } = await supabase
+            .from('vehicle_command_logs')
+            .update({
+                status: 'executing',
+                confirmed_at: new Date().toISOString(),
+                confirmed_by: effectiveUserId
+            })
+            .eq('id', command_id)
+            .select()
+            .single();
+
+        if (updateError) {
+             console.error('[Command] Failed to update existing command log:', updateError)
+             throw updateError;
+        }
+        
+        commandLog = updatedLog;
+        console.log(`[Command] Confirmed and executing existing command: ${command_id}`);
+
+    } 
+    // SCENARIO 2: Creating a new command (or confirming by re-sending data, though Scenario 1 is preferred for confirmation)
+    else {
+        // If we got here via command_id but no skip_confirmation, it's invalid
+        if (command_id && !skip_confirmation) {
+             // This implies re-fetching info? For now treat as error or ignore command_id if device_id present
+             if (!device_id) {
+                 return new Response(JSON.stringify({ success: false, message: 'Invalid request' }), { status: 400 });
+             }
+        }
+
+        // Verify vehicle permission (same as before)
+        if (!isAdmin) {
+            // Check if user has assignment via profiles table
+            const { data: userProfile, error: profileError } = await supabase
+                .from('profiles')
+                .select('id')
+                .eq('user_id', effectiveUserId)
+                .maybeSingle()
+
+            if (profileError || !userProfile) {
+                return new Response(JSON.stringify({ 
+                success: false, 
+                message: 'You do not have permission to control this vehicle' 
+                }), {
+                status: 403,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                })
+            }
+
+            const { data: assignment, error: assignmentError } = await supabase
+                .from('vehicle_assignments')
+                .select('device_id, profile_id')
+                .eq('device_id', device_id)
+                .eq('profile_id', userProfile.id)
+                .maybeSingle()
+
+            if (assignmentError || !assignment) {
+                return new Response(JSON.stringify({ 
+                success: false, 
+                message: 'You do not have permission to control this vehicle' 
+                }), {
+                status: 403,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                })
+            }
+        }
+
+        // Check if command requires confirmation
+        const requiresConfirmation = COMMANDS_REQUIRING_CONFIRMATION.includes(command_type!)
+        
+        // Log the command attempt
+        const { data: newLog, error: logError } = await supabase
+        .from('vehicle_command_logs')
+        .insert({
+            device_id,
+            user_id: effectiveUserId,
+            command_type,
+            payload,
+            requires_confirmation: requiresConfirmation,
+            status: requiresConfirmation && !skip_confirmation ? 'pending' : 'executing'
         })
-      }
+        .select()
+        .single()
 
-      // Now check if this profile has assignment for this device
-      const { data: assignment, error: assignmentError } = await supabase
-        .from('vehicle_assignments')
-        .select('device_id, profile_id')
-        .eq('device_id', device_id)
-        .eq('profile_id', userProfile.id)
-        .maybeSingle()
-
-      if (assignmentError || !assignment) {
-        console.log(`[Command] Permission denied for user ${effectiveUserId} (profile ${userProfile.id}) on device ${device_id}`)
+        if (logError) {
+        console.error('[Command] Failed to log command:', logError)
         return new Response(JSON.stringify({ 
-          success: false, 
-          message: 'You do not have permission to control this vehicle' 
+            success: false, 
+            message: 'Failed to log command' 
         }), {
-          status: 403,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
-      }
+        }
+        
+        commandLog = newLog;
     }
 
-    // Check if command requires confirmation
-    const requiresConfirmation = COMMANDS_REQUIRING_CONFIRMATION.includes(command_type)
-    
-    // Log the command attempt
-    const { data: commandLog, error: logError } = await supabase
-      .from('vehicle_command_logs')
-      .insert({
-        device_id,
-        user_id: effectiveUserId,
-        command_type,
-        payload,
-        requires_confirmation: requiresConfirmation,
-        status: requiresConfirmation && !skip_confirmation ? 'pending' : 'executing'
-      })
-      .select()
-      .single()
+    console.log(`[Command] Processing command ${commandLog.id} with status: ${commandLog.status}`)
 
-    if (logError) {
-      console.error('[Command] Failed to log command:', logError)
-      return new Response(JSON.stringify({ 
-        success: false, 
-        message: 'Failed to log command' 
-      }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
-
-    console.log(`[Command] Logged command ${commandLog.id} with status: ${commandLog.status}`)
-
-    // If requires confirmation and not skipped, return pending status
-    if (requiresConfirmation && !skip_confirmation) {
+    // If requires confirmation and is pending, return early
+    if (commandLog.status === 'pending') {
       console.log(`[Command] ${command_type} requires confirmation - awaiting approval`)
       
       return new Response(JSON.stringify({
@@ -352,16 +441,21 @@ serve(async (req) => {
     // Execute the command
     let executionResult: { success: boolean; response?: unknown; error?: string }
     const now = new Date().toISOString()
+    
+    // Ensure command_type and device_id are available (they should be from commandLog)
+    const activeCommandType = commandLog.command_type;
+    const activeDeviceId = commandLog.device_id;
+    const activePayload = commandLog.payload || {};
 
     // Check if this is a local-only command
-    if (LOCAL_ONLY_COMMANDS.includes(command_type)) {
-      executionResult = await handleLocalCommand(supabase, device_id, command_type, payload)
+    if (LOCAL_ONLY_COMMANDS.includes(activeCommandType)) {
+      executionResult = await handleLocalCommand(supabase, activeDeviceId, activeCommandType, activePayload)
     } else {
       // Get GPS51 command string
-      const gps51Command = GPS51_COMMANDS[command_type]
+      const gps51Command = GPS51_COMMANDS[activeCommandType]
       
       if (!gps51Command) {
-        executionResult = { success: false, error: `Unsupported or restricted command type: ${command_type}` }
+        executionResult = { success: false, error: `Unsupported or restricted command type: ${activeCommandType}` }
       } else {
         // Get proxy URL and token
         const DO_PROXY_URL = Deno.env.get('DO_PROXY_URL')
@@ -372,13 +466,13 @@ serve(async (req) => {
             const { token, serverid } = await getValidGps51Token(supabase)
             
             // Send command to GPS51 (with centralized rate limiting)
-            const sendResult = await callGps51Command(supabase, DO_PROXY_URL, token, serverid, device_id, gps51Command)
+            const sendResult = await callGps51Command(supabase, DO_PROXY_URL, token, serverid, activeDeviceId, gps51Command)
             
             if (!sendResult.success) {
               executionResult = { success: false, error: sendResult.error }
             } else if (sendResult.commandId) {
               // Poll for result (with extended timeout for critical commands like shutdown/immobilize)
-              const maxAttempts = (command_type === 'shutdown_engine' || command_type === 'immobilize_engine') ? 10 : 5
+              const maxAttempts = (activeCommandType === 'shutdown_engine' || activeCommandType === 'immobilize_engine') ? 10 : 5
               const pollResult = await pollCommandResult(supabase, DO_PROXY_URL, token, serverid, sendResult.commandId, maxAttempts)
               executionResult = {
                 success: pollResult.success,
@@ -412,6 +506,13 @@ serve(async (req) => {
     }
 
     // Update command log with result
+    // Note: If we are confirming, confirmed_at was already set. If not, set it now if it required confirmation?
+    // Actually, if we just executed a new command that didn't require confirmation, confirmed_at is null.
+    // If we executed a command that required confirmation but we skipped it (e.g. from UI), we should probably set confirmed_at.
+    
+    // Check if original command required confirmation (we can check the log or the type)
+    const wasConfirmed = commandLog.requires_confirmation || COMMANDS_REQUIRING_CONFIRMATION.includes(activeCommandType);
+
     await supabase
       .from('vehicle_command_logs')
       .update({
@@ -419,21 +520,22 @@ serve(async (req) => {
         result: executionResult.response as Record<string, unknown>,
         error_message: executionResult.error,
         executed_at: now,
-        confirmed_at: requiresConfirmation ? now : null,
-        confirmed_by: requiresConfirmation ? effectiveUserId : null
+        // Only update confirmed_at if it's null (it might have been set above in SCENARIO 1)
+        confirmed_at: commandLog.confirmed_at || (wasConfirmed ? now : null),
+        confirmed_by: commandLog.confirmed_by || (wasConfirmed ? effectiveUserId : null)
       })
       .eq('id', commandLog.id)
 
     console.log(`[Command] Execution complete for ${commandLog.id}: ${executionResult.success ? 'SUCCESS' : 'FAILED'}`)
 
     // Enhanced success message for critical commands
-    let successMessage = `Command '${command_type}' executed successfully`
+    let successMessage = `Command '${activeCommandType}' executed successfully`
     if (executionResult.success) {
-      if (command_type === 'shutdown_engine') {
+      if (activeCommandType === 'shutdown_engine') {
         successMessage = 'Engine shutdown command sent to GPS51 platform with password authentication. The vehicle engine will be shut down.'
-      } else if (command_type === 'immobilize_engine') {
+      } else if (activeCommandType === 'immobilize_engine') {
         successMessage = 'Immobilization command sent to GPS51 platform. Vehicle fuel/power has been cut.'
-      } else if (command_type === 'demobilize_engine') {
+      } else if (activeCommandType === 'demobilize_engine') {
         successMessage = 'Demobilization command sent to GPS51 platform. Vehicle fuel/power has been restored.'
       }
     }

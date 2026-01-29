@@ -32,6 +32,7 @@ ALTER TABLE public.acc_state_history ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
 -- Authenticated users can read ACC state history for their assigned vehicles
+DROP POLICY IF EXISTS "Authenticated users can read ACC state history" ON public.acc_state_history;
 CREATE POLICY "Authenticated users can read ACC state history"
   ON public.acc_state_history
   FOR SELECT
@@ -45,6 +46,7 @@ CREATE POLICY "Authenticated users can read ACC state history"
   );
 
 -- Service role can manage all ACC state history
+DROP POLICY IF EXISTS "Service role can manage ACC state history" ON public.acc_state_history;
 CREATE POLICY "Service role can manage ACC state history"
   ON public.acc_state_history
   FOR ALL

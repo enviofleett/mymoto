@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { PullToRefresh } from "@/components/ui/pull-to-refresh";
 import { DashboardLayout } from "@/components/layouts/DashboardLayout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -243,10 +244,15 @@ const Fleet = () => {
     (v) => v.lat !== null && v.lon !== null && v.lat !== 0 && v.lon !== 0
   );
 
+  const handleRefresh = async () => {
+    await Promise.all([refetch(), fetchDrivers()]);
+  };
+
   return (
     <DashboardLayout connectionStatus={connectionStatus}>
-      <div className="space-y-6">
-        {/* Header */}
+      <PullToRefresh onRefresh={handleRefresh}>
+        <div className="space-y-6">
+          {/* Header */}
         <div>
           <h1 className="text-2xl font-bold text-foreground">Fleet Management</h1>
           <p className="text-muted-foreground">
@@ -731,6 +737,7 @@ const Fleet = () => {
           refetch();
         }}
       />
+      </PullToRefresh>
     </DashboardLayout>
   );
 };

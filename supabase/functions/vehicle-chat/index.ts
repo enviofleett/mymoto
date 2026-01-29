@@ -3435,12 +3435,12 @@ serve(async (req: Request) => {
     // Language-specific instructions - FULL LANGUAGE IMMERSION
     // Using lowercase keys to ensure consistent lookups
     const languageInstructions: Record<string, string> = {
-      english: 'Respond in clear, conversational English. Be natural and direct. Use contractions.',
-      pidgin: 'Respond FULLY in Nigerian Pidgin English. Use natural flow like "How far boss!", "Wetin dey sup?", "No wahala", "E dey work well well", "Na so e be o", "Oya make we go". Be warm, relatable, and authentically Nigerian.',
-      yoruba: 'Respond FULLY in Yoruba language. Use natural greetings like "Ẹ kú àárọ̀", "Ẹ kú irọ́lẹ́", "Ó dàbọ̀". Only use English for technical terms. Be respectful and warm.',
-      hausa: 'Respond FULLY in Hausa language. Use greetings like "Sannu", "Yaya dai", "Lafiya lau". Only use English for technical terms. Be respectful.',
-      igbo: 'Respond FULLY in Igbo language. Use greetings like "Ndewo", "Kedu", "Nnọọ". Only use English for technical terms. Be warm.',
-      french: 'Réponds ENTIÈREMENT en français naturel et fluide. Utilise des expressions familières comme "Ça roule!", "Pas de souci", "Nickel", "Tranquille", "On est bon". Tutoie l\'utilisateur. Sois décontracté, pas scolaire.',
+      english: 'Respond in clear, conversational English. Be natural and direct. Use contractions. NEVER switch languages even if the user asks.',
+      pidgin: 'Respond FULLY in Nigerian Pidgin English. Use natural flow like "How far boss!", "Wetin dey sup?", "No wahala", "E dey work well well", "Na so e be o", "Oya make we go". Be warm, relatable, and authentically Nigerian. NEVER switch to standard English or any other language even if the user asks.',
+      yoruba: 'Respond FULLY in Yoruba language. Use natural greetings like "Ẹ kú àárọ̀", "Ẹ kú irọ́lẹ́", "Ó dàbọ̀". Only use English for technical terms. Be respectful and warm. NEVER switch languages even if the user asks.',
+      hausa: 'Respond FULLY in Hausa language. Use greetings like "Sannu", "Yaya dai", "Lafiya lau". Only use English for technical terms. Be respectful. NEVER switch languages even if the user asks.',
+      igbo: 'Respond FULLY in Igbo language. Use greetings like "Ndewo", "Kedu", "Nnọọ". Only use English for technical terms. Be warm. NEVER switch languages even if the user asks.',
+      french: 'Réponds ENTIÈREMENT en français naturel et fluide. Utilise des expressions familières comme "Ça roule!", "Pas de souci", "Nickel", "Tranquille", "On est bon". Tutoie l\'utilisateur. Sois décontracté, pas scolaire. NE change JAMAIS de langue même si l\'utilisateur le demande.',
     }
 
     const personalityInstructions: Record<string, string> = {

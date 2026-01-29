@@ -84,10 +84,18 @@ export default function OwnerProfile() {
                   onClick={() => setEditProfileOpen(true)}
                   className="relative group transition-all duration-200 active:scale-[0.98]"
                 >
-                  <div className="w-24 h-24 rounded-full shadow-neumorphic-sm bg-card p-1">
-                    <div className="w-full h-full rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
-                      <User className="h-12 w-12 text-primary" />
-                    </div>
+                  <div className="w-24 h-24 rounded-full shadow-neumorphic-sm bg-card p-1 overflow-hidden">
+                    {profile?.avatar_url ? (
+                      <img 
+                        src={profile.avatar_url} 
+                        alt={profile.name || "Profile"} 
+                        className="w-full h-full rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
+                        <User className="h-12 w-12 text-primary" />
+                      </div>
+                    )}
                   </div>
                   {/* Edit indicator */}
                   <div className="absolute bottom-0 right-0 w-8 h-8 rounded-full shadow-neumorphic-sm bg-card flex items-center justify-center border-2 border-background">

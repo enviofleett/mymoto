@@ -496,7 +496,9 @@ export default function OwnerVehicleProfile() {
 
         {/* Main Content */}
         <ScrollArea className="flex-1">
-          <div className="px-4 pb-8 space-y-4">
+          {/* Increased bottom padding to pb-32 (128px) to ensure content clears the bottom navigation menu 
+              and the last card's full UI curve is visible */}
+          <div className="px-4 pb-32 space-y-4">
             {/* Map Section */}
             <VehicleMapSection
               latitude={liveData?.latitude ?? null}
