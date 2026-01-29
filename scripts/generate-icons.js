@@ -48,10 +48,25 @@ async function generateIcons() {
       
       console.log(`📦 Generating ${filename} (${config.size}x${config.size})...`);
       
+      // Calculate padding to ensure logo is well-fitted (approx 65% of icon size)
+      // This ensures safe area for maskable icons and better visibility
+      const innerSize = Math.floor(config.size * 0.65);
+      const padding = Math.floor((config.size - innerSize) / 2);
+      // Handle odd pixel differences
+      const paddingBottom = config.size - innerSize - padding;
+      const paddingRight = config.size - innerSize - padding;
+
       await sharp(SOURCE_PATH)
-        .resize(config.size, config.size, {
+        .resize(innerSize, innerSize, {
           fit: 'contain',
-          background: { r: 19, g: 22, b: 24, alpha: 1 } // Dark charcoal gray background
+          background: { r: 0, g: 0, b: 0, alpha: 0 } // Transparent background for inner logo
+        })
+        .extend({
+          top: padding,
+          bottom: paddingBottom,
+          left: padding,
+          right: paddingRight,
+          background: { r: 19, g: 22, b: 24, alpha: 1 } // Dark charcoal gray background for container
         })
         .png()
         .toFile(outputPath);
@@ -66,15 +81,28 @@ async function generateIcons() {
     // Generate multiple sizes for ICO
     const faviconSizes = [16, 32, 48];
     const faviconBuffers = await Promise.all(
-      faviconSizes.map(size =>
-        sharp(SOURCE_PATH)
-          .resize(size, size, {
+      faviconSizes.map(size => {
+        // For favicons, we use less padding as they are small
+        const innerSize = Math.floor(size * 0.8); 
+        const padding = Math.floor((size - innerSize) / 2);
+        const paddingBottom = size - innerSize - padding;
+        const paddingRight = size - innerSize - padding;
+
+        return sharp(SOURCE_PATH)
+          .resize(innerSize, innerSize, {
             fit: 'contain',
+            background: { r: 0, g: 0, b: 0, alpha: 0 }
+          })
+          .extend({
+            top: padding,
+            bottom: paddingBottom,
+            left: padding,
+            right: paddingRight,
             background: { r: 19, g: 22, b: 24, alpha: 1 }
           })
           .png()
-          .toBuffer()
-      )
+          .toBuffer();
+      })
     );
 
     // Note: sharp doesn't support ICO directly, so we'll create a PNG favicon
