@@ -325,7 +325,6 @@ const InstallApp = () => {
           </div>
       </div>
     </div>
-    </div>
   );
 };
 
