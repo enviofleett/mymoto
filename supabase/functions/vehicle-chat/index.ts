@@ -2719,6 +2719,17 @@ serve(async (req: Request) => {
         ? `${Math.floor(dataAgeSeconds / 60)}min ago`
         : `${Math.floor(dataAgeSeconds / 3600)}h ago`
 
+    // FIX: Force ignition OFF if data is stale (> 10 mins)
+    // This prevents "Ghost Ignition" where the LLM thinks the car is ON because the last update (hours ago) was ON.
+    // If a vehicle is ON and moving, it SHOULD be sending updates. If silent for > 10m, it's likely OFF/Sleeping.
+    if (position && dataAgeSeconds > 600) { // 10 minutes
+      if (position.ignition_on) {
+        console.log(`[vehicle-chat] Forcing ignition OFF due to stale data (${dataAgeSeconds}s old)`)
+        position.ignition_on = false
+        position.status_text = (position.status_text || '') + ' [Ignition inferred OFF due to inactivity]'
+      }
+    }
+
     // 3. Fetch Driver Info
     const { data: assignment } = await supabase
       .from('vehicle_assignments')
@@ -2785,6 +2796,21 @@ serve(async (req: Request) => {
     // Enforce Lagos timezone across all date operations
     const DEFAULT_TIMEZONE = 'Africa/Lagos'
     const userTimezone = DEFAULT_TIMEZONE // Always use Lagos timezone (Africa/Lagos)
+    
+    // Explicitly set the current timestamp to Lagos time for the LLM context
+    const nowInLagos = new Date().toLocaleString("en-US", { timeZone: DEFAULT_TIMEZONE });
+    const lagosTimestamp = new Date(nowInLagos).toLocaleString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+    
+    let dateContext: DateContext = extractDateContext(message, new Date().toISOString(), userTimezone)
+    console.log('[Date Extraction] Initial extract:', dateContext)
 
     // Use enhanced date extraction (hybrid: regex + LLM)
     let dateContext: DateContext
@@ -2961,6 +2987,22 @@ serve(async (req: Request) => {
       latestPosition: string | null
       positionCount: number
     } | null = null
+
+    // ENHANCED LOCATION AWARENESS: Abuja District Recognition
+    // Identify key Abuja districts to provide richer context in AI responses
+    const abujaDistricts = [
+      'Garki', 'Wuse', 'Maitama', 'Asokoro', 'Central Business District', 'Jabi', 'Utako', 'Gwarinpa', 'Kubwa', 'Lugbe'
+    ];
+    let districtContext = '';
+    if (currentLocationName) {
+      const detectedDistrict = abujaDistricts.find(district => 
+        currentLocationName.toLowerCase().includes(district.toLowerCase())
+      );
+      if (detectedDistrict) {
+        districtContext = `\n\n[NEIGHBORHOOD CONTEXT]: We are currently in the **${detectedDistrict}** district of Abuja. This is a key area. Mention this specifically in your response.`;
+        console.log(`[Location] Detected Abuja District: ${detectedDistrict}`);
+      }
+    }
 
     if (dateContext.hasDateReference || isHistoricalMovementQuery(message)) {
       console.log(`Fetching historical data for period: ${dateContext.humanReadable}`)
@@ -3233,7 +3275,7 @@ serve(async (req: Request) => {
       // Fallback to geocoding if no learned location
       if (!learnedLocationContext && MAPBOX_ACCESS_TOKEN) {
         try {
-          const geocodeUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lon},${lat}.json?access_token=${MAPBOX_ACCESS_TOKEN}&types=address,poi,place`
+          const geocodeUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lon},${lat}.json?access_token=${MAPBOX_ACCESS_TOKEN}&types=address,poi,place,neighborhood,locality`
           const geocodeResponse = await fetch(geocodeUrl)
 
           if (geocodeResponse.ok) {
@@ -3262,6 +3304,14 @@ serve(async (req: Request) => {
       p_device_id: device_id,
       p_status: 'active'
     })
+
+    // PROACTIVE GREETING: Learned Location Arrival
+    // If we are at a learned location, add a proactive greeting to the system prompt
+    let learnedLocationGreeting = '';
+    if (learnedLocationContext && learnedLocationContext.at_learned_location) {
+      const locName = learnedLocationContext.custom_label || learnedLocationContext.location_name;
+      learnedLocationGreeting = `\n\n[PROACTIVE CONTEXT]: The user is currently at their learned location: "**${locName}**" (${learnedLocationContext.location_type}). Welcoming them back or acknowledging this familiar spot is appropriate.`;
+    }
 
     // 6.6. Fetch geofence context
     const { data: geofenceContext } = await supabase.rpc('get_vehicle_geofence_context', {
@@ -3424,8 +3474,9 @@ serve(async (req: Request) => {
     const displayTimestamp = client_timestamp || dataTimestamp
 
     // Format data timestamp for display
-    const formattedTimestamp = displayTimestamp
+    const formattedDisplayTimestamp = displayTimestamp
       ? new Date(displayTimestamp).toLocaleString('en-US', {
+          timeZone: 'Africa/Lagos',
           dateStyle: 'medium',
           timeStyle: 'short'
         })
@@ -3687,8 +3738,10 @@ ${conversationContext.important_facts.length > 0 ? `Key things you know:\n${conv
 ${corrections.length > 0 ? `- Note: User's message had ${corrections.length} typo(s) that were automatically corrected` : ''}
 
 ${preferenceContext ? `## LEARNED USER PREFERENCES\n${preferenceContext}\n` : ''}
-## REAL-TIME STATUS (${dataFreshness.toUpperCase()} as of ${formattedTimestamp})
-DATA FRESHNESS: ${dataFreshness === 'live' ? '[LIVE]' : dataFreshness === 'cached' ? `[CACHED: ${dataAgeReadable}]` : `[STALE: ${dataAgeReadable}]`} (as of ${formattedTimestamp})
+${learnedLocationGreeting}
+${districtContext}
+## REAL-TIME STATUS (${dataFreshness.toUpperCase()} as of ${formattedDisplayTimestamp})
+DATA FRESHNESS: ${dataFreshness === 'live' ? '[LIVE]' : dataFreshness === 'cached' ? `[CACHED: ${dataAgeReadable}]` : `[STALE: ${dataAgeReadable}]`} (as of ${formattedDisplayTimestamp})
 ${dataFreshness === 'stale' ? '⚠️ WARNING: Data may be outdated. Consider requesting fresh data for accurate status.' : ''}
 
 CURRENT STATUS:
@@ -3878,7 +3931,7 @@ RESPONSE RULES:
    Format: [LOCATION: ${lat || 'N/A'}, ${lon || 'N/A'}, "${currentLocationName}"]
    Example: "I am currently at [LOCATION: 6.5244, 3.3792, "Victoria Island, Lagos"]"
 3. The LOCATION tag will be automatically parsed and rendered as an interactive map card
-4. ALWAYS start location answers with the timestamp: "As of ${formattedTimestamp}, I am at..."
+4. ALWAYS start location answers with the timestamp: "As of ${formattedDisplayTimestamp}, I am at..."
 5. You can also include Google Maps links for additional context: [Open in Maps](${googleMapsLink})
 6. If battery is below 20%, proactively warn about low battery
 7. If overspeeding, mention it as a safety concern

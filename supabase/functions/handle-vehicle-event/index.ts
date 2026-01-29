@@ -426,6 +426,23 @@ serve(async (req) => {
 
     console.log(`[handle-vehicle-event] Processing event: ${event.title} for device ${event.device_id}`);
 
+    // CRITICAL FIX: Deduplication check - skip if already notified
+    if (event.id) {
+      const { data: existingEvent, error: checkError } = await supabase
+        .from('proactive_vehicle_events')
+        .select('notified, notified_at')
+        .eq('id', event.id)
+        .maybeSingle();
+
+      if (existingEvent?.notified === true) {
+        console.log(`[handle-vehicle-event] Event ${event.id} already notified at ${existingEvent.notified_at}, skipping.`);
+        return new Response(JSON.stringify({ message: 'Event already notified', skipped: true }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
     // 1. Check if LLM is enabled for this vehicle
     const { data: llmSettings, error: settingsError } = await supabase
       .from('vehicle_llm_settings')
@@ -460,6 +477,27 @@ serve(async (req) => {
       });
     }
 
+    // CRITICAL FIX: Wallet Balance Check
+    // At least one user must have positive balance to trigger LLM
+    const { data: eligibleWallets } = await supabase
+      .from('wallets')
+      .select('user_id')
+      .in('user_id', assignedUserIds)
+      .gt('balance', 0);
+
+    const eligibleUserIds = eligibleWallets?.map((w: any) => w.user_id) || [];
+
+    if (eligibleUserIds.length === 0) {
+      console.warn(`[handle-vehicle-event] No assigned users have positive wallet balance. Skipping LLM generation.`);
+      return new Response(JSON.stringify({ 
+        message: 'Insufficient wallet balance for all assigned users',
+        skipped: true
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // 3. Check user preferences for this event type
     const preferenceKey = getPreferenceKey(event.event_type);
     
@@ -480,6 +518,7 @@ serve(async (req) => {
       .in('user_id', assignedUserIds);
 
     let enabledUserIds: string[] = [];
+    let prefsFound = false;
 
     if (vehiclePrefsError) {
       console.error('[handle-vehicle-event] Error fetching vehicle notification preferences:', vehiclePrefsError);
@@ -493,22 +532,42 @@ serve(async (req) => {
 
       if (globalPrefsError) {
         console.error('[handle-vehicle-event] Error fetching global preferences:', globalPrefsError);
-        // If both fail, skip (opt-in model)
-        return new Response(JSON.stringify({ message: 'Could not fetch preferences, skipping' }), {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        // CRITICAL FIX: Smart Defaults
+        // If preferences fetch fails, allow critical events by default
+        const defaultEnabled = ['critical_battery', 'offline', 'anomaly_detected', 'maintenance_due', 'vehicle_moving', 'geofence_enter'].includes(event.event_type);
+        if (defaultEnabled) {
+          enabledUserIds = assignedUserIds;
+          prefsFound = true; // Treat defaults as found prefs to avoid double application
+        } else {
+          return new Response(JSON.stringify({ message: 'Could not fetch preferences, skipping' }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+      } else {
+        // Filter users who have this preference enabled (global)
+        enabledUserIds = (globalPrefs || [])
+          .filter((pref: any) => pref[preferenceKey] === true)
+          .map((pref: any) => pref.user_id);
+        
+        if (globalPrefs && globalPrefs.length > 0) prefsFound = true;
       }
-
-      // Filter users who have this preference enabled (global)
-      enabledUserIds = (globalPrefs || [])
-        .filter((pref: any) => pref[preferenceKey] === true)
-        .map((pref: any) => pref.user_id);
     } else {
       // Filter users who have this preference enabled for THIS VEHICLE
       enabledUserIds = (vehiclePrefs || [])
         .filter((pref: any) => pref[preferenceKey] === true)
         .map((pref: any) => pref.user_id);
+      
+      if (vehiclePrefs && vehiclePrefs.length > 0) prefsFound = true;
+    }
+
+    // CRITICAL FIX: Apply defaults if preference list is empty but event is critical
+    if (enabledUserIds.length === 0) {
+      const defaultEnabled = ['critical_battery', 'offline', 'anomaly_detected', 'maintenance_due', 'vehicle_moving', 'geofence_enter'].includes(event.event_type);
+      if (defaultEnabled && !prefsFound) {
+         console.log('[handle-vehicle-event] No preferences found, applying defaults for critical event.');
+         enabledUserIds = assignedUserIds;
+      }
     }
 
     if (enabledUserIds.length === 0) {
