@@ -32,8 +32,6 @@ SELECT cron.schedule(
   $$
 );
 
-COMMENT ON CRON JOB 'sync-gps51-trips-all-vehicles' IS 'Syncs trip data from GPS51 querytrips API every 10 minutes for all active vehicles';
-
 -- =====================================================
 -- 2. Cron Job for GPS51 Alarms Sync
 -- =====================================================
@@ -65,8 +63,6 @@ SELECT cron.schedule(
   FROM active_devices;
   $$
 );
-
-COMMENT ON CRON JOB 'sync-gps51-alarms-all-vehicles' IS 'Syncs alarm data from GPS51 position API every 5 minutes for all active vehicles';
 
 -- =====================================================
 -- 3. Store Supabase URL and Service Role Key in Settings

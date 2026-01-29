@@ -186,13 +186,12 @@ BEGIN
     GROUP BY ph.device_id, ph.ignition_detection_method
   ),
   primary_methods AS (
-    SELECT 
+    SELECT DISTINCT ON (device_id)
       device_id,
       ignition_detection_method as primary_method,
-      SUM(method_count) as total_count
+      method_count as total_count
     FROM method_counts
-    GROUP BY device_id, ignition_detection_method
-    QUALIFY ROW_NUMBER() OVER (PARTITION BY device_id ORDER BY method_count DESC) = 1
+    ORDER BY device_id, method_count DESC
   ),
   device_stats AS (
     SELECT 

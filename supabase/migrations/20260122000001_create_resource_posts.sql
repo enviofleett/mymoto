@@ -36,21 +36,25 @@ ALTER TABLE public.resource_posts ENABLE ROW LEVEL SECURITY;
 
 -- Resource Categories Policies
 -- Everyone can read published categories
+DROP POLICY IF EXISTS "Anyone can read resource categories" ON public.resource_categories;
 CREATE POLICY "Anyone can read resource categories"
     ON public.resource_categories FOR SELECT
     USING (true);
 
 -- Only admins can manage categories
+DROP POLICY IF EXISTS "Admins can insert resource categories" ON public.resource_categories;
 CREATE POLICY "Admins can insert resource categories"
     ON public.resource_categories FOR INSERT
     TO authenticated
     WITH CHECK (public.has_role(auth.uid(), 'admin'));
 
+DROP POLICY IF EXISTS "Admins can update resource categories" ON public.resource_categories;
 CREATE POLICY "Admins can update resource categories"
     ON public.resource_categories FOR UPDATE
     TO authenticated
     USING (public.has_role(auth.uid(), 'admin'));
 
+DROP POLICY IF EXISTS "Admins can delete resource categories" ON public.resource_categories;
 CREATE POLICY "Admins can delete resource categories"
     ON public.resource_categories FOR DELETE
     TO authenticated
@@ -58,29 +62,34 @@ CREATE POLICY "Admins can delete resource categories"
 
 -- Resource Posts Policies
 -- Everyone can read published posts
+DROP POLICY IF EXISTS "Anyone can read published resource posts" ON public.resource_posts;
 CREATE POLICY "Anyone can read published resource posts"
     ON public.resource_posts FOR SELECT
     USING (is_published = true);
 
 -- Admins can read all posts (including unpublished)
+DROP POLICY IF EXISTS "Admins can read all resource posts" ON public.resource_posts;
 CREATE POLICY "Admins can read all resource posts"
     ON public.resource_posts FOR SELECT
     TO authenticated
     USING (public.has_role(auth.uid(), 'admin'));
 
 -- Only admins can create posts
+DROP POLICY IF EXISTS "Admins can insert resource posts" ON public.resource_posts;
 CREATE POLICY "Admins can insert resource posts"
     ON public.resource_posts FOR INSERT
     TO authenticated
     WITH CHECK (public.has_role(auth.uid(), 'admin'));
 
 -- Only admins can update posts
+DROP POLICY IF EXISTS "Admins can update resource posts" ON public.resource_posts;
 CREATE POLICY "Admins can update resource posts"
     ON public.resource_posts FOR UPDATE
     TO authenticated
     USING (public.has_role(auth.uid(), 'admin'));
 
 -- Only admins can delete posts
+DROP POLICY IF EXISTS "Admins can delete resource posts" ON public.resource_posts;
 CREATE POLICY "Admins can delete resource posts"
     ON public.resource_posts FOR DELETE
     TO authenticated

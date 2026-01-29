@@ -36,20 +36,37 @@ CREATE TABLE IF NOT EXISTS public.trip_patterns (
 -- Enable RLS
 ALTER TABLE public.trip_patterns ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Service role manages trip patterns"
-ON public.trip_patterns FOR ALL
-USING (auth.role() = 'service_role')
-WITH CHECK (auth.role() = 'service_role');
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies 
+    WHERE tablename = 'trip_patterns' AND policyname = 'Service role manages trip patterns'
+  ) THEN
+    CREATE POLICY "Service role manages trip patterns"
+    ON public.trip_patterns FOR ALL
+    USING (auth.role() = 'service_role')
+    WITH CHECK (auth.role() = 'service_role');
+  END IF;
+END $$;
 
-CREATE POLICY "Users view own vehicle patterns"
-ON public.trip_patterns FOR SELECT
-USING (EXISTS (
-    SELECT 1 FROM public.vehicles v
-    WHERE v.device_id = trip_patterns.device_id
-    AND v.owner_id = auth.uid()
-));
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies 
+    WHERE tablename = 'trip_patterns' AND policyname = 'Users view own vehicle patterns'
+  ) THEN
+    CREATE POLICY "Users view own vehicle patterns"
+    ON public.trip_patterns FOR SELECT
+    USING (EXISTS (
+        SELECT 1 FROM public.vehicle_assignments va
+        WHERE va.device_id = trip_patterns.device_id
+        AND va.profile_id = auth.uid()
+    ));
+  END IF;
+END $$;
 
 -- 2. Create RPC function to analyze trips and generate patterns
+DROP FUNCTION IF EXISTS analyze_trip_patterns();
 CREATE OR REPLACE FUNCTION analyze_trip_patterns()
 RETURNS JSON
 LANGUAGE plpgsql
@@ -137,6 +154,8 @@ END;
 $$;
 
 -- 3. Create RPC function to get predicted trips for the current hour
+DROP FUNCTION IF EXISTS get_predicted_trips();
+DROP FUNCTION IF EXISTS get_predicted_trips();
 CREATE OR REPLACE FUNCTION get_predicted_trips()
 RETURNS JSON
 LANGUAGE plpgsql
@@ -180,5 +199,5 @@ END;
 $$;
 
 -- Grant access
-GRANT EXECUTE ON FUNCTION analyze_trip_patterns TO service_role;
-GRANT EXECUTE ON FUNCTION get_predicted_trips TO service_role;
+GRANT EXECUTE ON FUNCTION analyze_trip_patterns() TO service_role;
+GRANT EXECUTE ON FUNCTION get_predicted_trips() TO service_role;

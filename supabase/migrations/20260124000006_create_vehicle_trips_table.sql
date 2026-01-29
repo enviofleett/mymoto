@@ -1,7 +1,7 @@
 -- Migration: Create vehicle_trips Table
 -- Description: Creates a dedicated table for processed vehicle trip data from the process-trips Edge Function.
 
-CREATE TABLE public.vehicle_trips (
+CREATE TABLE IF NOT EXISTS public.vehicle_trips (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     device_id TEXT NOT NULL REFERENCES public.vehicles(device_id) ON DELETE CASCADE,
     start_time TIMESTAMPTZ NOT NULL,
@@ -26,18 +26,23 @@ ALTER TABLE public.vehicle_trips ENABLE ROW LEVEL SECURITY;
 
 -- Policies for RLS
 -- Allow authenticated users to view their own vehicle's trips
-CREATE POLICY "Allow authenticated read access to vehicle trips" ON public.vehicle_trips
-    FOR SELECT USING (EXISTS (SELECT 1 FROM public.vehicles WHERE device_id = vehicle_trips.device_id AND owner_id = auth.uid()));
+DROP POLICY IF EXISTS "Allow authenticated read access to vehicle trips" ON public.vehicle_trips;
+-- This policy is replaced by "Allow vehicle owners/providers to view vehicle trips" below which uses vehicle_assignments
+
 
 -- Allow service role to insert trips (Edge Function)
+DROP POLICY IF EXISTS "Allow service role to insert vehicle trips" ON public.vehicle_trips;
 CREATE POLICY "Allow service role to insert vehicle trips" ON public.vehicle_trips
     FOR INSERT WITH CHECK (auth.role() = 'service_role');
 
 -- Allow authenticated users to view trips for vehicles they have access to
+DROP POLICY IF EXISTS "Allow vehicle owners/providers to view vehicle trips" ON public.vehicle_trips;
 CREATE POLICY "Allow vehicle owners/providers to view vehicle trips" ON public.vehicle_trips
     FOR SELECT USING (EXISTS (
-        SELECT 1 FROM public.user_vehicle_access uva
-        WHERE uva.device_id = vehicle_trips.device_id
-        AND uva.user_id = auth.uid()
+        SELECT 1 
+        FROM public.vehicle_assignments va
+        JOIN public.profiles p ON va.profile_id = p.id
+        WHERE va.device_id = vehicle_trips.device_id
+        AND p.user_id = auth.uid()
     ));
 

@@ -12,6 +12,26 @@ DROP POLICY IF EXISTS "Users can view their vehicle events" ON public.proactive_
 DROP POLICY IF EXISTS "Users can acknowledge their vehicle events" ON public.proactive_vehicle_events;
 DROP POLICY IF EXISTS "Authenticated users can read ACC state history" ON public.acc_state_history;
 
+-- Conditionally drop other dependent policies (tables might not exist yet in a fresh run)
+DO $$
+BEGIN
+    -- vehicle_trips
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'vehicle_trips') THEN
+        DROP POLICY IF EXISTS "Users can view vehicle trips for assigned vehicles" ON public.vehicle_trips;
+    END IF;
+
+    -- trip_sync_status
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'trip_sync_status') THEN
+        DROP POLICY IF EXISTS "Users can view trip sync status for assigned vehicles" ON public.trip_sync_status;
+    END IF;
+    
+    -- vehicle_specifications
+    IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'vehicle_specifications') THEN
+        DROP POLICY IF EXISTS "Users can view their vehicle specifications" ON public.vehicle_specifications;
+        DROP POLICY IF EXISTS "Users can manage their vehicle specifications" ON public.vehicle_specifications;
+    END IF;
+END $$;
+
 -- Step 1: Create new table with composite primary key
 CREATE TABLE public.vehicle_assignments_new (
     device_id TEXT NOT NULL,

@@ -28,6 +28,7 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS provider_approval_trigger ON public.service_providers;
 CREATE TRIGGER provider_approval_trigger
     BEFORE UPDATE ON public.service_providers
     FOR EACH ROW

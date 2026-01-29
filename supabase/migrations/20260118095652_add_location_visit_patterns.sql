@@ -43,18 +43,20 @@ CREATE TABLE IF NOT EXISTS public.location_visit_patterns (
 );
 
 -- Indexes for fast lookups
-CREATE INDEX idx_location_patterns_location ON location_visit_patterns(learned_location_id);
-CREATE INDEX idx_location_patterns_device ON location_visit_patterns(device_id);
-CREATE INDEX idx_location_patterns_time ON location_visit_patterns(time_of_day);
+CREATE INDEX IF NOT EXISTS idx_location_patterns_location ON location_visit_patterns(learned_location_id);
+CREATE INDEX IF NOT EXISTS idx_location_patterns_device ON location_visit_patterns(device_id);
+CREATE INDEX IF NOT EXISTS idx_location_patterns_time ON location_visit_patterns(time_of_day);
 
 -- Enable RLS
 ALTER TABLE public.location_visit_patterns ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
+DROP POLICY IF EXISTS "Users can view location visit patterns" ON public.location_visit_patterns;
 CREATE POLICY "Users can view location visit patterns"
 ON public.location_visit_patterns FOR SELECT
 USING (true);
 
+DROP POLICY IF EXISTS "Admins can manage location visit patterns" ON public.location_visit_patterns;
 CREATE POLICY "Admins can manage location visit patterns"
 ON public.location_visit_patterns FOR ALL
 USING (has_role(auth.uid(), 'admin'::app_role))
@@ -135,6 +137,7 @@ END;
 $$;
 
 -- Trigger: Update patterns whenever a parking session is linked to a learned location
+DROP TRIGGER IF EXISTS track_visit_patterns ON parking_sessions;
 CREATE TRIGGER track_visit_patterns
 AFTER UPDATE OF learned_location_id ON parking_sessions
 FOR EACH ROW

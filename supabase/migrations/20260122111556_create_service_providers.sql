@@ -45,24 +45,28 @@ CREATE INDEX IF NOT EXISTS idx_service_providers_approved ON public.service_prov
 ALTER TABLE public.service_providers ENABLE ROW LEVEL SECURITY;
 
 -- Providers can read their own profile
+DROP POLICY IF EXISTS "Providers read own profile" ON public.service_providers;
 CREATE POLICY "Providers read own profile"
     ON public.service_providers FOR SELECT
     TO authenticated
     USING (user_id = auth.uid());
 
 -- Users can read approved providers only
+DROP POLICY IF EXISTS "Users read approved providers" ON public.service_providers;
 CREATE POLICY "Users read approved providers"
     ON public.service_providers FOR SELECT
     TO authenticated
     USING (approval_status = 'approved');
 
 -- Admins can read all
+DROP POLICY IF EXISTS "Admins read all providers" ON public.service_providers;
 CREATE POLICY "Admins read all providers"
     ON public.service_providers FOR SELECT
     TO authenticated
     USING (public.has_role(auth.uid(), 'admin'));
 
 -- Providers can update their own profile (triggers needs_reapproval)
+DROP POLICY IF EXISTS "Providers update own profile" ON public.service_providers;
 CREATE POLICY "Providers update own profile"
     ON public.service_providers FOR UPDATE
     TO authenticated
@@ -70,12 +74,14 @@ CREATE POLICY "Providers update own profile"
     WITH CHECK (user_id = auth.uid());
 
 -- Providers can insert their own profile (during signup)
+DROP POLICY IF EXISTS "Providers insert own profile" ON public.service_providers;
 CREATE POLICY "Providers insert own profile"
     ON public.service_providers FOR INSERT
     TO authenticated
     WITH CHECK (user_id = auth.uid());
 
 -- Admins can manage all
+DROP POLICY IF EXISTS "Admins manage providers" ON public.service_providers;
 CREATE POLICY "Admins manage providers"
     ON public.service_providers FOR ALL
     TO authenticated

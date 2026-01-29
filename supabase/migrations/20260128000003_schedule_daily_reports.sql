@@ -2,7 +2,7 @@
 -- Uses pg_cron and pg_net to call the Edge Function
 
 -- Ensure pg_cron is enabled (idempotent)
-CREATE EXTENSION IF NOT EXISTS pg_cron;
+-- CREATE EXTENSION IF NOT EXISTS pg_cron;
 
 -- Schedule the job
 SELECT cron.schedule(

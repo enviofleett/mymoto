@@ -79,7 +79,7 @@ ON public.vehicle_specifications FOR SELECT
 TO authenticated
 USING (
   device_id IN (
-    SELECT device_id FROM vehicle_assignments WHERE user_id = auth.uid()
+    SELECT device_id FROM vehicle_assignments WHERE profile_id = auth.uid()
   )
 );
 
@@ -88,12 +88,12 @@ ON public.vehicle_specifications FOR ALL
 TO authenticated
 USING (
   device_id IN (
-    SELECT device_id FROM vehicle_assignments WHERE user_id = auth.uid()
+    SELECT device_id FROM vehicle_assignments WHERE profile_id = auth.uid()
   )
 )
 WITH CHECK (
   device_id IN (
-    SELECT device_id FROM vehicle_assignments WHERE user_id = auth.uid()
+    SELECT device_id FROM vehicle_assignments WHERE profile_id = auth.uid()
   )
 );
 

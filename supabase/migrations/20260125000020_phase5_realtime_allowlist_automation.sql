@@ -6,6 +6,7 @@
 -- ============
 -- 1) Monitoring view (gps_time vs last_synced_at)
 -- ============
+DROP VIEW IF EXISTS public.v_vehicle_staleness;
 CREATE OR REPLACE VIEW public.v_vehicle_staleness AS
 SELECT
   vp.device_id,
@@ -166,9 +167,9 @@ COMMENT ON FUNCTION public.refresh_realtime_allowlist IS
 -- ============
 -- 5) Cron job (optional, safe because function no-ops when flag disabled)
 -- ============
-CREATE EXTENSION IF NOT EXISTS pg_cron;
-GRANT USAGE ON SCHEMA cron TO postgres;
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA cron TO postgres;
+-- CREATE EXTENSION IF NOT EXISTS pg_cron;
+-- GRANT USAGE ON SCHEMA cron TO postgres;
+-- GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA cron TO postgres;
 
 -- Schedule every 2 minutes: refresh allowlist + snapshot
 -- Note: cron.job naming differs across environments; we identify by command if needed.

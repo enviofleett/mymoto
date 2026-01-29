@@ -25,6 +25,7 @@ CREATE INDEX IF NOT EXISTS idx_ratings_booking ON public.provider_ratings(bookin
 ALTER TABLE public.provider_ratings ENABLE ROW LEVEL SECURITY;
 
 -- Users can create ratings for their completed bookings
+DROP POLICY IF EXISTS "Users create own ratings" ON public.provider_ratings;
 CREATE POLICY "Users create own ratings"
     ON public.provider_ratings FOR INSERT
     TO authenticated
@@ -39,6 +40,7 @@ CREATE POLICY "Users create own ratings"
     );
 
 -- Providers can read their own ratings
+DROP POLICY IF EXISTS "Providers read own ratings" ON public.provider_ratings;
 CREATE POLICY "Providers read own ratings"
     ON public.provider_ratings FOR SELECT
     TO authenticated
@@ -50,6 +52,7 @@ CREATE POLICY "Providers read own ratings"
     );
 
 -- Admins can read all ratings
+DROP POLICY IF EXISTS "Admins read all ratings" ON public.provider_ratings;
 CREATE POLICY "Admins read all ratings"
     ON public.provider_ratings FOR SELECT
     TO authenticated

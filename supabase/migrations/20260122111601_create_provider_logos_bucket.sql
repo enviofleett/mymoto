@@ -11,11 +11,13 @@ ON CONFLICT (id) DO NOTHING;
 
 -- RLS Policies for provider-logos bucket
 -- Public read access (for directory display)
+DROP POLICY IF EXISTS "Public read access for provider logos" ON storage.objects;
 CREATE POLICY "Public read access for provider logos"
 ON storage.objects FOR SELECT
 USING (bucket_id = 'provider-logos');
 
 -- Providers can upload to their own folder
+DROP POLICY IF EXISTS "Providers upload own logos" ON storage.objects;
 CREATE POLICY "Providers upload own logos"
 ON storage.objects FOR INSERT
 WITH CHECK (
@@ -24,6 +26,7 @@ WITH CHECK (
 );
 
 -- Providers can update their own logos
+DROP POLICY IF EXISTS "Providers update own logos" ON storage.objects;
 CREATE POLICY "Providers update own logos"
 ON storage.objects FOR UPDATE
 USING (
@@ -32,6 +35,7 @@ USING (
 );
 
 -- Providers can delete their own logos
+DROP POLICY IF EXISTS "Providers delete own logos" ON storage.objects;
 CREATE POLICY "Providers delete own logos"
 ON storage.objects FOR DELETE
 USING (
@@ -40,6 +44,7 @@ USING (
 );
 
 -- Admins can manage all logos
+DROP POLICY IF EXISTS "Admins manage all provider logos" ON storage.objects;
 CREATE POLICY "Admins manage all provider logos"
 ON storage.objects FOR ALL
 USING (

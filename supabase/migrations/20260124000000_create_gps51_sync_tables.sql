@@ -50,16 +50,21 @@ CREATE INDEX IF NOT EXISTS idx_gps51_trips_synced
 ALTER TABLE gps51_trips ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
+DROP POLICY IF EXISTS "Users can view trips for assigned vehicles" ON gps51_trips;
 CREATE POLICY "Users can view trips for assigned vehicles"
   ON gps51_trips
   FOR SELECT
   TO authenticated
   USING (
     device_id IN (
-      SELECT device_id FROM vehicle_assignments WHERE user_id = auth.uid()
+      SELECT va.device_id 
+      FROM vehicle_assignments va
+      JOIN profiles p ON va.profile_id = p.id
+      WHERE p.user_id = auth.uid()
     )
   );
 
+DROP POLICY IF EXISTS "Service role can manage trips" ON gps51_trips;
 CREATE POLICY "Service role can manage trips"
   ON gps51_trips
   FOR ALL
@@ -134,31 +139,43 @@ CREATE INDEX IF NOT EXISTS idx_gps51_alarms_unacknowledged
 ALTER TABLE gps51_alarms ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
+DROP POLICY IF EXISTS "Users can view alarms for assigned vehicles" ON gps51_alarms;
 CREATE POLICY "Users can view alarms for assigned vehicles"
   ON gps51_alarms
   FOR SELECT
   TO authenticated
   USING (
     device_id IN (
-      SELECT device_id FROM vehicle_assignments WHERE user_id = auth.uid()
+      SELECT va.device_id 
+      FROM vehicle_assignments va
+      JOIN profiles p ON va.profile_id = p.id
+      WHERE p.user_id = auth.uid()
     )
   );
 
+DROP POLICY IF EXISTS "Users can acknowledge alarms for assigned vehicles" ON gps51_alarms;
 CREATE POLICY "Users can acknowledge alarms for assigned vehicles"
   ON gps51_alarms
   FOR UPDATE
   TO authenticated
   USING (
     device_id IN (
-      SELECT device_id FROM vehicle_assignments WHERE user_id = auth.uid()
+      SELECT va.device_id 
+      FROM vehicle_assignments va
+      JOIN profiles p ON va.profile_id = p.id
+      WHERE p.user_id = auth.uid()
     )
   )
   WITH CHECK (
     device_id IN (
-      SELECT device_id FROM vehicle_assignments WHERE user_id = auth.uid()
+      SELECT va.device_id 
+      FROM vehicle_assignments va
+      JOIN profiles p ON va.profile_id = p.id
+      WHERE p.user_id = auth.uid()
     )
   );
 
+DROP POLICY IF EXISTS "Service role can manage alarms" ON gps51_alarms;
 CREATE POLICY "Service role can manage alarms"
   ON gps51_alarms
   FOR ALL
@@ -324,19 +341,24 @@ CREATE INDEX IF NOT EXISTS idx_gps51_sync_status_updated
 -- Enable RLS
 ALTER TABLE gps51_sync_status ENABLE ROW LEVEL SECURITY;
 
--- RLS Policy
-CREATE POLICY "Users can view sync status for assigned vehicles"
-  ON gps51_sync_status
+-- RLS Policies
+DROP POLICY IF EXISTS "Users can view alarms for assigned vehicles" ON gps51_alarms;
+CREATE POLICY "Users can view alarms for assigned vehicles"
+  ON gps51_alarms
   FOR SELECT
   TO authenticated
   USING (
     device_id IN (
-      SELECT device_id FROM vehicle_assignments WHERE user_id = auth.uid()
+      SELECT va.device_id 
+      FROM vehicle_assignments va
+      JOIN profiles p ON va.profile_id = p.id
+      WHERE p.user_id = auth.uid()
     )
   );
 
-CREATE POLICY "Service role can manage sync status"
-  ON gps51_sync_status
+DROP POLICY IF EXISTS "Service role can manage alarms" ON gps51_alarms;
+CREATE POLICY "Service role can manage alarms"
+  ON gps51_alarms
   FOR ALL
   TO service_role
   USING (true)

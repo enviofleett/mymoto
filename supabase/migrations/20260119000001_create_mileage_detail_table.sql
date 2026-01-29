@@ -1,7 +1,10 @@
 -- Vehicle Mileage Details Table
 -- Stores GPS51 reportmileagedetail API response data with manufacturer-based estimates
 
-CREATE TABLE public.vehicle_mileage_details (
+DROP VIEW IF EXISTS public.vehicle_mileage_details;
+DROP TABLE IF EXISTS public.vehicle_mileage_details;
+
+CREATE TABLE IF NOT EXISTS public.vehicle_mileage_details (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   device_id TEXT NOT NULL,
   
@@ -51,20 +54,22 @@ CREATE TABLE public.vehicle_mileage_details (
 );
 
 -- Indexes
-CREATE INDEX idx_mileage_details_device_date ON vehicle_mileage_details(device_id, statisticsday DESC);
-CREATE INDEX idx_mileage_details_device_time ON vehicle_mileage_details(device_id, starttime DESC);
-CREATE INDEX idx_mileage_details_fuel_theft ON vehicle_mileage_details(device_id, leakoil) WHERE leakoil > 0;
-CREATE INDEX idx_mileage_details_variance ON vehicle_mileage_details(device_id, fuel_consumption_variance) WHERE fuel_consumption_variance IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_mileage_details_device_date ON vehicle_mileage_details(device_id, statisticsday DESC);
+CREATE INDEX IF NOT EXISTS idx_mileage_details_device_time ON vehicle_mileage_details(device_id, starttime DESC);
+CREATE INDEX IF NOT EXISTS idx_mileage_details_fuel_theft ON vehicle_mileage_details(device_id, leakoil) WHERE leakoil > 0;
+CREATE INDEX IF NOT EXISTS idx_mileage_details_variance ON vehicle_mileage_details(device_id, fuel_consumption_variance) WHERE fuel_consumption_variance IS NOT NULL;
 
 -- Enable RLS
 ALTER TABLE public.vehicle_mileage_details ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
+DROP POLICY IF EXISTS "Authenticated users can read mileage details" ON public.vehicle_mileage_details;
 CREATE POLICY "Authenticated users can read mileage details"
 ON public.vehicle_mileage_details FOR SELECT
 TO authenticated
 USING (true);
 
+DROP POLICY IF EXISTS "Service role can manage mileage details" ON public.vehicle_mileage_details;
 CREATE POLICY "Service role can manage mileage details"
 ON public.vehicle_mileage_details FOR ALL
 TO service_role

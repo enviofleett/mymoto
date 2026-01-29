@@ -32,12 +32,14 @@ CREATE INDEX IF NOT EXISTS idx_bookings_status ON public.directory_bookings(stat
 ALTER TABLE public.directory_bookings ENABLE ROW LEVEL SECURITY;
 
 -- Users read their own bookings
+DROP POLICY IF EXISTS "Users read own bookings" ON public.directory_bookings;
 CREATE POLICY "Users read own bookings"
     ON public.directory_bookings FOR SELECT
     TO authenticated
     USING (user_id = auth.uid());
 
 -- Providers read bookings for their business
+DROP POLICY IF EXISTS "Providers read own bookings" ON public.directory_bookings;
 CREATE POLICY "Providers read own bookings"
     ON public.directory_bookings FOR SELECT
     TO authenticated
@@ -49,12 +51,14 @@ CREATE POLICY "Providers read own bookings"
     );
 
 -- Users can create bookings
+DROP POLICY IF EXISTS "Users create bookings" ON public.directory_bookings;
 CREATE POLICY "Users create bookings"
     ON public.directory_bookings FOR INSERT
     TO authenticated
     WITH CHECK (user_id = auth.uid());
 
 -- Providers can update fulfillment status
+DROP POLICY IF EXISTS "Providers update fulfillment" ON public.directory_bookings;
 CREATE POLICY "Providers update fulfillment"
     ON public.directory_bookings FOR UPDATE
     TO authenticated

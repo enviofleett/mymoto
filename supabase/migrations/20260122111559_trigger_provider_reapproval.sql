@@ -20,6 +20,7 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS provider_profile_edit_trigger ON public.service_providers;
 CREATE TRIGGER provider_profile_edit_trigger
     BEFORE UPDATE ON public.service_providers
     FOR EACH ROW

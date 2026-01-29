@@ -6,7 +6,11 @@ DO $$
 DECLARE
     constraint_name text;
 BEGIN
-    -- Find and drop language_preference constraint
+    -- Drop specific named constraints if they exist
+    ALTER TABLE public.vehicle_llm_settings DROP CONSTRAINT IF EXISTS vehicle_llm_settings_language_preference_check;
+    ALTER TABLE public.vehicle_llm_settings DROP CONSTRAINT IF EXISTS vehicle_llm_settings_personality_mode_check;
+
+    -- Find and drop language_preference constraint (if any other exists with random name)
     SELECT conname INTO constraint_name
     FROM pg_constraint
     WHERE conrelid = 'public.vehicle_llm_settings'::regclass
@@ -17,7 +21,7 @@ BEGIN
         EXECUTE format('ALTER TABLE public.vehicle_llm_settings DROP CONSTRAINT %I', constraint_name);
     END IF;
     
-    -- Find and drop personality_mode constraint
+    -- Find and drop personality_mode constraint (if any other exists with random name)
     SELECT conname INTO constraint_name
     FROM pg_constraint
     WHERE conrelid = 'public.vehicle_llm_settings'::regclass

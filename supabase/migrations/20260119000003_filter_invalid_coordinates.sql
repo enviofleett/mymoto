@@ -3,6 +3,7 @@
 -- Invalid coordinates (e.g., lat 290, lon 500) are filtered out
 
 -- Update v_gps_sync_health view to filter invalid coordinates
+DROP VIEW IF EXISTS v_gps_sync_health;
 CREATE OR REPLACE VIEW v_gps_sync_health AS
 SELECT 
   COUNT(*) as total_vehicles,
