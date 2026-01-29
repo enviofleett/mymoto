@@ -102,7 +102,8 @@ const InstallApp = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background font-sans text-foreground pb-20">
+    <div className="min-h-screen bg-gray-50/50 dark:bg-black flex justify-center font-sans">
+      <div className="w-full max-w-[480px] bg-background min-h-screen shadow-2xl border-x border-border/20 pb-20">
       {/* App Store Header Style */}
       <div className="px-5 pt-8 pb-4 flex gap-5 items-start">
         <div className="w-[118px] h-[118px] rounded-[22px] shadow-sm border border-border/10 bg-background overflow-hidden shrink-0 relative">
@@ -323,6 +324,7 @@ const InstallApp = () => {
               </button>
           </div>
       </div>
+    </div>
     </div>
   );
 };
