@@ -150,6 +150,11 @@ export default function OwnerChatDetail() {
     let channel: ReturnType<typeof supabase.channel> | null = null;
     
     const setupSubscription = async () => {
+      // Cleanup existing channel if any
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+
       channel = supabase
         .channel(`vehicle_chat:${deviceId}:${user.id}`)
         .on(
@@ -234,7 +239,11 @@ export default function OwnerChatDetail() {
           if (status === 'SUBSCRIBED') {
             console.log('[Chat] ✅ Realtime subscription active');
           } else if (status === 'CHANNEL_ERROR') {
-            console.error('[Chat] ❌ Realtime subscription error');
+            console.error('[Chat] ❌ Realtime subscription error - retrying in 5s...');
+            // Retry subscription after delay
+            setTimeout(() => {
+              if (mounted) setupSubscription();
+            }, 5000);
           }
         });
     };
