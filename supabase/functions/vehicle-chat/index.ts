@@ -4,6 +4,7 @@ import { routeQuery } from './query-router.ts'
 import { parseCommand, containsCommandKeywords, getCommandMetadata, GeofenceAlertParams } from './command-parser.ts'
 import { learnAndGetPreferences, buildPreferenceContext } from './preference-learner.ts'
 import { extractDateContext, isHistoricalMovementQuery, calculateDistanceFromHistory, DateContext } from './date-extractor.ts'
+import { handleTripSearch } from './trip-search.ts'
 import { detectIgnition, normalizeSpeed, normalizeVehicleTelemetry, type Gps51RawData } from '../_shared/telemetry-normalizer.ts'
 
 // Declare Deno for linter
@@ -2610,6 +2611,44 @@ Deno.serve(async (req: Request) => {
     }
 
     // Determine if fresh data is needed based on routing
+    
+    // --- SMART TRIP SEARCH INTEGRATION ---
+    let tripSearchResult = null;
+    let smartSearchContext = '';
+    
+    // Only attempt if not a command and looks like a trip/location query
+    if (!commandCreated && originalMessage.match(/(?:to|from|at|in|visit|visiting|near|around|trip|ride|go|went|history)/i)) {
+       const searchRes = await handleTripSearch(supabase, originalMessage, device_id);
+       
+       if (searchRes) {
+         if (searchRes.type === 'clarification') {
+            const suggestions = searchRes.suggestions.map(s => `**${s.name}**`).join(' or ');
+            const responseText = `I found multiple locations matching your request. Did you mean ${suggestions}?`;
+            
+            return new Response(responseText, {
+              headers: { ...corsHeaders, 'Content-Type': 'text/plain' }
+            });
+         }
+         
+         if (searchRes.type === 'success') {
+            tripSearchResult = searchRes;
+            smartSearchContext = `
+[SMART TRIP SEARCH RESULT]
+The user asked about "${searchRes.locationName}".
+Found ${searchRes.trips.length} trips:
+${searchRes.trips.map((t, i) => `${i+1}. ${t.start_time} to ${t.end_time} (${t.distance_km}km)`).join('\n')}
+`;
+            console.log(`[Smart Search] Injected ${searchRes.trips.length} trips into context.`);
+         }
+         
+         if (searchRes.type === 'empty') {
+            // Optional: You could return immediately if you want strict "not found" behavior
+            // return new Response(`I couldn't find any trips related to "${searchRes.message}".`, { headers: { ...corsHeaders, 'Content-Type': 'text/plain' } });
+            console.log(`[Smart Search] No matches found.`);
+         }
+       }
+    }
+    // -------------------------------------
 
     const needsFreshData = routing.cache_strategy === 'fresh' || routing.cache_strategy === 'hybrid'
 
@@ -3964,6 +4003,7 @@ ${ragContext.semanticTripMatches.map((t, i) => `  ${i + 1}. ${t}`).join('\n')}
 ${ragContext.memories.length > 0 ? `RELEVANT PAST CONVERSATIONS (from semantic memory search):
 ${ragContext.memories.map((m, i) => `  ${i + 1}. ${m}`).join('\n')}
 ` : ''}
+${smartSearchContext ? smartSearchContext : ''}
 RESPONSE RULES:
 1. ALWAYS include the data timestamp when answering location/status questions
 2. When discussing location, you MUST include a special LOCATION tag for rich rendering:
