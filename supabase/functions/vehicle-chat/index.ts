@@ -1,4 +1,3 @@
-import { serve } from "std/http/server.ts"
 import { createClient } from 'supabase-js'
 import { buildConversationContext, estimateTokenCount } from './conversation-manager.ts'
 import { routeQuery } from './query-router.ts'
@@ -2351,8 +2350,9 @@ async function fetchFreshGpsData(supabase: any, deviceId: string): Promise<any> 
   }
 }
 
-serve(async (req: Request) => {
+Deno.serve(async (req: Request) => {
   
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
@@ -2813,7 +2813,7 @@ serve(async (req: Request) => {
     console.log('[Date Extraction] Initial extract:', dateContext)
 
     // Use enhanced date extraction (hybrid: regex + LLM)
-    let dateContext: DateContext
+    // let dateContext: DateContext // Removed duplicate declaration
     const dateExtractionStartTime = Date.now()
 
     try {
@@ -2988,21 +2988,9 @@ serve(async (req: Request) => {
       positionCount: number
     } | null = null
 
-    // ENHANCED LOCATION AWARENESS: Abuja District Recognition
-    // Identify key Abuja districts to provide richer context in AI responses
-    const abujaDistricts = [
-      'Garki', 'Wuse', 'Maitama', 'Asokoro', 'Central Business District', 'Jabi', 'Utako', 'Gwarinpa', 'Kubwa', 'Lugbe'
-    ];
+    // ENHANCED LOCATION AWARENESS: Abuja District Recognition logic moved to after location resolution
     let districtContext = '';
-    if (currentLocationName) {
-      const detectedDistrict = abujaDistricts.find(district => 
-        currentLocationName.toLowerCase().includes(district.toLowerCase())
-      );
-      if (detectedDistrict) {
-        districtContext = `\n\n[NEIGHBORHOOD CONTEXT]: We are currently in the **${detectedDistrict}** district of Abuja. This is a key area. Mention this specifically in your response.`;
-        console.log(`[Location] Detected Abuja District: ${detectedDistrict}`);
-      }
-    }
+
 
     if (dateContext.hasDateReference || isHistoricalMovementQuery(message)) {
       console.log(`Fetching historical data for period: ${dateContext.humanReadable}`)
@@ -3292,6 +3280,21 @@ serve(async (req: Request) => {
         }
       } else if (!learnedLocationContext) {
         currentLocationName = `${lat.toFixed(5)}, ${lon.toFixed(5)}`
+      }
+    }
+
+    // ENHANCED LOCATION AWARENESS: Abuja District Recognition (Placed here to ensure currentLocationName is resolved)
+    // Identify key Abuja districts to provide richer context in AI responses
+    const abujaDistricts = [
+      'Garki', 'Wuse', 'Maitama', 'Asokoro', 'Central Business District', 'Jabi', 'Utako', 'Gwarinpa', 'Kubwa', 'Lugbe'
+    ];
+    if (currentLocationName) {
+      const detectedDistrict = abujaDistricts.find(district => 
+        currentLocationName.toLowerCase().includes(district.toLowerCase())
+      );
+      if (detectedDistrict) {
+        districtContext = `\n\n[NEIGHBORHOOD CONTEXT]: We are currently in the **${detectedDistrict}** district of Abuja. This is a key area. Mention this specifically in your response.`;
+        console.log(`[Location] Detected Abuja District: ${detectedDistrict}`);
       }
     }
 
