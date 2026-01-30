@@ -1220,7 +1220,7 @@ function structuredDataToPrompt(data: StructuredVehicleData): string {
   prompt += `- Location: ${data.realtime.location.address} (${data.realtime.location.lat}, ${data.realtime.location.lon})\n`
   prompt += `- Speed: ${data.realtime.status.speed} km/h\n`
   prompt += `- Battery: ${data.realtime.status.battery ?? 'Unknown'}%\n`
-  prompt += `- Ignition: ${data.realtime.status.ignition ? 'ON' : 'OFF'}\n`
+  prompt += `- Motion: ${data.realtime.status.speed > 0 ? 'Moving' : 'Stationary'}\n`
   prompt += `- Online: ${data.realtime.status.isOnline ? 'YES' : 'NO'}\n`
   prompt += `- Data Quality: ${data.realtime.dataQuality.toUpperCase()}\n\n`
   
@@ -3694,7 +3694,7 @@ ${scenario.requires_vehicle_status ? '⚠️ REQUIRES: Vehicle status' : ''}
       position,
       currentLocationName,
       dataFreshness,
-      dataTimestamp,
+      formattedDisplayTimestamp, // Use formatted Lagos time instead of ISO
       dataAgeSeconds
     )
     
@@ -3788,7 +3788,7 @@ CURRENT STATUS:
 - GPS Owner: ${vehicle?.gps_owner || 'Unknown'}
 - Device Type: ${vehicle?.device_type || 'Unknown'}
 - Status: ${pos?.is_online ? 'ONLINE' : 'OFFLINE'}
-- Ignition: ${pos?.ignition_on ? 'ON (engine running)' : 'OFF (parked)'}
+- Motion: ${pos?.speed > 0 ? 'Moving' : 'Stationary'}
 - Speed: ${pos?.speed || 0} km/h ${pos?.is_overspeeding ? '(OVERSPEEDING!)' : ''}
 - Battery: ${pos?.battery_percent ?? 'Unknown'}%
 - Current Location: ${currentLocationName}
@@ -3805,7 +3805,7 @@ ASSIGNED DRIVER:
 
 RECENT ACTIVITY (last ${history?.length || 0} position updates):
 ${history?.slice(0, 5).map((h: any, i: number) =>
-  `  ${i + 1}. Speed: ${h.speed}km/h, Battery: ${h.battery_percent}%, Ignition: ${h.ignition_on ? 'ON' : 'OFF'}, Time: ${h.gps_time}`
+  `  ${i + 1}. Speed: ${h.speed}km/h, Battery: ${h.battery_percent}%, Motion: ${h.speed > 0 ? 'Moving' : 'Stationary'}, Time: ${h.gps_time}`
 ).join('\n') || 'No recent history'}
 
 ## RECENT TRIPS (last 5 completed)
@@ -4001,7 +4001,9 @@ IMPORTANT:
 
 ## CRITICAL INSTRUCTIONS (OVERRIDE ALL OTHERS)
 1. LANGUAGE ENFORCEMENT: ${languageInstruction}
-2. Stay in character as the vehicle.`
+2. Stay in character as the vehicle.
+3. TIMEZONE: All times are Lagos Time (West Africa Time, GMT+1). Do NOT reference UTC or other timezones. Do NOT say "it's 7:44 AM here" if the data says 6:44 AM. Trust the provided timestamp.
+4. CLARIFICATION: If the user's request is vague or ambiguous (e.g., "check status" without context), ASK A CLARIFYING QUESTION instead of guessing. Example: "Do you mean my location status or battery health?"`
 
     // 8. Prepare messages for Lovable AI with conversation context
     const messages = [
