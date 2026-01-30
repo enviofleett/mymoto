@@ -17,6 +17,7 @@ export type PreferenceCategory =
   | 'topics_of_interest'     // What they ask about most
   | 'time_preference'        // Morning person, night owl
   | 'language_style'         // Formal vs casual
+  | 'language_preference'    // Explicit language choice (English, Pidgin, etc.)
   | 'vehicle_nickname'       // What they call their car
   | 'alert_severity'         // What alerts they care about
 
@@ -136,6 +137,37 @@ const PREFERENCE_PATTERNS: Record<string, {
       if (lower.match(/all|every|any.*?(alert|notif)/)) {
         return { value: 'all', confidence: 0.7 }
       }
+      return null
+    }
+  },
+
+  // Explicit Language Preference
+  'language_preference': {
+    patterns: [
+      /\b(speak|use|switch\s+to|talk\s+in)\s+(english|pidgin|yoruba|hausa|igbo|french|francais)\b/i,
+      /\b(can\s+you\s+speak|do\s+you\s+speak)\s+(english|pidgin|yoruba|hausa|igbo|french|francais)\b/i,
+      /\b(no\s+wahala|wetin\s+dey|how\s+far)\b/i, // Pidgin indicators
+      /\b(ba\s+wo|kedu|sannu)\b/i, // Native greeting indicators
+      /\b(parlez[\s\-]?vous|je\s+parle)\s+fran[cç]ais\b/i, // French indicators
+    ],
+    extract: (match, message) => {
+      const lower = message.toLowerCase()
+      
+      // Explicit requests
+      if (lower.match(/english/)) return { value: 'english', confidence: 0.95 }
+      if (lower.match(/pidgin/)) return { value: 'pidgin', confidence: 0.95 }
+      if (lower.match(/yoruba/)) return { value: 'yoruba', confidence: 0.95 }
+      if (lower.match(/hausa/)) return { value: 'hausa', confidence: 0.95 }
+      if (lower.match(/igbo/)) return { value: 'igbo', confidence: 0.95 }
+      if (lower.match(/french|fran[cç]ais/)) return { value: 'french', confidence: 0.95 }
+      
+      // Implicit indicators (lower confidence)
+      if (lower.match(/no\s+wahala|wetin\s+dey|how\s+far/)) return { value: 'pidgin', confidence: 0.6 }
+      if (lower.match(/ba\s+wo/)) return { value: 'yoruba', confidence: 0.6 }
+      if (lower.match(/kedu/)) return { value: 'igbo', confidence: 0.6 }
+      if (lower.match(/sannu/)) return { value: 'hausa', confidence: 0.6 }
+      if (lower.match(/parlez[\s\-]?vous|je\s+parle/)) return { value: 'french', confidence: 0.7 }
+      
       return null
     }
   },

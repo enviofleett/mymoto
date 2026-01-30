@@ -3205,6 +3205,7 @@ Deno.serve(async (req: Request) => {
 
     // 5.5. Learn user preferences from conversation and message
     let preferenceContext = ''
+    let languageOverride: string | null = null; // Store explicit language switches
     if (user_id) {
       try {
         const prefResult = await learnAndGetPreferences(
@@ -3218,6 +3219,41 @@ Deno.serve(async (req: Request) => {
           console.log(`Learned ${prefResult.newPreferencesFound} new preferences from conversation`)
         }
         console.log(`User preferences loaded: ${Object.keys(prefResult.preferences).length} preferences`)
+
+        // CRITICAL: Handle explicit language switch requests immediately
+        // This ensures the VERY NEXT response is in the requested language
+        const detectedLang = prefResult.preferences['language_preference'];
+        if (detectedLang && detectedLang.confidence >= 0.9) {
+          const newLang = detectedLang.value;
+          const currentLang = llmSettings?.language_preference || 'english';
+          
+          if (newLang.toLowerCase() !== currentLang.toLowerCase()) {
+            console.log(`[Language Switch] User explicitly requested switch to: ${newLang} (from ${currentLang})`);
+            
+            // 1. Update Database
+            const { error: updateError } = await supabase
+              .from('vehicle_llm_settings')
+              .upsert({ 
+                device_id, 
+                language_preference: newLang,
+                updated_at: new Date().toISOString()
+              }, { onConflict: 'device_id' });
+              
+            if (updateError) {
+              console.error('[Language Switch] Failed to update settings:', updateError);
+            } else {
+              console.log('[Language Switch] Database updated successfully');
+            }
+            
+            // 2. Set override for this execution
+            languageOverride = newLang;
+            
+            // 3. Update local context (best effort)
+            if (llmSettings) {
+              llmSettings.language_preference = newLang;
+            }
+          }
+        }
       } catch (prefError) {
         console.error('Preference learning error:', prefError)
         // Continue without preferences
@@ -3457,8 +3493,8 @@ Deno.serve(async (req: Request) => {
     const driver = assignment?.profiles as unknown as { name: string; phone: string | null; license_number: string | null } | null
     const vehicleNickname = llmSettings?.nickname || assignment?.vehicle_alias || vehicle?.device_name || 'Unknown Vehicle'
     // Normalize language and personality to lowercase to prevent lookup errors
-    // IMPORTANT: Only use stored preference, never auto-detect or change language
-    let languagePref = (llmSettings?.language_preference || 'english').toLowerCase().trim()
+    // IMPORTANT: Only use stored preference (or explicit override), never auto-detect or change language
+    let languagePref = (languageOverride || llmSettings?.language_preference || 'english').toLowerCase().trim()
     const personalityMode = (llmSettings?.personality_mode || 'casual').toLowerCase().trim()
     
     
@@ -3719,7 +3755,7 @@ ${ownerDisplayName ? `✓ Address owner as "${ownerDisplayName}" occasionally fo
 ✓ GOOD: "Cruising at 45 km/h on Third Mainland Bridge."
 
 ## VOICE & LANGUAGE
-${languageInstruction}
+(See CRITICAL INSTRUCTIONS at end)
 
 ## PERSONALITY MODE
 ${personalityInstruction}
@@ -3961,7 +3997,11 @@ CRITICAL STORYTELLING RULES:
 IMPORTANT: 
 - When the user asks "where are you" or similar location questions, your response MUST include the [LOCATION: lat, lon, "address"] tag so the frontend can render a map card.
 - When the user asks about trip history, your response MUST use the paragraph-based narrative provided. The narrative is already formatted as natural, flowing paragraphs - include it in your response without adding markdown, icons, or structure.
-- The narrative already includes a call-to-action at the end directing users to the vehicle profile page - make sure to include this in your response.`
+- The narrative already includes a call-to-action at the end directing users to the vehicle profile page - make sure to include this in your response.
+
+## CRITICAL INSTRUCTIONS (OVERRIDE ALL OTHERS)
+1. LANGUAGE ENFORCEMENT: ${languageInstruction}
+2. Stay in character as the vehicle.`
 
     // 8. Prepare messages for Lovable AI with conversation context
     const messages = [
