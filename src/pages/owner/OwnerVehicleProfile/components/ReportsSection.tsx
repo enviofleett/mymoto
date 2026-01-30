@@ -506,11 +506,19 @@ function TripCard({
               )}
             </div>
             <div className="text-xs text-green-500">
-              {trip.duration_seconds 
-                ? Math.round(trip.duration_seconds / 60) 
+              {trip.duration_seconds
+                ? Math.round(trip.duration_seconds / 60)
                 : differenceInMinutes(parseISO(trip.end_time), parseISO(trip.start_time))
               } min
             </div>
+            {/* GPS51 Speed Data */}
+            {(trip.max_speed || trip.avg_speed) && (
+              <div className="text-xs text-muted-foreground">
+                {trip.max_speed && <span>Max: {Math.round(trip.max_speed)}km/h</span>}
+                {trip.max_speed && trip.avg_speed && <span> · </span>}
+                {trip.avg_speed && <span>Avg: {Math.round(trip.avg_speed)}km/h</span>}
+              </div>
+            )}
           </div>
           <Button
             variant="ghost"

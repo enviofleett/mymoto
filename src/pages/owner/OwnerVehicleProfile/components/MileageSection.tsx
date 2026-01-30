@@ -12,6 +12,10 @@ import {
   AlertTriangle,
   TrendingDown,
   TrendingUp as TrendingUpIcon,
+  Clock,
+  Car,
+  ParkingCircle,
+  Zap,
 } from "lucide-react";
 import {
   AreaChart,
@@ -146,6 +150,79 @@ export function MileageSection({
   // Use chartData consistently to prevent UI jumping
   const displayData = chartData.length > 0 ? chartData : [];
 
+  // Calculate driving stats (driving time, parking time, max/avg speed)
+  // These match the GPS51 platform display
+  const drivingStats = useMemo(() => {
+    if (!dailyStats || dailyStats.length === 0) {
+      return {
+        totalDrivingSeconds: 0,
+        drivingTimeFormatted: "0h 0m",
+        parkingTimeFormatted: "--",
+        maxSpeed: 0,
+        avgSpeed: 0,
+        hasDrivingData: false,
+      };
+    }
+
+    let filtered = dailyStats;
+    const today = new Date().toISOString().split('T')[0];
+
+    if (dateRange?.from) {
+      // Use the selected date range
+      const fromDate = dateRange.from.toISOString().split('T')[0];
+      const toDate = dateRange.to?.toISOString().split('T')[0] || fromDate;
+      filtered = dailyStats.filter(s => s.stat_date >= fromDate && s.stat_date <= toDate);
+    } else {
+      // When no filter is active, show TODAY's data only (to match GPS51 behavior)
+      const todayStat = dailyStats.find(s => s.stat_date === today);
+      filtered = todayStat ? [todayStat] : [];
+    }
+
+    if (filtered.length === 0) {
+      return {
+        totalDrivingSeconds: 0,
+        drivingTimeFormatted: "0h 0m",
+        parkingTimeFormatted: "--",
+        maxSpeed: 0,
+        avgSpeed: 0,
+        hasDrivingData: false,
+      };
+    }
+
+    // Total driving time in seconds
+    const totalDrivingSeconds = filtered.reduce((sum, s) => sum + (s.total_duration_seconds || 0), 0);
+
+    // Peak speed across all days
+    const maxSpeed = Math.max(...filtered.map(s => s.peak_speed || 0), 0);
+
+    // Average speed (weighted by duration would be ideal, but we'll use simple average)
+    const speedValues = filtered.filter(s => s.avg_speed && s.avg_speed > 0).map(s => s.avg_speed || 0);
+    const avgSpeed = speedValues.length > 0 ? speedValues.reduce((a, b) => a + b, 0) / speedValues.length : 0;
+
+    // Format driving time as hours and minutes
+    const drivingHours = Math.floor(totalDrivingSeconds / 3600);
+    const drivingMinutes = Math.floor((totalDrivingSeconds % 3600) / 60);
+    const drivingTimeFormatted = `${drivingHours}h ${drivingMinutes}m`;
+
+    // Calculate parking time: For single day, it's 24h - driving time
+    // For multiple days, it's (total days * 24h) - driving time
+    const daysCount = filtered.length || 1;
+    const totalPeriodSeconds = daysCount * 24 * 3600;
+    const parkingSeconds = Math.max(0, totalPeriodSeconds - totalDrivingSeconds);
+    const parkingHours = Math.floor(parkingSeconds / 3600);
+    const parkingMinutes = Math.floor((parkingSeconds % 3600) / 60);
+    const parkingTimeFormatted = `${parkingHours}h ${parkingMinutes}m`;
+
+    return {
+      totalDrivingSeconds,
+      drivingTimeFormatted,
+      parkingTimeFormatted,
+      maxSpeed: Math.round(maxSpeed),
+      avgSpeed: Math.round(avgSpeed),
+      hasDrivingData: totalDrivingSeconds > 0 || maxSpeed > 0,
+    };
+  }, [dailyStats, dateRange]);
+
   // Calculate fuel consumption statistics (only if table exists and has data)
   const fuelStats = useMemo(() => {
     // Check if table exists - if error is PGRST205, table doesn't exist
@@ -233,7 +310,7 @@ export function MileageSection({
             <div className="rounded-lg bg-muted p-3 text-center">
               <TrendingUp className="h-4 w-4 text-muted-foreground mx-auto mb-1" />
               <div className="text-lg font-bold text-foreground">
-                {isFilterActive 
+                {isFilterActive
                   ? derivedStats.avgPerDay.toFixed(1)
                   : (todayAndWeekStats.weekDistance / 7).toFixed(1)
                 }
@@ -243,13 +320,82 @@ export function MileageSection({
             <div className="rounded-lg bg-primary/10 p-3 text-center">
               <Calendar className="h-4 w-4 text-primary mx-auto mb-1" />
               <div className="text-lg font-bold text-primary">
-                {isFilterActive 
+                {isFilterActive
                   ? (derivedStats.daysWithData || 1)
                   : todayAndWeekStats.weekDistance.toFixed(1)
                 }
               </div>
               <div className="text-xs text-muted-foreground">
                 {isFilterActive ? "Days" : "This Week"}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Driving Stats Card - GPS51 Parity */}
+      <Card className="border-border bg-card/50">
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Car className="h-5 w-5 text-primary" />
+              <span className="font-medium text-foreground">Driving Stats</span>
+            </div>
+            {isFilterActive ? (
+              <Badge variant="outline" className="text-xs border-primary/50 text-primary">
+                <Filter className="h-3 w-3 mr-1" />
+                Filtered
+              </Badge>
+            ) : (
+              <div className="flex items-center gap-1 text-muted-foreground text-sm">
+                <Calendar className="h-4 w-4" />
+                Today
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            {/* Driving Time */}
+            <div className="rounded-lg bg-green-500/10 p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <Clock className="h-4 w-4 text-green-500" />
+                <span className="text-xs text-muted-foreground">Driving</span>
+              </div>
+              <div className="text-xl font-bold text-green-500">
+                {drivingStats.drivingTimeFormatted}
+              </div>
+            </div>
+
+            {/* Parking Duration */}
+            <div className="rounded-lg bg-orange-500/10 p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <ParkingCircle className="h-4 w-4 text-orange-500" />
+                <span className="text-xs text-muted-foreground">Parking</span>
+              </div>
+              <div className="text-xl font-bold text-orange-500">
+                {drivingStats.parkingTimeFormatted}
+              </div>
+            </div>
+
+            {/* Max Speed */}
+            <div className="rounded-lg bg-red-500/10 p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <Zap className="h-4 w-4 text-red-500" />
+                <span className="text-xs text-muted-foreground">Max Speed</span>
+              </div>
+              <div className="text-xl font-bold text-red-500">
+                {drivingStats.maxSpeed > 0 ? `${drivingStats.maxSpeed} km/h` : "--"}
+              </div>
+            </div>
+
+            {/* Avg Speed */}
+            <div className="rounded-lg bg-blue-500/10 p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <Gauge className="h-4 w-4 text-blue-500" />
+                <span className="text-xs text-muted-foreground">Avg Speed</span>
+              </div>
+              <div className="text-xl font-bold text-blue-500">
+                {drivingStats.avgSpeed > 0 ? `${drivingStats.avgSpeed} km/h` : "--"}
               </div>
             </div>
           </div>
