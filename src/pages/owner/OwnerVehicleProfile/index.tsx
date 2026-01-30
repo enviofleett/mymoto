@@ -6,10 +6,9 @@ import { toast } from "sonner";
 
 import { OwnerLayout } from "@/components/layouts/OwnerLayout";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { PullToRefresh } from "@/components/ui/pull-to-refresh";
+import { PullToRefresh, PullToRefreshIndicator } from "@/components/ui/pull-to-refresh";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { TripPlaybackDialog } from "@/components/profile/TripPlaybackDialog";
 import { VehiclePersonaSettings } from "@/components/fleet/VehiclePersonaSettings";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
@@ -473,10 +472,9 @@ export default function OwnerVehicleProfile() {
 
   return (
     <OwnerLayout>
-      <PullToRefresh
-        isPulling={isPulling}
-        pullProgress={pullDistance / 80}
+      <PullToRefreshIndicator
         isRefreshing={isRefreshing}
+        pullDistance={pullDistance}
       />
 
       <div {...pullHandlers} className="flex flex-col min-h-full w-full max-w-3xl mx-auto space-y-4">
@@ -580,13 +578,13 @@ export default function OwnerVehicleProfile() {
           }
         }}
       >
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" aria-describedby="vehicle-settings-description">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Vehicle Settings</DialogTitle>
+            <DialogDescription className="sr-only">
+              Configure vehicle persona settings including nickname, language preference, personality mode, and avatar
+            </DialogDescription>
           </DialogHeader>
-          <p id="vehicle-settings-description" className="sr-only">
-            Configure vehicle persona settings including nickname, language preference, personality mode, and avatar
-          </p>
           <VehiclePersonaSettings 
             deviceId={deviceId} 
             vehicleName={displayName}

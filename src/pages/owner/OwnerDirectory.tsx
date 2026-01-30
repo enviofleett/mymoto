@@ -18,11 +18,10 @@ import {
   Calendar,
   Search,
   Filter,
-  Loader2,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
-import { extractCity, getStaticMapUrl } from "@/utils/mapbox-geocoding";
+import { extractCity } from "@/utils/mapbox-geocoding";
 import BookingModal from "@/components/directory/BookingModal";
 
 interface ServiceProvider {
@@ -46,6 +45,8 @@ interface ServiceProvider {
     name: string;
     icon: string | null;
   };
+  avg_rating?: number;
+  review_count?: number;
 }
 
 export default function OwnerDirectory() {
@@ -59,14 +60,32 @@ export default function OwnerDirectory() {
   const { data: categories = [] } = useQuery({
     queryKey: ['directory-categories'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      // @ts-ignore
+      const { data, error } = await (supabase as any)
         .from('directory_categories')
         .select('*')
         .eq('is_active', true)
         .order('display_order', { ascending: true });
       
       if (error) throw error;
-      return data;
+      return data as any[];
+    },
+  });
+
+  // Fetch provider stats
+  const { data: stats = [] } = useQuery({
+    queryKey: ['provider-stats'],
+    queryFn: async () => {
+      // @ts-ignore
+      const { data, error } = await (supabase as any)
+        .from('provider_stats_view')
+        .select('*');
+      
+      if (error) {
+        console.warn('Failed to fetch provider stats (view might not exist yet):', error);
+        return [];
+      }
+      return data as any[];
     },
   });
 
@@ -74,35 +93,53 @@ export default function OwnerDirectory() {
   const { data: providers = [], isLoading } = useQuery({
     queryKey: ['approved-providers'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      // @ts-ignore
+      const { data, error } = await (supabase as any)
         .from('service_providers')
         .select(`
           *,
           category:directory_categories(*)
         `)
         .eq('approval_status', 'approved')
-        .order('created_at', { ascending: false });
+        .eq('is_active', true);
       
       if (error) throw error;
-      return data as ServiceProvider[];
+      
+      // Transform data to match ServiceProvider interface
+      return (data as any[]).map(provider => ({
+        ...provider,
+        category: provider.category
+      })) as ServiceProvider[];
     },
   });
+
+  // Merge stats into providers
+  const providersWithStats = useMemo(() => {
+    return providers.map(p => {
+      const stat = stats.find((s: any) => s.provider_id === p.id);
+      return {
+        ...p,
+        avg_rating: stat?.avg_rating || 0,
+        review_count: stat?.review_count || 0
+      };
+    });
+  }, [providers, stats]);
 
   // Extract unique cities from providers
   const cities = useMemo(() => {
     const citySet = new Set<string>();
-    providers.forEach(p => {
+    providersWithStats.forEach(p => {
       if (p.profile_data?.location?.address) {
         const city = extractCity(p.profile_data.location.address);
         if (city) citySet.add(city);
       }
     });
     return Array.from(citySet).sort();
-  }, [providers]);
+  }, [providersWithStats]);
 
   // Filter providers
   const filteredProviders = useMemo(() => {
-    return providers.filter(p => {
+    return providersWithStats.filter(p => {
       const matchesCategory = selectedCategory === "all" || p.category_id === selectedCategory;
       const matchesCity = selectedCity === "all" || 
         (p.profile_data?.location?.address && 
@@ -114,7 +151,7 @@ export default function OwnerDirectory() {
       
       return matchesCategory && matchesCity && matchesSearch;
     });
-  }, [providers, selectedCategory, selectedCity, searchQuery]);
+  }, [providersWithStats, selectedCategory, selectedCity, searchQuery]);
 
   const handleBookVisit = (provider: ServiceProvider) => {
     setSelectedProvider(provider);
@@ -243,6 +280,13 @@ export default function OwnerDirectory() {
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <h3 className="font-bold text-lg">{provider.business_name}</h3>
+                        <div className="flex items-center gap-1 text-sm mt-1">
+                          <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+                          <span className="font-medium">{provider.avg_rating || "New"}</span>
+                          {provider.review_count ? (
+                            <span className="text-muted-foreground">({provider.review_count})</span>
+                          ) : null}
+                        </div>
                         {provider.category && (
                           <Badge variant="secondary" className="mt-1">
                             {provider.category.icon && (

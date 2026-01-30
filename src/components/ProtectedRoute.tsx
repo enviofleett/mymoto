@@ -6,12 +6,15 @@ import { Button } from '@/components/ui/button';
 interface ProtectedRouteProps {
   children: React.ReactNode;
   requireAdmin?: boolean;
+  requireProvider?: boolean;
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requireAdmin = false }) => {
-  const { user, isAdmin, isLoading } = useAuth();
+  const { user, isAdmin, isLoading, isLoggingOut } = useAuth();
 
-  if (isLoading) {
+  // Show loader while initial auth is loading OR while actively logging out
+  // This prevents race conditions where redirect happens before logout completes
+  if (isLoading || isLoggingOut) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -24,6 +27,17 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requireAdmin 
   }
 
   if (requireAdmin && !isAdmin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-destructive">Access Denied</h1>
+          <p className="text-muted-foreground mt-2">You don't have permission to access this page.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (requireProvider && !isProvider) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">

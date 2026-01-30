@@ -56,6 +56,8 @@ serve(async (req) => {
     console.log("[admin-register-provider] Verifying token...");
     
     // Verify the user token using service role client
+    // CRITICAL: getUser() is strictly for session/user info. 
+    // It DOES NOT check if the user has specific roles.
     const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
 
     if (authError || !user) {
@@ -68,28 +70,31 @@ serve(async (req) => {
 
     console.log("[admin-register-provider] User authenticated:", user.id, user.email);
 
-    // Check if user is admin using RPC function (more reliable)
-    const { data: isAdmin, error: roleError } = await supabaseAdmin.rpc('has_role', {
-      _user_id: user.id,
-      _role: 'admin'
-    });
+    // CRITICAL: We MUST explicitly check if the user is an admin.
+    // The previous RPC call 'has_role' might fail if the function doesn't exist or permissions are wrong.
+    // We will use a direct DB query to the user_roles table, which is the source of truth.
+    
+    const { data: userRoles, error: rolesError } = await supabaseAdmin
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", user.id);
 
-    if (roleError || !isAdmin) {
-      console.error("[admin-register-provider] Admin check failed:", { isAdmin, roleError });
-      // Fallback check
-      const { data: userRole } = await supabaseAdmin
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", user.id)
-        .eq("role", "admin")
-        .maybeSingle();
+    if (rolesError) {
+      console.error("[admin-register-provider] Error fetching roles:", rolesError);
+       return new Response(
+        JSON.stringify({ error: `Internal Error: Could not verify admin privileges. Details: ${rolesError.message}` }),
+        { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
 
-      if (!userRole) {
-        return new Response(
-          JSON.stringify({ error: "Only admins can register providers" }),
-          { status: 403, headers: { "Content-Type": "application/json", ...corsHeaders } }
-        );
-      }
+    const isAdmin = userRoles?.some(r => r.role === 'admin');
+
+    if (!isAdmin) {
+      console.error("[admin-register-provider] Access denied. User is not admin:", user.id);
+      return new Response(
+        JSON.stringify({ error: "Access Denied: Only admins can register providers" }),
+        { status: 403, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
     }
 
     console.log("[admin-register-provider] Admin role verified for user:", user.id);
@@ -116,20 +121,9 @@ serve(async (req) => {
     }
 
     // Check if user already exists
-    const { data: existingUsers, error: listError } = await supabaseAdmin.auth.admin.listUsers();
-    if (listError) {
-      console.error("[admin-register-provider] Error checking existing users:", listError);
-    } else {
-      const userExists = existingUsers.users.some(u => u.email?.toLowerCase() === email.toLowerCase());
-      if (userExists) {
-        console.error(`[admin-register-provider] User already exists: ${email}`);
-        return new Response(
-          JSON.stringify({ error: `A user with the email ${email} already exists.` }),
-          { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
-        );
-      }
-    }
-
+    // Note: listUsers() is paginated and not reliable for uniqueness checks across large user bases.
+    // We will rely on createUser throwing an error if the email exists.
+    
     // Generate random password if auto-approve is enabled and no password provided
     let finalPassword = password;
     if (autoApprove && !password) {
@@ -155,8 +149,15 @@ serve(async (req) => {
 
     if (createError) {
       console.error("[admin-register-provider] Create user error:", createError);
+      let errorMessage = `Failed to create user: ${createError.message}`;
+      
+      // Handle known error messages
+      if (createError.message?.toLowerCase().includes("already registered") || createError.status === 422) {
+        errorMessage = `A user with the email ${email} already exists.`;
+      }
+      
       return new Response(
-        JSON.stringify({ error: `Failed to create user: ${createError.message}` }),
+        JSON.stringify({ error: errorMessage }),
         { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }

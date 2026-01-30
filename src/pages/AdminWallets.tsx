@@ -8,8 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Wallet, TrendingUp, TrendingDown, ArrowUpDown, Settings, Plus, Minus } from "lucide-react";
+import { Wallet, TrendingUp, ArrowUpDown, Settings, Plus, Minus } from "lucide-react";
 import { Navigate } from "react-router-dom";
 
 export default function AdminWallets() {
@@ -182,67 +183,70 @@ export default function AdminWallets() {
                 <p className="text-muted-foreground">Loading wallets...</p>
               </div>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>User</TableHead>
-                    <TableHead>Balance</TableHead>
-                    <TableHead>Created</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {wallets.map((wallet) => (
-                    <TableRow key={wallet.id}>
-                      <TableCell>
-                        <div>
-                          <p className="font-medium">{wallet.email || "No email"}</p>
-                          <p className="text-xs text-muted-foreground truncate max-w-[200px]">
-                            {wallet.user_id}
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <span className={wallet.balance < 0 ? "text-destructive" : "text-foreground"}>
-                          ₦{wallet.balance.toLocaleString()}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        {new Date(wallet.created_at).toLocaleDateString()}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-green-600 hover:text-green-700"
-                            onClick={() => openAdjustDialog(wallet.id, "credit")}
-                          >
-                            <Plus className="h-4 w-4 mr-1" />
-                            Credit
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-red-600 hover:text-red-700"
-                            onClick={() => openAdjustDialog(wallet.id, "debit")}
-                          >
-                            <Minus className="h-4 w-4 mr-1" />
-                            Debit
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {wallets.length === 0 && (
+              <ScrollArea className="w-full whitespace-nowrap rounded-md border">
+                <Table>
+                  <TableHeader>
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground">
-                        No wallets found
-                      </TableCell>
+                      <TableHead>User</TableHead>
+                      <TableHead>Balance</TableHead>
+                      <TableHead>Created</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {wallets.map((wallet) => (
+                      <TableRow key={wallet.id}>
+                        <TableCell>
+                          <div>
+                            <p className="font-medium">{wallet.email || "No email"}</p>
+                            <p className="text-xs text-muted-foreground truncate max-w-[200px]">
+                              {wallet.user_id}
+                            </p>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <span className={wallet.balance < 0 ? "text-destructive" : "text-foreground"}>
+                            ₦{wallet.balance.toLocaleString()}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          {new Date(wallet.created_at).toLocaleDateString()}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-green-600 hover:text-green-700"
+                              onClick={() => openAdjustDialog(wallet.id, "credit")}
+                            >
+                              <Plus className="h-4 w-4 mr-1" />
+                              Credit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-red-600 hover:text-red-700"
+                              onClick={() => openAdjustDialog(wallet.id, "debit")}
+                            >
+                              <Minus className="h-4 w-4 mr-1" />
+                              Debit
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {wallets.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center text-muted-foreground">
+                          No wallets found
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+                <ScrollBar orientation="horizontal" />
+              </ScrollArea>
             )}
           </CardContent>
         </Card>

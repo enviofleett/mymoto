@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -30,6 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import {
   Tabs,
   TabsContent,
@@ -47,16 +47,23 @@ import {
   FolderPlus,
   Building2,
   Search,
-  Filter,
-  UserPlus,
+  Calendar,
+  MapPin,
+  Phone,
+  Mail,
+  User,
+  FileText,
 } from "lucide-react";
+import { VehicleLocationMap } from "@/components/fleet/VehicleLocationMap";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { format } from "date-fns";
 
 interface DirectoryCategory {
   id: string;
   name: string;
+  slug: string;
   icon: string | null;
   display_order: number;
   is_active: boolean;
@@ -75,10 +82,13 @@ interface ServiceProvider {
   profile_data: {
     logo_url?: string;
     description?: string;
+    address?: string;
+    city?: string;
     location?: {
       lat: number;
       lng: number;
       address: string;
+      city?: string;
       mapbox_place_id?: string;
     };
     perks?: string[];
@@ -92,6 +102,25 @@ interface ServiceProvider {
   created_at: string;
   updated_at: string;
   category?: DirectoryCategory;
+}
+
+interface DirectoryBooking {
+  id: string;
+  user_id: string;
+  provider_id: string;
+  booking_date: string;
+  booking_time: string | null;
+  status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
+  fulfilled_at: string | null;
+  notes: string | null;
+  created_at: string;
+  user?: {
+    email: string | null;
+    name: string | null;
+  };
+  provider?: {
+    business_name: string;
+  };
 }
 
 export default function AdminDirectory() {
@@ -154,6 +183,29 @@ export default function AdminDirectory() {
     },
   });
 
+  // Fetch bookings
+  const { data: bookings = [], isLoading: bookingsLoading } = useQuery({
+    queryKey: ['admin-bookings'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('directory_bookings')
+        .select(`
+          *,
+          user:user_id (
+            email,
+            name
+          ),
+          provider:provider_id (
+            business_name
+          )
+        `)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      return data as DirectoryBooking[];
+    },
+  });
+
   // Filter providers
   const filteredProviders = useMemo(() => {
     return providers.filter(p => {
@@ -171,7 +223,7 @@ export default function AdminDirectory() {
 
   // Create category mutation
   const createCategory = useMutation({
-    mutationFn: async (data: { name: string; icon: string | null; display_order: number }) => {
+    mutationFn: async (data: { name: string; slug: string; icon: string | null; display_order: number }) => {
       const { error } = await supabase
         .from('directory_categories')
         .insert(data);
@@ -196,7 +248,7 @@ export default function AdminDirectory() {
 
   // Update category mutation
   const updateCategory = useMutation({
-    mutationFn: async ({ id, ...data }: { id: string; name: string; icon: string | null; display_order: number }) => {
+    mutationFn: async ({ id, ...data }: { id: string; name: string; slug: string; icon: string | null; display_order: number }) => {
       const { error } = await supabase
         .from('directory_categories')
         .update(data)
@@ -271,6 +323,22 @@ export default function AdminDirectory() {
 
       if (error) {
         console.error('Edge function invocation error:', error);
+        
+        // Handle FunctionsHttpError explicitly
+        if (error.name === 'FunctionsHttpError') {
+                try {
+                   const errorContext = await error.context.json();
+                   throw new Error(errorContext.error || 'Failed to register provider');
+                } catch (e) {
+                   if (e instanceof Error && e.message !== 'Internal server error in registration service.') {
+                     // If we successfully parsed the error but re-threw it above, don't catch it here
+                     if (e.message !== 'Failed to parse error context') throw e;
+                   }
+                   console.error("Failed to parse error context:", e);
+                   throw new Error('Internal server error in registration service.');
+                }
+              }
+
         // Extract more detailed error information if available
         let message = 'Failed to register provider. Please try again.';
         if (error.message?.includes('400')) message = 'Invalid data or user already exists.';
@@ -288,7 +356,7 @@ export default function AdminDirectory() {
 
       return result;
     },
-    onSuccess: (result) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['service-providers'] });
       setProviderRegisterDialogOpen(false);
       resetProviderForm();
@@ -300,7 +368,6 @@ export default function AdminDirectory() {
       );
     },
     onError: (error: any) => {
-      console.error('Register provider error:', error);
       const errorMessage = error.message || error.error_description || 'Unknown error occurred';
       toast.error('Failed to register provider', { 
         description: errorMessage,
@@ -433,6 +500,9 @@ export default function AdminDirectory() {
   // Reject provider mutation
   const rejectProvider = useMutation({
     mutationFn: async ({ providerId, reason }: { providerId: string; reason: string }) => {
+      // Fetch session for edge function auth
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      
       const { error } = await supabase
         .from('service_providers')
         .update({ 
@@ -442,12 +512,33 @@ export default function AdminDirectory() {
         .eq('id', providerId);
       
       if (error) throw error;
+
+      // Send rejection email
+      const provider = providers.find(p => p.id === providerId);
+      if (provider?.email && currentSession) {
+        try {
+          await supabase.functions.invoke('send-provider-rejection-email', {
+            body: {
+              providerEmail: provider.email,
+              businessName: provider.business_name,
+              reason,
+            },
+            headers: {
+              Authorization: `Bearer ${currentSession.access_token}`,
+            },
+          });
+        } catch (emailError) {
+          console.error('Email sending error:', emailError);
+          // Don't throw, rejection is saved
+          toast.error('Provider rejected, but failed to send email');
+        }
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['service-providers'] });
       setApprovalDialogOpen(false);
       setSelectedProvider(null);
-      toast.success('Provider rejected');
+      toast.success('Provider rejected and email sent');
     },
     onError: (error: any) => {
       toast.error('Failed to reject provider', { description: error.message });
@@ -473,8 +564,16 @@ export default function AdminDirectory() {
       return;
     }
 
+    const name = categoryName.trim();
+    // Generate slug from name: "Car Wash" -> "car-wash"
+    const slug = name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-') // Replace non-alphanumeric chars with hyphens
+      .replace(/(^-|-$)/g, '');    // Remove leading/trailing hyphens
+
     const data = {
-      name: categoryName.trim(),
+      name,
+      slug,
       icon: categoryIcon.trim() || null,
       display_order: categoryOrder,
     };
@@ -616,6 +715,10 @@ export default function AdminDirectory() {
               <FolderPlus className="h-4 w-4 mr-2" />
               Categories ({categories.length})
             </TabsTrigger>
+            <TabsTrigger value="bookings">
+              <Calendar className="h-4 w-4 mr-2" />
+              Bookings ({bookings.length})
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="providers" className="space-y-4">
@@ -691,105 +794,108 @@ export default function AdminDirectory() {
                   </div>
                 ) : (
                   <div className="rounded-md border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Business Name</TableHead>
-                          <TableHead>Category</TableHead>
-                          <TableHead>Contact</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Created</TableHead>
-                          <TableHead className="text-right">Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {filteredProviders.map((provider) => (
-                          <TableRow key={provider.id}>
-                            <TableCell className="font-medium">
-                              {provider.business_name}
-                            </TableCell>
-                            <TableCell>
-                              {provider.category?.name || 'Uncategorized'}
-                            </TableCell>
-                            <TableCell>
-                              <div className="text-sm">
-                                <div>{provider.phone}</div>
-                                {provider.email && (
-                                  <div className="text-muted-foreground">{provider.email}</div>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              {getStatusBadge(provider.approval_status)}
-                            </TableCell>
-                            <TableCell>
-                              {new Date(provider.created_at).toLocaleDateString('en-US', {
-                                timeZone: 'Africa/Lagos'
-                              })}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex justify-end gap-2">
-                                {provider.approval_status === 'pending' && (
-                                  <>
+                    <ScrollArea className="w-full whitespace-nowrap">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Business Name</TableHead>
+                            <TableHead>Category</TableHead>
+                            <TableHead>Contact</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Created</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredProviders.map((provider) => (
+                            <TableRow key={provider.id}>
+                              <TableCell className="font-medium">
+                                {provider.business_name}
+                              </TableCell>
+                              <TableCell>
+                                {provider.category?.name || 'Uncategorized'}
+                              </TableCell>
+                              <TableCell>
+                                <div className="text-sm">
+                                  <div>{provider.phone}</div>
+                                  {provider.email && (
+                                    <div className="text-muted-foreground">{provider.email}</div>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                {getStatusBadge(provider.approval_status)}
+                              </TableCell>
+                              <TableCell>
+                                {new Date(provider.created_at).toLocaleDateString('en-US', {
+                                  timeZone: 'Africa/Lagos'
+                                })}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex justify-end gap-2">
+                                  {provider.approval_status === 'pending' && (
+                                    <>
+                                      <Button
+                                        size="sm"
+                                        variant="default"
+                                        onClick={() => handleApprove(provider)}
+                                      >
+                                        <CheckCircle2 className="h-4 w-4 mr-1" />
+                                        Approve
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="destructive"
+                                        onClick={() => handleReject(provider)}
+                                      >
+                                        <XCircle className="h-4 w-4 mr-1" />
+                                        Reject
+                                      </Button>
+                                    </>
+                                  )}
+                                  {provider.approval_status === 'needs_reapproval' && (
                                     <Button
                                       size="sm"
                                       variant="default"
                                       onClick={() => handleApprove(provider)}
                                     >
                                       <CheckCircle2 className="h-4 w-4 mr-1" />
-                                      Approve
+                                      Re-approve
                                     </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="destructive"
-                                      onClick={() => handleReject(provider)}
-                                    >
-                                      <XCircle className="h-4 w-4 mr-1" />
-                                      Reject
-                                    </Button>
-                                  </>
-                                )}
-                                {provider.approval_status === 'needs_reapproval' && (
+                                  )}
                                   <Button
                                     size="sm"
-                                    variant="default"
-                                    onClick={() => handleApprove(provider)}
+                                    variant="outline"
+                                    onClick={() => handleOpenEditProvider(provider)}
                                   >
-                                    <CheckCircle2 className="h-4 w-4 mr-1" />
-                                    Re-approve
+                                    <Edit className="h-4 w-4 mr-1" />
+                                    Edit
                                   </Button>
-                                )}
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => handleOpenEditProvider(provider)}
-                                >
-                                  <Edit className="h-4 w-4 mr-1" />
-                                  Edit
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => {
-                                    setSelectedProvider(provider);
-                                    setProviderDialogOpen(true);
-                                  }}
-                                >
-                                  <Eye className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="destructive"
-                                  onClick={() => handleDeleteProvider(provider)}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setSelectedProvider(provider);
+                                      setProviderDialogOpen(true);
+                                    }}
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="destructive"
+                                    onClick={() => handleDeleteProvider(provider)}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                      <ScrollBar orientation="horizontal" />
+                    </ScrollArea>
                   </div>
                 )}
               </CardContent>
@@ -854,6 +960,79 @@ export default function AdminDirectory() {
                         </div>
                       </div>
                     ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="bookings" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Directory Bookings</CardTitle>
+                <CardDescription>View all service bookings across the platform</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {bookingsLoading ? (
+                  <div className="text-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
+                  </div>
+                ) : bookings.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No bookings found
+                  </div>
+                ) : (
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Date & Time</TableHead>
+                          <TableHead>User</TableHead>
+                          <TableHead>Provider</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Notes</TableHead>
+                          <TableHead>Created</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {bookings.map((booking) => (
+                          <TableRow key={booking.id}>
+                            <TableCell>
+                              <div className="font-medium">
+                                {format(new Date(booking.booking_date), 'MMM dd, yyyy')}
+                              </div>
+                              {booking.booking_time && (
+                                <div className="text-sm text-muted-foreground">
+                                  {booking.booking_time}
+                                </div>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <div className="font-medium">
+                                {booking.user?.name || 'Unknown User'}
+                              </div>
+                              <div className="text-sm text-muted-foreground">
+                                {booking.user?.email}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              {booking.provider?.business_name || 'Unknown Provider'}
+                            </TableCell>
+                            <TableCell>
+                              {getStatusBadge(booking.status)}
+                            </TableCell>
+                            <TableCell className="max-w-[200px] truncate">
+                              {booking.notes || '-'}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground text-sm">
+                              {new Date(booking.created_at).toLocaleDateString('en-US', {
+                                timeZone: 'Africa/Lagos'
+                              })}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
                 )}
               </CardContent>
@@ -1171,65 +1350,179 @@ export default function AdminDirectory() {
 
         {/* Provider Details Dialog */}
         <Dialog open={providerDialogOpen} onOpenChange={setProviderDialogOpen}>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>{selectedProvider?.business_name}</DialogTitle>
-              <DialogDescription>Provider details and profile information</DialogDescription>
-            </DialogHeader>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-0 gap-0">
+             <div className="bg-muted/30 p-6 border-b">
+                <DialogHeader>
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="flex items-start gap-4">
+                       <div className="h-16 w-16 rounded-lg bg-primary/10 flex items-center justify-center border shrink-0 overflow-hidden">
+                          {selectedProvider?.profile_data?.logo_url ? (
+                            <img src={selectedProvider.profile_data.logo_url} alt="Logo" className="h-full w-full object-cover" />
+                          ) : (
+                            <Building2 className="h-8 w-8 text-primary" />
+                          )}
+                       </div>
+                       <div>
+                          <DialogTitle className="text-2xl">{selectedProvider?.business_name}</DialogTitle>
+                          <DialogDescription className="mt-1 flex items-center gap-2">
+                             <Badge variant="outline">{selectedProvider?.category?.name || 'Uncategorized'}</Badge>
+                             <span>•</span>
+                             <span>Joined {selectedProvider && new Date(selectedProvider.created_at).toLocaleDateString()}</span>
+                          </DialogDescription>
+                       </div>
+                    </div>
+                    {selectedProvider && getStatusBadge(selectedProvider.approval_status)}
+                  </div>
+                </DialogHeader>
+             </div>
+
             {selectedProvider && (
-              <div className="space-y-4">
-                <div>
-                  <Label>Business Information</Label>
-                  <div className="mt-2 space-y-2">
-                    <div><strong>Name:</strong> {selectedProvider.business_name}</div>
-                    <div><strong>Contact Person:</strong> {selectedProvider.contact_person || 'N/A'}</div>
-                    <div><strong>Phone:</strong> {selectedProvider.phone}</div>
-                    <div><strong>Email:</strong> {selectedProvider.email || 'N/A'}</div>
-                    <div><strong>Category:</strong> {selectedProvider.category?.name || 'Uncategorized'}</div>
-                    <div><strong>Status:</strong> {getStatusBadge(selectedProvider.approval_status)}</div>
-                  </div>
+              <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Left Column */}
+                <div className="space-y-6">
+                  {/* Contact Info */}
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base font-medium flex items-center gap-2">
+                        <User className="h-4 w-4" />
+                        Contact Information
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="flex items-center gap-3">
+                        <User className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <div className="space-y-0.5">
+                          <p className="text-sm font-medium">Contact Person</p>
+                          <p className="text-sm text-muted-foreground">{selectedProvider.contact_person || 'N/A'}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <div className="space-y-0.5">
+                          <p className="text-sm font-medium">Phone</p>
+                          <p className="text-sm text-muted-foreground">{selectedProvider.phone}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <div className="space-y-0.5">
+                          <p className="text-sm font-medium">Email</p>
+                          <p className="text-sm text-muted-foreground">{selectedProvider.email || 'N/A'}</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Profile Details */}
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base font-medium flex items-center gap-2">
+                        <FileText className="h-4 w-4" />
+                        Profile Details
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                       <div>
+                          <p className="text-sm font-medium mb-1">Description</p>
+                          <p className="text-sm text-muted-foreground leading-relaxed">
+                            {selectedProvider.profile_data?.description || 'No description provided.'}
+                          </p>
+                       </div>
+                       {selectedProvider.profile_data?.perks && selectedProvider.profile_data.perks.length > 0 && (
+                          <div>
+                             <p className="text-sm font-medium mb-2">Perks & Features</p>
+                             <div className="flex flex-wrap gap-2">
+                                {selectedProvider.profile_data.perks.map((perk, i) => (
+                                   <Badge key={i} variant="secondary" className="font-normal">{perk}</Badge>
+                                ))}
+                             </div>
+                          </div>
+                       )}
+                    </CardContent>
+                  </Card>
                 </div>
-                {selectedProvider.profile_data && (
-                  <div>
-                    <Label>Profile Data</Label>
-                    <div className="mt-2 space-y-2">
-                      {selectedProvider.profile_data.description && (
-                        <div><strong>Description:</strong> {selectedProvider.profile_data.description}</div>
-                      )}
-                      {selectedProvider.profile_data.location && (
-                        <div>
-                          <strong>Location:</strong> {selectedProvider.profile_data.location.address}
-                        </div>
-                      )}
-                      {selectedProvider.profile_data.perks && selectedProvider.profile_data.perks.length > 0 && (
-                        <div>
-                          <strong>Perks:</strong>
-                          <ul className="list-disc list-inside">
-                            {selectedProvider.profile_data.perks.map((perk, idx) => (
-                              <li key={idx}>{perk}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-                {selectedProvider.pending_changes && (
-                  <div>
-                    <Label>Pending Changes (Awaiting Re-approval)</Label>
-                    <div className="mt-2 p-3 bg-muted rounded-lg">
-                      <pre className="text-sm overflow-auto">
-                        {JSON.stringify(selectedProvider.pending_changes, null, 2)}
-                      </pre>
-                    </div>
-                  </div>
-                )}
+
+                {/* Right Column */}
+                <div className="space-y-6">
+                   {/* Location */}
+                   <Card className="overflow-hidden flex flex-col h-full max-h-[500px]">
+                     <CardHeader className="pb-3 bg-muted/10">
+                        <CardTitle className="text-base font-medium flex items-center gap-2">
+                           <MapPin className="h-4 w-4" />
+                           Location
+                        </CardTitle>
+                     </CardHeader>
+                     <div className="flex-1 relative min-h-[300px]">
+                       {selectedProvider.profile_data?.location?.lat ? (
+                         <VehicleLocationMap
+                           latitude={selectedProvider.profile_data.location.lat}
+                           longitude={selectedProvider.profile_data.location.lng}
+                           address={selectedProvider.profile_data.location.address}
+                           vehicleName={selectedProvider.business_name}
+                           showAddressCard={false}
+                           mapHeight="h-full"
+                         />
+                       ) : (
+                         <div className="absolute inset-0 flex items-center justify-center bg-muted/20">
+                           <div className="text-center text-muted-foreground">
+                             <MapPin className="h-10 w-10 mx-auto mb-2 opacity-20" />
+                             <p>No location data</p>
+                           </div>
+                         </div>
+                       )}
+                     </div>
+                     <div className="p-3 bg-muted/50 border-t text-sm">
+                        <p className="font-medium text-foreground">{selectedProvider.profile_data?.location?.address || selectedProvider.profile_data?.address || 'Address not specified'}</p>
+                        <p className="text-muted-foreground">{selectedProvider.profile_data?.location?.city || selectedProvider.profile_data?.city}</p>
+                     </div>
+                   </Card>
+                   
+                   {selectedProvider.pending_changes && (
+                    <Card className="border-yellow-200 bg-yellow-50 dark:bg-yellow-900/20 dark:border-yellow-900">
+                      <CardHeader>
+                        <CardTitle className="text-lg text-yellow-700 dark:text-yellow-400">Pending Changes</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <pre className="text-xs overflow-auto max-h-40 p-2 bg-white dark:bg-black/50 rounded border">
+                          {JSON.stringify(selectedProvider.pending_changes, null, 2)}
+                        </pre>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
               </div>
             )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setProviderDialogOpen(false)}>
-                Close
-              </Button>
+
+            <DialogFooter className="p-6 pt-2 border-t bg-muted/10 sm:justify-between items-center">
+              <div className="text-xs text-muted-foreground hidden sm:block">
+                Provider ID: <span className="font-mono">{selectedProvider?.id}</span>
+              </div>
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                <Button variant="outline" onClick={() => setProviderDialogOpen(false)}>
+                  Close
+                </Button>
+                {selectedProvider && (selectedProvider.approval_status === 'pending' || selectedProvider.approval_status === 'needs_reapproval') && (
+                  <>
+                     <Button 
+                       variant="destructive" 
+                       onClick={() => {
+                          handleReject(selectedProvider);
+                          setProviderDialogOpen(false);
+                       }}
+                     >
+                       Reject
+                     </Button>
+                     <Button 
+                       onClick={() => {
+                          handleApprove(selectedProvider);
+                          setProviderDialogOpen(false);
+                       }}
+                     >
+                       Approve
+                     </Button>
+                  </>
+                )}
+              </div>
             </DialogFooter>
           </DialogContent>
         </Dialog>

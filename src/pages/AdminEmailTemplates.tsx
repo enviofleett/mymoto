@@ -10,8 +10,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Mail, Save, RotateCcw, Eye, Send, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { Mail, Save, RotateCcw, Eye, Send, Loader2, CheckCircle2, XCircle, LayoutTemplate, FileCode, Monitor, Check } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import { emailLayouts, EmailContentProps } from "@/lib/email-layouts";
+import { cn } from "@/lib/utils";
 
 interface EmailTemplate {
   id: string;
@@ -24,6 +26,10 @@ interface EmailTemplate {
   variables: string[];
   sender_id: string | null;
   is_active: boolean;
+  design_metadata: {
+    layoutId?: string;
+    content?: EmailContentProps;
+  } | null;
 }
 
 // Validate test email (align with backend validateEmail)
@@ -119,6 +125,12 @@ function replaceTemplateVariables(template: string, data: Record<string, string>
 
 // Wrap HTML content in base email template
 function wrapInEmailTemplate(content: string): string {
+  // If content is already a full HTML document, return it as is
+  if (content.trim().toLowerCase().startsWith('<!doctype html') || content.trim().toLowerCase().startsWith('<html')) {
+    return content;
+  }
+
+  // Otherwise wrap in default legacy template (Clean Bright style)
   return `
 <!DOCTYPE html>
 <html>
@@ -127,29 +139,33 @@ function wrapInEmailTemplate(content: string): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MyMoto Fleet Management</title>
 </head>
-<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f4f4f5;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="padding: 20px;">
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f8fafc; color: #0f172a;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding: 40px 20px;">
     <tr>
       <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); border: 1px solid #e2e8f0;">
+          <!-- Header -->
           <tr>
-            <td style="background-color: #3b82f6; padding: 24px; text-align: center;">
-              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600;">MyMoto Fleet</h1>
-              <p style="margin: 8px 0 0 0; color: #bfdbfe; font-size: 14px;">Fleet Management System</p>
+            <td style="padding: 32px 40px; text-align: center; border-bottom: 1px solid #f1f5f9;">
+              <h1 style="margin: 0; color: #0f172a; font-size: 24px; font-weight: 700; letter-spacing: -0.025em;">MyMoto Fleet</h1>
             </td>
           </tr>
+          
+          <!-- Content -->
           <tr>
-            <td style="padding: 32px;">
+            <td style="padding: 40px;">
               ${content}
             </td>
           </tr>
+          
+          <!-- Footer -->
           <tr>
-            <td style="background-color: #f4f4f5; padding: 20px; text-align: center; border-top: 1px solid #e4e4e7;">
-              <p style="margin: 0; color: #71717a; font-size: 12px;">
+            <td style="background-color: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #e2e8f0;">
+              <p style="margin: 0; color: #64748b; font-size: 13px;">
                 MyMoto Fleet Management System
               </p>
-              <p style="margin: 8px 0 0 0; color: #a1a1aa; font-size: 11px;">
-                This is an automated notification. Do not reply to this email.
+              <p style="margin: 8px 0 0 0; color: #94a3b8; font-size: 12px;">
+                Automated notification • Do not reply
               </p>
             </td>
           </tr>
@@ -173,6 +189,16 @@ export default function AdminEmailTemplates() {
   const [testEmailDialogOpen, setTestEmailDialogOpen] = useState(false);
   const [testEmailAddress, setTestEmailAddress] = useState("");
   const [sendingTest, setSendingTest] = useState(false);
+  const [editMode, setEditMode] = useState<'builder' | 'code'>('builder');
+
+  // Builder state
+  const [selectedLayoutId, setSelectedLayoutId] = useState<string>(emailLayouts[0].id);
+  const [builderContent, setBuilderContent] = useState<EmailContentProps>({
+    headline: '',
+    body: '',
+    callToAction: { text: '', url: '' },
+    footerText: ''
+  });
 
   useEffect(() => {
     fetchTemplates();
@@ -181,6 +207,26 @@ export default function AdminEmailTemplates() {
   useEffect(() => {
     if (selectedTemplate) {
       setEditedTemplate({ ...selectedTemplate });
+      
+      // Initialize builder state from metadata or try to parse
+      if (selectedTemplate.design_metadata?.content) {
+        setBuilderContent(selectedTemplate.design_metadata.content);
+        setSelectedLayoutId(selectedTemplate.design_metadata.layoutId || emailLayouts[0].id);
+        setEditMode('builder');
+      } else {
+        // Fallback: If no metadata, default to builder but empty, or code mode?
+        // Let's default to builder with empty fields to encourage using it, 
+        // unless it's a complex existing template.
+        setEditMode('builder');
+        // Try to preserve existing body if switching to builder
+        setBuilderContent({
+          headline: selectedTemplate.subject,
+          body: selectedTemplate.html_content, // This might be raw HTML, which is fine
+          callToAction: { text: '', url: '' },
+          footerText: ''
+        });
+      }
+      
       updatePreview();
     }
   }, [selectedTemplate]);
@@ -190,6 +236,23 @@ export default function AdminEmailTemplates() {
       updatePreview();
     }
   }, [editedTemplate?.subject, editedTemplate?.html_content]);
+
+  // Update HTML when builder content changes
+  useEffect(() => {
+    if (editMode === 'builder' && editedTemplate) {
+      const layout = emailLayouts.find(l => l.id === selectedLayoutId) || emailLayouts[0];
+      const generatedHtml = layout.generateHtml(builderContent);
+      
+      setEditedTemplate(prev => prev ? ({
+        ...prev,
+        html_content: generatedHtml,
+        design_metadata: {
+          layoutId: selectedLayoutId,
+          content: builderContent
+        }
+      }) : null);
+    }
+  }, [builderContent, selectedLayoutId, editMode]);
 
   const updatePreview = () => {
     if (!editedTemplate) return;
@@ -225,6 +288,10 @@ export default function AdminEmailTemplates() {
         const formatted = (data || []).map(t => ({
           ...t,
           variables: Array.isArray(t.variables) ? t.variables : [],
+          // Ensure design_metadata is typed correctly
+          design_metadata: typeof t.design_metadata === 'string' 
+            ? JSON.parse(t.design_metadata) 
+            : t.design_metadata || null
         }));
         setTemplates(formatted);
         if (formatted.length > 0 && !selectedTemplate) {
@@ -232,15 +299,8 @@ export default function AdminEmailTemplates() {
         }
       }
     } catch (err: any) {
-      if (err.message?.includes('schema cache') || err.message?.includes('not found')) {
-        setTableMissing(true);
-        toast.error(
-          'Email templates table not found. Please run the migration SQL file.',
-          { duration: 10000 }
-        );
-      } else {
-        toast.error(`Error loading templates: ${err.message}`);
-      }
+      console.error(err);
+      toast.error(`Error loading templates: ${err.message}`);
     }
     setLoading(false);
   };
@@ -262,6 +322,7 @@ export default function AdminEmailTemplates() {
           is_active: editedTemplate.is_active,
           updated_at: new Date().toISOString(),
           updated_by: user?.id || null,
+          design_metadata: editedTemplate.design_metadata || null // Save metadata
         })
         .eq('id', editedTemplate.id);
 
@@ -280,6 +341,11 @@ export default function AdminEmailTemplates() {
   const handleReset = () => {
     if (selectedTemplate) {
       setEditedTemplate({ ...selectedTemplate });
+      if (selectedTemplate.design_metadata?.content) {
+        setBuilderContent(selectedTemplate.design_metadata.content);
+        setSelectedLayoutId(selectedTemplate.design_metadata.layoutId || emailLayouts[0].id);
+        setEditMode('builder');
+      }
       toast.info('Template reset to saved version');
     }
   };
@@ -298,7 +364,6 @@ export default function AdminEmailTemplates() {
 
     setSendingTest(true);
     try {
-      // ✅ FIX: Always refresh session before invoke (gateway verify_jwt can reset to true on deploy)
       const { data: { session } } = await supabase.auth.refreshSession();
       const currentSession = session ?? (await supabase.auth.getSession()).data?.session;
       
@@ -311,9 +376,10 @@ export default function AdminEmailTemplates() {
       const sampleData = getSampleData(editedTemplate.template_key);
       const processedSubject = replaceTemplateVariables(editedTemplate.subject, sampleData);
       const processedHtml = replaceTemplateVariables(editedTemplate.html_content, sampleData);
-      const wrappedHtml = wrapInEmailTemplate(processedHtml);
+      // Logic change: If using builder (Full HTML), don't wrap. If code mode and partial, wrap.
+      // But wrapInEmailTemplate handles this check now!
+      const finalHtml = wrapInEmailTemplate(processedHtml);
 
-      // ✅ FIX: vehicle_assignment maps to systemNotification; backend requires title, message, actionLink, actionText
       const isVehicleAssignment = editedTemplate.template_key === 'vehicle_assignment';
       const templateForInvoke = isVehicleAssignment ? 'systemNotification' : editedTemplate.template_key;
       const testData: Record<string, string | undefined> = isVehicleAssignment
@@ -329,15 +395,14 @@ export default function AdminEmailTemplates() {
             ...(editedTemplate.sender_id && { senderId: editedTemplate.sender_id }),
           };
 
-      // ✅ FIX: Pass Authorization explicitly (gateway verify_jwt may be true; use fresh token)
       const { data, error } = await supabase.functions.invoke('send-email', {
         body: {
           template: templateForInvoke,
           to: trimmedEmail,
           data: testData,
           customSubject: processedSubject,
-          customHtml: wrappedHtml,
-          bypassStatusCheck: true, // Always allow test emails
+          customHtml: finalHtml,
+          bypassStatusCheck: true,
         },
         headers: {
           Authorization: `Bearer ${currentSession.access_token}`,
@@ -346,45 +411,10 @@ export default function AdminEmailTemplates() {
 
       if (error) {
         console.error('Test email error:', error);
-        
-        // Check for specific error types
-        if (error.message?.includes('401') || error.message?.includes('Unauthorized')) {
-          throw new Error('Authentication failed. Please sign in again as an admin and try again.');
-        }
-        
-        if (error.message?.includes('CORS') || error.message?.includes('preflight')) {
-          throw new Error('CORS error: The email function may not be deployed or configured correctly. Please check your Supabase Edge Functions.');
-        }
-        
-        if (error.message?.includes('403') || error.message?.includes('Forbidden')) {
-          throw new Error('Access denied: Admin access is required to send test emails. Please check that your user has the admin role.');
-        }
-        
-        // 429 rate limit – use resetAt from response body when available
-        const isRateLimit = error.message?.includes('429') || /rate limit/i.test(error.message ?? '');
-        if (isRateLimit && data?.resetAt) {
-          const resetAt = new Date(data.resetAt);
-          const secs = Math.max(1, Math.ceil((resetAt.getTime() - Date.now()) / 1000));
-          throw new Error(`Rate limit exceeded. Try again in ${secs} second${secs !== 1 ? 's' : ''}.`);
-        }
-        if (isRateLimit) {
-          throw new Error('Rate limit exceeded. Please wait a minute before sending another test email.');
-        }
-        
         throw error;
       }
 
       if (data?.error) {
-        // 429 may also come as data.error (e.g. when status not propagated)
-        const isRateLimit = data?.resetAt != null || (typeof data?.error === 'string' && /rate limit|429/i.test(data.error));
-        if (isRateLimit && data?.resetAt) {
-          const resetAt = new Date(data.resetAt);
-          const secs = Math.max(1, Math.ceil((resetAt.getTime() - Date.now()) / 1000));
-          throw new Error(`Rate limit exceeded. Try again in ${secs} second${secs !== 1 ? 's' : ''}.`);
-        }
-        if (isRateLimit) {
-          throw new Error('Rate limit exceeded. Please wait a minute before sending another test email.');
-        }
         throw new Error(data.error || data.message || 'Failed to send email');
       }
       
@@ -397,13 +427,7 @@ export default function AdminEmailTemplates() {
       }
     } catch (err: any) {
       console.error('Test email exception:', err);
-      const errorMessage = err.message || err.error || 'Unknown error';
-      
-      if (errorMessage.includes('CORS') || errorMessage.includes('preflight')) {
-        toast.error('CORS Error: Please ensure the send-email Edge Function is deployed and accessible.');
-      } else {
-        toast.error(`Failed to send test email: ${errorMessage}`);
-      }
+      toast.error(`Failed to send test email: ${err.message || 'Unknown error'}`);
     }
     setSendingTest(false);
   };
@@ -422,42 +446,11 @@ export default function AdminEmailTemplates() {
     return (
       <DashboardLayout>
         <div className="space-y-6">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Email Templates</h1>
-            <p className="text-muted-foreground">
-              Customize email templates sent to users for registration and vehicle assignments
-            </p>
-          </div>
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Mail className="h-5 w-5" />
-                Setup Required
-              </CardTitle>
-              <CardDescription>
-                The email templates table has not been created yet.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="p-4 bg-yellow-50 dark:bg-yellow-950/20 rounded-lg border border-yellow-200 dark:border-yellow-900">
-                <p className="text-sm text-yellow-800 dark:text-yellow-200 mb-2">
-                  <strong>Action Required:</strong> Run the SQL migration to create the email_templates table.
-                </p>
-                <ol className="list-decimal list-inside space-y-1 text-sm text-yellow-700 dark:text-yellow-300">
-                  <li>Open your Supabase Dashboard</li>
-                  <li>Go to SQL Editor</li>
-                  <li>Copy and paste the contents of <code className="bg-yellow-100 dark:bg-yellow-900 px-1 rounded">CREATE_EMAIL_TEMPLATES_TABLE.sql</code></li>
-                  <li>Click "Run" to execute the migration</li>
-                  <li>Refresh this page</li>
-                </ol>
-              </div>
-              <div className="p-4 bg-muted rounded-lg">
-                <p className="text-sm font-medium mb-2">Alternative:</p>
-                <p className="text-sm text-muted-foreground">
-                  If you're using Supabase CLI, run: <code className="bg-background px-1 rounded">supabase migration up</code>
-                </p>
-              </div>
-            </CardContent>
+             <CardHeader>
+               <CardTitle>Setup Required</CardTitle>
+               <CardDescription>Please run migration.</CardDescription>
+             </CardHeader>
           </Card>
         </div>
       </DashboardLayout>
@@ -467,16 +460,40 @@ export default function AdminEmailTemplates() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Email Templates</h1>
-          <p className="text-muted-foreground">
-            Customize email templates sent to users for registration, alerts, and notifications
-          </p>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Email Templates</h1>
+            <p className="text-muted-foreground">
+              Customize email templates sent to users for registration, alerts, and notifications
+            </p>
+          </div>
+          {editedTemplate && (
+            <div className="flex items-center gap-2 bg-muted p-1 rounded-lg">
+               <Button 
+                 variant={editMode === 'builder' ? 'default' : 'ghost'} 
+                 size="sm" 
+                 onClick={() => setEditMode('builder')}
+                 className="gap-2"
+               >
+                 <LayoutTemplate className="h-4 w-4" />
+                 Visual Builder
+               </Button>
+               <Button 
+                 variant={editMode === 'code' ? 'default' : 'ghost'} 
+                 size="sm" 
+                 onClick={() => setEditMode('code')}
+                 className="gap-2"
+               >
+                 <FileCode className="h-4 w-4" />
+                 Code Editor
+               </Button>
+            </div>
+          )}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Template List */}
-          <Card>
+          <Card className="h-fit">
             <CardHeader>
               <CardTitle className="text-sm">Templates</CardTitle>
               <CardDescription className="text-xs">
@@ -488,11 +505,12 @@ export default function AdminEmailTemplates() {
                 <button
                   key={template.id}
                   onClick={() => setSelectedTemplate(template)}
-                  className={`w-full text-left p-3 rounded-lg transition-colors ${
+                  className={cn(
+                    "w-full text-left p-3 rounded-lg transition-colors border",
                     selectedTemplate?.id === template.id
-                      ? "bg-primary/10 border border-primary/30"
-                      : "hover:bg-muted border border-transparent"
-                  }`}
+                      ? "bg-primary/5 border-primary/30"
+                      : "hover:bg-muted/50 border-transparent"
+                  )}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex-1 min-w-0">
@@ -500,10 +518,9 @@ export default function AdminEmailTemplates() {
                       <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
                         {template.description || template.template_key}
                       </p>
-                      <code className="text-xs text-muted-foreground mt-1 block">{template.template_key}</code>
                     </div>
                     {template.is_active && (
-                      <Badge variant="secondary" className="text-xs ml-2">Active</Badge>
+                      <Badge variant="secondary" className="text-[10px] ml-2 h-5">Active</Badge>
                     )}
                   </div>
                 </button>
@@ -512,8 +529,8 @@ export default function AdminEmailTemplates() {
           </Card>
 
           {/* Template Editor & Preview */}
-          <Card className="lg:col-span-2">
-            <CardHeader>
+          <Card className="lg:col-span-2 flex flex-col min-h-[600px]">
+            <CardHeader className="border-b pb-4">
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle className="flex items-center gap-2">
@@ -525,140 +542,107 @@ export default function AdminEmailTemplates() {
                   </CardDescription>
                 </div>
                 {editedTemplate && (
-                  <Dialog open={testEmailDialogOpen} onOpenChange={setTestEmailDialogOpen}>
-                    <DialogTrigger asChild>
-                      <Button variant="outline" size="sm">
-                        <Send className="h-4 w-4 mr-2" />
-                        Send Test
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Send Test Email</DialogTitle>
-                        <DialogDescription>
-                          Send a test email with sample data to verify your template looks correct.
-                        </DialogDescription>
-                      </DialogHeader>
-                      <div className="space-y-4 py-4">
-                        <div className="space-y-2">
-                          <Label>Test Email Address</Label>
-                          <Input
-                            type="email"
-                            placeholder="test@example.com"
-                            value={testEmailAddress}
-                            onChange={(e) => setTestEmailAddress(e.target.value)}
-                          />
-                        </div>
-                        <div className="p-3 bg-muted rounded-lg">
-                          <p className="text-sm font-medium mb-1">Preview Data:</p>
-                          <pre className="text-xs text-muted-foreground overflow-auto">
-                            {JSON.stringify(getSampleData(editedTemplate.template_key), null, 2)}
-                          </pre>
-                        </div>
-                      </div>
-                      <DialogFooter>
-                        <Button
-                          variant="outline"
-                          onClick={() => setTestEmailDialogOpen(false)}
-                          disabled={sendingTest}
-                        >
-                          Cancel
+                  <div className="flex items-center gap-2">
+                    <Dialog open={testEmailDialogOpen} onOpenChange={setTestEmailDialogOpen}>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" size="sm">
+                          <Send className="h-4 w-4 mr-2" />
+                          Send Test
                         </Button>
-                        <Button
-                          onClick={handleSendTestEmail}
-                          disabled={sendingTest || !(testEmailAddress || "").trim() || !isValidTestEmail(testEmailAddress)}
-                        >
-                          {sendingTest ? (
-                            <>
-                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                              Sending...
-                            </>
-                          ) : (
-                            <>
-                              <Send className="h-4 w-4 mr-2" />
-                              Send Test Email
-                            </>
-                          )}
-                        </Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Send Test Email</DialogTitle>
+                          <DialogDescription>
+                            Send a test email with sample data to verify your template looks correct.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4 py-4">
+                          <div className="space-y-2">
+                            <Label>Test Email Address</Label>
+                            <Input
+                              type="email"
+                              placeholder="test@example.com"
+                              value={testEmailAddress}
+                              onChange={(e) => setTestEmailAddress(e.target.value)}
+                            />
+                          </div>
+                          <div className="p-3 bg-muted rounded-lg">
+                            <p className="text-sm font-medium mb-1">Preview Data:</p>
+                            <pre className="text-xs text-muted-foreground overflow-auto max-h-40">
+                              {JSON.stringify(getSampleData(editedTemplate.template_key), null, 2)}
+                            </pre>
+                          </div>
+                        </div>
+                        <DialogFooter>
+                          <Button
+                            variant="outline"
+                            onClick={() => setTestEmailDialogOpen(false)}
+                            disabled={sendingTest}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            onClick={handleSendTestEmail}
+                            disabled={sendingTest || !(testEmailAddress || "").trim() || !isValidTestEmail(testEmailAddress)}
+                          >
+                            {sendingTest ? (
+                              <>
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                Sending...
+                              </>
+                            ) : (
+                              <>
+                                <Send className="h-4 w-4 mr-2" />
+                                Send Test Email
+                              </>
+                            )}
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                    <Button onClick={handleSave} disabled={saving} size="sm">
+                      {saving ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Save className="h-4 w-4 mr-2" />
+                      )}
+                      Save
+                    </Button>
+                  </div>
                 )}
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-0 flex-1 flex flex-col">
               {editedTemplate ? (
-                <Tabs defaultValue="edit" className="w-full">
-                  <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="edit">Edit</TabsTrigger>
-                    <TabsTrigger value="preview">Preview</TabsTrigger>
-                  </TabsList>
+                <Tabs defaultValue="edit" className="flex-1 flex flex-col">
+                  <div className="px-6 py-2 border-b bg-muted/30">
+                    <TabsList className="grid w-full max-w-md grid-cols-2">
+                      <TabsTrigger value="edit">Edit Content</TabsTrigger>
+                      <TabsTrigger value="preview">Live Preview</TabsTrigger>
+                    </TabsList>
+                  </div>
                   
-                  <TabsContent value="edit" className="space-y-4 mt-4">
-                    {/* Status Toggle */}
-                    <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg border">
+                  <TabsContent value="edit" className="flex-1 p-6 space-y-6 m-0">
+                    {/* Active Status */}
+                    <div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg border">
                       <div className="space-y-0.5">
-                        <Label className="text-base">Active Status</Label>
+                        <Label className="text-base font-medium">Active Status</Label>
                         <p className="text-sm text-muted-foreground">
-                          {editedTemplate.is_active 
-                            ? "This email type is currently enabled and will be sent to customers."
-                            : "This email type is currently disabled and will NOT be sent."}
+                          {editedTemplate.is_active ? "Enabled" : "Disabled"}
                         </p>
                       </div>
-                      <div className="flex items-center gap-2">
-                        {editedTemplate.is_active ? (
-                          <Badge className="bg-green-500 hover:bg-green-600 gap-1">
-                            <CheckCircle2 className="h-3 w-3" /> Enabled
-                          </Badge>
-                        ) : (
-                          <Badge variant="destructive" className="gap-1">
-                            <XCircle className="h-3 w-3" /> Disabled
-                          </Badge>
-                        )}
-                        <Switch 
-                          checked={editedTemplate.is_active}
-                          onCheckedChange={(checked) => setEditedTemplate({
-                            ...editedTemplate,
-                            is_active: checked
-                          })}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Available Variables */}
-                    {editedTemplate.variables && editedTemplate.variables.length > 0 && (
-                      <div className="p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-900">
-                        <Label className="text-xs font-semibold mb-2 block">Available Variables:</Label>
-                        <div className="flex flex-wrap gap-1">
-                          {editedTemplate.variables.map(v => (
-                            <Badge key={v} variant="outline" className="text-xs font-mono">
-                              {`{{${v}}}`}
-                            </Badge>
-                          ))}
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-2">
-                          Use these variables in your template. They will be replaced with actual values when sending emails.
-                        </p>
-                      </div>
-                    )}
-
-                    <div className="space-y-2">
-                      <Label>Sender ID (optional)</Label>
-                      <Input
-                        value={editedTemplate.sender_id || ""}
-                        onChange={(e) => setEditedTemplate({
+                      <Switch 
+                        checked={editedTemplate.is_active}
+                        onCheckedChange={(checked) => setEditedTemplate({
                           ...editedTemplate,
-                          sender_id: e.target.value || null
+                          is_active: checked
                         })}
-                        placeholder="Sender Name <sender@example.com>"
                       />
-                      <p className="text-xs text-muted-foreground">
-                        Custom sender name and email. Leave empty to use default Gmail account.
-                      </p>
                     </div>
 
                     <div className="space-y-2">
-                      <Label>Subject</Label>
+                      <Label>Subject Line</Label>
                       <Input
                         value={editedTemplate.subject}
                         onChange={(e) => setEditedTemplate({
@@ -669,69 +653,129 @@ export default function AdminEmailTemplates() {
                       />
                     </div>
 
-                    <div className="space-y-2">
-                      <Label>HTML Content</Label>
-                      <Textarea
-                        value={editedTemplate.html_content}
-                        onChange={(e) => setEditedTemplate({
-                          ...editedTemplate,
-                          html_content: e.target.value
-                        })}
-                        placeholder="HTML email content"
-                        className="font-mono text-sm min-h-[400px]"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Use HTML for formatting. Variables like {"{{userName}}"} will be replaced automatically.
-                      </p>
-                    </div>
+                    {editMode === 'builder' ? (
+                      <div className="space-y-6">
+                        {/* Layout Selector */}
+                        <div className="space-y-3">
+                           <Label>Choose Layout</Label>
+                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                             {emailLayouts.map(layout => (
+                               <div 
+                                 key={layout.id}
+                                 className={cn(
+                                   "cursor-pointer rounded-lg border-2 p-3 transition-all hover:border-primary/50",
+                                   selectedLayoutId === layout.id ? "border-primary bg-primary/5" : "border-muted"
+                                 )}
+                                 onClick={() => setSelectedLayoutId(layout.id)}
+                               >
+                                 <div className={cn("h-24 w-full rounded mb-2", layout.thumbnail)}></div>
+                                 <div className="flex items-center justify-between">
+                                    <span className="font-medium text-sm">{layout.name}</span>
+                                    {selectedLayoutId === layout.id && <Check className="h-4 w-4 text-primary" />}
+                                 </div>
+                                 <p className="text-xs text-muted-foreground mt-1">{layout.description}</p>
+                               </div>
+                             ))}
+                           </div>
+                        </div>
 
-                    <div className="flex gap-2 pt-2">
-                      <Button onClick={handleSave} disabled={saving}>
-                        {saving ? (
-                          <>
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            Saving...
-                          </>
-                        ) : (
-                          <>
-                            <Save className="h-4 w-4 mr-2" />
-                            Save Template
-                          </>
-                        )}
-                      </Button>
-                      <Button variant="outline" onClick={handleReset}>
-                        <RotateCcw className="h-4 w-4 mr-2" />
-                        Reset Changes
-                      </Button>
-                    </div>
+                        {/* Content Fields */}
+                        <div className="space-y-4 border-t pt-4">
+                           <h3 className="text-sm font-semibold">Email Literature</h3>
+                           
+                           <div className="space-y-2">
+                             <Label>Headline / Greeting</Label>
+                             <Input 
+                               value={builderContent.headline || ''}
+                               onChange={e => setBuilderContent({...builderContent, headline: e.target.value})}
+                               placeholder="e.g. Welcome to MyMoto Fleet!"
+                             />
+                           </div>
+
+                           <div className="space-y-2">
+                             <Label>Body Content</Label>
+                             <Textarea 
+                               value={builderContent.body}
+                               onChange={e => setBuilderContent({...builderContent, body: e.target.value})}
+                               placeholder="Write your message here..."
+                               className="min-h-[200px]"
+                             />
+                             <div className="text-xs text-muted-foreground">
+                               <p>Available variables: {editedTemplate.variables.map(v => `{{${v}}}`).join(', ')}</p>
+                             </div>
+                           </div>
+
+                           <div className="grid grid-cols-2 gap-4">
+                             <div className="space-y-2">
+                               <Label>Button Text (Optional)</Label>
+                               <Input 
+                                 value={builderContent.callToAction?.text || ''}
+                                 onChange={e => setBuilderContent({
+                                   ...builderContent, 
+                                   callToAction: { ...builderContent.callToAction, text: e.target.value } as any
+                                 })}
+                                 placeholder="e.g. Get Started"
+                               />
+                             </div>
+                             <div className="space-y-2">
+                               <Label>Button URL (Optional)</Label>
+                               <Input 
+                                 value={builderContent.callToAction?.url || ''}
+                                 onChange={e => setBuilderContent({
+                                   ...builderContent, 
+                                   callToAction: { ...builderContent.callToAction, url: e.target.value } as any
+                                 })}
+                                 placeholder="e.g. {{loginLink}}"
+                               />
+                             </div>
+                           </div>
+
+                           <div className="space-y-2">
+                             <Label>Footer Text</Label>
+                             <Input 
+                               value={builderContent.footerText || ''}
+                               onChange={e => setBuilderContent({...builderContent, footerText: e.target.value})}
+                               placeholder="e.g. MyMoto Fleet Management System"
+                             />
+                           </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <Label>HTML Content</Label>
+                        <Textarea
+                          value={editedTemplate.html_content}
+                          onChange={(e) => setEditedTemplate({
+                            ...editedTemplate,
+                            html_content: e.target.value
+                          })}
+                          placeholder="HTML email content"
+                          className="font-mono text-sm min-h-[400px]"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Directly editing HTML. Switch to "Visual Builder" for easier editing.
+                        </p>
+                      </div>
+                    )}
                   </TabsContent>
 
-                  <TabsContent value="preview" className="mt-4">
-                    <div className="border rounded-lg overflow-hidden">
-                      <div className="bg-muted px-4 py-2 border-b flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Eye className="h-4 w-4" />
-                          <span className="text-sm font-medium">Email Preview</span>
-                        </div>
-                        <Badge variant="secondary" className="text-xs">
-                          {editedTemplate.subject ? replaceTemplateVariables(editedTemplate.subject, getSampleData(editedTemplate.template_key)) : "No subject"}
-                        </Badge>
-                      </div>
-                      <div className="bg-white p-4">
+                  <TabsContent value="preview" className="flex-1 bg-muted/10 m-0 p-0 flex flex-col">
+                    <div className="flex-1 bg-white p-4 overflow-hidden flex flex-col">
+                       <div className="border rounded-lg shadow-sm flex-1 overflow-hidden">
                         <iframe
                           srcDoc={previewHtml}
-                          className="w-full border-0"
-                          style={{ minHeight: '600px', height: '600px' }}
+                          className="w-full h-full border-0"
                           title="Email Preview"
                         />
-                      </div>
+                       </div>
                     </div>
                   </TabsContent>
                 </Tabs>
               ) : (
-                <p className="text-muted-foreground text-center py-8">
-                  Select a template to edit
-                </p>
+                <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-12">
+                  <Mail className="h-12 w-12 mb-4 opacity-20" />
+                  <p>Select a template from the list to start editing</p>
+                </div>
               )}
             </CardContent>
           </Card>

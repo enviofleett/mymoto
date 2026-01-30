@@ -63,7 +63,7 @@ export function VehicleLocationMap({
     const initialLat = hasValidCoordinates ? latitude : 9.0765;
     const initialLng = hasValidCoordinates ? longitude : 7.3986;
 
-    const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
+    const token = import.meta.env.VITE_MAPBOX_STYLE_TOKEN || import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
     if (!token) {
       console.error('[VehicleLocationMap] VITE_MAPBOX_ACCESS_TOKEN is not set');
       return;

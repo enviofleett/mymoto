@@ -155,6 +155,8 @@ function VehicleCard({ vehicle, onClick }: { vehicle: OwnerVehicle; onClick: () 
   );
 }
 
+import { VehicleRequestDialog } from "@/components/owner/VehicleRequestDialog";
+
 export default function OwnerVehicles() {
   const navigate = useNavigate();
   const { data: vehicles, isLoading } = useOwnerVehicles();
@@ -203,9 +205,13 @@ export default function OwnerVehicles() {
                 </div>
               </div>
               {/* Neumorphic add button */}
-              <button className="w-12 h-12 rounded-full bg-card shadow-neumorphic-sm flex items-center justify-center transition-all duration-200 hover:shadow-neumorphic active:shadow-neumorphic-inset ring-2 ring-accent/50">
-                <Plus className="h-5 w-5 text-accent" />
-              </button>
+              <VehicleRequestDialog 
+                trigger={
+                  <button className="w-12 h-12 rounded-full bg-card shadow-neumorphic-sm flex items-center justify-center transition-all duration-200 hover:shadow-neumorphic active:shadow-neumorphic-inset ring-2 ring-accent/50">
+                    <Plus className="h-5 w-5 text-accent" />
+                  </button>
+                }
+              />
             </div>
 
             {/* Search - Neumorphic inset style */}

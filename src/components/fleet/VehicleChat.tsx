@@ -25,7 +25,7 @@ interface LocationData {
 // Location Card Component - renders a rich map preview
 function LocationCard({ lat, lon, address }: LocationData) {
   const mapUrl = `https://www.google.com/maps?q=${lat},${lon}`;
-  const staticMapUrl = `https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/pin-s+3b82f6(${lon},${lat})/${lon},${lat},14,0/300x200@2x?access_token=${import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || 'pk.eyJ1IjoibWFwYm94IiwiYSI6ImNpejY4NXVycTA2emYycXBndHRqcmZ3N3gifQ.rJcFIG214AriISLbB6B5aw'}`;
+  const staticMapUrl = `https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/pin-s+3b82f6(${lon},${lat})/${lon},${lat},14,0/300x200@2x?access_token=${import.meta.env.VITE_MAPBOX_STYLE_TOKEN || import.meta.env.VITE_MAPBOX_ACCESS_TOKEN}`;
 
   return (
     <div className="my-2 rounded-lg border border-border bg-card overflow-hidden max-w-sm">

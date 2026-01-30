@@ -6,12 +6,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { FleetMap } from "@/components/fleet/FleetMap";
 import { VehicleTable } from "@/components/fleet/VehicleTable";
 import { AssignDriverDialog } from "@/components/fleet/AssignDriverDialog";
@@ -489,6 +489,11 @@ const Fleet = () => {
                         <DialogTitle>
                           {editingDriver ? "Edit Driver" : "Add New Driver"}
                         </DialogTitle>
+                        <DialogDescription>
+                          {editingDriver 
+                            ? "Update the driver's details below." 
+                            : "Enter the details for the new driver."}
+                        </DialogDescription>
                       </DialogHeader>
                       <form onSubmit={handleSubmitDriver} className="space-y-4">
                         <div className="space-y-2">
@@ -618,48 +623,51 @@ const Fleet = () => {
                     </div>
 
                     {/* Desktop Table */}
-                    <div className="hidden md:block">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Name</TableHead>
-                            <TableHead>Phone</TableHead>
-                            <TableHead>License</TableHead>
-                            <TableHead>Status</TableHead>
-                            {isAdmin && <TableHead className="text-right">Actions</TableHead>}
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {drivers.map((driver) => (
-                            <TableRow key={driver.id}>
-                              <TableCell className="font-medium">{driver.name}</TableCell>
-                              <TableCell>{driver.phone || "-"}</TableCell>
-                              <TableCell>{driver.license_number || "-"}</TableCell>
-                              <TableCell>{getStatusBadge(driver.status)}</TableCell>
-                              {isAdmin && (
-                                <TableCell className="text-right">
-                                  <div className="flex justify-end gap-2">
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      onClick={() => handleOpenDriverDialog(driver)}
-                                    >
-                                      <Pencil className="h-4 w-4" />
-                                    </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      onClick={() => handleDeleteDriver(driver.id)}
-                                    >
-                                      <Trash2 className="h-4 w-4 text-destructive" />
-                                    </Button>
-                                  </div>
-                                </TableCell>
-                              )}
+                    <div className="hidden md:block rounded-md border">
+                      <ScrollArea className="w-full whitespace-nowrap">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Name</TableHead>
+                              <TableHead>Phone</TableHead>
+                              <TableHead>License</TableHead>
+                              <TableHead>Status</TableHead>
+                              {isAdmin && <TableHead className="text-right">Actions</TableHead>}
                             </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
+                          </TableHeader>
+                          <TableBody>
+                            {drivers.map((driver) => (
+                              <TableRow key={driver.id}>
+                                <TableCell className="font-medium">{driver.name}</TableCell>
+                                <TableCell>{driver.phone || "-"}</TableCell>
+                                <TableCell>{driver.license_number || "-"}</TableCell>
+                                <TableCell>{getStatusBadge(driver.status)}</TableCell>
+                                {isAdmin && (
+                                  <TableCell className="text-right">
+                                    <div className="flex justify-end gap-2">
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => handleOpenDriverDialog(driver)}
+                                      >
+                                        <Pencil className="h-4 w-4" />
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => handleDeleteDriver(driver.id)}
+                                      >
+                                        <Trash2 className="h-4 w-4 text-destructive" />
+                                      </Button>
+                                    </div>
+                                  </TableCell>
+                                )}
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                        <ScrollBar orientation="horizontal" />
+                      </ScrollArea>
                     </div>
                   </>
                 )}

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -172,6 +172,9 @@ export function VehicleDetailsModal({
             <Car className="h-5 w-5" />
             {vehicle.name}
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Detailed information and controls for vehicle {vehicle.name}
+          </DialogDescription>
           {vehicle.gpsOwner && (
             <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
               <Building2 className="h-3.5 w-3.5" />

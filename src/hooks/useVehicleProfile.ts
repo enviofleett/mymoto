@@ -189,38 +189,9 @@ async function fetchVehicleTrips(
   
   return filteredTrips
     .map((trip: any): VehicleTrip => {
-      // Calculate distance if missing or 0
-      let distanceKm = trip.distance_km || 0;
-      
-      // First, try to calculate from GPS coordinates if available
-      const hasValidStartCoords = trip.start_latitude && trip.start_longitude && 
-                                   trip.start_latitude !== 0 && trip.start_longitude !== 0;
-      const hasValidEndCoords = trip.end_latitude && trip.end_longitude && 
-                                 trip.end_latitude !== 0 && trip.end_longitude !== 0;
-      
-      if (distanceKm === 0 && hasValidStartCoords && hasValidEndCoords) {
-        distanceKm = calculateDistance(
-          trip.start_latitude,
-          trip.start_longitude,
-          trip.end_latitude,
-          trip.end_longitude
-        );
-      }
-      
-      // If distance is still 0 but we have duration and average speed, estimate distance
-      if (distanceKm === 0 && trip.duration_seconds && trip.avg_speed && trip.avg_speed > 0) {
-        // distance = speed (km/h) * time (hours)
-        const durationHours = trip.duration_seconds / 3600;
-        distanceKm = trip.avg_speed * durationHours;
-      }
-      
-      // If distance is still 0 but we have duration, estimate minimum distance
-      // Assume minimum speed of 5 km/h for any trip with duration
-      if (distanceKm === 0 && trip.duration_seconds && trip.duration_seconds > 0) {
-        const durationHours = trip.duration_seconds / 3600;
-        const minSpeedKmh = 5; // Minimum assumed speed for a trip
-        distanceKm = minSpeedKmh * durationHours;
-      }
+      // CRITICAL FIX: Use database distance (GPS51 source of truth)
+      // Do NOT estimate distance from duration/speed as it creates phantom mileage
+      const distanceKm = trip.distance_km || 0;
 
       return {
         id: trip.id,

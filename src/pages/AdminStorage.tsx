@@ -6,6 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Database, HardDrive, Clock, RefreshCw, AlertTriangle, CheckCircle } from "lucide-react";
 import { Navigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -234,30 +235,33 @@ export default function AdminStorage() {
                 <CardDescription>Row counts and estimated sizes (sorted by size)</CardDescription>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Table</TableHead>
-                      <TableHead className="text-right">Row Count</TableHead>
-                      <TableHead className="text-right">Est. Size (MB)</TableHead>
-                      <TableHead className="text-right">% of Total</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {data.tables.map((table) => (
-                      <TableRow key={table.table}>
-                        <TableCell className="font-medium">{table.table}</TableCell>
-                        <TableCell className="text-right">{table.rowCount.toLocaleString()}</TableCell>
-                        <TableCell className="text-right">{table.estimatedSizeMB}</TableCell>
-                        <TableCell className="text-right">
-                          {data.totalEstimatedSizeMB > 0
-                            ? Math.round((table.estimatedSizeMB / data.totalEstimatedSizeMB) * 100)
-                            : 0}%
-                        </TableCell>
+                <ScrollArea className="w-full whitespace-nowrap rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Table</TableHead>
+                        <TableHead className="text-right">Row Count</TableHead>
+                        <TableHead className="text-right">Est. Size (MB)</TableHead>
+                        <TableHead className="text-right">% of Total</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {data.tables.map((table) => (
+                        <TableRow key={table.table}>
+                          <TableCell className="font-medium">{table.table}</TableCell>
+                          <TableCell className="text-right">{table.rowCount.toLocaleString()}</TableCell>
+                          <TableCell className="text-right">{table.estimatedSizeMB}</TableCell>
+                          <TableCell className="text-right">
+                            {data.totalEstimatedSizeMB > 0
+                              ? Math.round((table.estimatedSizeMB / data.totalEstimatedSizeMB) * 100)
+                              : 0}%
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  <ScrollBar orientation="horizontal" />
+                </ScrollArea>
               </CardContent>
             </Card>
           </>

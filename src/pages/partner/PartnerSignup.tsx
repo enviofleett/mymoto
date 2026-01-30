@@ -12,10 +12,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Loader2, AlertCircle, CheckCircle2, Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
+import { LocationPicker } from "@/components/ui/LocationPicker";
 
 export default function PartnerSignup() {
   const navigate = useNavigate();
@@ -24,8 +25,15 @@ export default function PartnerSignup() {
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [categoryId, setCategoryId] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [location, setLocation] = useState<{
+    address: string;
+    city: string;
+    latitude: number;
+    longitude: number;
+  } | null>(null);
 
   // Fetch categories
   const { data: categories = [] } = useQuery({
@@ -45,46 +53,44 @@ export default function PartnerSignup() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!businessName || !phone || !email || !password || !categoryId) {
-      toast.error('Please fill in all required fields');
+    if (!businessName || !phone || !email || !password || !categoryId || !location) {
+      toast.error('Please fill in all required fields, including location');
       return;
     }
 
     setIsSubmitting(true);
     try {
-      // Sign up user
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
+      // Use Edge Function for robust registration (handles metadata and provider record creation safely)
+      const { data: result, error: invokeError } = await supabase.functions.invoke('public-register-provider', {
+        body: {
+          email,
+          password,
+          businessName,
+          contactPerson,
+          phone,
+          categoryId,
+          address: location.address,
+          city: location.city,
+          location: {
+            lat: location.latitude,
+            lng: location.longitude,
+            address: location.address,
+            city: location.city
+          }
+        },
       });
 
-      if (authError) throw authError;
-
-      if (!authData.user) {
-        throw new Error('User creation failed');
+      if (invokeError) {
+        throw invokeError;
       }
 
-      // Create provider profile
-      const { error: providerError } = await supabase
-        // @ts-ignore - Table exists but types are outdated
-        .from('service_providers')
-        .insert({
-          user_id: authData.user.id,
-          business_name: businessName,
-          contact_person: contactPerson || null,
-          phone,
-          email,
-          category_id: categoryId,
-          approval_status: 'pending',
-        });
-
-      if (providerError) {
-        // If provider creation fails, log error but don't try to delete user
-        // (admin.auth.admin is not available in client SDK)
-        // Admin can manually clean up orphaned accounts if needed
-        console.error('Provider creation failed, user account may need manual cleanup:', authData.user.id);
-        throw providerError;
+      // Check for application-level errors from the function
+      if (result && result.error) {
+        throw new Error(result.error);
       }
+
+      // Note: service_providers row is created via database trigger on auth.users OR manual fallback in the function
+      // Emails are also handled by the Edge Function.
 
       toast.success('Registration successful! Your profile is pending admin approval.');
       
@@ -94,7 +100,7 @@ export default function PartnerSignup() {
       }, 2000);
     } catch (error: any) {
       console.error('Signup error:', error);
-      toast.error('Registration failed', { description: error.message });
+      toast.error('Registration failed', { description: error.message || error.toString() });
     } finally {
       setIsSubmitting(false);
     }
@@ -175,15 +181,33 @@ export default function PartnerSignup() {
 
             <div>
               <Label htmlFor="password">Password *</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="At least 6 characters"
-                minLength={6}
-                required
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="At least 6 characters"
+                  minLength={6}
+                  required
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <LocationPicker onLocationSelect={setLocation} />
             </div>
 
             <Alert>
@@ -211,7 +235,7 @@ export default function PartnerSignup() {
               Already have an account?{' '}
               <button
                 type="button"
-                onClick={() => navigate('/login')}
+                onClick={() => navigate('/auth')}
                 className="text-primary hover:underline"
               >
                 Log in

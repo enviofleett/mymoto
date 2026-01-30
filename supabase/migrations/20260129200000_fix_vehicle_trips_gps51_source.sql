@@ -233,7 +233,7 @@ GRANT EXECUTE ON FUNCTION public.get_daily_mileage(TEXT, INTEGER) TO authenticat
 GRANT EXECUTE ON FUNCTION public.get_daily_mileage(TEXT, INTEGER) TO anon;
 GRANT EXECUTE ON FUNCTION public.get_daily_mileage(TEXT, INTEGER) TO service_role;
 
-COMMENT ON FUNCTION public.get_daily_mileage IS 'Returns daily mileage statistics for a vehicle. ONLY counts GPS51-sourced trips.';
+COMMENT ON FUNCTION public.get_daily_mileage(TEXT, INTEGER) IS 'Returns daily mileage statistics for a vehicle. ONLY counts GPS51-sourced trips.';
 
 -- =====================================================
 -- 5. Update vehicle_daily_stats view to filter by source='gps51'

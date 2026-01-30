@@ -500,9 +500,6 @@ function TripCard({
               {trip.distance_km > 0 ? (
                 <>
                   {trip.distance_km.toFixed(1)} km
-                  {!hasValidStartCoords || !hasValidEndCoords ? (
-                    <span className="text-xs text-muted-foreground ml-1">(est.)</span>
-                  ) : null}
                 </>
               ) : (
                 '0.0 km'

@@ -77,8 +77,10 @@ export function OwnerLayout({
       <StickyAlertBanner />
       
       {/* Main Content - Dynamic padding ensures content is never cut off by footer */}
-      <main className={`flex-1 overflow-y-auto p-4 md:p-6 ${footerPadding}`}>
-        <div className="pb-4">
+      {/* CRITICAL FIX: overflow-x-hidden prevents horizontal scroll, pb-32 ensures content clears footer */}
+      {/* ADDED: pt-[calc(env(safe-area-inset-top)+1rem)] prevents top notch cutoff */}
+      <main className={`flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 pb-32 pt-[calc(env(safe-area-inset-top)+1rem)] safe-area-bottom ${footerPadding}`}>
+        <div className="mx-auto max-w-7xl w-full animate-in fade-in slide-in-from-bottom-4 duration-500">
           {children}
         </div>
       </main>

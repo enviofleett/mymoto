@@ -51,16 +51,15 @@ import PartnerSignup from "./pages/partner/PartnerSignup";
 // Directory pages
 import OwnerDirectory from "./pages/owner/OwnerDirectory";
 import AdminDirectory from "./pages/AdminDirectory";
+import AdminVehicleRequests from "./pages/AdminVehicleRequests";
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      onError: (error) => {
-      },
+      retry: 1,
     },
     mutations: {
-      onError: (error) => {
-      },
+      retry: 1,
     },
   },
 });
@@ -149,6 +148,7 @@ const App = () => {
               <Route path="/admin/report-templates" element={<ProtectedRoute><AdminReportTemplates /></ProtectedRoute>} />
               <Route path="/admin/resources" element={<ProtectedRoute><AdminResources /></ProtectedRoute>} />
               <Route path="/admin/directory" element={<ProtectedRoute requireAdmin><AdminDirectory /></ProtectedRoute>} />
+              <Route path="/admin/vehicle-requests" element={<ProtectedRoute requireAdmin><AdminVehicleRequests /></ProtectedRoute>} />
               
               {/* Partner Routes */}
               <Route path="/partner/dashboard" element={<ProtectedRoute requireProvider><PartnerDashboard /></ProtectedRoute>} />

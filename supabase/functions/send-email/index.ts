@@ -82,6 +82,7 @@ async function sendEmail(options: EmailOptions): Promise<void> {
 
 /**
  * Base email template HTML structure
+ * Updated to "Clean Bright" style
  */
 function getBaseEmailTemplate(content: string, footerText?: string): string {
   return `
@@ -92,34 +93,33 @@ function getBaseEmailTemplate(content: string, footerText?: string): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MyMoto Fleet Management</title>
 </head>
-<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f4f4f5;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="padding: 20px;">
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f8fafc; color: #0f172a;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding: 40px 20px;">
     <tr>
       <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); border: 1px solid #e2e8f0;">
           <!-- Header -->
           <tr>
-            <td style="background-color: #3b82f6; padding: 24px; text-align: center;">
-              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600;">MyMoto Fleet</h1>
-              <p style="margin: 8px 0 0 0; color: #bfdbfe; font-size: 14px;">Fleet Management System</p>
+            <td style="padding: 32px 40px; text-align: center; border-bottom: 1px solid #f1f5f9;">
+              <h1 style="margin: 0; color: #0f172a; font-size: 24px; font-weight: 700; letter-spacing: -0.025em;">MyMoto Fleet</h1>
             </td>
           </tr>
           
           <!-- Content -->
           <tr>
-            <td style="padding: 32px;">
+            <td style="padding: 40px;">
               ${content}
             </td>
           </tr>
           
           <!-- Footer -->
           <tr>
-            <td style="background-color: #f4f4f5; padding: 20px; text-align: center; border-top: 1px solid #e4e4e7;">
-              <p style="margin: 0; color: #71717a; font-size: 12px;">
+            <td style="background-color: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #e2e8f0;">
+              <p style="margin: 0; color: #64748b; font-size: 13px;">
                 ${footerText || "MyMoto Fleet Management System"}
               </p>
-              <p style="margin: 8px 0 0 0; color: #a1a1aa; font-size: 11px;">
-                This is an automated notification. Do not reply to this email.
+              <p style="margin: 8px 0 0 0; color: #94a3b8; font-size: 12px;">
+                Automated notification • Do not reply
               </p>
             </td>
           </tr>
@@ -601,6 +601,11 @@ const handler = async (req: Request): Promise<Response> => {
       dbSubject = dbSubject.replace(/\{\{#if\s+\w+\}\}[\s\S]*?\{\{\/if\}\}/g, '');
       dbHtml = dbHtml.replace(/\{\{#if\s+\w+\}\}[\s\S]*?\{\{\/if\}\}/g, '');
       
+      // Wrap in base template if it's not a full HTML document (legacy support)
+      if (!dbHtml.trim().toLowerCase().startsWith('<!doctype html') && !dbHtml.trim().toLowerCase().startsWith('<html')) {
+        dbHtml = getBaseEmailTemplate(dbHtml);
+      }
+
       emailTemplate = {
         subject: dbSubject,
         html: dbHtml,

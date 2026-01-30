@@ -213,17 +213,13 @@ export function GlobalAlertListener() {
           }
           return;
         }
-        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          console.error('[GlobalAlertListener] ❌ Subscription error:', status);
-          const { data: { session }, error } = await supabase.auth.getSession();
-          if (error || !session) {
-            if (!authRedirectedRef.current) {
-              authRedirectedRef.current = true;
-              console.error('[GlobalAlertListener] Auth invalid on channel error, redirecting to /auth');
-              navigate('/auth', { replace: true });
-            }
-            return;
-          }
+        if (status === 'CHANNEL_ERROR') {
+          console.warn('[GlobalAlertListener] ⚠️ Subscription channel error (retrying...)');
+          // Silent retry or refresh session if persistent
+          return;
+        }
+        if (status === 'TIMED_OUT') {
+          console.error('[GlobalAlertListener] ❌ Subscription timed out');
         }
       });
 

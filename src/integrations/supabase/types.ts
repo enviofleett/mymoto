@@ -113,6 +113,192 @@ export type Database = {
         }
         Relationships: []
       }
+      directory_bookings: {
+        Row: {
+          booking_date: string
+          booking_time: string | null
+          created_at: string
+          fulfilled_at: string | null
+          id: string
+          notes: string | null
+          provider_id: string
+          service_type: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          booking_date: string
+          booking_time?: string | null
+          created_at?: string
+          fulfilled_at?: string | null
+          id?: string
+          notes?: string | null
+          provider_id: string
+          service_type: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          booking_date?: string
+          booking_time?: string | null
+          created_at?: string
+          fulfilled_at?: string | null
+          id?: string
+          notes?: string | null
+          provider_id?: string
+          service_type?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "directory_bookings_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: false
+            referencedRelation: "service_providers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "directory_bookings_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      directory_categories: {
+        Row: {
+          created_at: string
+          display_order: number
+          icon: string
+          id: string
+          is_active: boolean
+          name: string
+          slug: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          display_order?: number
+          icon: string
+          id?: string
+          is_active?: boolean
+          name: string
+          slug: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          display_order?: number
+          icon?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          slug?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      service_providers: {
+        Row: {
+          address: string
+          approval_status: string
+          approved_at: string | null
+          approved_by: string | null
+          business_name: string
+          category_id: string
+          contact_person: string
+          created_at: string
+          description: string | null
+          email: string
+          id: string
+          is_active: boolean
+          is_verified: boolean
+          last_edit_at: string | null
+          pending_changes: Json | null
+          phone: string
+          profile_data: Json | null
+          rating: number
+          rejection_reason: string | null
+          review_count: number
+          service_radius_km: number
+          updated_at: string
+          user_id: string
+          website: string | null
+        }
+        Insert: {
+          address: string
+          approval_status?: string
+          approved_at?: string | null
+          approved_by?: string | null
+          business_name: string
+          category_id: string
+          contact_person: string
+          created_at?: string
+          description?: string | null
+          email: string
+          id?: string
+          is_active?: boolean
+          is_verified?: boolean
+          last_edit_at?: string | null
+          pending_changes?: Json | null
+          phone: string
+          profile_data?: Json | null
+          rating?: number
+          rejection_reason?: string | null
+          review_count?: number
+          service_radius_km?: number
+          updated_at?: string
+          user_id: string
+          website?: string | null
+        }
+        Update: {
+          address?: string
+          approval_status?: string
+          approved_at?: string | null
+          approved_by?: string | null
+          business_name?: string
+          category_id?: string
+          contact_person?: string
+          created_at?: string
+          description?: string | null
+          email?: string
+          id?: string
+          is_active?: boolean
+          is_verified?: boolean
+          last_edit_at?: string | null
+          pending_changes?: Json | null
+          phone?: string
+          profile_data?: Json | null
+          rating?: number
+          rejection_reason?: string | null
+          review_count?: number
+          service_radius_km?: number
+          updated_at?: string
+          user_id?: string
+          website?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_providers_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "directory_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_providers_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       user_roles: {
         Row: {
           id: string
@@ -133,7 +319,22 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      provider_stats_view: {
+        Row: {
+          provider_id: string
+          avg_rating: number
+          review_count: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "provider_stats_view_provider_id_fkey"
+            columns: ["provider_id"]
+            isOneToOne: true
+            referencedRelation: "service_providers"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
     }
     Functions: {
       has_role: {

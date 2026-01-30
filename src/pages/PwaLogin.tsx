@@ -149,6 +149,16 @@ export default function PwaLogin() {
           <p className="text-xs text-muted-foreground text-center mt-6">
             Your vehicles will be automatically synced
           </p>
+
+          <div className="mt-6 pt-6 border-t border-muted/20 text-center">
+            <button
+              type="button"
+              onClick={() => navigate('/auth')}
+              className="text-sm text-accent hover:underline"
+            >
+              Not using GPS51? Standard Login / Sign Up
+            </button>
+          </div>
         </CardContent>
       </Card>
 

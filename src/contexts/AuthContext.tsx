@@ -8,6 +8,7 @@ interface AuthContextType {
   isAdmin: boolean;
   isProvider: boolean;
   isLoading: boolean;
+  isLoggingOut: boolean;
   isRoleLoaded: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string) => Promise<{ error: Error | null }>;
@@ -32,6 +33,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isAdmin, setIsAdmin] = useState(false);
   const [isProvider, setIsProvider] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isRoleLoaded, setIsRoleLoaded] = useState(false);
 
   const checkAdminRole = async (userId: string) => {
@@ -191,8 +193,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
-    setIsAdmin(false);
+    try {
+      setIsLoggingOut(true);
+      await supabase.auth.signOut();
+      setIsAdmin(false);
+      setIsProvider(false);
+    } finally {
+      setIsLoggingOut(false);
+    }
   };
 
   const resetPassword = async (email: string) => {
@@ -211,7 +219,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, isAdmin, isProvider, isLoading, isRoleLoaded, signIn, signUp, signOut, resetPassword, updatePassword }}>
+    <AuthContext.Provider value={{ user, session, isAdmin, isProvider, isLoading, isLoggingOut, isRoleLoaded, signIn, signUp, signOut, resetPassword, updatePassword }}>
       {children}
     </AuthContext.Provider>
   );

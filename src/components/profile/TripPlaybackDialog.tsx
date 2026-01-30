@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -276,6 +276,9 @@ export function TripPlaybackDialog({
             <Route className="h-5 w-5 text-primary" />
             Trip Playback - {deviceName}
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Replay the vehicle's movement during this trip on the map.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">

@@ -140,38 +140,76 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
   
   console.log("[useOwnerVehicles] Fetching data for deviceIds:", deviceIds);
 
+  // Reduced chunk size to prevent URL length errors (net::ERR_ABORTED) with Supabase .in() filter
+  const CHUNK_SIZE = 10;
+
+  // Helper to fetch in chunks
+  const fetchInChunks = async (
+    table: string,
+    select: string,
+    ids: string[],
+    orderBy?: { column: string, ascending: boolean }
+  ) => {
+    const chunks = [];
+    for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+      chunks.push(ids.slice(i, i + CHUNK_SIZE));
+    }
+
+    let aggregatedData: any[] = [];
+    
+    // Process chunks sequentially to avoid browser connection limits and net::ERR_ABORTED
+    for (const chunk of chunks) {
+      let query = (supabase as any)
+        .from(table)
+        .select(select)
+        .in("device_id", chunk);
+      
+      if (orderBy) {
+        query = query.order(orderBy.column, { ascending: orderBy.ascending });
+      }
+      
+      const { data, error } = await query;
+
+      if (error) {
+        console.error(`[useOwnerVehicles] Error fetching ${table} chunk:`, error);
+      } else if (data) {
+        aggregatedData = [...aggregatedData, ...data];
+      }
+    }
+
+    return aggregatedData;
+  };
+
   // Fetch vehicle info
-  const { data: vehicles, error: vehiclesError } = await (supabase as any)
-    .from("vehicles")
-    .select("device_id, device_name, device_type")
-    .in("device_id", deviceIds);
+  const vehicles = await fetchInChunks("vehicles", "device_id, device_name, device_type", deviceIds);
+  console.log("[useOwnerVehicles] Vehicles data:", { vehicles, count: vehicles?.length });
 
-  console.log("[useOwnerVehicles] Vehicles data:", { vehicles, vehiclesError, count: vehicles?.length });
-
-  // Fetch positions - note: total_mileage is stored in meters
-  const { data: positions, error: positionsError } = await (supabase as any)
-    .from("vehicle_positions")
-    .select("device_id, latitude, longitude, speed, heading, battery_percent, ignition_on, is_online, is_overspeeding, gps_time, total_mileage")
-    .in("device_id", deviceIds);
-
-  console.log("[useOwnerVehicles] Positions data:", { positions, positionsError, count: positions?.length });
+  // Fetch positions in chunks
+  const positions = await fetchInChunks(
+    "vehicle_positions", 
+    "device_id, latitude, longitude, speed, heading, battery_percent, ignition_on, is_online, is_overspeeding, gps_time, total_mileage", 
+    deviceIds
+  );
+  console.log("[useOwnerVehicles] Positions data:", { positions, count: positions?.length });
 
   // Create maps for easy lookup
   const vehicleMap = new Map((vehicles as any[])?.map((v: any) => [v.device_id, v]) || []);
   const positionMap = new Map((positions as any[])?.map((p: any) => [p.device_id, p]) || []);
 
   // Fetch last chat messages for each device
-  const { data: chatHistory } = await (supabase as any)
-    .from("vehicle_chat_history")
-    .select("device_id, content, created_at, role")
-    .in("device_id", deviceIds)
-    .order("created_at", { ascending: false });
+  const chatHistory = await fetchInChunks(
+    "vehicle_chat_history",
+    "device_id, content, created_at, role",
+    deviceIds,
+    { column: "created_at", ascending: false }
+  );
 
   // Fetch LLM settings for personality and avatar
-  const { data: llmSettings } = await (supabase as any)
-    .from("vehicle_llm_settings")
-    .select("device_id, personality_mode, nickname, avatar_url")
-    .in("device_id", deviceIds);
+  const llmSettings = await fetchInChunks(
+    "vehicle_llm_settings",
+    "device_id, personality_mode, nickname, avatar_url",
+    deviceIds
+  );
 
   // Group chat history by device
   const chatByDevice = new Map<string, { content: string; time: Date; unread: number }>();

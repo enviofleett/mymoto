@@ -97,8 +97,9 @@ export function DashboardLayout({ children, connectionStatus }: DashboardLayoutP
 
       {/* Main Content - Dynamic padding ensures content is never cut off by footer */}
       {/* CRITICAL FIX: overflow-x-hidden prevents horizontal scroll, pb-32 ensures content clears footer */}
+      {/* UPDATE: Increased max-width to 7xl for better admin view utilization */}
       <main className={`flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 pb-32 safe-area-bottom ${footerPadding}`}>
-        <div className="mx-auto max-w-5xl animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="mx-auto max-w-7xl w-full animate-in fade-in slide-in-from-bottom-4 duration-500">
           {children}
         </div>
       </main>

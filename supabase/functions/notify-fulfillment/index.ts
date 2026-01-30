@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { sendEmail } from "../_shared/email-service.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -48,17 +49,39 @@ serve(async (req) => {
     }
 
     const providerName = (booking.provider as any).business_name;
+    const userEmail = user.user.email;
+    const publicAppUrl = Deno.env.get("PUBLIC_APP_URL") || "https://mymotofleet.com";
 
-    // Create notification message
-    const message = `Service completed at ${providerName}. Please rate your experience!`;
+    if (userEmail) {
+      const emailHtml = `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2>Service Completed!</h2>
+          <p>Hello,</p>
+          <p>Your service with <strong>${providerName}</strong> has been marked as completed.</p>
+          <p>We hope you are satisfied with the service. Please take a moment to rate your experience.</p>
+          <div style="margin: 20px 0;">
+            <a href="${publicAppUrl}/owner/directory" style="background-color: #3b82f6; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;">Rate Provider</a>
+          </div>
+          <p>Or open the MyMoto Fleet app to see the rating prompt.</p>
+          <p>Thank you,<br>MyMoto Fleet Team</p>
+        </div>
+      `;
 
-    // Here you could:
-    // 1. Send push notification to user
-    // 2. Send email notification
-    // 3. Create in-app notification record
-    // 4. The RatingListener component will handle showing the rating prompt via Realtime
+      try {
+        await sendEmail({
+          to: userEmail,
+          subject: `Service Completed - ${providerName}`,
+          html: emailHtml,
+          text: `Your service with ${providerName} is completed. Please rate your experience in the app.`,
+        });
+        console.log(`Email sent to ${userEmail}`);
+      } catch (emailErr) {
+        console.error("Failed to send email:", emailErr);
+        // Don't fail the whole request if email fails, but log it
+      }
+    }
 
-    console.log(`Notification for user ${user.user.email}: ${message}`);
+    console.log(`Notification for user ${user.user.email}: Service completed at ${providerName}`);
 
     // The RatingListener component in the frontend will automatically show the rating prompt
     // when it detects the booking status change via Supabase Realtime

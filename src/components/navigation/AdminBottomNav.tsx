@@ -66,6 +66,7 @@ const ADMIN_NAV_ITEMS = [
 ];
 
 const MORE_MENU_ITEMS = [
+  { title: "Vehicle Requests", url: "/admin/vehicle-requests", icon: Truck },
   { title: "Map", url: "/map", icon: Map },
   { title: "Insights", url: "/insights", icon: BarChart3 },
   { title: "Settings", url: "/settings", icon: Settings },

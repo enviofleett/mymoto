@@ -118,7 +118,7 @@ export function StickyAlertBanner() {
   const hasLocation = latestAlert.metadata?.latitude && latestAlert.metadata?.longitude;
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-[100] safe-area-inset-top">
+    <div className="fixed top-0 left-0 right-0 z-[100] pt-[env(safe-area-inset-top)]">
       {/* Main Banner - Neumorphic PWA Design */}
       <div
         className={cn(

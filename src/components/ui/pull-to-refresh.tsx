@@ -88,30 +88,11 @@ export function PullToRefresh({ onRefresh, children, className }: PullToRefreshP
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      {/* Loading Indicator */}
-      <div 
-        className="absolute left-0 right-0 top-0 flex justify-center items-center pointer-events-none z-10"
-        style={{ 
-          height: `${pullDistance}px`,
-          opacity: Math.min(pullDistance / PULL_THRESHOLD, 1),
-          transition: isRefreshing ? 'height 0.2s' : 'none'
-        }}
-      >
-        <div className={cn(
-          "bg-background/80 backdrop-blur-sm rounded-full p-2 shadow-sm border transition-transform duration-200",
-          isRefreshing && "animate-spin"
-        )}>
-          <Loader2 
-            className={cn(
-              "h-5 w-5 text-primary", 
-              !isRefreshing && "transform transition-transform duration-200"
-            )} 
-            style={{ 
-              transform: !isRefreshing ? `rotate(${pullDistance * 2}deg)` : undefined 
-            }}
-          />
-        </div>
-      </div>
+      <PullToRefreshIndicator 
+        isRefreshing={isRefreshing} 
+        pullDistance={pullDistance} 
+        pullThreshold={PULL_THRESHOLD} 
+      />
 
       {/* Content */}
       <div 
@@ -121,6 +102,51 @@ export function PullToRefresh({ onRefresh, children, className }: PullToRefreshP
         }}
       >
         {children}
+      </div>
+    </div>
+  );
+}
+
+interface PullToRefreshIndicatorProps {
+  isRefreshing: boolean;
+  pullDistance: number;
+  pullThreshold?: number;
+  isPulling?: boolean; // Added for compatibility if needed
+  pullProgress?: number; // Added for compatibility
+}
+
+export function PullToRefreshIndicator({ 
+  isRefreshing, 
+  pullDistance, 
+  pullThreshold = 80,
+  pullProgress 
+}: PullToRefreshIndicatorProps) {
+  // If pullProgress is provided (0-1), calculate effective distance or opacity
+  const effectiveOpacity = pullProgress !== undefined 
+    ? Math.min(pullProgress, 1)
+    : Math.min(pullDistance / pullThreshold, 1);
+    
+  const effectiveHeight = pullProgress !== undefined
+    ? pullProgress * pullThreshold
+    : pullDistance;
+
+  return (
+    <div 
+      className="absolute left-0 right-0 top-0 flex justify-center items-center pointer-events-none z-10"
+      style={{ 
+        height: `${effectiveHeight}px`,
+        opacity: effectiveOpacity,
+        transition: isRefreshing ? 'height 0.2s' : 'none'
+      }}
+    >
+      <div className={cn(
+        "bg-background/80 backdrop-blur-sm rounded-full p-2 shadow-sm border",
+        isRefreshing && "animate-spin"
+      )}>
+        <Loader2 className={cn(
+          "h-5 w-5 text-primary",
+          isRefreshing && "animate-spin"
+        )} />
       </div>
     </div>
   );
