@@ -53,25 +53,16 @@ serve(async (req) => {
     const publicAppUrl = Deno.env.get("PUBLIC_APP_URL") || "https://mymotofleet.com";
 
     if (userEmail) {
-      const emailHtml = `
-        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2>Service Completed!</h2>
-          <p>Hello,</p>
-          <p>Your service with <strong>${providerName}</strong> has been marked as completed.</p>
-          <p>We hope you are satisfied with the service. Please take a moment to rate your experience.</p>
-          <div style="margin: 20px 0;">
-            <a href="${publicAppUrl}/owner/directory" style="background-color: #3b82f6; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;">Rate Provider</a>
-          </div>
-          <p>Or open the MyMoto Fleet app to see the rating prompt.</p>
-          <p>Thank you,<br>MyMoto Fleet Team</p>
-        </div>
-      `;
+      const emailTemplate = EmailTemplates.serviceCompletion({
+          providerName: providerName,
+          rateUrl: `${publicAppUrl}/owner/directory`
+      });
 
       try {
         await sendEmail({
           to: userEmail,
-          subject: `Service Completed - ${providerName}`,
-          html: emailHtml,
+          subject: emailTemplate.subject,
+          html: emailTemplate.html,
           text: `Your service with ${providerName} is completed. Please rate your experience in the app.`,
         });
         console.log(`Email sent to ${userEmail}`);

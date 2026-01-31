@@ -108,58 +108,18 @@ serve(async (req: Request) => {
       throw new Error(`User not found: ${userError?.message}`);
     }
 
-    const loginUrl = `${Deno.env.get("PUBLIC_APP_URL") || "https://app.fleethub.com"}/login`;
+    const loginUrl = `${Deno.env.get("PUBLIC_APP_URL") || "https://mymotofleet.com"}/auth`;
     
-    // Email content
-    const emailHtml = `
-      <div style="max-width: 600px; margin: 0 auto; font-family: sans-serif;">
-        <h2 style="color: #1f2937; margin-bottom: 16px;">Congratulations! Your Profile is Approved</h2>
-        
-        <p style="color: #4b5563; line-height: 1.6; margin-bottom: 16px;">
-          Great news! Your service provider profile for <strong>${businessName}</strong> has been approved and is now live on the Fleet Directory.
-        </p>
-
-        <div style="background-color: #f3f4f6; border-left: 4px solid #3b82f6; padding: 16px; margin: 24px 0; border-radius: 4px;">
-          <p style="margin: 0; color: #1f2937; font-weight: 600;">Next Steps:</p>
-          <ol style="margin: 8px 0 0 0; padding-left: 20px; color: #4b5563;">
-            <li>Log in to your Partner Dashboard</li>
-            <li>Complete your profile (add logo, description, location, perks)</li>
-            <li>Start receiving booking requests from fleet users</li>
-          </ol>
-        </div>
-
-        <div style="margin: 32px 0; text-align: center;">
-          <a href="${loginUrl}" 
-             style="display: inline-block; background-color: #3b82f6; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600;">
-            Log In to Partner Dashboard
-          </a>
-        </div>
-
-        <p style="color: #6b7280; font-size: 14px; margin-top: 24px;">
-          <strong>Login Credentials:</strong><br>
-          Email: ${providerUser.user.email}<br>
-          ${password ? `Password: <strong>${password}</strong><br><br><em style="color: #dc2626;">Please save this password securely. You can change it after logging in.</em>` : 'Use the password you set during registration, or reset it from the login page if needed.'}
-        </p>
-
-        ${!password ? `
-        <p style="color: #6b7280; font-size: 14px; margin-top: 16px;">
-          If you forgot your password, you can reset it from the login page.
-        </p>
-        ` : ''}
-
-        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 32px 0;">
-
-        <p style="color: #9ca3af; font-size: 12px; margin: 0;">
-          This is an automated email from MyMoto Fleet Management System.<br>
-          If you have any questions, please contact our support team.
-        </p>
-      </div>
-    `;
+    const emailTemplate = EmailTemplates.providerApproval({
+      businessName: businessName,
+      loginUrl: loginUrl,
+      password: password
+    });
 
     await sendEmail({
       to: providerEmail,
-      subject: `Your Fleet Directory Profile is Approved! - ${businessName}`,
-      html: emailHtml,
+      subject: emailTemplate.subject,
+      html: emailTemplate.html,
     });
 
     console.log(`Approval email sent successfully to ${providerEmail}`);

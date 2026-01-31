@@ -137,64 +137,37 @@ serve(async (req: Request) => {
         const adminEmail = emailConfig.gmailUser;
         
         // 1. Send confirmation to Provider
-        const providerHtml = `
-          <div style="max-width: 600px; margin: 0 auto; font-family: sans-serif;">
-            <h2 style="color: #1f2937;">Registration Received</h2>
-            <p style="color: #4b5563;">
-              Hello <strong>${businessName}</strong>,
-            </p>
-            <p style="color: #4b5563;">
-              Thank you for registering with Fleet Directory. We have received your application and it is currently under review.
-            </p>
-            <p style="color: #4b5563;">
-              You will receive another email once your account has been approved by an administrator.
-            </p>
-            <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
-            <p style="color: #9ca3af; font-size: 12px;">
-              Fleet Management System
-            </p>
-          </div>
-        `;
+        const providerTemplate = EmailTemplates.providerRegistration({
+            businessName: businessName
+        });
 
         try {
             await sendEmail({
                 to: email,
-                subject: `Registration Received - ${businessName}`,
-                html: providerHtml,
+                subject: providerTemplate.subject,
+                html: providerTemplate.html,
             });
         } catch (e) {
             console.error("Failed to send provider email:", e);
         }
 
         // 2. Send notification to Admin
-        const adminHtml = `
-          <div style="max-width: 600px; margin: 0 auto; font-family: sans-serif;">
-            <h2 style="color: #1f2937;">New Provider Registration</h2>
-            <p style="color: #4b5563;">
-              A new service provider has registered and is pending approval.
-            </p>
-            <div style="background-color: #f3f4f6; padding: 16px; border-radius: 4px; margin: 16px 0;">
-              <p style="margin: 4px 0;"><strong>Business:</strong> ${businessName}</p>
-              <p style="margin: 4px 0;"><strong>Email:</strong> ${email}</p>
-              <p style="margin: 4px 0;"><strong>Phone:</strong> ${phone}</p>
-            </div>
-            <p style="color: #4b5563;">
-              Please log in to the Admin Dashboard to review and approve this application.
-            </p>
-            <div style="margin-top: 24px;">
-                <a href="${Deno.env.get("PUBLIC_APP_URL") || "https://app.fleethub.com"}/admin/directory" 
-                   style="background-color: #3b82f6; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px;">
-                   Go to Admin Dashboard
-                </a>
-            </div>
-          </div>
-        `;
+        const dashboardUrl = `${Deno.env.get("PUBLIC_APP_URL") || "https://mymotofleet.com"}/admin/directory`;
+        const adminTemplate = EmailTemplates.providerRegistrationAdmin({
+            businessName: businessName,
+            email: email,
+            phone: phone,
+            category: categoryId,
+            address: address,
+            location: location,
+            dashboardUrl: dashboardUrl
+        });
 
         try {
             await sendEmail({
                 to: adminEmail,
-                subject: `New Provider Registration: ${businessName}`,
-                html: adminHtml,
+                subject: adminTemplate.subject,
+                html: adminTemplate.html,
             });
         } catch (e) {
             console.error("Failed to send admin email:", e);

@@ -111,61 +111,12 @@ export async function sendEmail(options: EmailOptions): Promise<void> {
     subject: options.subject,
     content: options.text || options.html,
     html: options.html,
+    headers: {
+      "Content-Transfer-Encoding": "8bit",
+    },
   });
 
   await client.close();
-}
-
-/**
- * Base email template HTML structure
- */
-function getBaseEmailTemplate(content: string, footerText?: string): string {
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MyMoto Fleet Management</title>
-</head>
-<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f4f4f5;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="padding: 20px;">
-    <tr>
-      <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
-          <!-- Header -->
-          <tr>
-            <td style="background-color: #3b82f6; padding: 24px; text-align: center;">
-              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600;">MyMoto Fleet</h1>
-              <p style="margin: 8px 0 0 0; color: #bfdbfe; font-size: 14px;">Fleet Management System</p>
-            </td>
-          </tr>
-          
-          <!-- Content -->
-          <tr>
-            <td style="padding: 32px;">
-              ${content}
-            </td>
-          </tr>
-          
-          <!-- Footer -->
-          <tr>
-            <td style="background-color: #f4f4f5; padding: 20px; text-align: center; border-top: 1px solid #e4e4e7;">
-              <p style="margin: 0; color: #71717a; font-size: 12px;">
-                ${footerText || "MyMoto Fleet Management System"}
-              </p>
-              <p style="margin: 8px 0 0 0; color: #a1a1aa; font-size: 11px;">
-                This is an automated notification. Do not reply to this email.
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-  `;
 }
 
 /**
@@ -183,45 +134,19 @@ export const EmailTemplates = {
     timestamp?: string;
     metadata?: Record<string, unknown>;
   }): EmailTemplate => {
-    const severityColors = {
-      info: '#3b82f6',
-      warning: '#f59e0b',
-      error: '#ef4444',
-      critical: '#dc2626',
-    };
-
-    const severityIcons = {
-      info: 'ℹ️',
-      warning: '⚠️',
-      error: '❌',
-      critical: '🚨',
-    };
-
-    const color = severityColors[data.severity];
-    const icon = severityIcons[data.severity];
-
     const content = `
-      <div style="margin-bottom: 24px;">
-        <div style="display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; background-color: ${color}15; border-left: 4px solid ${color}; border-radius: 4px; margin-bottom: 16px;">
-          <span style="font-size: 20px;">${icon}</span>
-          <span style="color: ${color}; font-weight: 600; text-transform: uppercase; font-size: 12px; letter-spacing: 0.5px;">${data.severity}</span>
-        </div>
-        <h2 style="margin: 0 0 12px 0; color: #18181b; font-size: 20px; font-weight: 600;">${data.title}</h2>
-        ${data.vehicleName ? `<p style="margin: 0 0 16px 0; color: #71717a; font-size: 14px;"><strong>Vehicle:</strong> ${data.vehicleName}</p>` : ''}
-        <p style="margin: 0 0 16px 0; color: #3f3f46; font-size: 15px; line-height: 1.6;">${data.message}</p>
-        ${data.timestamp ? `<p style="margin: 0 0 16px 0; color: #71717a; font-size: 13px;"><strong>Time:</strong> ${data.timestamp}</p>` : ''}
-        ${data.metadata && Object.keys(data.metadata).length > 0 ? `
-          <div style="margin-top: 20px; padding: 12px; background-color: #f4f4f5; border-radius: 4px;">
-            <p style="margin: 0 0 8px 0; color: #71717a; font-size: 12px; font-weight: 600;">Additional Details:</p>
-            <pre style="margin: 0; color: #3f3f46; font-size: 12px; white-space: pre-wrap; word-wrap: break-word;">${JSON.stringify(data.metadata, null, 2)}</pre>
-          </div>
-        ` : ''}
-      </div>
+      <img src="https://enviofleet.vercel.app/mymoto-logo.png" alt="MyMoto Logo" />
+      <br />
+      <h2>${data.title}</h2>
+      <p>${data.message}</p>
+      ${data.vehicleName ? `<p>Vehicle: ${data.vehicleName}</p>` : ''}
+      ${data.timestamp ? `<p>Time: ${data.timestamp}</p>` : ''}
+      ${data.metadata ? `<pre>${JSON.stringify(data.metadata, null, 2)}</pre>` : ''}
     `;
 
     return {
       subject: `[${data.severity.toUpperCase()}] ${data.title}${data.vehicleName ? ` - ${data.vehicleName}` : ''}`,
-      html: getBaseEmailTemplate(content),
+      html: content,
     };
   },
 
@@ -234,29 +159,18 @@ export const EmailTemplates = {
     expiresIn?: string;
   }): EmailTemplate => {
     const content = `
-      <div style="margin-bottom: 24px;">
-        <h2 style="margin: 0 0 16px 0; color: #18181b; font-size: 20px; font-weight: 600;">Password Reset Request</h2>
-        ${data.userName ? `<p style="margin: 0 0 16px 0; color: #3f3f46; font-size: 15px; line-height: 1.6;">Hello ${data.userName},</p>` : ''}
-        <p style="margin: 0 0 16px 0; color: #3f3f46; font-size: 15px; line-height: 1.6;">
-          We received a request to reset your password for your MyMoto Fleet account. Click the button below to reset your password:
-        </p>
-        <div style="text-align: center; margin: 24px 0;">
-          <a href="${data.resetLink}" style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 15px;">Reset Password</a>
-        </div>
-        <p style="margin: 16px 0 0 0; color: #71717a; font-size: 13px; line-height: 1.6;">
-          Or copy and paste this link into your browser:<br>
-          <a href="${data.resetLink}" style="color: #3b82f6; word-break: break-all;">${data.resetLink}</a>
-        </p>
-        ${data.expiresIn ? `<p style="margin: 16px 0 0 0; color: #f59e0b; font-size: 13px;">⚠️ This link will expire in ${data.expiresIn}.</p>` : ''}
-        <p style="margin: 24px 0 0 0; color: #71717a; font-size: 13px; line-height: 1.6;">
-          If you didn't request a password reset, please ignore this email or contact support if you have concerns.
-        </p>
-      </div>
+      <img src="https://enviofleet.vercel.app/mymoto-logo.png" alt="MyMoto Logo" />
+      <br />
+      <h2>Password Reset Request</h2>
+      ${data.userName ? `<p>Hello ${data.userName},</p>` : ''}
+      <p>Click the link below to reset your password:</p>
+      <a href="${data.resetLink}">${data.resetLink}</a>
+      ${data.expiresIn ? `<p>Expires in ${data.expiresIn}</p>` : ''}
     `;
 
     return {
       subject: "Reset Your MyMoto Fleet Password",
-      html: getBaseEmailTemplate(content),
+      html: content,
     };
   },
 
@@ -268,28 +182,17 @@ export const EmailTemplates = {
     loginLink?: string;
   }): EmailTemplate => {
     const content = `
-      <div style="margin-bottom: 24px;">
-        <h2 style="margin: 0 0 16px 0; color: #18181b; font-size: 20px; font-weight: 600;">Welcome to MyMoto Fleet!</h2>
-        <p style="margin: 0 0 16px 0; color: #3f3f46; font-size: 15px; line-height: 1.6;">
-          Hello ${data.userName},
-        </p>
-        <p style="margin: 0 0 16px 0; color: #3f3f46; font-size: 15px; line-height: 1.6;">
-          Your account has been successfully created. You can now access the MyMoto Fleet Management System to monitor and manage your vehicles.
-        </p>
-        ${data.loginLink ? `
-          <div style="text-align: center; margin: 24px 0;">
-            <a href="${data.loginLink}" style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 15px;">Get Started</a>
-          </div>
-        ` : ''}
-        <p style="margin: 16px 0 0 0; color: #71717a; font-size: 13px; line-height: 1.6;">
-          If you have any questions or need assistance, please don't hesitate to contact our support team.
-        </p>
-      </div>
+      <img src="https://enviofleet.vercel.app/mymoto-logo.png" alt="MyMoto Logo" />
+      <br />
+      <h2>Welcome to MyMoto Fleet!</h2>
+      <p>Hello ${data.userName},</p>
+      <p>Your account has been created.</p>
+      ${data.loginLink ? `<a href="${data.loginLink}">Login Here</a>` : ''}
     `;
 
     return {
       subject: "Welcome to MyMoto Fleet",
-      html: getBaseEmailTemplate(content),
+      html: content,
     };
   },
 
@@ -308,60 +211,22 @@ export const EmailTemplates = {
     avgSpeed?: string;
   }): EmailTemplate => {
     const content = `
-      <div style="margin-bottom: 24px;">
-        <h2 style="margin: 0 0 16px 0; color: #18181b; font-size: 20px; font-weight: 600;">Trip Summary</h2>
-        <p style="margin: 0 0 16px 0; color: #3f3f46; font-size: 15px; line-height: 1.6;">
-          Hello ${data.userName},
-        </p>
-        <p style="margin: 0 0 16px 0; color: #3f3f46; font-size: 15px; line-height: 1.6;">
-          Here's a summary of your trip on ${data.vehicleName}:
-        </p>
-        <div style="background-color: #f4f4f5; border-radius: 6px; padding: 20px; margin: 20px 0;">
-          <table width="100%" cellpadding="0" cellspacing="0">
-            <tr>
-              <td style="padding: 8px 0; color: #71717a; font-size: 14px; width: 40%;"><strong>Date:</strong></td>
-              <td style="padding: 8px 0; color: #18181b; font-size: 14px;">${data.date}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px 0; color: #71717a; font-size: 14px;"><strong>Distance:</strong></td>
-              <td style="padding: 8px 0; color: #18181b; font-size: 14px;">${data.distance}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px 0; color: #71717a; font-size: 14px;"><strong>Duration:</strong></td>
-              <td style="padding: 8px 0; color: #18181b; font-size: 14px;">${data.duration}</td>
-            </tr>
-            ${data.startLocation ? `
-              <tr>
-                <td style="padding: 8px 0; color: #71717a; font-size: 14px;"><strong>Start:</strong></td>
-                <td style="padding: 8px 0; color: #18181b; font-size: 14px;">${data.startLocation}</td>
-              </tr>
-            ` : ''}
-            ${data.endLocation ? `
-              <tr>
-                <td style="padding: 8px 0; color: #71717a; font-size: 14px;"><strong>End:</strong></td>
-                <td style="padding: 8px 0; color: #18181b; font-size: 14px;">${data.endLocation}</td>
-              </tr>
-            ` : ''}
-            ${data.maxSpeed ? `
-              <tr>
-                <td style="padding: 8px 0; color: #71717a; font-size: 14px;"><strong>Max Speed:</strong></td>
-                <td style="padding: 8px 0; color: #18181b; font-size: 14px;">${data.maxSpeed}</td>
-              </tr>
-            ` : ''}
-            ${data.avgSpeed ? `
-              <tr>
-                <td style="padding: 8px 0; color: #71717a; font-size: 14px;"><strong>Avg Speed:</strong></td>
-                <td style="padding: 8px 0; color: #18181b; font-size: 14px;">${data.avgSpeed}</td>
-              </tr>
-            ` : ''}
-          </table>
-        </div>
-      </div>
+      <img src="https://enviofleet.vercel.app/mymoto-logo.png" alt="MyMoto Logo" />
+      <br />
+      <h2>Trip Summary</h2>
+      <p>Vehicle: ${data.vehicleName}</p>
+      <p>Date: ${data.date}</p>
+      <p>Distance: ${data.distance}</p>
+      <p>Duration: ${data.duration}</p>
+      ${data.startLocation ? `<p>Start Location: ${data.startLocation}</p>` : ''}
+      ${data.endLocation ? `<p>End Location: ${data.endLocation}</p>` : ''}
+      ${data.maxSpeed ? `<p>Max Speed: ${data.maxSpeed}</p>` : ''}
+      ${data.avgSpeed ? `<p>Avg Speed: ${data.avgSpeed}</p>` : ''}
     `;
 
     return {
       subject: `Trip Summary - ${data.vehicleName} - ${data.date}`,
-      html: getBaseEmailTemplate(content),
+      html: content,
     };
   },
 
@@ -375,20 +240,16 @@ export const EmailTemplates = {
     actionText?: string;
   }): EmailTemplate => {
     const content = `
-      <div style="margin-bottom: 24px;">
-        <h2 style="margin: 0 0 16px 0; color: #18181b; font-size: 20px; font-weight: 600;">${data.title}</h2>
-        <p style="margin: 0 0 16px 0; color: #3f3f46; font-size: 15px; line-height: 1.6;">${data.message}</p>
-        ${data.actionLink && data.actionText ? `
-          <div style="text-align: center; margin: 24px 0;">
-            <a href="${data.actionLink}" style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 15px;">${data.actionText}</a>
-          </div>
-        ` : ''}
-      </div>
+      <img src="https://enviofleet.vercel.app/mymoto-logo.png" alt="MyMoto Logo" />
+      <br />
+      <h2>${data.title}</h2>
+      <p>${data.message}</p>
+      ${data.actionLink ? `<a href="${data.actionLink}">${data.actionText || 'Click here'}</a>` : ''}
     `;
 
     return {
       subject: data.title,
-      html: getBaseEmailTemplate(content),
+      html: content,
     };
   },
 
@@ -404,69 +265,20 @@ export const EmailTemplates = {
     adminName?: string;
     walletLink?: string;
   }): EmailTemplate => {
-    const formattedAmount = new Intl.NumberFormat('en-NG', {
-      style: 'currency',
-      currency: data.currency || 'NGN',
-    }).format(data.amount);
-
-    const formattedBalance = new Intl.NumberFormat('en-NG', {
-      style: 'currency',
-      currency: data.currency || 'NGN',
-    }).format(data.newBalance);
-
     const content = `
-      <div style="margin-bottom: 24px;">
-        <div style="display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; background-color: #10b98115; border-left: 4px solid #10b981; border-radius: 4px; margin-bottom: 16px;">
-          <span style="font-size: 20px;">💰</span>
-          <span style="color: #10b981; font-weight: 600; text-transform: uppercase; font-size: 12px; letter-spacing: 0.5px;">Wallet Credit</span>
-        </div>
-        <h2 style="margin: 0 0 16px 0; color: #18181b; font-size: 20px; font-weight: 600;">Wallet Top-Up Confirmation</h2>
-        <p style="margin: 0 0 16px 0; color: #3f3f46; font-size: 15px; line-height: 1.6;">
-          Hello ${data.userName},
-        </p>
-        <p style="margin: 0 0 16px 0; color: #3f3f46; font-size: 15px; line-height: 1.6;">
-          Your wallet has been credited with <strong style="color: #10b981;">${formattedAmount}</strong>.
-        </p>
-        ${data.description ? `
-          <p style="margin: 0 0 16px 0; color: #71717a; font-size: 14px;">
-            <strong>Reason:</strong> ${data.description}
-          </p>
-        ` : ''}
-        ${data.adminName ? `
-          <p style="margin: 0 0 16px 0; color: #71717a; font-size: 14px;">
-            <strong>Processed by:</strong> ${data.adminName}
-          </p>
-        ` : ''}
-        <div style="background-color: #f4f4f5; border-radius: 6px; padding: 20px; margin: 20px 0;">
-          <table width="100%" cellpadding="0" cellspacing="0">
-            <tr>
-              <td style="padding: 8px 0; color: #71717a; font-size: 14px; width: 40%;"><strong>Amount Credited:</strong></td>
-              <td style="padding: 8px 0; color: #10b981; font-size: 16px; font-weight: 600;">+${formattedAmount}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px 0; color: #71717a; font-size: 14px;"><strong>New Balance:</strong></td>
-              <td style="padding: 8px 0; color: #18181b; font-size: 16px; font-weight: 600;">${formattedBalance}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px 0; color: #71717a; font-size: 14px;"><strong>Date:</strong></td>
-              <td style="padding: 8px 0; color: #18181b; font-size: 14px;">${new Date().toLocaleDateString('en-NG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</td>
-            </tr>
-          </table>
-        </div>
-        ${data.walletLink ? `
-          <div style="text-align: center; margin: 24px 0;">
-            <a href="${data.walletLink}" style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 15px;">View Wallet</a>
-          </div>
-        ` : ''}
-        <p style="margin: 16px 0 0 0; color: #71717a; font-size: 13px; line-height: 1.6;">
-          This credit has been added to your wallet and is available for use immediately. If you have any questions, please contact our support team.
-        </p>
-      </div>
+      <img src="https://enviofleet.vercel.app/mymoto-logo.png" alt="MyMoto Logo" />
+      <br />
+      <h2>Wallet Top-Up Confirmation</h2>
+      <p>Amount: ${data.amount} ${data.currency}</p>
+      <p>New Balance: ${data.newBalance} ${data.currency}</p>
+      ${data.description ? `<p>Description: ${data.description}</p>` : ''}
+      ${data.adminName ? `<p>Processed by: ${data.adminName}</p>` : ''}
+      ${data.walletLink ? `<a href="${data.walletLink}">View Wallet</a>` : ''}
     `;
 
     return {
-      subject: `Wallet Top-Up: ${formattedAmount} Added to Your Account`,
-      html: getBaseEmailTemplate(content),
+      subject: `Wallet Top-Up: ${data.amount} ${data.currency} Added`,
+      html: content,
     };
   },
 
@@ -479,50 +291,140 @@ export const EmailTemplates = {
     currency: string;
     walletLink?: string;
   }): EmailTemplate => {
-    const formattedAmount = new Intl.NumberFormat('en-NG', {
-      style: 'currency',
-      currency: data.currency || 'NGN',
-    }).format(data.bonusAmount);
-
     const content = `
-      <div style="margin-bottom: 24px;">
-        <div style="display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; background-color: #3b82f615; border-left: 4px solid #3b82f6; border-radius: 4px; margin-bottom: 16px;">
-          <span style="font-size: 20px;">🎁</span>
-          <span style="color: #3b82f6; font-weight: 600; text-transform: uppercase; font-size: 12px; letter-spacing: 0.5px;">Welcome Bonus</span>
-        </div>
-        <h2 style="margin: 0 0 16px 0; color: #18181b; font-size: 20px; font-weight: 600;">Welcome to MyMoto Fleet!</h2>
-        <p style="margin: 0 0 16px 0; color: #3f3f46; font-size: 15px; line-height: 1.6;">
-          Hello ${data.userName},
-        </p>
-        <p style="margin: 0 0 16px 0; color: #3f3f46; font-size: 15px; line-height: 1.6;">
-          As a welcome gift, we've credited your wallet with <strong style="color: #3b82f6;">${formattedAmount}</strong> to get you started!
-        </p>
-        <div style="background-color: #f4f4f5; border-radius: 6px; padding: 20px; margin: 20px 0;">
-          <table width="100%" cellpadding="0" cellspacing="0">
-            <tr>
-              <td style="padding: 8px 0; color: #71717a; font-size: 14px; width: 40%;"><strong>Welcome Bonus:</strong></td>
-              <td style="padding: 8px 0; color: #3b82f6; font-size: 16px; font-weight: 600;">+${formattedAmount}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px 0; color: #71717a; font-size: 14px;"><strong>Current Balance:</strong></td>
-              <td style="padding: 8px 0; color: #18181b; font-size: 16px; font-weight: 600;">${formattedAmount}</td>
-            </tr>
-          </table>
-        </div>
-        ${data.walletLink ? `
-          <div style="text-align: center; margin: 24px 0;">
-            <a href="${data.walletLink}" style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 15px;">View Wallet</a>
-          </div>
-        ` : ''}
-        <p style="margin: 16px 0 0 0; color: #71717a; font-size: 13px; line-height: 1.6;">
-          This bonus is available immediately and can be used for any service on the platform. Thank you for choosing MyMoto Fleet!
-        </p>
-      </div>
+      <img src="https://enviofleet.vercel.app/mymoto-logo.png" alt="MyMoto Logo" />
+      <br />
+      <h2>Welcome Bonus</h2>
+      <p>You received ${data.bonusAmount} ${data.currency}</p>
+      ${data.walletLink ? `<a href="${data.walletLink}">View Wallet</a>` : ''}
     `;
 
     return {
-      subject: `Welcome Bonus: ${formattedAmount} Added to Your Wallet`,
-      html: getBaseEmailTemplate(content),
+      subject: "Welcome Bonus Received!",
+      html: content,
     };
   },
+
+  /**
+   * Provider Registration Received (Provider)
+   */
+  providerRegistration: (data: {
+    businessName: string;
+  }): EmailTemplate => {
+    const content = `
+      <img src="https://enviofleet.vercel.app/mymoto-logo.png" alt="MyMoto Logo" />
+      <br />
+      <h2>Registration Received</h2>
+      <p>Hello ${data.businessName},</p>
+      <p>Thank you for registering with Fleet Directory. We have received your application and it is currently under review.</p>
+      <p>You will receive another email once your account has been approved by an administrator.</p>
+    `;
+
+    return {
+      subject: `Registration Received - ${data.businessName}`,
+      html: content,
+    };
+  },
+
+  /**
+   * Provider Registration Notification (Admin)
+   */
+  providerRegistrationAdmin: (data: {
+    businessName: string;
+    email: string;
+    phone: string;
+    category?: string;
+    address?: string;
+    location?: any;
+    dashboardUrl: string;
+  }): EmailTemplate => {
+    const content = `
+      <img src="https://enviofleet.vercel.app/mymoto-logo.png" alt="MyMoto Logo" />
+      <br />
+      <h2>New Service Provider Registration</h2>
+      <p><strong>Business:</strong> ${data.businessName}</p>
+      <p><strong>Email:</strong> ${data.email}</p>
+      <p><strong>Phone:</strong> ${data.phone}</p>
+      ${data.category ? `<p><strong>Category:</strong> ${data.category}</p>` : ''}
+      ${data.address ? `<p><strong>Address:</strong> ${data.address}</p>` : ''}
+      <p>Please review and approve/reject in the admin dashboard.</p>
+      <a href="${data.dashboardUrl}">Go to Admin Dashboard</a>
+    `;
+
+    return {
+      subject: `New Provider Registration: ${data.businessName}`,
+      html: content,
+    };
+  },
+
+  /**
+   * Provider Approval Email
+   */
+  providerApproval: (data: {
+    businessName: string;
+    loginUrl: string;
+    password?: string;
+  }): EmailTemplate => {
+    const content = `
+      <img src="https://enviofleet.vercel.app/mymoto-logo.png" alt="MyMoto Logo" />
+      <br />
+      <h2>Application Approved</h2>
+      <p>Hello ${data.businessName},</p>
+      <p>Congratulations! Your application to join Fleet Directory has been approved.</p>
+      <p>You can now log in to your provider dashboard to complete your profile and start receiving bookings.</p>
+      <a href="${data.loginUrl}">Login to Dashboard</a>
+      ${data.password ? `<p><strong>Temporary Password:</strong> ${data.password}</p>` : ''}
+    `;
+
+    return {
+      subject: `Application Approved - ${data.businessName}`,
+      html: content,
+    };
+  },
+
+  /**
+   * Provider Rejection Email
+   */
+  providerRejection: (data: {
+    businessName: string;
+    reason: string;
+  }): EmailTemplate => {
+    const content = `
+      <img src="https://enviofleet.vercel.app/mymoto-logo.png" alt="MyMoto Logo" />
+      <br />
+      <h2>Application Update</h2>
+      <p>Hello ${data.businessName},</p>
+      <p>Thank you for your interest in Fleet Directory. We have reviewed your application.</p>
+      <p><strong>Application Status: Not Approved</strong></p>
+      <p>Reason: ${data.reason}</p>
+      <p>If you have questions or believe this is an error, please contact our support team.</p>
+    `;
+
+    return {
+      subject: `Application Update - ${data.businessName}`,
+      html: content,
+    };
+  },
+
+  /**
+   * Service Completion Notification (User)
+   */
+  serviceCompletion: (data: {
+    providerName: string;
+    rateUrl: string;
+  }): EmailTemplate => {
+    const content = `
+      <img src="https://enviofleet.vercel.app/mymoto-logo.png" alt="MyMoto Logo" />
+      <br />
+      <h2>Service Completed!</h2>
+      <p>Your service with <strong>${data.providerName}</strong> has been marked as completed.</p>
+      <p>We hope you are satisfied with the service. Please take a moment to rate your experience.</p>
+      <a href="${data.rateUrl}">Rate Provider</a>
+    `;
+
+    return {
+      subject: `Service Completed - ${data.providerName}`,
+      html: content,
+    };
+  }
 };
