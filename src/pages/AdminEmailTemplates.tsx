@@ -130,51 +130,11 @@ function wrapInEmailTemplate(content: string): string {
     return content;
   }
 
-  // Otherwise wrap in default legacy template (Clean Bright style)
+  // Minimal wrapper - just the content
   return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MyMoto Fleet Management</title>
-</head>
-<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f8fafc; color: #0f172a;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="padding: 40px 20px;">
-    <tr>
-      <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); border: 1px solid #e2e8f0;">
-          <!-- Header -->
-          <tr>
-            <td style="padding: 32px 40px; text-align: center; border-bottom: 1px solid #f1f5f9;">
-              <h1 style="margin: 0; color: #0f172a; font-size: 24px; font-weight: 700; letter-spacing: -0.025em;">MyMoto Fleet</h1>
-            </td>
-          </tr>
-          
-          <!-- Content -->
-          <tr>
-            <td style="padding: 40px;">
-              ${content}
-            </td>
-          </tr>
-          
-          <!-- Footer -->
-          <tr>
-            <td style="background-color: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #e2e8f0;">
-              <p style="margin: 0; color: #64748b; font-size: 13px;">
-                MyMoto Fleet Management System
-              </p>
-              <p style="margin: 8px 0 0 0; color: #94a3b8; font-size: 12px;">
-                Automated notification • Do not reply
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; color: #0f172a; line-height: 1.5;">
+      ${content}
+    </div>
   `;
 }
 
@@ -761,11 +721,10 @@ export default function AdminEmailTemplates() {
 
                   <TabsContent value="preview" className="flex-1 bg-muted/10 m-0 p-0 flex flex-col">
                     <div className="flex-1 bg-white p-4 overflow-hidden flex flex-col">
-                       <div className="border rounded-lg shadow-sm flex-1 overflow-hidden">
-                        <iframe
-                          srcDoc={previewHtml}
-                          className="w-full h-full border-0"
-                          title="Email Preview"
+                       <div className="border rounded-lg shadow-sm flex-1 overflow-auto bg-white p-4">
+                        <div
+                          dangerouslySetInnerHTML={{ __html: previewHtml }}
+                          className="w-full h-full"
                         />
                        </div>
                     </div>
