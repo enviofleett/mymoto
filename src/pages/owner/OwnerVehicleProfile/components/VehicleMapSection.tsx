@@ -82,7 +82,6 @@ export function VehicleMapSection({
       {/* Neumorphic map container */}
       <div className="rounded-2xl shadow-neumorphic overflow-hidden">
         <VehicleLocationMap
-          key={`map-${vehicleName || 'vehicle'}`}
           latitude={latitude}
           longitude={longitude}
           heading={heading}

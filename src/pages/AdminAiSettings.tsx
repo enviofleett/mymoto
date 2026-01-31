@@ -114,7 +114,7 @@ export default function AdminAiSettings() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
+      <div className="space-y-6 pb-32">
         {/* Header */}
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
@@ -277,6 +277,10 @@ export default function AdminAiSettings() {
 
           <TabsContent value="reports" className="space-y-6">
             <ReportTemplateSettings />
+          </TabsContent>
+
+          <TabsContent value="welcome" className="space-y-6">
+            <WelcomeMessageSettings />
           </TabsContent>
         </Tabs>
       </div>

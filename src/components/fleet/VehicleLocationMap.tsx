@@ -44,6 +44,7 @@ export function VehicleLocationMap({
   const markerElement = useRef<HTMLDivElement | null>(null);
   const isMapInitialized = useRef(false);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [hasReceivedCoordinates, setHasReceivedCoordinates] = useState(false);
   const lastCoordinates = useRef<{ lat: number; lng: number } | null>(null);
 
   // Robust check for valid coordinates
@@ -55,6 +56,13 @@ export function VehicleLocationMap({
     latitude !== 0 && 
     longitude !== 0;
 
+  // Update received state
+  useEffect(() => {
+    if (hasValidCoordinates) {
+      setHasReceivedCoordinates(true);
+    }
+  }, [hasValidCoordinates]);
+
   // 1. Initialize map ONCE
   useEffect(() => {
     if (!mapContainer.current || isMapInitialized.current) return;
@@ -63,7 +71,8 @@ export function VehicleLocationMap({
     const initialLat = hasValidCoordinates ? latitude : 9.0765;
     const initialLng = hasValidCoordinates ? longitude : 7.3986;
 
-    const token = import.meta.env.VITE_MAPBOX_STYLE_TOKEN || import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
+    // Prioritize ACCESS_TOKEN (account token) over STYLE_TOKEN (public style token) for map rendering
+    const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || import.meta.env.VITE_MAPBOX_STYLE_TOKEN;
     if (!token) {
       console.error('[VehicleLocationMap] VITE_MAPBOX_ACCESS_TOKEN is not set');
       return;
@@ -79,37 +88,81 @@ export function VehicleLocationMap({
     const initTimer = setTimeout(() => {
       if (!mapContainer.current) return; // Guard against unmount during timeout
 
-      map.current = new mapboxgl.Map({
-        container: mapContainer.current,
-        style: 'mapbox://styles/mapbox/dark-v11', // Optimized dark mode
-        center: [initialLng, initialLat],
-        zoom: hasValidCoordinates ? 16 : 10,
-        pitch: 45,
-        bearing: heading || 0,
-        attributionControl: false,
-        interactive: true,
-      });
+      try {
+        map.current = new mapboxgl.Map({
+          container: mapContainer.current,
+          style: 'mapbox://styles/mapbox/dark-v11', // Optimized dark mode
+          center: [initialLng, initialLat],
+          zoom: hasValidCoordinates ? 16 : 10,
+          pitch: 45,
+          bearing: heading || 0,
+          attributionControl: false,
+          interactive: true,
+          failIfMajorPerformanceCaveat: false,
+        });
 
-      // Add controls
-      map.current.addControl(
-        new mapboxgl.NavigationControl({ showCompass: true, visualizePitch: true }),
-        'top-right'
-      );
+        // Add controls
+        map.current.addControl(
+          new mapboxgl.NavigationControl({ showCompass: true, visualizePitch: true }),
+          'top-right'
+        );
 
-      map.current.on('load', () => {
-        if (import.meta.env.DEV) {
-          console.log('[VehicleLocationMap] Map loaded successfully');
+        map.current.on('load', () => {
+          if (import.meta.env.DEV) {
+            console.log('[VehicleLocationMap] Map loaded successfully');
+          }
+          setMapLoaded(true);
+          // Force resize to prevent blank canvas issues
+          map.current?.resize();
+        });
+
+        // Backup: map.loaded() check in case 'load' fired already (unlikely but safe)
+        if (map.current.loaded()) {
+          console.log('[VehicleLocationMap] Map already loaded');
+          setMapLoaded(true);
         }
-        setMapLoaded(true);
-        // Force resize to prevent blank canvas issues
-        map.current?.resize();
-      });
+
+        // Error handling
+        map.current.on('error', (e) => {
+          console.error('[VehicleLocationMap] Mapbox error:', e.error?.message || e);
+          // Force load state on error to remove overlay (map might still work partially)
+          // or show error UI. For now, we assume it might recover or just show what it can.
+          if (!mapLoaded) setMapLoaded(true); 
+        });
+
+      } catch (err) {
+        console.error('[VehicleLocationMap] Failed to initialize map:', err);
+        setMapLoaded(true); // Remove overlay so at least UI isn't blocked
+      }
       
       isMapInitialized.current = true;
     }, 100); // Increased to 100ms to robustly handle Strict Mode double-invocation
 
+    // Fallback timeout: If map doesn't load in 5 seconds, remove overlay
+    const fallbackTimer = setTimeout(() => {
+      if (!isMapInitialized.current || !map.current) return;
+      setMapLoaded(prev => {
+        if (!prev) console.warn('[VehicleLocationMap] Map load timed out, forcing UI state');
+        return true;
+      });
+    }, 5000);
+
+    // 3. Handle Resize
+    const resizeObserver = new ResizeObserver(() => {
+        // Safe to call resize if map instance exists
+        if (map.current) {
+            map.current.resize();
+        }
+    });
+    
+    if (mapContainer.current) {
+        resizeObserver.observe(mapContainer.current);
+    }
+
     return () => {
       clearTimeout(initTimer); // Cancel init if unmounted immediately
+      clearTimeout(fallbackTimer);
+      resizeObserver.disconnect();
       marker.current?.remove();
       map.current?.remove();
       map.current = null;
@@ -249,8 +302,8 @@ export function VehicleLocationMap({
         className={cn("w-full rounded-xl overflow-hidden bg-muted/20", mapHeight)}
       />
       
-      {/* LOADING OVERLAY: Shown when map isn't ready or coords invalid */}
-      {(!mapLoaded || !hasValidCoordinates) && (
+      {/* LOADING OVERLAY: Shown when map isn't ready or coords invalid AND never received coords */}
+      {(!mapLoaded || (!hasValidCoordinates && !hasReceivedCoordinates)) && (
         <div className={cn("absolute inset-0 z-20 flex items-center justify-center bg-card/80 backdrop-blur-sm rounded-xl", mapHeight)}>
           <div className="text-center p-8">
             <div className="w-12 h-12 mx-auto rounded-full bg-primary/10 flex items-center justify-center animate-pulse mb-3">
@@ -273,8 +326,18 @@ export function VehicleLocationMap({
         </div>
       )}
 
+      {/* Signal Lost Indicator - when we have history but current signal is lost */}
+      {!hasValidCoordinates && hasReceivedCoordinates && mapLoaded && (
+        <div className="absolute top-4 left-4 z-10">
+          <Badge variant="destructive" className="animate-pulse shadow-lg border-2 border-background px-3 py-1">
+            <WifiOff className="h-3 w-3 mr-1.5" />
+            GPS Signal Lost
+          </Badge>
+        </div>
+      )}
+
       {/* Floating Address Card */}
-      {showAddressCard && hasValidCoordinates && mapLoaded && (
+      {showAddressCard && (hasValidCoordinates || hasReceivedCoordinates) && mapLoaded && (
         <Card className="absolute bottom-3 left-3 right-3 bg-card/90 backdrop-blur-md border-white/10 shadow-xl z-10 animate-in slide-in-from-bottom-2">
           <div className="p-3">
             <div className="flex items-start gap-3">

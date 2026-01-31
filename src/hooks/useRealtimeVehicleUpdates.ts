@@ -174,7 +174,8 @@ export function useRealtimeVehicleUpdates(
             }
 
             if (import.meta.env.DEV) {
-              console.warn('[Realtime] Channel down, checking auth before reconnect...');
+              // Log as info, not warning, since this is normal behavior during dev hot-reloads
+              console.log('[Realtime] Channel down, checking auth before reconnect...');
             }
             
             // ✅ FIX: Check auth session before reconnecting to prevent infinite loop

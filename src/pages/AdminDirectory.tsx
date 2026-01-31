@@ -697,7 +697,7 @@ export default function AdminDirectory() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
+      <div className="space-y-6 pb-32">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Directory Management</h1>
           <p className="text-muted-foreground">

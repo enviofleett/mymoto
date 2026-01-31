@@ -9,8 +9,8 @@ interface ProtectedRouteProps {
   requireProvider?: boolean;
 }
 
-const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requireAdmin = false }) => {
-  const { user, isAdmin, isLoading, isLoggingOut } = useAuth();
+const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requireAdmin = false, requireProvider = false }) => {
+  const { user, isAdmin, isProvider, isLoading, isLoggingOut } = useAuth();
 
   // Show loader while initial auth is loading OR while actively logging out
   // This prevents race conditions where redirect happens before logout completes

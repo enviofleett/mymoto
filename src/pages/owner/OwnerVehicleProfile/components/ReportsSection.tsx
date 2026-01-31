@@ -493,6 +493,12 @@ function TripCard({
           <div className="text-xs text-muted-foreground">
             {format(parseISO(trip.start_time), 'h:mm a')} - {format(parseISO(trip.end_time), 'h:mm a')}
           </div>
+          {/* Speed Stats */}
+          {(Number(trip.max_speed) > 0 || Number(trip.avg_speed) > 0) && (
+            <div className="text-xs text-muted-foreground mt-1">
+              Max: {Math.round(trip.max_speed || 0)}km/h · Avg: {Math.round(trip.avg_speed || 0)}km/h
+            </div>
+          )}
         </div>
         <div className="text-right shrink-0 flex items-center gap-2">
           <div>

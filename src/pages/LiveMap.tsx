@@ -104,7 +104,7 @@ const LiveMap = () => {
         </div>
 
         {/* Floating Action Buttons */}
-        <div className="absolute bottom-20 md:bottom-6 right-4 z-[1000] flex flex-col gap-2">
+        <div className="absolute bottom-24 md:bottom-8 right-4 z-[1000] flex flex-col gap-2">
           <Button
             size="icon"
             variant="secondary"

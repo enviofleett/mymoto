@@ -52,7 +52,7 @@ const Index = () => {
   return (
     <DashboardLayout connectionStatus={connectionStatus}>
       <PullToRefresh onRefresh={handleRefreshGPS}>
-        <div className="space-y-6">
+        <div className="space-y-6 pb-32">
         {/* Page Header */}
         <div>
           <h1 className="text-2xl font-bold text-foreground">Command Center</h1>

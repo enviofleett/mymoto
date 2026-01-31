@@ -15,7 +15,6 @@ import Auth from "./pages/Auth";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import Fleet from "./pages/Fleet";
-import LiveMap from "./pages/LiveMap";
 import Insights from "./pages/Insights";
 import Profile from "./pages/Profile";
 import AdminWallets from "./pages/AdminWallets";
@@ -111,7 +110,7 @@ const App = () => {
           {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
           <Toaster />
           <Sonner />
-          <BrowserRouter>
+          <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
             <AuthProvider>
               <TermsChecker>
             <Routes>

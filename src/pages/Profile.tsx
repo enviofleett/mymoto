@@ -198,7 +198,7 @@ const Profile = () => {
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="space-y-6">
+        <div className="space-y-6 pb-32">
           <div className="flex items-center gap-6">
             <Skeleton className="h-24 w-24 rounded-full" />
             <div className="space-y-2">
@@ -339,7 +339,7 @@ const Profile = () => {
   return (
     <DashboardLayout>
       <PullToRefresh onRefresh={handleRefresh}>
-        <div className="space-y-6">
+        <div className="space-y-6 pb-32">
         {/* Profile Header */}
         <Card className="border-border bg-gradient-to-br from-card to-card/80">
           <CardContent className="p-6">

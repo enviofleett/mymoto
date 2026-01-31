@@ -80,17 +80,30 @@ export default function OwnerVehicleProfile() {
     refetch: refetchLive,
   } = useVehicleLiveData(deviceId);
 
+  // Keep track of last valid data to prevent UI flashing/unmounting on errors
+  const [lastKnownLiveData, setLastKnownLiveData] = useState<typeof liveData | null>(null);
+
+  useEffect(() => {
+    if (liveData) {
+      setLastKnownLiveData(liveData);
+    }
+  }, [liveData]);
+
+  // Use last known data if live data is missing (e.g. during error)
+  const displayData = liveData || lastKnownLiveData;
+
   // Auto-refresh stale data on mount/update to ensure 100% LIVE data
   const lastAutoSyncRef = useRef<number>(0);
   useEffect(() => {
-    if (!liveData?.lastUpdate || !deviceId) return;
+    if (!displayData?.lastUpdate || !deviceId) return;
     
     const now = Date.now();
-    const lastUpdate = liveData.lastUpdate.getTime();
+    const lastUpdate = displayData.lastUpdate.getTime();
     const ageSeconds = (now - lastUpdate) / 1000;
     
-    // If data is stale (> 60s) and we haven't auto-synced in the last 60s
-    if (ageSeconds > 60 && (now - lastAutoSyncRef.current > 60000)) {
+    // If data is stale (> 5 minutes) and we haven't auto-synced in the last 60s
+    // Increased threshold from 60s to 300s (5 mins) to reduce console noise for vehicles with slower reporting
+    if (ageSeconds > 300 && (now - lastAutoSyncRef.current > 60000)) {
       if (import.meta.env.DEV) {
         console.log(`[OwnerVehicleProfile] Data is stale (${Math.round(ageSeconds)}s), triggering auto-refresh...`);
       }
@@ -106,37 +119,20 @@ export default function OwnerVehicleProfile() {
          if (import.meta.env.DEV) console.log('[OwnerVehicleProfile] Auto-refresh sync initiated');
       }).catch(err => console.error("Auto-refresh failed:", err));
     }
-  }, [deviceId, liveData?.lastUpdate]);
+  }, [deviceId, displayData?.lastUpdate]);
 
   // DEBUG: Track liveData changes and data freshness
   useEffect(() => {
-    if (liveData && import.meta.env.DEV) {
+    if (displayData && import.meta.env.DEV) {
       const now = new Date();
-      const lastUpdateAge = liveData.lastUpdate ? Math.round((now.getTime() - liveData.lastUpdate.getTime()) / 1000) : null;
-      const lastGpsFixAge = liveData.lastGpsFix ? Math.round((now.getTime() - liveData.lastGpsFix.getTime()) / 1000) : null;
-      const lastSyncedAge = liveData.lastSyncedAt ? Math.round((now.getTime() - liveData.lastSyncedAt.getTime()) / 1000) : null;
+      const lastUpdateAge = displayData.lastUpdate ? Math.round((now.getTime() - displayData.lastUpdate.getTime()) / 1000) : null;
       
-      console.log('[OwnerVehicleProfile] 📍 liveData changed:', {
-        latitude: liveData.latitude,
-        longitude: liveData.longitude,
-        speed: liveData.speed,
-        heading: liveData.heading,
-        lastUpdate: liveData.lastUpdate?.toISOString(),
-        lastUpdateAgeSeconds: lastUpdateAge,
-        lastGpsFix: liveData.lastGpsFix?.toISOString(),
-        lastGpsFixAgeSeconds: lastGpsFixAge,
-        lastSyncedAt: liveData.lastSyncedAt?.toISOString(),
-        lastSyncedAgeSeconds: lastSyncedAge,
-        currentTime: now.toISOString(),
-        isStale: lastUpdateAge !== null && lastUpdateAge > 60, // Consider stale if > 60 seconds old
-      });
-      
-      // Warn if data is stale
-      if (lastUpdateAge !== null && lastUpdateAge > 60) {
+      // Warn if data is stale (adjusted to > 5 mins)
+      if (lastUpdateAge !== null && lastUpdateAge > 300) {
         console.warn(`[OwnerVehicleProfile] ⚠️ STALE DATA: Last update is ${lastUpdateAge} seconds old (${Math.round(lastUpdateAge / 60)} minutes)`);
       }
     }
-  }, [liveData?.latitude, liveData?.longitude, liveData?.speed, liveData?.heading, liveData?.lastUpdate, liveData?.lastGpsFix, liveData?.lastSyncedAt]);
+  }, [displayData?.lastUpdate]);
 
   // Realtime subscriptions - reconnected
   const realtimeOptions = useMemo(() => ({ forceEnable: true }), []);
@@ -224,28 +220,29 @@ export default function OwnerVehicleProfile() {
 
   // Address lookup - reconnected
   const { address, isLoading: addressLoading } = useAddress(
-    liveData?.latitude ?? null,
-    liveData?.longitude ?? null
+    displayData?.latitude ?? null,
+    displayData?.longitude ?? null
   );
 
   // Status derivation: online, charging, or offline - reconnected
-  const isOnline = liveData?.isOnline ?? false;
+  // Use displayData to prevent flickering during errors
+  const isOnline = displayData?.isOnline ?? false;
   const status: "online" | "charging" | "offline" = useMemo(() => {
-    if (!liveData?.isOnline) {
+    if (!displayData?.isOnline) {
       return "offline";
     }
     
     // Detect charging/parked state: vehicle is online, ignition is off, and stationary
     const isParked = 
-      liveData.ignitionOn === false && 
-      liveData.speed === 0;
+      displayData.ignitionOn === false && 
+      displayData.speed === 0;
     
     // Show as "charging" if parked and has battery data
-    const hasBatteryData = liveData.batteryPercent !== null;
+    const hasBatteryData = displayData.batteryPercent !== null;
     const isCharging = isParked && hasBatteryData;
     
     return isCharging ? "charging" : "online";
-  }, [liveData?.isOnline, liveData?.batteryPercent, liveData?.ignitionOn, liveData?.speed]);
+  }, [displayData?.isOnline, displayData?.batteryPercent, displayData?.ignitionOn, displayData?.speed]);
 
   // Force sync handler - reconnected
   const handleForceSync = useCallback(() => {
@@ -406,9 +403,12 @@ export default function OwnerVehicleProfile() {
   const personalityMode = llmSettings?.personality_mode || null;
 
   // Loading and error states - reconnected
-  const isInitialLoading = liveLoading && !liveData;
-  const hasCriticalError = liveError !== null && liveError !== undefined;
-  const hasNoData = !liveLoading && !liveData && !liveError;
+  // Only show initial loading if we have NO data (neither live nor cached)
+  const isInitialLoading = liveLoading && !displayData;
+  // Only show critical error if we have NO data to display
+  const hasCriticalError = liveError !== null && liveError !== undefined && !displayData;
+  // Only show no data if we have NO data to display
+  const hasNoData = !liveLoading && !displayData && !liveError;
   
   // Show error state for critical data failures
   if (hasCriticalError) {
@@ -477,6 +477,15 @@ export default function OwnerVehicleProfile() {
         pullDistance={pullDistance}
       />
 
+      {/* Show toast for errors if we have data (silent failure mode) */}
+      {liveError && displayData && (
+        <div className="fixed top-20 left-0 right-0 z-50 px-4 pointer-events-none">
+          <div className="bg-destructive/90 text-destructive-foreground px-4 py-2 rounded-full shadow-lg text-sm text-center mx-auto max-w-xs backdrop-blur-sm">
+            Connection lost. Using cached data.
+          </div>
+        </div>
+      )}
+
       <div {...pullHandlers} className="flex flex-col min-h-full w-full max-w-3xl mx-auto space-y-4">
         {/* Header */}
         <ProfileHeader
@@ -485,8 +494,8 @@ export default function OwnerVehicleProfile() {
           avatarUrl={avatarUrl}
           personalityMode={personalityMode}
           status={status}
-          lastGpsFix={liveData?.lastGpsFix ?? null}
-          lastSyncedAt={liveData?.lastSyncedAt ?? null}
+          lastGpsFix={displayData?.lastGpsFix ?? null}
+          lastSyncedAt={displayData?.lastSyncedAt ?? null}
           onBack={() => navigate("/owner/vehicles")}
               onSettings={() => setSettingsOpen(true)}
           plateNumber={plateNumber}
@@ -496,10 +505,10 @@ export default function OwnerVehicleProfile() {
         <div className="flex-1 pb-32 space-y-4">
             {/* Map Section */}
             <VehicleMapSection
-              latitude={liveData?.latitude ?? null}
-              longitude={liveData?.longitude ?? null}
-              heading={liveData?.heading ?? null}
-              speed={liveData?.speed ?? 0}
+              latitude={displayData?.latitude ?? null}
+              longitude={displayData?.longitude ?? null}
+              heading={displayData?.heading ?? null}
+              speed={displayData?.speed ?? 0}
               address={address}
               vehicleName={displayName}
               isOnline={isOnline}
@@ -509,19 +518,19 @@ export default function OwnerVehicleProfile() {
             />
 
             {/* Current Status */}
-            <CurrentStatusCard status={status} speed={liveData?.speed ?? null} />
+            <CurrentStatusCard status={status} speed={displayData?.speed ?? null} />
 
             {/* Status Metrics */}
             <StatusMetricsRow
-              battery={liveData?.batteryPercent ?? null}
-              totalMileage={liveData?.totalMileageKm ?? null}
+              battery={displayData?.batteryPercent ?? null}
+              totalMileage={displayData?.totalMileageKm ?? null}
             />
 
             {/* Engine Control */}
             <div className="grid grid-cols-1 gap-4">
               <EngineControlCard
                 deviceId={deviceId}
-                ignitionOn={liveData?.ignitionOn ?? null}
+                ignitionOn={displayData?.ignitionOn ?? null}
                 isOnline={isOnline}
               />
             </div>

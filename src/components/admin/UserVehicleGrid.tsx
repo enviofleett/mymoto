@@ -481,7 +481,7 @@ export function UserVehicleGrid() {
               <p className="text-sm">No vehicles found</p>
             </div>
           ) : (
-            <div className="p-2 space-y-1">
+            <div className="p-2 space-y-1 pb-32">
               {displayVehicles?.map(vehicle => (
                 <VehicleRow
                   key={vehicle.device_id}
