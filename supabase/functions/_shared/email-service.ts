@@ -135,8 +135,6 @@ export const EmailTemplates = {
     metadata?: Record<string, unknown>;
   }): EmailTemplate => {
     const content = `
-      <img src="https://enviofleet.vercel.app/mymoto-logo.png" alt="MyMoto Logo" />
-      <br />
       <h2>${data.title}</h2>
       <p>${data.message}</p>
       ${data.vehicleName ? `<p>Vehicle: ${data.vehicleName}</p>` : ''}
@@ -159,8 +157,6 @@ export const EmailTemplates = {
     expiresIn?: string;
   }): EmailTemplate => {
     const content = `
-      <img src="https://enviofleet.vercel.app/mymoto-logo.png" alt="MyMoto Logo" />
-      <br />
       <h2>Password Reset Request</h2>
       ${data.userName ? `<p>Hello ${data.userName},</p>` : ''}
       <p>Click the link below to reset your password:</p>
@@ -182,8 +178,6 @@ export const EmailTemplates = {
     loginLink?: string;
   }): EmailTemplate => {
     const content = `
-      <img src="https://enviofleet.vercel.app/mymoto-logo.png" alt="MyMoto Logo" />
-      <br />
       <h2>Welcome to MyMoto Fleet!</h2>
       <p>Hello ${data.userName},</p>
       <p>Your account has been created.</p>
@@ -211,8 +205,6 @@ export const EmailTemplates = {
     avgSpeed?: string;
   }): EmailTemplate => {
     const content = `
-      <img src="https://enviofleet.vercel.app/mymoto-logo.png" alt="MyMoto Logo" />
-      <br />
       <h2>Trip Summary</h2>
       <p>Vehicle: ${data.vehicleName}</p>
       <p>Date: ${data.date}</p>
@@ -240,8 +232,6 @@ export const EmailTemplates = {
     actionText?: string;
   }): EmailTemplate => {
     const content = `
-      <img src="https://enviofleet.vercel.app/mymoto-logo.png" alt="MyMoto Logo" />
-      <br />
       <h2>${data.title}</h2>
       <p>${data.message}</p>
       ${data.actionLink ? `<a href="${data.actionLink}">${data.actionText || 'Click here'}</a>` : ''}
@@ -266,8 +256,6 @@ export const EmailTemplates = {
     walletLink?: string;
   }): EmailTemplate => {
     const content = `
-      <img src="https://enviofleet.vercel.app/mymoto-logo.png" alt="MyMoto Logo" />
-      <br />
       <h2>Wallet Top-Up Confirmation</h2>
       <p>Amount: ${data.amount} ${data.currency}</p>
       <p>New Balance: ${data.newBalance} ${data.currency}</p>
@@ -292,8 +280,6 @@ export const EmailTemplates = {
     walletLink?: string;
   }): EmailTemplate => {
     const content = `
-      <img src="https://enviofleet.vercel.app/mymoto-logo.png" alt="MyMoto Logo" />
-      <br />
       <h2>Welcome Bonus</h2>
       <p>You received ${data.bonusAmount} ${data.currency}</p>
       ${data.walletLink ? `<a href="${data.walletLink}">View Wallet</a>` : ''}
@@ -312,8 +298,6 @@ export const EmailTemplates = {
     businessName: string;
   }): EmailTemplate => {
     const content = `
-      <img src="https://enviofleet.vercel.app/mymoto-logo.png" alt="MyMoto Logo" />
-      <br />
       <h2>Registration Received</h2>
       <p>Hello ${data.businessName},</p>
       <p>Thank you for registering with Fleet Directory. We have received your application and it is currently under review.</p>
@@ -339,8 +323,6 @@ export const EmailTemplates = {
     dashboardUrl: string;
   }): EmailTemplate => {
     const content = `
-      <img src="https://enviofleet.vercel.app/mymoto-logo.png" alt="MyMoto Logo" />
-      <br />
       <h2>New Service Provider Registration</h2>
       <p><strong>Business:</strong> ${data.businessName}</p>
       <p><strong>Email:</strong> ${data.email}</p>
@@ -366,8 +348,6 @@ export const EmailTemplates = {
     password?: string;
   }): EmailTemplate => {
     const content = `
-      <img src="https://enviofleet.vercel.app/mymoto-logo.png" alt="MyMoto Logo" />
-      <br />
       <h2>Application Approved</h2>
       <p>Hello ${data.businessName},</p>
       <p>Congratulations! Your application to join Fleet Directory has been approved.</p>
@@ -379,7 +359,7 @@ export const EmailTemplates = {
     return {
       subject: `Application Approved - ${data.businessName}`,
       html: content,
-    };
+      };
   },
 
   /**
@@ -390,8 +370,6 @@ export const EmailTemplates = {
     reason: string;
   }): EmailTemplate => {
     const content = `
-      <img src="https://enviofleet.vercel.app/mymoto-logo.png" alt="MyMoto Logo" />
-      <br />
       <h2>Application Update</h2>
       <p>Hello ${data.businessName},</p>
       <p>Thank you for your interest in Fleet Directory. We have reviewed your application.</p>
@@ -414,8 +392,6 @@ export const EmailTemplates = {
     rateUrl: string;
   }): EmailTemplate => {
     const content = `
-      <img src="https://enviofleet.vercel.app/mymoto-logo.png" alt="MyMoto Logo" />
-      <br />
       <h2>Service Completed!</h2>
       <p>Your service with <strong>${data.providerName}</strong> has been marked as completed.</p>
       <p>We hope you are satisfied with the service. Please take a moment to rate your experience.</p>

@@ -26,30 +26,27 @@ export const emailLayouts: EmailLayout[] = [
   {
     id: 'modern-bright',
     name: 'Modern Bright',
-    description: 'Blank canvas with logo',
+    description: 'Blank canvas',
     thumbnail: 'bg-white border border-gray-200',
     generateHtml: ({ body }) => `
-      <img src="https://enviofleet.vercel.app/mymoto-logo.png" alt="MyMoto Logo" />
       ${body}
     `
   },
   {
     id: 'corporate-clean',
     name: 'Corporate Clean',
-    description: 'Blank canvas with logo',
+    description: 'Blank canvas',
     thumbnail: 'bg-gray-100 border border-gray-300',
     generateHtml: ({ body }) => `
-      <img src="https://enviofleet.vercel.app/mymoto-logo.png" alt="MyMoto Logo" />
       ${body}
     `
   },
   {
     id: 'minimalist',
     name: 'Minimalist',
-    description: 'Blank canvas with logo',
+    description: 'Blank canvas',
     thumbnail: 'bg-white border-none',
     generateHtml: ({ body }) => `
-      <img src="https://enviofleet.vercel.app/mymoto-logo.png" alt="MyMoto Logo" />
       ${body}
     `
   }
