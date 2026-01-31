@@ -43,6 +43,7 @@ import { ReportsSection } from "./components/ReportsSection";
 
 export default function OwnerVehicleProfile() {
   const { deviceId } = useParams<{ deviceId: string }>();
+  console.log('deviceId:', deviceId);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -81,16 +82,7 @@ export default function OwnerVehicleProfile() {
   } = useVehicleLiveData(deviceId);
 
   // Keep track of last valid data to prevent UI flashing/unmounting on errors
-  const [lastKnownLiveData, setLastKnownLiveData] = useState<typeof liveData | null>(null);
-
-  useEffect(() => {
-    if (liveData) {
-      setLastKnownLiveData(liveData);
-    }
-  }, [liveData]);
-
-  // Use last known data if live data is missing (e.g. during error)
-  const displayData = liveData || lastKnownLiveData;
+  const displayData = liveData;
 
   // Auto-refresh stale data on mount/update to ensure 100% LIVE data
   const lastAutoSyncRef = useRef<number>(0);

@@ -226,7 +226,7 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
   // Map LLM settings
   const settingsByDevice = new Map(((llmSettings as any[]) || []).map((s: any) => [s.device_id, s]));
 
-  return (assignments as any[]).map((a: any) => {
+  const finalVehicles = (assignments as any[]).map((a: any) => {
     const vehicle = vehicleMap.get(a.device_id) as any;
     const pos = positionMap.get(a.device_id) as any;
     const chat = chatByDevice.get(a.device_id);
@@ -266,6 +266,8 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
       personality: settings?.personality_mode || "casual",
     };
   });
+
+  return finalVehicles;
 }
 
 export function useOwnerVehicles() {

@@ -29,6 +29,7 @@ export type CommandType =
 export interface GeofenceAlertParams {
   location_name?: string;
   trigger_on: 'enter' | 'exit' | 'both';
+  action: 'notify' | 'immobilize' | 'shutdown'; // Added action type
   one_time?: boolean;
   active_from?: string; // HH:MM format
   active_until?: string;
@@ -79,7 +80,11 @@ const GEOFENCE_ALERT_PATTERNS = [
   // "monitor arrival at X" / "monitor departure from X"
   /\bmonitor\s+(my\s+)?(arrival|departure|entry|exit)\s+(at|from|to)\s+(.+)/i,
   // "ping me when at X"
-  /\b(ping|buzz|beep)\s+me\s+when\s+(at|in|near)\s+(.+)/i
+  /\b(ping|buzz|beep)\s+me\s+when\s+(at|in|near)\s+(.+)/i,
+  // "disable engine when enters X"
+  /\b(disable|immobilize|cut|stop|kill|shut\s*down)\s+(the\s+)?(engine|vehicle|car|fuel)?\s*when\s+(it|the\s+vehicle|the\s+car)?\s*(enters?|leaves?|arrives?|exits?)\s+(at\s+|from\s+)?(.+)/i,
+  // "when it enters X, disable engine"
+  /\bwhen\s+(it|the\s+vehicle|the\s+car)\s*(enters?|leaves?|arrives?|exits?)\s+(at\s+|from\s+)?(.+?),?\s*(disable|immobilize|cut|stop|kill|shut\s*down)\s+(the\s+)?(engine|vehicle|car|fuel)/i
 ]
 
 // Time condition patterns
@@ -232,12 +237,23 @@ function detectGeofenceAlert(message: string): ParsedCommand | null {
       // Check for "once" / "one time" / "just this once"
       const oneTime = /\b(once|one\s+time|just\s+this\s+once|single|only\s+once)\b/i.test(normalized)
       
+      // Determine action (notify vs immobilize)
+      let action: 'notify' | 'immobilize' | 'shutdown' = 'notify';
+      if (/\b(disable|immobilize|cut|stop|kill|shut\s*down)\b/i.test(normalized)) {
+        if (/\b(shut\s*down|kill|stop)\b/i.test(normalized)) {
+           action = 'shutdown';
+        } else {
+           action = 'immobilize';
+        }
+      }
+
       // Extract time conditions
       const timeParams = extractTimeConditions(message)
       
       const geofenceParams: GeofenceAlertParams = {
         location_name: locationName || undefined,
         trigger_on: triggerOn,
+        action,
         one_time: oneTime || timeParams.one_time,
         ...timeParams
       }
@@ -307,10 +323,20 @@ const COMMAND_PATTERNS: CommandPattern[] = [
   {
     type: 'immobilize',
     patterns: [
-      /\b(immobilize|disable|stop|shut\s+down)\s+(the\s+)?(engine|vehicle|car)\b/i,
-      /\bcut\s+(the\s+)?engine\b/i,
-      /\bdisable\s+(the\s+)?vehicle\b/i,
+      /\b(immobilize|disable)\s+(the\s+)?(engine|vehicle|car)\b/i,
+      /\bcut\s+(the\s+)?(fuel|power|engine)\b/i,
       /\bimmobilize\b/i
+    ],
+    requiresConfirmation: true,
+    priority: 'urgent'
+  },
+  {
+    type: 'shutdown_engine',
+    patterns: [
+      /\b(shut\s*down|kill|emergency\s+stop)\s+(the\s+)?(engine|vehicle|car)\b/i,
+      /\bstop\s+(the\s+)?(engine|car|vehicle)\b/i,
+      /\bturn\s+off\s+(the\s+)?(engine|ignition)\b/i,
+      /\bshutdown\b/i
     ],
     requiresConfirmation: true,
     priority: 'urgent'
@@ -404,15 +430,6 @@ const COMMAND_PATTERNS: CommandPattern[] = [
     ],
     requiresConfirmation: true,
     priority: 'high'
-  },
-  {
-    type: 'stop_engine',
-    patterns: [
-      /\bstop\s+(the\s+)?(engine|car|vehicle)\b/i,
-      /\bturn\s+off\s+(the\s+)?(engine|ignition)\b/i
-    ],
-    requiresConfirmation: true,
-    priority: 'urgent'
   },
   {
     type: 'sound_alarm',

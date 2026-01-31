@@ -663,7 +663,7 @@ function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
   const MIN_TRIP_DISTANCE = 0.1; // km - minimum trip distance (100 meters)
   const IDLE_TIMEOUT_MS = 180 * 1000; // 180 seconds (3 minutes) - GPS51 standard idle timeout
   const MAX_TIME_GAP_MS = 30 * 60 * 1000; // 30 minutes - if gap is larger, end trip
-  const SPEED_THRESHOLD = 0.1; // km/h - very low threshold for movement detection (only for idle timeout)
+  const SPEED_THRESHOLD = 5.0; // km/h - increased from 0.1 to 5.0 to match system-wide standard
 
   // CRITICAL: Check if we have reliable ACC/ignition data from hardware
   // We require ACC bit detection (status_bit method) OR explicit string parsing
@@ -878,7 +878,7 @@ function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
       console.warn(`[extractTripsFromHistory] ⚠️ No hardware ACC data available - using speed-based detection (less accurate)`);
       
       const DISTANCE_THRESHOLD = 0.05; // 50 meters - significant movement
-      const MIN_MOVEMENT_SPEED = 1.0; // km/h - require actual movement (not GPS drift)
+      const MIN_MOVEMENT_SPEED = 5.0; // km/h - increased from 1.0 to 5.0 to match system-wide standard
       
       // Calculate distance from previous point
       let distanceFromPrev = 0;

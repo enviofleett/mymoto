@@ -33,6 +33,7 @@ interface VehicleNotificationPreferences {
   rapid_acceleration: boolean;
   ignition_on: boolean;
   ignition_off: boolean;
+  vehicle_moving: boolean;
   geofence_enter: boolean;
   geofence_exit: boolean;
   idle_too_long: boolean;
@@ -45,6 +46,7 @@ interface VehicleNotificationPreferences {
   // AI Chat preferences (separate from push notifications)
   enable_ai_chat_ignition_on?: boolean;
   enable_ai_chat_ignition_off?: boolean;
+  enable_ai_chat_vehicle_moving?: boolean;
   enable_ai_chat_low_battery?: boolean;
   enable_ai_chat_critical_battery?: boolean;
   enable_ai_chat_overspeeding?: boolean;
@@ -143,6 +145,14 @@ const EVENT_CONFIG: Array<{
     description: 'Vehicle engine stops',
     icon: Power,
     category: 'status'
+  },
+  {
+    key: 'vehicle_moving',
+    label: 'Vehicle Moving',
+    description: 'Vehicle starts moving',
+    icon: Route,
+    category: 'status',
+    defaultEnabled: true
   },
   {
     key: 'online',
@@ -255,6 +265,7 @@ export function VehicleNotificationSettings({ deviceId, userId }: VehicleNotific
             rapid_acceleration: false,
             ignition_on: false,
             ignition_off: false,
+            vehicle_moving: true,
             geofence_enter: false,
             geofence_exit: false,
             idle_too_long: false,

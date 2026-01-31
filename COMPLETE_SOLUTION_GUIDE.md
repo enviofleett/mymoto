@@ -70,7 +70,7 @@ PostgreSQL Database (UTC storage)
 
 **File**: `src/components/fleet/VehicleLocationMap.tsx`
 
-**Action**: Copy the content from `VehicleLocationMap.FINAL.tsx` and replace
+**Action**: Copy the content from `src/components/fleet/VehicleLocationMap.tsx` and replace
 
 ```bash
 # Backup original

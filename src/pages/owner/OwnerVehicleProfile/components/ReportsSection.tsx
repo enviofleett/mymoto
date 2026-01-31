@@ -28,6 +28,9 @@ import {
   Radio,
   ArrowRight,
   Settings,
+  Milestone,
+  Gauge,
+  Clock,
 } from "lucide-react";
 import { format, parseISO, isSameDay, differenceInMinutes, formatDistanceToNow, isToday, isYesterday } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -37,6 +40,7 @@ import type { TripSyncStatus } from "@/hooks/useTripSync";
 import { useAddress } from "@/hooks/useAddress";
 import { useAuth } from "@/contexts/AuthContext";
 import { VehicleNotificationSettings } from "@/components/fleet/VehicleNotificationSettings";
+import { GeofenceManager } from "@/components/fleet/GeofenceManager";
 import { TripSyncProgress } from "@/components/fleet/TripSyncProgress";
 
 interface ReportsSectionProps {
@@ -305,7 +309,7 @@ export function ReportsSection({
         )}
 
         <Tabs defaultValue="trips" className="w-full">
-          <TabsList className="grid w-full grid-cols-3 mb-4">
+          <TabsList className="flex w-full justify-center md:justify-center overflow-x-auto mb-4">
             <TabsTrigger value="trips" className="text-sm">
               <Route className="h-4 w-4 mr-2" />
               Trips
@@ -313,6 +317,10 @@ export function ReportsSection({
             <TabsTrigger value="alarms" className="text-sm">
               <Bell className="h-4 w-4 mr-2" />
               Alarms
+            </TabsTrigger>
+            <TabsTrigger value="geofence" className="text-sm">
+              <MapPin className="h-4 w-4 mr-2" />
+              Geofence
             </TabsTrigger>
             <TabsTrigger value="notifications" className="text-sm">
               <Settings className="h-4 w-4 mr-2" />
@@ -363,6 +371,7 @@ export function ReportsSection({
 
           {/* Alarms Tab */}
           <TabsContent value="alarms" className="mt-0">
+            {/* ... alarms content ... */}
             <div className="space-y-4 max-h-96 overflow-y-auto">
               {eventsLoading ? (
                 <div className="space-y-2">
@@ -418,6 +427,13 @@ export function ReportsSection({
             </div>
           </TabsContent>
 
+          {/* Geofence Tab */}
+          <TabsContent value="geofence" className="mt-0">
+            <div className="max-h-[600px] overflow-y-auto">
+              <GeofenceManager deviceId={deviceId} />
+            </div>
+          </TabsContent>
+
           {/* Notifications Tab */}
           <TabsContent value="notifications" className="mt-0">
             {!user?.id ? (
@@ -437,7 +453,6 @@ export function ReportsSection({
   );
 }
 
-// Trip card component with address display
 function TripCard({ 
   trip, 
   index, 
@@ -467,115 +482,114 @@ function TripCard({
     return `https://www.google.com/maps?q=${lat},${lon}`;
   };
 
+  const durationMinutes = trip.duration_seconds
+    ? Math.round(trip.duration_seconds / 60)
+    : differenceInMinutes(parseISO(trip.end_time), parseISO(trip.start_time));
+
   return (
-    <div className="p-3 rounded-lg bg-muted/50 border border-border hover:bg-muted transition-colors">
-      <div className="flex items-start justify-between gap-3 mb-2">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-sm font-medium">Trip {index + 1}</span>
-            {!canPlayback && (
-              <Badge variant="outline" className="text-xs border-orange-500/50 text-orange-600">
-                <AlertTriangle className="h-3 w-3 mr-1" />
-                GPS incomplete
-              </Badge>
-            )}
-            {hasValidEndCoords && (
-              <a
-                href={getGoogleMapsLink(trip.end_latitude, trip.end_longitude)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-500 hover:text-blue-600"
-              >
-                <ExternalLink className="h-3 w-3" />
-              </a>
-            )}
-          </div>
-          <div className="text-xs text-muted-foreground">
+    <div className="p-4 rounded-lg bg-muted/40 border border-border/80 hover:bg-muted/80 transition-colors">
+      {/* Header: Trip Title, Time & Play Button */}
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-sm font-semibold text-foreground">Trip {index + 1}</h3>
+          <p className="text-xs text-muted-foreground">
             {format(parseISO(trip.start_time), 'h:mm a')} - {format(parseISO(trip.end_time), 'h:mm a')}
-          </div>
-          {/* Speed Stats */}
-          {(Number(trip.max_speed) > 0 || Number(trip.avg_speed) > 0) && (
-            <div className="text-xs text-muted-foreground mt-1">
-              Max: {Math.round(trip.max_speed || 0)}km/h · Avg: {Math.round(trip.avg_speed || 0)}km/h
-            </div>
-          )}
+          </p>
         </div>
-        <div className="text-right shrink-0 flex items-center gap-2">
-          <div>
-            <div className="text-sm font-medium">
-              {trip.distance_km > 0 ? (
-                <>
-                  {trip.distance_km.toFixed(1)} km
-                </>
-              ) : (
-                '0.0 km'
-              )}
-            </div>
-            <div className="text-xs text-green-500">
-              {trip.duration_seconds
-                ? Math.round(trip.duration_seconds / 60)
-                : differenceInMinutes(parseISO(trip.end_time), parseISO(trip.start_time))
-              } min
-            </div>
-            {/* GPS51 Speed Data */}
-            {(trip.max_speed || trip.avg_speed) && (
-              <div className="text-xs text-muted-foreground">
-                {trip.max_speed && <span>Max: {Math.round(trip.max_speed)}km/h</span>}
-                {trip.max_speed && trip.avg_speed && <span> · </span>}
-                {trip.avg_speed && <span>Avg: {Math.round(trip.avg_speed)}km/h</span>}
-              </div>
-            )}
-          </div>
+        {canPlayback && (
           <Button
             variant="ghost"
             size="icon"
             className="h-8 w-8"
-            onClick={() => canPlayback && onPlayTrip(trip)}
-            disabled={!canPlayback}
-            title={canPlayback ? "Play trip" : "GPS coordinates incomplete - cannot playback"}
+            onClick={() => onPlayTrip(trip)}
+            title="Play trip"
           >
-            <Play className={cn("h-4 w-4", !canPlayback && "opacity-50")} />
+            <Play className="h-4 w-4" />
           </Button>
+        )}
+      </div>
+
+      {/* Stats Section */}
+      <div className="grid grid-cols-3 gap-4 mb-4 text-center">
+        <div className="flex flex-col items-center justify-center">
+          <Milestone className="h-5 w-5 text-primary mb-1" />
+          <span className="text-sm font-bold">{trip.distance_km.toFixed(1)}</span>
+          <span className="text-xs text-muted-foreground">km</span>
+        </div>
+        <div className="flex flex-col items-center justify-center">
+          <Clock className="h-5 w-5 text-primary mb-1" />
+          <span className="text-sm font-bold">{durationMinutes}</span>
+          <span className="text-xs text-muted-foreground">min</span>
+        </div>
+        <div className="flex flex-col items-center justify-center">
+          <Gauge className="h-5 w-5 text-primary mb-1" />
+          <span className="text-sm font-bold">{Math.round(trip.avg_speed || 0)}</span>
+          <span className="text-xs text-muted-foreground">km/h avg</span>
         </div>
       </div>
 
-      {/* Start and End Addresses */}
-      <div className="mt-2 pt-2 border-t border-border space-y-2">
-        <div className="flex items-start gap-2">
-          <MapPin className="h-3 w-3 text-green-500 mt-0.5 shrink-0" />
+      {/* From/To Section */}
+      <div className="space-y-1">
+        {/* Start Address */}
+        <div className="flex items-start gap-3">
+          <MapPin className="h-4 w-4 text-green-500 mt-1 shrink-0" />
           <div className="flex-1 min-w-0">
-            <p className="text-xs text-muted-foreground mb-0.5">From</p>
             {startLoading ? (
-              <Skeleton className="h-3 w-full" />
-            ) : hasValidStartCoords ? (
-              <p className="text-xs text-foreground line-clamp-2">
-                {startAddress || `${trip.start_latitude.toFixed(5)}, ${trip.start_longitude.toFixed(5)}`}
-              </p>
+              <Skeleton className="h-4 w-3/4" />
             ) : (
-              <p className="text-xs text-muted-foreground italic">
-                Location data unavailable
-              </p>
+              <p className="text-xs text-foreground line-clamp-2">{startAddress || "Address not found"}</p>
             )}
           </div>
+          {hasValidStartCoords && (
+             <a
+              href={getGoogleMapsLink(trip.start_latitude, trip.start_longitude)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-500 hover:text-blue-600 shrink-0"
+              title="View on Google Maps"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          )}
         </div>
-        <div className="flex items-start gap-2">
-          <ArrowRight className="h-3 w-3 text-muted-foreground mt-0.5 shrink-0 ml-0.5" />
+        
+        {/* Vertical line */}
+        <div className="pl-[8px]">
+          <div className="h-4 w-px bg-border ml-px"></div>
+        </div>
+
+        {/* End Address */}
+        <div className="flex items-start gap-3">
+          <MapPin className="h-4 w-4 text-red-500 mt-1 shrink-0" />
           <div className="flex-1 min-w-0">
-            <p className="text-xs text-muted-foreground mb-0.5">To</p>
             {endLoading ? (
-              <Skeleton className="h-3 w-full" />
-            ) : hasValidEndCoords ? (
-              <p className="text-xs text-foreground line-clamp-2">
-                {endAddress || `${trip.end_latitude.toFixed(5)}, ${trip.end_longitude.toFixed(5)}`}
-              </p>
+              <Skeleton className="h-4 w-3/4" />
             ) : (
-              <p className="text-xs text-muted-foreground italic">
-                Location data unavailable
-              </p>
+              <p className="text-xs text-foreground line-clamp-2">{endAddress || "Address not found"}</p>
             )}
           </div>
+          {hasValidEndCoords && (
+            <a
+              href={getGoogleMapsLink(trip.end_latitude, trip.end_longitude)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-500 hover:text-blue-600 shrink-0"
+              title="View on Google Maps"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          )}
         </div>
       </div>
+
+      {!canPlayback && (
+        <div className="mt-3">
+          <Badge variant="outline" className="text-xs border-orange-500/50 text-orange-600 font-normal">
+            <AlertTriangle className="h-3 w-3 mr-1.5" />
+            Playback unavailable due to incomplete GPS data.
+          </Badge>
+        </div>
+      )}
     </div>
   );
 }

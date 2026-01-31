@@ -1,9 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -22,44 +20,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  MapPin,
-  Home,
-  Briefcase,
-  Shield,
-  Plus,
-  Loader2,
-  Circle
-} from "lucide-react";
+import { Plus, Loader2 } from "lucide-react";
+import { GeofenceMap } from "./GeofenceMap";
+import { GeofenceList, type Geofence } from "./GeofenceList";
 
 interface GeofenceManagerProps {
   deviceId: string;
 }
-
-interface Geofence {
-  id: string;
-  name: string;
-  description: string | null;
-  zone_type: string;
-  center_latitude: number;
-  center_longitude: number;
-  radius_meters: number;
-  is_active: boolean;
-}
-
-const ZONE_TYPE_ICONS: Record<string, any> = {
-  home: Home,
-  work: Briefcase,
-  restricted: Shield,
-  custom: MapPin
-};
-
-const ZONE_TYPE_COLORS: Record<string, string> = {
-  home: 'bg-blue-100 text-blue-800 border-blue-200',
-  work: 'bg-purple-100 text-purple-800 border-purple-200',
-  restricted: 'bg-red-100 text-red-800 border-red-200',
-  custom: 'bg-gray-100 text-gray-800 border-gray-200'
-};
 
 export function GeofenceManager({ deviceId }: GeofenceManagerProps) {
   const [geofences, setGeofences] = useState<Geofence[]>([]);
@@ -73,22 +40,39 @@ export function GeofenceManager({ deviceId }: GeofenceManagerProps) {
     name: '',
     description: '',
     zone_type: 'custom',
-    latitude: '',
-    longitude: '',
-    radius_meters: '100'
+    latitude: 6.5244, // Default to Lagos
+    longitude: 3.3792,
+    radius_meters: 100
   });
 
+  const fetchGeofences = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('geofence_zones' as any)
+        .select('*')
+        .or(`device_id.eq.${deviceId},device_id.is.null`)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setGeofences((data as any) || []);
+    } catch (error) {
+      console.error('Error fetching geofences:', error);
+      // Fallback to empty if table doesn't exist yet
+      setGeofences([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    // Geofences table doesn't exist yet - show empty state
-    setLoading(false);
-    setGeofences([]);
+    fetchGeofences();
   }, [deviceId]);
 
   const handleCreate = async () => {
-    if (!formData.name || !formData.latitude || !formData.longitude) {
+    if (!formData.name) {
       toast({
         title: "Validation Error",
-        description: "Name, latitude, and longitude are required",
+        description: "Name is required",
         variant: "destructive"
       });
       return;
@@ -96,15 +80,111 @@ export function GeofenceManager({ deviceId }: GeofenceManagerProps) {
 
     setSaving(true);
     
-    // Placeholder - geofence table needs to be created via migration
-    toast({
-      title: "Coming Soon",
-      description: "Geofence creation will be available after database setup"
-    });
+    try {
+      // 1. Create in local DB
+      const { data, error } = await supabase
+        .from('geofence_zones' as any)
+        .insert({
+          device_id: deviceId,
+          name: formData.name,
+          description: formData.description,
+          zone_type: formData.zone_type,
+          shape_type: 'circle',
+          // Create GeoJSON Point
+          center_point: `POINT(${formData.longitude} ${formData.latitude})`,
+          center_latitude: formData.latitude,
+          center_longitude: formData.longitude,
+          radius_meters: formData.radius_meters,
+          is_active: true
+        })
+        .select()
+        .single();
 
-    setSaving(false);
-    setShowCreateDialog(false);
-    resetForm();
+      if (error) throw error;
+
+      // 2. Trigger Sync to GPS51 (via Edge Function)
+      // We'll implement this next, for now just log it
+      console.log('Geofence created locally:', data);
+      
+      let syncSuccess = false;
+      try {
+        await supabase.functions.invoke('sync-geofences-gps51', {
+          body: { action: 'create', geofence_id: (data as any).id }
+        });
+        syncSuccess = true;
+      } catch (syncError) {
+        console.warn('GPS51 Sync failed:', syncError);
+        // Don't block UI, just warn
+      }
+
+      toast({
+        title: syncSuccess ? "Geofence Created" : "Created Locally Only",
+        description: syncSuccess 
+          ? "Geofence has been created and synced with the vehicle." 
+          : "Geofence saved locally. Sync to vehicle failed and will retry in background.",
+        variant: syncSuccess ? "default" : "destructive"
+      });
+
+      setShowCreateDialog(false);
+      resetForm();
+      fetchGeofences();
+
+    } catch (error: any) {
+      console.error('Error creating geofence:', error);
+      toast({
+        title: "Creation Failed",
+        description: error.message || "Failed to create geofence",
+        variant: "destructive"
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      // 1. Fetch GPS51 ID before deleting
+      const { data: geofence } = await supabase
+        .from('geofence_zones' as any)
+        .select('gps51_id')
+        .eq('id', id)
+        .single();
+
+      const gps51Id = (geofence as any)?.gps51_id;
+
+      // 2. Delete from local DB
+      const { error } = await supabase
+        .from('geofence_zones' as any)
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      // 3. Trigger Sync Delete
+      if (gps51Id) {
+        try {
+          await supabase.functions.invoke('sync-geofences-gps51', {
+            body: { action: 'delete', geofence_id: id, gps51_id: gps51Id }
+          });
+        } catch (syncError) {
+          console.warn('GPS51 Sync failed:', syncError);
+        }
+      }
+
+      toast({
+        title: "Geofence Deleted",
+        description: "Geofence has been removed."
+      });
+
+      fetchGeofences();
+    } catch (error: any) {
+      console.error('Error deleting geofence:', error);
+      toast({
+        title: "Delete Failed",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
   };
 
   const resetForm = () => {
@@ -112,26 +192,20 @@ export function GeofenceManager({ deviceId }: GeofenceManagerProps) {
       name: '',
       description: '',
       zone_type: 'custom',
-      latitude: '',
-      longitude: '',
-      radius_meters: '100'
+      latitude: 6.5244,
+      longitude: 3.3792,
+      radius_meters: 100
     });
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-8 text-muted-foreground">
-        <Loader2 className="h-5 w-5 animate-spin mr-2" />
-        Loading geofences...
-      </div>
-    );
-  }
-
   return (
     <>
-      <div className="space-y-3">
+      <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-sm">Geofence Zones ({geofences.length})</h3>
+          <div>
+            <h3 className="font-semibold text-base">Geofence Zones</h3>
+            <p className="text-xs text-muted-foreground">Manage virtual boundaries for this vehicle</p>
+          </div>
           <Button
             size="sm"
             onClick={() => {
@@ -140,150 +214,89 @@ export function GeofenceManager({ deviceId }: GeofenceManagerProps) {
             }}
           >
             <Plus className="h-4 w-4 mr-1" />
-            Create Geofence
+            Add Zone
           </Button>
         </div>
 
-        {geofences.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            <MapPin className="h-12 w-12 mx-auto mb-3 opacity-40" />
-            <p className="text-sm">No geofences configured</p>
-            <p className="text-xs mt-1">Create a geofence to monitor vehicle movements</p>
-          </div>
-        ) : (
-          geofences.map((geofence) => {
-            const Icon = ZONE_TYPE_ICONS[geofence.zone_type] || MapPin;
-            const colorClass = ZONE_TYPE_COLORS[geofence.zone_type] || ZONE_TYPE_COLORS.custom;
-
-            return (
-              <Card
-                key={geofence.id}
-                className={`p-4 border-l-4 ${colorClass}`}
-              >
-                <div className="flex items-start gap-3">
-                  <div className={`p-2 rounded-full ${colorClass} bg-opacity-20`}>
-                    <Icon className="h-5 w-5" />
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-semibold text-sm">{geofence.name}</h4>
-                    {geofence.description && (
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {geofence.description}
-                      </p>
-                    )}
-
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground mt-2">
-                      <Circle className="h-3 w-3" />
-                      <span>Radius: {geofence.radius_meters}m</span>
-                    </div>
-
-                    <div className="flex gap-2 mt-2">
-                      <Badge variant="outline" className="text-xs capitalize">
-                        {geofence.zone_type}
-                      </Badge>
-                      <Badge variant={geofence.is_active ? "default" : "secondary"} className="text-xs">
-                        {geofence.is_active ? 'Active' : 'Inactive'}
-                      </Badge>
-                    </div>
-
-                    <a
-                      href={`https://www.google.com/maps?q=${geofence.center_latitude},${geofence.center_longitude}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-primary hover:underline mt-2 inline-block"
-                    >
-                      View on Google Maps →
-                    </a>
-                  </div>
-                </div>
-              </Card>
-            );
-          })
-        )}
+        <GeofenceList 
+          geofences={geofences} 
+          loading={loading} 
+          onDelete={handleDelete} 
+        />
       </div>
 
       {/* Create Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>Create Geofence</DialogTitle>
+            <DialogTitle>Create Geofence Zone</DialogTitle>
             <DialogDescription>
-              Create a circular geofence zone to monitor vehicle movements
+              Set a virtual boundary. You can configure alerts for when the vehicle enters or exits this zone.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Name *</Label>
-              <Input
-                id="name"
-                placeholder="e.g., Home, Office, Warehouse"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                placeholder="Optional description"
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                rows={2}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="zone_type">Zone Type</Label>
-              <Select value={formData.zone_type} onValueChange={(value) => setFormData({ ...formData, zone_type: value })}>
-                <SelectTrigger id="zone_type">
-                  <SelectValue placeholder="Select type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="home">Home</SelectItem>
-                  <SelectItem value="work">Work</SelectItem>
-                  <SelectItem value="restricted">Restricted</SelectItem>
-                  <SelectItem value="custom">Custom</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
+          <div className="grid flex-1 grid-cols-1 md:grid-cols-2 gap-6 py-4 overflow-y-auto">
+            {/* Left Column: Form */}
+            <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="latitude">Latitude *</Label>
+                <Label htmlFor="name">Zone Name *</Label>
                 <Input
-                  id="latitude"
-                  type="number"
-                  step="0.000001"
-                  placeholder="e.g., 6.5244"
-                  value={formData.latitude}
-                  onChange={(e) => setFormData({ ...formData, latitude: e.target.value })}
+                  id="name"
+                  placeholder="e.g., Home, Office"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 />
               </div>
+
               <div className="space-y-2">
-                <Label htmlFor="longitude">Longitude *</Label>
-                <Input
-                  id="longitude"
-                  type="number"
-                  step="0.000001"
-                  placeholder="e.g., 3.3792"
-                  value={formData.longitude}
-                  onChange={(e) => setFormData({ ...formData, longitude: e.target.value })}
+                <Label htmlFor="zone_type">Type</Label>
+                <Select value={formData.zone_type} onValueChange={(value) => setFormData({ ...formData, zone_type: value })}>
+                  <SelectTrigger id="zone_type">
+                    <SelectValue placeholder="Select type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="home">Home</SelectItem>
+                    <SelectItem value="work">Work</SelectItem>
+                    <SelectItem value="restricted">Restricted Area</SelectItem>
+                    <SelectItem value="custom">Custom</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  placeholder="Optional notes..."
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  rows={3}
                 />
+              </div>
+              
+              <div className="p-3 bg-muted/30 rounded-lg text-xs text-muted-foreground">
+                <p className="font-medium mb-1">Coordinates:</p>
+                <p>Lat: {formData.latitude.toFixed(6)}</p>
+                <p>Lng: {formData.longitude.toFixed(6)}</p>
+                <p>Radius: {formData.radius_meters}m</p>
               </div>
             </div>
 
+            {/* Right Column: Map */}
             <div className="space-y-2">
-              <Label htmlFor="radius">Radius (meters)</Label>
-              <Input
-                id="radius"
-                type="number"
-                min="50"
-                max="10000"
-                value={formData.radius_meters}
-                onChange={(e) => setFormData({ ...formData, radius_meters: e.target.value })}
+              <Label>Location & Radius</Label>
+              <GeofenceMap
+                initialLat={formData.latitude}
+                initialLng={formData.longitude}
+                initialRadius={formData.radius_meters}
+                onLocationSelect={(lat, lng, radius) => {
+                  setFormData(prev => ({
+                    ...prev,
+                    latitude: lat,
+                    longitude: lng,
+                    radius_meters: radius
+                  }));
+                }}
               />
             </div>
           </div>
@@ -296,10 +309,10 @@ export function GeofenceManager({ deviceId }: GeofenceManagerProps) {
               {saving ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  Creating...
+                  Syncing...
                 </>
               ) : (
-                'Create Geofence'
+                'Save Zone'
               )}
             </Button>
           </DialogFooter>

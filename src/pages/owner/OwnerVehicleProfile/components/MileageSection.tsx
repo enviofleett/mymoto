@@ -361,7 +361,7 @@ export function MileageSection({
                 <Clock className="h-4 w-4 text-green-500" />
                 <span className="text-xs text-muted-foreground">Driving</span>
               </div>
-              <div className="text-xl font-bold text-green-500">
+              <div className="text-xl font-bold text-white">
                 {drivingStats.drivingTimeFormatted}
               </div>
             </div>
@@ -372,7 +372,7 @@ export function MileageSection({
                 <ParkingCircle className="h-4 w-4 text-orange-500" />
                 <span className="text-xs text-muted-foreground">Parking</span>
               </div>
-              <div className="text-xl font-bold text-orange-500">
+              <div className="text-xl font-bold text-white">
                 {drivingStats.parkingTimeFormatted}
               </div>
             </div>
@@ -383,7 +383,7 @@ export function MileageSection({
                 <Zap className="h-4 w-4 text-red-500" />
                 <span className="text-xs text-muted-foreground">Max Speed</span>
               </div>
-              <div className="text-xl font-bold text-red-500">
+              <div className="text-xl font-bold text-white">
                 {drivingStats.maxSpeed > 0 ? `${drivingStats.maxSpeed} km/h` : "--"}
               </div>
             </div>
@@ -394,7 +394,7 @@ export function MileageSection({
                 <Gauge className="h-4 w-4 text-blue-500" />
                 <span className="text-xs text-muted-foreground">Avg Speed</span>
               </div>
-              <div className="text-xl font-bold text-blue-500">
+              <div className="text-xl font-bold text-white">
                 {drivingStats.avgSpeed > 0 ? `${drivingStats.avgSpeed} km/h` : "--"}
               </div>
             </div>
@@ -445,10 +445,12 @@ export function MileageSection({
                 />
                 <YAxis hide />
                 <Tooltip
+                  cursor={{ fill: "hsl(var(--primary))", opacity: 0.1 }}
                   contentStyle={{
                     backgroundColor: "hsl(var(--card))",
                     border: "1px solid hsl(var(--border))",
                     borderRadius: "8px",
+                    color: "#FFFFFF",
                   }}
                   formatter={(value: number) => [`${typeof value === 'number' ? value.toFixed(1) : 0} km`, 'Distance']}
                 />
@@ -500,14 +502,21 @@ export function MileageSection({
                 />
                 <YAxis hide />
                 <Tooltip
+                  cursor={{ fill: "hsl(var(--primary))", opacity: 0.1 }}
                   contentStyle={{
                     backgroundColor: "hsl(var(--card))",
                     border: "1px solid hsl(var(--border))",
                     borderRadius: "8px",
+                    color: "#FFFFFF",
                   }}
                   formatter={(value: number) => [`${value} trips`, 'Trips']}
                 />
-                <Bar dataKey="trips" fill="hsl(270, 70%, 60%)" radius={[4, 4, 0, 0]} />
+                <Bar
+                  dataKey="trips"
+                  fill="hsl(var(--background))"
+                  stroke="#FFFFFF"
+                  radius={[4, 4, 0, 0]}
+                />
               </BarChart>
             </ResponsiveContainer>
           </div>

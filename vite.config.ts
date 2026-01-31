@@ -12,6 +12,7 @@ export default defineConfig(({ mode }) => ({
     strictPort: false, // Try next available port if busy
   },
   build: {
+    sourcemap: true,
     rollupOptions: {
       output: {
         manualChunks: {

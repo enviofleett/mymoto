@@ -74,7 +74,7 @@ function FleetStatusCard({
   );
 }
 
-function VehicleCard({ vehicle, onClick }: { vehicle: OwnerVehicle; onClick: () => void }) {
+function VehicleCard({ vehicle, onClick, onMouseEnter }: { vehicle: OwnerVehicle; onClick: () => void; onMouseEnter: () => void; }) {
   const getStatusColor = () => {
     if (vehicle.status === "online") return "bg-status-active shadow-[0_0_8px_hsl(142_70%_50%/0.5)]";
     if (vehicle.status === "charging") return "bg-accent shadow-[0_0_8px_hsl(24_95%_53%/0.5)]";
@@ -88,6 +88,7 @@ function VehicleCard({ vehicle, onClick }: { vehicle: OwnerVehicle; onClick: () 
     <button 
       className="w-full text-left bg-card border-0 shadow-neumorphic-sm rounded-xl p-4 hover:shadow-neumorphic transition-all duration-200 active:shadow-neumorphic-inset"
       onClick={onClick}
+      onMouseEnter={onMouseEnter}
     >
       <div className="flex items-center gap-3">
         {/* Vehicle Icon/Avatar with neumorphic container */}
@@ -288,15 +289,12 @@ export default function OwnerVehicles() {
           ) : (
             <div className="space-y-3">
               {filteredVehicles.map((vehicle) => (
-                <div
+                <VehicleCard
                   key={vehicle.deviceId}
                   onMouseEnter={() => handleVehicleHover(vehicle.deviceId)}
-                >
-                  <VehicleCard
-                    vehicle={vehicle}
-                    onClick={() => navigate(`/owner/vehicle/${vehicle.deviceId}`)}
-                  />
-                </div>
+                  vehicle={vehicle}
+                  onClick={() => navigate(`/owner/vehicle/${vehicle.deviceId}`)}
+                />
               ))}
             </div>
           )}

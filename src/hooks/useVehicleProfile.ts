@@ -287,7 +287,7 @@ async function fetchVehicleDailyStats(
 
 interface CommandPayload {
   device_id: string;
-  command_type: "immobilize_engine" | "demobilize_engine" | "sound_alarm" | "silence_alarm";
+  command_type: "immobilize_engine" | "demobilize_engine" | "sound_alarm" | "silence_alarm" | "shutdown_engine";
   confirmed?: boolean;
 }
 

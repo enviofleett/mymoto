@@ -53,7 +53,7 @@ function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
 
   const trips: TripData[] = [];
   let currentTrip: { points: PositionPoint[] } | null = null;
-  const SPEED_THRESHOLD = 2; // km/h - consider moving if speed > 2
+  const SPEED_THRESHOLD = 5; // km/h - increased from 2 to 5 to match system-wide standard
   const MIN_TRIP_DISTANCE = 0.3; // km - minimum trip distance to record
   const STOP_DURATION_MS = 3 * 60 * 1000; // 3 minutes of no movement = trip end
 

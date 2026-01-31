@@ -18,6 +18,8 @@
  *   const result = await callGps51WithRateLimit(supabase, proxyUrl, action, token, serverid, body)
  */
 
+import { crypto } from "https://deno.land/std@0.168.0/crypto/mod.ts"
+
 // Rate limiting configuration
 const GPS51_RATE_LIMIT = {
   // VERY Conservative limits to prevent IP blocking (8902 errors)
@@ -350,6 +352,77 @@ export async function callGps51LoginWithRateLimit(
   }
 }
 
+const TOKEN_VALIDITY_HOURS = 24
+
+async function md5(text: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(text)
+  const hashBuffer = await crypto.subtle.digest("MD5", data)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+/**
+ * Refresh GPS51 token automatically
+ */
+export async function refreshGps51Token(supabase: any, refreshedBy: string = 'system_auto_refresh'): Promise<{
+  token: string;
+  username: string;
+  serverid: string;
+}> {
+  console.log(`[GPS51 Client] Token missing or expired, attempting auto-refresh (by ${refreshedBy})...`)
+
+  const DO_PROXY_URL = Deno.env.get('DO_PROXY_URL')
+  const GPS_USER = Deno.env.get('GPS_USERNAME')
+  const GPS_PASS_PLAIN = Deno.env.get('GPS_PASSWORD')
+
+  if (!DO_PROXY_URL || !GPS_USER || !GPS_PASS_PLAIN) {
+    throw new Error('Missing required secrets (DO_PROXY_URL, GPS_USERNAME, GPS_PASSWORD) for token refresh')
+  }
+
+  // Hash password
+  const passwordHash = await md5(GPS_PASS_PLAIN)
+
+  const loginData = {
+    type: "USER",
+    from: "web",
+    username: GPS_USER,
+    password: passwordHash,
+    browser: "Chrome/120.0.0.0"
+  }
+
+  const apiResponse = await callGps51LoginWithRateLimit(supabase, DO_PROXY_URL, loginData)
+
+  if (apiResponse.status !== 0 || !apiResponse.token) {
+    throw new Error(`GPS51 Auto-Login Failed: status=${apiResponse.status}, message=${apiResponse.message || 'Unknown'}`)
+  }
+
+  // Calculate expiry (24 hours from now, minus 1 hour buffer)
+  const expiresAt = new Date()
+  expiresAt.setHours(expiresAt.getHours() + TOKEN_VALIDITY_HOURS - 1)
+
+  // Store token with expiry
+  await supabase.from('app_settings').upsert({ 
+    key: 'gps_token', 
+    value: apiResponse.token,
+    expires_at: expiresAt.toISOString(),
+    metadata: { 
+      serverid: apiResponse.serverid, 
+      username: GPS_USER, 
+      refreshed_by: refreshedBy,
+      refreshed_at: new Date().toISOString()
+    }
+  }, { onConflict: 'key' })
+
+  console.log(`[GPS51 Client] Token auto-refreshed successfully, expires at ${expiresAt.toISOString()}`)
+
+  return {
+    token: apiResponse.token,
+    username: GPS_USER,
+    serverid: apiResponse.serverid
+  }
+}
+
 /**
  * Get valid GPS51 token (shared utility)
  */
@@ -364,13 +437,32 @@ export async function getValidGps51Token(supabase: any): Promise<{
     .eq("key", "gps_token")
     .maybeSingle();
 
-  if (error) throw new Error(`Token fetch error: ${error.message}`);
-  if (!tokenData?.value) throw new Error("No GPS token found. Admin login required.");
+  // If error (other than not found) or no data, try refresh
+  if (error && error.code !== "PGRST116") throw new Error(`Token fetch error: ${error.message}`);
+  
+  let shouldRefresh = false;
 
-  if (tokenData.expires_at) {
+  if (!tokenData?.value) {
+    shouldRefresh = true;
+  } else if (tokenData.expires_at) {
     const expiresAt = new Date(tokenData.expires_at);
-    if (new Date() >= expiresAt) {
-      throw new Error("Token expired. Admin refresh required.");
+    // Refresh if expired or expiring in less than 5 minutes
+    if (new Date().getTime() >= expiresAt.getTime() - 5 * 60 * 1000) {
+      shouldRefresh = true;
+    }
+  }
+
+  if (shouldRefresh) {
+    try {
+      return await refreshGps51Token(supabase);
+    } catch (refreshError) {
+      console.error(`[GPS51 Client] Auto-refresh failed: ${refreshError}`);
+      // Fallback: if we have an expired token, maybe still try to use it? 
+      // Or just rethrow. Since the user wants auto-renew, failing to renew is a critical error.
+      // But if we have a token that is *just* expired, maybe it still works for a bit?
+      // GPS51 returns 9903 if token invalid.
+      // For now, let's rethrow the refresh error.
+      throw refreshError;
     }
   }
 

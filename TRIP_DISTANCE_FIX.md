@@ -132,3 +132,17 @@ To verify the fix works:
 ---
 
 **Status:** ✅ **FIXED AND READY FOR TESTING**
+
+# Trip Logic Standardization (2026-01-31)
+
+We have standardized the speed threshold for all trip calculations to **> 5 km/h**. This ensures consistency between:
+1. **Frontend**: Notification alerts ("Vehicle Moving")
+2. **Backend**: Trip start/end detection
+3. **Estimation**: Fallback distance calculations
+
+**Updated Thresholds:**
+- **Real-time Sync**: `sync-trips-incremental` now uses **5.0 km/h** (was 1.0 km/h)
+- **Historical Processing**: `process-trips` now uses **5.0 km/h** (was 2.0 km/h)
+- **Idle Detection**: Stops trips when speed drops below **5.0 km/h** (was 0.1 km/h)
+
+This change eliminates "ghost trips" caused by GPS drift (1-3 km/h jitter) when vehicles are stationary.

@@ -247,6 +247,7 @@ function getPreferenceKey(eventType: string): string | null {
     'low_battery': 'low_battery',
     'critical_battery': 'low_battery',
     'overspeeding': 'overspeeding',
+    'vehicle_moving': 'vehicle_moving',
   };
   return mapping[eventType] || null;
 }
