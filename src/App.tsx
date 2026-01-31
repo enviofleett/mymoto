@@ -42,11 +42,6 @@ import OwnerNotificationSettings from "./pages/owner/OwnerNotificationSettings";
 import OwnerPrivacy from "./pages/owner/OwnerPrivacy";
 import OwnerResources from "./pages/owner/OwnerResources";
 
-// Partner pages
-import PartnerDashboard from "./pages/partner/PartnerDashboard";
-import PartnerProfile from "./pages/partner/PartnerProfile";
-import PartnerSignup from "./pages/partner/PartnerSignup";
-
 // Directory pages
 import OwnerDirectory from "./pages/owner/OwnerDirectory";
 import AdminDirectory from "./pages/AdminDirectory";
@@ -76,8 +71,6 @@ const RoleBasedRedirect = () => {
     if (!isLoading && isRoleLoaded && user) {
       if (isAdmin) {
         navigate('/', { replace: true });
-      } else if (isProvider) {
-        navigate('/partner/dashboard', { replace: true });
       } else {
         navigate('/owner', { replace: true });
       }
@@ -120,10 +113,6 @@ const App = () => {
               <Route path="/login" element={<PwaLogin />} />
               <Route path="/app" element={<InstallApp />} />
               
-              {/* Public Partner Signup */}
-              <Route path="/partner-signup" element={<PartnerSignup />} />
-              <Route path="/partner/signup" element={<PartnerSignup />} />
-              
               {/* Role-based redirect */}
               <Route path="/redirect" element={<RoleBasedRedirect />} />
               
@@ -149,10 +138,6 @@ const App = () => {
               <Route path="/admin/directory" element={<ProtectedRoute requireAdmin><AdminDirectory /></ProtectedRoute>} />
               <Route path="/admin/vehicle-requests" element={<ProtectedRoute requireAdmin><AdminVehicleRequests /></ProtectedRoute>} />
               
-              {/* Partner Routes */}
-              <Route path="/partner/dashboard" element={<ProtectedRoute requireProvider><PartnerDashboard /></ProtectedRoute>} />
-              <Route path="/partner/profile" element={<ProtectedRoute requireProvider><PartnerProfile /></ProtectedRoute>} />
-              
               {/* Owner PWA Routes */}
               <Route path="/owner" element={<ProtectedRoute><OwnerChat /></ProtectedRoute>} />
               <Route path="/owner/chat/:deviceId" element={<ProtectedRoute><OwnerChatDetail /></ProtectedRoute>} />
@@ -171,8 +156,8 @@ const App = () => {
             </TermsChecker>
           </AuthProvider>
         </BrowserRouter>
-      </TooltipProvider>
-    </QueryClientProvider>
+        </TooltipProvider>
+      </QueryClientProvider>
     </ErrorBoundary>
   );
 };

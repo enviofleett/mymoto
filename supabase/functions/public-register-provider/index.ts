@@ -33,7 +33,7 @@ serve(async (req: Request) => {
     } = await req.json();
 
     // Basic Validation
-    if (!email || !password || !businessName || !phone || !categoryId) {
+    if (!email || !password || !businessName || !phone) {
          return new Response(
             JSON.stringify({ error: "Missing required fields" }),
             { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }

@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 40% 98%; /* Light blue background */
+    --foreground: 222 47% 11%; /* Dark blue text */
+
+    --card: 0 0% 100%; /* White cards */
+    --card-foreground: 222 47% 11%; /* Dark blue text */
+
+    --popover: 0 0% 100%; /* White popovers */
+    --popover-foreground: 222 47% 11%; /* Dark blue text */
+
+    --primary: 221 83% 53%; /* Bright blue primary */
+    --primary-foreground: 210 40% 98%; /* Light text */
+
+    --secondary: 210 40% 96%; /* Light blue secondary */
+    --secondary-foreground: 222 47% 11%; /* Dark blue text */
+
+    --muted: 210 40% 96%; /* Light blue muted */
+    --muted-foreground: 215 16% 47%; /* Gray text */
+
+    --accent: 221 83% 53%; /* Bright blue accent */
+    --accent-foreground: 210 40% 98%; /* Light text */
+
+    --destructive: 0 84% 60%; /* Red destructive */
+    --destructive-foreground: 210 40% 98%; /* Light text */
+
+    --border: 214 32% 91%; /* Light border */
+    --input: 214 32% 91%; /* Light input */
+    --ring: 221 83% 53%; /* Blue ring */
+
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222 47% 11%; /* Dark blue background */
+    --foreground: 210 40% 98%; /* Light text */
+
+    --card: 222 47% 11%; /* Dark blue cards */
+    --card-foreground: 210 40% 98%; /* Light text */
+
+    --popover: 222 47% 11%; /* Dark blue popovers */
+    --popover-foreground: 210 40% 98%; /* Light text */
+
+    --primary: 217 91% 60%; /* Bright blue primary */
+    --primary-foreground: 210 40% 98%; /* Light text */
+
+    --secondary: 217 33% 17%; /* Dark blue secondary */
+    --secondary-foreground: 210 40% 98%; /* Light text */
+
+    --muted: 217 33% 17%; /* Dark blue muted */
+    --muted-foreground: 215 20% 65%; /* Light gray text */
+
+    --accent: 217 91% 60%; /* Bright blue accent */
+    --accent-foreground: 210 40% 98%; /* Light text */
+
+    --destructive: 0 63% 31%; /* Dark red destructive */
+    --destructive-foreground: 210 40% 98%; /* Light text */
+
+    --border: 217 33% 17%; /* Dark border */
+    --input: 217 33% 17%; /* Dark input */
+    --ring: 224 76% 48%; /* Blue ring */
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Service provider specific animations */
+@keyframes provider-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(37, 99, 235, 0);
+  }
+}
+
+.animate-provider-pulse {
+  animation: provider-pulse 2s infinite;
+}

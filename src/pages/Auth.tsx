@@ -236,24 +236,6 @@ const Auth = () => {
             >
               {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
             </Button>
-
-            <div className="relative my-4">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t border-muted/20" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-card px-2 text-muted-foreground">Or</span>
-              </div>
-            </div>
-
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full border-accent/20 text-accent hover:bg-accent/10 hover:text-accent"
-              onClick={() => navigate('/partner-signup')}
-            >
-              Register as Service Provider
-            </Button>
           </CardFooter>
         </form>
       </Card>

@@ -1,53 +1,39 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
-import { componentTagger } from "lovable-tagger";
 import { VitePWA } from "vite-plugin-pwa";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
   server: {
-    // Let Vite use default host/port settings to avoid permission issues
-    port: 5173,
-    strictPort: false, // Try next available port if busy
-    proxy: {
-      '/partner': {
-        target: 'http://localhost:5174',
-        changeOrigin: true,
-        secure: false,
-      }
-    }
+    port: 5174, // Different port from main PWA
+    strictPort: false,
   },
   build: {
     sourcemap: true,
     rollupOptions: {
       output: {
         manualChunks: {
-          // Split large libraries into separate chunks
-          'mapbox': ['mapbox-gl'],
-          'recharts': ['recharts'],
           'react-vendor': ['react', 'react-dom', 'react-router-dom'],
-          'ui-vendor': ['@radix-ui/react-dialog', '@radix-ui/react-popover', '@radix-ui/react-tabs'],
         },
       },
     },
   },
   plugins: [
     react(),
-    mode === "development" && componentTagger(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["favicon.ico", "robots.txt", "sw-custom.js"], // ✅ Include custom service worker
+      includeAssets: ["favicon.ico", "robots.txt"],
       manifest: {
-        name: "MyMoto - Vehicle Companion",
-        short_name: "MyMoto",
-        description: "Chat with your vehicles and manage your fleet",
-        theme_color: "#131618",
-        background_color: "#131618",
+        name: "MyMoto Service Provider Portal",
+        short_name: "MyMoto Providers",
+        description: "Service provider portal for MyMoto fleet management",
+        theme_color: "#2563eb", // Blue theme for service providers
+        background_color: "#2563eb",
         display: "standalone",
         orientation: "portrait",
-        scope: "/",
-        start_url: "/?v=1.3.0",
+        scope: "/partner/",
+        start_url: "/partner/?v=1.0.0",
         icons: [
           {
             src: "/pwa-192x192.png",
@@ -69,12 +55,10 @@ export default defineConfig(({ mode }) => ({
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
-        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MiB
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         skipWaiting: true,
         clientsClaim: true,
         cleanupOutdatedCaches: true,
-        // ✅ FIX: Import custom service worker handlers
-        importScripts: ['/sw-custom.js'], // Injects custom notification handlers
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,
@@ -83,25 +67,14 @@ export default defineConfig(({ mode }) => ({
               cacheName: "supabase-cache",
               expiration: {
                 maxEntries: 100,
-                maxAgeSeconds: 60 * 60, // 1 hour
-              },
-            },
-          },
-          {
-            urlPattern: /^https:\/\/api\.mapbox\.com\/.*/i,
-            handler: "CacheFirst",
-            options: {
-              cacheName: "mapbox-cache",
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24, // 24 hours
+                maxAgeSeconds: 60 * 60,
               },
             },
           },
         ],
       },
     }),
-  ].filter(Boolean),
+  ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
