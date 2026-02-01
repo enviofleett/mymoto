@@ -5,7 +5,11 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-Deno.serve(async (req) => {
+function hexToUint8Array(hexString: string): Uint8Array {
+  return new Uint8Array(hexString.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16)));
+}
+
+Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -21,7 +25,39 @@ Deno.serve(async (req) => {
 
     // Handle webhook from Paystack
     if (action === "webhook") {
-      const payload = await req.json();
+      // Get the signature from headers
+      const signature = req.headers.get("x-paystack-signature");
+      if (!signature) {
+        return new Response("No signature provided", { status: 400, headers: corsHeaders });
+      }
+
+      // Read body as text for verification
+      const body = await req.text();
+
+      // Verify signature
+      const encoder = new TextEncoder();
+      const keyData = encoder.encode(paystackSecretKey);
+      const key = await crypto.subtle.importKey(
+        "raw",
+        keyData,
+        { name: "HMAC", hash: "SHA-512" },
+        false,
+        ["verify"]
+      );
+
+      const verified = await crypto.subtle.verify(
+        "HMAC",
+        key,
+        hexToUint8Array(signature),
+        encoder.encode(body)
+      );
+
+      if (!verified) {
+        console.error("Invalid Paystack signature");
+        return new Response("Invalid signature", { status: 401, headers: corsHeaders });
+      }
+
+      const payload = JSON.parse(body);
       console.log("Paystack webhook received:", payload.event);
 
       if (payload.event === "charge.success") {
@@ -110,13 +146,13 @@ Deno.serve(async (req) => {
           const { data: assignments } = await supabase
             .from("vehicle_assignments")
             .select("device_id")
-            .in("profile_id", profiles.map((p) => p.id));
+            .in("profile_id", profiles.map((p: any) => p.id));
 
           if (assignments && assignments.length > 0) {
             const { error: llmUpdateError } = await supabase
               .from("vehicle_llm_settings")
               .update({ llm_enabled: true })
-              .in("device_id", assignments.map((a) => a.device_id));
+              .in("device_id", assignments.map((a: any) => a.device_id));
 
             if (llmUpdateError) {
               console.error("Failed to re-enable LLM settings:", llmUpdateError);

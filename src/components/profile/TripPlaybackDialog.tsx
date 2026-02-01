@@ -8,7 +8,7 @@ import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
-import { format, differenceInSeconds } from "date-fns";
+import { formatLagos } from "@/lib/timezone";
 import { 
   Play, 
   Pause, 
@@ -228,7 +228,7 @@ export function TripPlaybackDialog({
 
     const startTimeDate = new Date(positions[0].gps_time);
     const endTimeDate = new Date(positions[positions.length - 1].gps_time);
-    const durationSeconds = differenceInSeconds(endTimeDate, startTimeDate);
+    const durationSeconds = Math.floor((endTimeDate.getTime() - startTimeDate.getTime()) / 1000);
 
     return {
       distance: totalDistance,
@@ -441,9 +441,9 @@ export function TripPlaybackDialog({
                 className="w-full"
               />
               <div className="flex justify-between text-xs text-muted-foreground">
-                <span>{positions.length > 0 ? format(new Date(positions[0].gps_time), "HH:mm") : "--:--"}</span>
+                <span>{positions.length > 0 ? formatLagos(new Date(positions[0].gps_time), "HH:mm") : "--:--"}</span>
                 <span>{currentIndex + 1} / {positions.length}</span>
-                <span>{positions.length > 0 ? format(new Date(positions[positions.length - 1].gps_time), "HH:mm") : "--:--"}</span>
+                <span>{positions.length > 0 ? formatLagos(new Date(positions[positions.length - 1].gps_time), "HH:mm") : "--:--"}</span>
               </div>
             </div>
           )}

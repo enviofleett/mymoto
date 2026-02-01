@@ -17,6 +17,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Ghost, Trash2, RefreshCw, Eye, AlertTriangle } from "lucide-react";
+import { formatLagos } from "@/lib/timezone";
 
 interface GhostVehicle {
   device_id: string;
@@ -153,13 +154,7 @@ export function GhostVehicleCard() {
   };
 
   const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    return formatLagos(dateStr, "MMM d, yyyy h:mm a");
   };
 
   return (

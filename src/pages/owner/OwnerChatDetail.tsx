@@ -14,8 +14,7 @@ import { useVehicleAlerts, formatAlertForChat } from "@/hooks/useVehicleAlerts";
 import { ArrowLeft, Car, User, Send, Loader2, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ChatMessageContent } from "@/components/chat/ChatMessageContent";
-import { format } from "date-fns";
-import { formatLagosDate } from "@/lib/timezone";
+import { formatLagos } from "@/lib/timezone";
 import { useQuery } from "@tanstack/react-query";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 

@@ -13,6 +13,7 @@ import {
   BatteryWarning
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { formatLagos } from '@/lib/timezone';
 
 interface SyncHealthData {
   total_vehicles: number | null;
@@ -50,8 +51,7 @@ export function GpsSyncHealthDashboard() {
 
   const formatTime = (dateString: string | null) => {
     if (!dateString) return 'Never';
-    const date = new Date(dateString);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return formatLagos(dateString, 'h:mm:ss a');
   };
 
   const getSyncStatus = (avgAge: number | null) => {

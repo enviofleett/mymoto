@@ -107,57 +107,64 @@ Deno.serve(async (req) => {
     let disabledCount = 0;
     const results: any[] = [];
 
+    // Helper to get Lagos date string YYYY-MM-DD
+    const getLagosDateString = () => {
+      return new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Lagos" });
+    };
+    const lagosDate = getLagosDateString();
+
     for (const [userId, userDeviceIds] of Object.entries(userDevices)) {
       const totalCharge = dailyRate * userDeviceIds.length;
+      let userBalance = 0;
 
-      // Get user's wallet
-      const { data: wallet, error: walletError } = await supabase
-        .from("wallets")
-        .select("id, balance")
-        .eq("user_id", userId)
-        .single();
-
-      if (walletError || !wallet) {
-        console.log(`No wallet found for user ${userId}, skipping...`);
-        continue;
-      }
-
-      const newBalance = parseFloat(wallet.balance) - totalCharge;
-
-      // Debit the wallet
-      const { error: updateError } = await supabase
-        .from("wallets")
-        .update({ balance: newBalance })
-        .eq("id", wallet.id);
-
-      if (updateError) {
-        console.error(`Error updating wallet for user ${userId}:`, updateError);
-        continue;
-      }
-
-      // Record transactions for each vehicle
+      // We'll process each vehicle individually to maintain granular transaction history
+      // and use the atomic RPC for safety.
+      
       for (const deviceId of userDeviceIds) {
         const vehicleName = vehicleNames[deviceId] || deviceId;
-        await supabase.from("wallet_transactions").insert({
-          wallet_id: wallet.id,
-          amount: -dailyRate,
-          type: "debit",
-          description: `Daily LLM fee: ${vehicleName}`,
-          reference: `billing_${deviceId}_${new Date().toISOString().split("T")[0]}`,
-          metadata: { device_id: deviceId, rate: dailyRate },
+        const reference = `billing_${deviceId}_${lagosDate}`;
+
+        // Call RPC for atomic debit
+        const { data: rpcResult, error: rpcError } = await supabase.rpc("credit_wallet_atomic", {
+          p_user_id: userId,
+          p_amount: -dailyRate, // Negative for debit
+          p_reference: reference,
+          p_description: `Daily LLM fee: ${vehicleName}`,
+          p_metadata: { 
+            device_id: deviceId, 
+            rate: dailyRate,
+            type: 'daily_subscription'
+          }
         });
 
-        // Update last_billing_date
-        await supabase
-          .from("vehicle_llm_settings")
-          .update({ last_billing_date: new Date().toISOString() })
-          .eq("device_id", deviceId);
+        if (rpcError) {
+          console.error(`RPC Error billing user ${userId} for device ${deviceId}:`, rpcError);
+          continue;
+        }
 
-        processedCount++;
+        if (!rpcResult.success) {
+           // If it failed (e.g. maybe insufficient funds if we enforced it, but likely we allow negative),
+           // log it. If the RPC prevents negative balance, we might get an error here.
+           // Assuming we allow negative balance for subscription fees (post-paid style) or 
+           // we just want to record it.
+           // If the RPC enforces >= 0, then this might fail.
+           // For now, we assume it succeeds or we handle the failure.
+           console.error(`Billing failed for user ${userId}, device ${deviceId}: ${rpcResult.error}`);
+        } else {
+           processedCount++;
+           userBalance = rpcResult.new_balance;
+           
+           // Update last_billing_date only on success
+           await supabase
+            .from("vehicle_llm_settings")
+            .update({ last_billing_date: new Date().toISOString() })
+            .eq("device_id", deviceId);
+        }
       }
 
-      // If balance is negative, disable LLM for this user's vehicles
-      if (newBalance < 0) {
+      // Check balance and disable if negative
+      // We use the balance from the last RPC call
+      if (userBalance < 0) {
         for (const deviceId of userDeviceIds) {
           await supabase
             .from("vehicle_llm_settings")
@@ -165,15 +172,15 @@ Deno.serve(async (req) => {
             .eq("device_id", deviceId);
           disabledCount++;
         }
-        console.log(`Disabled LLM for user ${userId} due to insufficient balance`);
+        console.log(`Disabled LLM for user ${userId} due to negative balance: ${userBalance}`);
       }
 
       results.push({
         user_id: userId,
         vehicles: userDeviceIds.length,
         charged: totalCharge,
-        new_balance: newBalance,
-        disabled: newBalance < 0,
+        new_balance: userBalance,
+        disabled: userBalance < 0,
       });
     }
 

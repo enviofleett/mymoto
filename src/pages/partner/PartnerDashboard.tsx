@@ -27,7 +27,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { format } from "date-fns";
+import { formatLagos } from "@/lib/timezone";
 
 interface Booking {
   id: string;
@@ -315,7 +315,7 @@ export default function PartnerDashboard() {
                       <div className="font-medium">{getUserName(booking)}</div>
                       <div className="text-sm text-muted-foreground flex items-center gap-2 mt-1">
                         <Calendar className="h-3 w-3" />
-                        {format(new Date(booking.booking_date), 'MMM dd, yyyy')}
+                        {formatLagos(new Date(booking.booking_date), 'MMM dd, yyyy')}
                         {booking.booking_time && (
                           <>
                             <Clock className="h-3 w-3 ml-2" />

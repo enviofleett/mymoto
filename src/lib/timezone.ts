@@ -167,3 +167,20 @@ export function formatLagos(date: Date | string, formatStr: string): string {
     return dateObj.toLocaleString('en-US', { timeZone: DEFAULT_TIMEZONE });
   }
 }
+
+/**
+ * Format a date as relative time (e.g., "5 minutes ago")
+ */
+export function formatRelativeTime(date: Date | string): string {
+  const dateObj = typeof date === 'string' ? new Date(date) : date;
+  const now = new Date();
+  const diffMs = now.getTime() - dateObj.getTime();
+  const diffSecs = Math.floor(diffMs / 1000);
+  
+  if (diffSecs < 60) return 'just now';
+  if (diffSecs < 3600) return `${Math.floor(diffSecs / 60)}m ago`;
+  if (diffSecs < 86400) return `${Math.floor(diffSecs / 3600)}h ago`;
+  if (diffSecs < 604800) return `${Math.floor(diffSecs / 86400)}d ago`;
+  
+  return formatLagos(dateObj, "MMM d");
+}

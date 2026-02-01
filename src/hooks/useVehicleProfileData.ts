@@ -92,20 +92,7 @@ export interface TripDateRange {
   to?: Date;
 }
 
-// Calculate distance between two coordinates (Haversine formula)
-function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371; // Earth's radius in km
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
+
 
 async function fetchVehicleTrips(
   deviceId: string, 
@@ -120,6 +107,7 @@ async function fetchVehicleTrips(
     .from("vehicle_trips")
     .select("*")
     .eq("device_id", deviceId)
+    .eq("source", "gps51") // STRICT PARITY: Only show trips from GPS51
     // Only require start_time and end_time - coordinates might be missing (0,0) for some trips
     .not("start_time", "is", null)
     .not("end_time", "is", null);
@@ -219,38 +207,9 @@ async function fetchVehicleTrips(
   
   return filteredTrips
     .map((trip: any): VehicleTrip => {
-      // Calculate distance if missing or 0
-      let distanceKm = trip.distance_km || 0;
-      
-      // First, try to calculate from GPS coordinates if available
-      const hasValidStartCoords = trip.start_latitude && trip.start_longitude && 
-                                   trip.start_latitude !== 0 && trip.start_longitude !== 0;
-      const hasValidEndCoords = trip.end_latitude && trip.end_longitude && 
-                                 trip.end_latitude !== 0 && trip.end_longitude !== 0;
-      
-      if (distanceKm === 0 && hasValidStartCoords && hasValidEndCoords) {
-        distanceKm = calculateDistance(
-          trip.start_latitude,
-          trip.start_longitude,
-          trip.end_latitude,
-          trip.end_longitude
-        );
-      }
-      
-      // If distance is still 0 but we have duration and average speed, estimate distance
-      if (distanceKm === 0 && trip.duration_seconds && trip.avg_speed && trip.avg_speed > 0) {
-        // distance = speed (km/h) * time (hours)
-        const durationHours = trip.duration_seconds / 3600;
-        distanceKm = trip.avg_speed * durationHours;
-      }
-      
-      // If distance is still 0 but we have duration, estimate minimum distance
-      // Assume minimum speed of 5 km/h for any trip with duration
-      if (distanceKm === 0 && trip.duration_seconds && trip.duration_seconds > 0) {
-        const durationHours = trip.duration_seconds / 3600;
-        const minSpeedKmh = 5; // Minimum assumed speed for a trip
-        distanceKm = minSpeedKmh * durationHours;
-      }
+      // CRITICAL: Use database distance (GPS51 source of truth) ONLY
+      // Do NOT estimate distance from duration/speed or coordinates
+      const distanceKm = trip.distance_km || 0;
 
       return {
         id: trip.id,

@@ -4,7 +4,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Brain, Clock, BarChart3, RefreshCw, AlertCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { format } from "date-fns";
+import { formatLagos } from "@/lib/timezone";
 import { Button } from "@/components/ui/button";
 
 interface InsightRecord {
@@ -91,7 +91,7 @@ export function InsightHistory({ limit = 10 }: { limit?: number }) {
                 <CardContent className="p-4 space-y-3">
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <span className="text-xs font-medium text-muted-foreground bg-background px-2 py-1 rounded-md border">
-                      {format(new Date(insight.created_at), "MMM d, h:mm a")}
+                      {formatLagos(new Date(insight.created_at), "MMM d, h:mm a")}
                     </span>
                     <div className="flex items-center gap-2 text-[10px] uppercase font-bold tracking-wider">
                       <span className="px-2 py-0.5 rounded bg-primary/10 text-primary flex items-center gap-1">

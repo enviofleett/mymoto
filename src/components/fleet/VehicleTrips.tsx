@@ -5,9 +5,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MapPin, Navigation, Clock, TrendingUp, Loader2 } from "lucide-react";
-import { format } from "date-fns";
+import { formatLagos, formatLagosDate } from "@/lib/timezone";
 import { useAddress } from "@/hooks/useAddress";
-import { formatLagosDate } from "@/lib/timezone";
 
 interface Trip {
   id: string;
@@ -27,31 +26,18 @@ interface VehicleTripsProps {
   deviceId: string;
 }
 
-// Haversine distance calculation
-function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371; // Earth's radius in km
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
 export function VehicleTrips({ deviceId }: VehicleTripsProps) {
   const { data: trips, isLoading } = useQuery({
     queryKey: ['vehicle-trips-direct', deviceId],
     queryFn: async () => {
       // Fetch trips DIRECTLY from vehicle_trips table (synced from GPS51)
       // This ensures 100% match with GPS51 platform
+      // @ts-ignore
       const { data, error } = await supabase
-        .from('vehicle_trips')
+        .from('vehicle_trips' as any)
         .select('*')
         .eq('device_id', deviceId)
+        .eq('source', 'gps51') // STRICT PARITY: Only show trips from GPS51
         .order('start_time', { ascending: false })
         .limit(50);
 
@@ -172,7 +158,7 @@ export function VehicleTrips({ deviceId }: VehicleTripsProps) {
         } else if (tripDate.getTime() === today.getTime() - 86400000) {
           label = "Yesterday";
         } else {
-          label = format(tripDate, "EEE, MMM d");
+          label = formatLagos(tripDate, "EEE, MMM d");
         }
         groups.push({ date: tripDate, label, trips: [trip] });
       }

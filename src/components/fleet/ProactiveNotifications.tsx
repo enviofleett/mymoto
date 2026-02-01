@@ -22,7 +22,7 @@ import {
   Navigation,
   Car
 } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { formatRelativeTime } from "@/lib/timezone";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useNotificationPreferences, type AlertType, type SeverityLevel } from "@/hooks/useNotificationPreferences";
 import { NotificationPermissionBanner } from "@/components/notifications/NotificationPermissionBanner";
@@ -326,7 +326,7 @@ export function ProactiveNotifications({
             const Icon = EVENT_ICONS[event.event_type] || AlertCircle;
             const severityColor = SEVERITY_COLORS[event.severity] || SEVERITY_COLORS.info;
             const badgeColor = SEVERITY_BADGE_COLORS[event.severity] || SEVERITY_BADGE_COLORS.info;
-            const timeAgo = formatDistanceToNow(new Date(event.created_at), { addSuffix: true });
+            const timeAgo = formatRelativeTime(new Date(event.created_at));
 
             return (
               <Card

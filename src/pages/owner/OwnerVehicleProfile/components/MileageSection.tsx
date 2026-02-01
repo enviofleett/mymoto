@@ -27,8 +27,8 @@ import {
   BarChart,
   Bar,
 } from "recharts";
-import { format, parseISO } from "date-fns";
 import type { DateRange } from "react-day-picker";
+import { formatLagos } from "@/lib/timezone";
 import type { VehicleDailyStats } from "@/hooks/useVehicleProfile";
 import { deriveMileageFromStats, useVehicleMileageDetails } from "@/hooks/useVehicleProfile";
 
@@ -126,7 +126,7 @@ export function MileageSection({
     
     return filtered
       .map(stat => ({
-        day: format(parseISO(stat.stat_date), 'EEE'),
+        day: formatLagos(stat.stat_date, 'EEE'),
         date: stat.stat_date,
         distance: Number(stat.total_distance_km),
         trips: stat.trip_count,

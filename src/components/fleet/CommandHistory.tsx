@@ -20,7 +20,7 @@ import {
   Loader2,
   Shield
 } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { formatRelativeTime } from "@/lib/timezone";
 
 interface CommandHistoryProps {
   deviceId: string;
@@ -171,7 +171,7 @@ export function CommandHistory({ deviceId }: CommandHistoryProps) {
       {commands.map((command) => {
         const Icon = COMMAND_ICONS[command.command_type] || Shield;
         const statusColor = STATUS_COLORS[command.status] || STATUS_COLORS.pending;
-        const timeAgo = formatDistanceToNow(new Date(command.created_at), { addSuffix: true });
+        const timeAgo = formatRelativeTime(new Date(command.created_at));
         const isSuccess = command.status === 'success' || command.status === 'completed';
         const isFailed = command.status === 'failed';
         const isPending = command.status === 'pending' || command.status === 'executing';

@@ -13,7 +13,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { RefreshCw, Brain, TrendingUp, AlertTriangle, Wifi, Bot, Save } from "lucide-react";
-import { format } from "date-fns";
+import { formatLagos } from "@/lib/timezone";
 import { BillingConfigCard } from "@/components/admin/BillingConfigCard";
 import { AiSimulationCard } from "@/components/admin/AiSimulationCard";
 import { DataBackfillCard } from "@/components/admin/DataBackfillCard";
@@ -124,7 +124,7 @@ const Insights = () => {
     .slice(0, 50)
     .reverse()
     .map((insight) => ({
-      time: format(new Date(insight.created_at), "MMM d, HH:mm"),
+      time: formatLagos(new Date(insight.created_at), "MMM d, HH:mm"),
       alerts: insight.alerts_count,
       overspeeding: insight.overspeeding_count,
       lowBattery: insight.low_battery_count,
@@ -476,7 +476,7 @@ const Insights = () => {
                     >
                       <div className="flex items-center justify-between flex-wrap gap-2">
                         <span className="text-sm font-medium text-muted-foreground">
-                          {format(new Date(insight.created_at), "MMM d, yyyy 'at' h:mm a")}
+                          {formatLagos(new Date(insight.created_at), "MMM d, yyyy 'at' h:mm a")}
                         </span>
                         <div className="flex items-center gap-2 text-xs">
                           <span className="px-2 py-1 rounded bg-primary/10 text-primary">

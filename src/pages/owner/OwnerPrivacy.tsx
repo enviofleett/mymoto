@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Shield, Loader2, AlertCircle, CheckCircle2, Clock } from "lucide-react";
-import { format } from "date-fns";
+import { formatLagos } from "@/lib/timezone";
 import myMotoLogo from "@/assets/mymoto-logo-new.png";
 
 interface TermsData {
@@ -213,7 +213,7 @@ export default function OwnerPrivacy() {
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">Last Updated</span>
                     <span className="text-xs">
-                      {format(new Date(terms.updated_at), "MMM d, yyyy")}
+                      {formatLagos(new Date(terms.updated_at), "MMM d, yyyy")}
                     </span>
                   </div>
                 )}

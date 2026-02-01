@@ -17,7 +17,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Clock, Trash2, RefreshCw, Eye, AlertTriangle } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { formatRelativeTime } from "@/lib/timezone";
 
 interface StaleVehicle {
   device_id: string;
@@ -133,7 +133,7 @@ export function StaleVehicleCard() {
 
   const formatLastSeen = (dateStr: string) => {
     try {
-      return formatDistanceToNow(new Date(dateStr), { addSuffix: true });
+      return formatRelativeTime(new Date(dateStr));
     } catch {
       return "Unknown";
     }

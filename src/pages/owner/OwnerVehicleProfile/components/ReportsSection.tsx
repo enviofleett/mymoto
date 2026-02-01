@@ -32,7 +32,7 @@ import {
   Gauge,
   Clock,
 } from "lucide-react";
-import { format, parseISO, isSameDay, differenceInMinutes, formatDistanceToNow, isToday, isYesterday } from "date-fns";
+import { formatLagos, formatRelativeTime } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
 import type { DateRange } from "react-day-picker";
 import type { VehicleTrip, VehicleEvent } from "@/hooks/useVehicleProfile";
@@ -107,23 +107,27 @@ export function ReportsSection({
     const groups: { date: Date; label: string; trips: VehicleTrip[] }[] = [];
     
     validTrips.forEach(trip => {
-      // FIX: Use parseISO to handle the date string correctly in local browser time
-      const tripDate = parseISO(trip.start_time);
+      const tripDate = new Date(trip.start_time);
+      const tripDateStr = formatLagos(tripDate, 'yyyy-MM-dd');
       
       // Find existing group by checking if it's the same Local Day
-      const existingGroup = groups.find(g => isSameDay(g.date, tripDate));
+      const existingGroup = groups.find(g => formatLagos(g.date, 'yyyy-MM-dd') === tripDateStr);
       
       if (existingGroup) {
         existingGroup.trips.push(trip);
       } else {
         let label: string;
+        const todayStr = formatLagos(new Date(), 'yyyy-MM-dd');
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = formatLagos(yesterday, 'yyyy-MM-dd');
         
-        if (isToday(tripDate)) {
+        if (tripDateStr === todayStr) {
           label = "Today";
-        } else if (isYesterday(tripDate)) {
+        } else if (tripDateStr === yesterdayStr) {
           label = "Yesterday";
         } else {
-          label = format(tripDate, "EEE, MMM d");
+          label = formatLagos(tripDate, "EEE, MMM d");
         }
         
         groups.push({ date: tripDate, label, trips: [trip] });
@@ -150,19 +154,25 @@ export function ReportsSection({
     const groups: { date: Date; label: string; events: VehicleEvent[] }[] = [];
     
     events.forEach(event => {
-      const eventDate = parseISO(event.created_at);
-      const existingGroup = groups.find(g => isSameDay(g.date, eventDate));
+      const eventDate = new Date(event.created_at);
+      const eventDateStr = formatLagos(eventDate, 'yyyy-MM-dd');
+      const existingGroup = groups.find(g => formatLagos(g.date, 'yyyy-MM-dd') === eventDateStr);
       
       if (existingGroup) {
         existingGroup.events.push(event);
       } else {
         let label: string;
-        if (isToday(eventDate)) {
+        const todayStr = formatLagos(new Date(), 'yyyy-MM-dd');
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = formatLagos(yesterday, 'yyyy-MM-dd');
+        
+        if (eventDateStr === todayStr) {
           label = "Today";
-        } else if (isYesterday(eventDate)) {
+        } else if (eventDateStr === yesterdayStr) {
           label = "Yesterday";
         } else {
-          label = format(eventDate, "EEE, MMM d");
+          label = formatLagos(eventDate, "EEE, MMM d");
         }
         groups.push({ date: eventDate, label, events: [event] });
       }
@@ -263,7 +273,7 @@ export function ReportsSection({
                 >
                   <CalendarIcon className="h-3 w-3 mr-1" />
                   {isFilterActive
-                    ? `${format(dateRange.from!, 'MMM d')}${dateRange.to ? ` - ${format(dateRange.to, 'MMM d')}` : ''}`
+                    ? `${formatLagos(dateRange.from!, 'MMM d')}${dateRange.to ? ` - ${formatLagos(dateRange.to, 'MMM d')}` : ''}`
                     : 'Filter by date'
                   }
                 </Button>
@@ -292,7 +302,7 @@ export function ReportsSection({
           <div className="mb-3 p-2 rounded-md bg-muted/30 text-xs text-muted-foreground">
             <div className="flex items-center justify-between">
               <span>
-                Last synced: {formatDistanceToNow(new Date(syncStatus.last_sync_at), { addSuffix: true })}
+                Last synced: {formatRelativeTime(syncStatus.last_sync_at)}
               </span>
               {syncStatus.trips_processed > 0 && (
                 <span className="text-green-600 font-medium">
@@ -400,7 +410,7 @@ export function ReportsSection({
                             <div className="font-medium text-foreground">{event.title}</div>
                             <div className="text-sm text-muted-foreground truncate">{event.message}</div>
                             <div className="text-xs text-muted-foreground mt-1">
-                              {format(parseISO(event.created_at), 'h:mm a')}
+                              {formatLagos(event.created_at, 'h:mm a')}
                             </div>
                           </div>
                         </div>
@@ -484,16 +494,25 @@ function TripCard({
 
   const durationMinutes = trip.duration_seconds
     ? Math.round(trip.duration_seconds / 60)
-    : differenceInMinutes(parseISO(trip.end_time), parseISO(trip.start_time));
+    : Math.round((new Date(trip.end_time).getTime() - new Date(trip.start_time).getTime()) / 60000);
+
+  const isIdling = trip.distance_km === 0;
 
   return (
     <div className="p-4 rounded-lg bg-muted/40 border border-border/80 hover:bg-muted/80 transition-colors">
       {/* Header: Trip Title, Time & Play Button */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="text-sm font-semibold text-foreground">Trip {index + 1}</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-foreground">Trip {index + 1}</h3>
+            {isIdling && (
+              <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-normal bg-blue-500/10 text-blue-600 border-blue-200">
+                Idling
+              </Badge>
+            )}
+          </div>
           <p className="text-xs text-muted-foreground">
-            {format(parseISO(trip.start_time), 'h:mm a')} - {format(parseISO(trip.end_time), 'h:mm a')}
+            {formatLagos(trip.start_time, 'h:mm a')} - {formatLagos(trip.end_time, 'h:mm a')}
           </p>
         </div>
         {canPlayback && (
@@ -537,7 +556,12 @@ function TripCard({
             {startLoading ? (
               <Skeleton className="h-4 w-3/4" />
             ) : (
-              <p className="text-xs text-foreground line-clamp-2">{startAddress || "Address not found"}</p>
+              <p className="text-xs text-foreground line-clamp-2">
+                {hasValidStartCoords 
+                  ? (startAddress || "Address not found") 
+                  : (isIdling ? "Vehicle Stationary" : "Location unavailable")
+                }
+              </p>
             )}
           </div>
           {hasValidStartCoords && (
@@ -565,7 +589,12 @@ function TripCard({
             {endLoading ? (
               <Skeleton className="h-4 w-3/4" />
             ) : (
-              <p className="text-xs text-foreground line-clamp-2">{endAddress || "Address not found"}</p>
+              <p className="text-xs text-foreground line-clamp-2">
+                {hasValidEndCoords 
+                  ? (endAddress || "Address not found") 
+                  : (isIdling ? "Vehicle Stationary" : "Location unavailable")
+                }
+              </p>
             )}
           </div>
           {hasValidEndCoords && (
@@ -582,7 +611,7 @@ function TripCard({
         </div>
       </div>
 
-      {!canPlayback && (
+      {!canPlayback && !isIdling && (
         <div className="mt-3">
           <Badge variant="outline" className="text-xs border-orange-500/50 text-orange-600 font-normal">
             <AlertTriangle className="h-3 w-3 mr-1.5" />

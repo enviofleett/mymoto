@@ -6,7 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import myMotoLogo from "@/assets/mymoto-logo-new.png";
 import { useOwnerVehicles, OwnerVehicle } from "@/hooks/useOwnerVehicles";
 import { Search, Car, MessageSquare, ChevronRight } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { formatRelativeTime } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
 function VehicleChatItem({
   vehicle,
@@ -54,9 +54,7 @@ function VehicleChatItem({
               </span>}
           </h3>
           {vehicle.lastMessageTime && <span className="text-[11px] text-muted-foreground shrink-0">
-              {formatDistanceToNow(vehicle.lastMessageTime, {
-            addSuffix: false
-          })}
+              {formatRelativeTime(vehicle.lastMessageTime)}
             </span>}
         </div>
         <p className="text-xs text-muted-foreground truncate mt-0.5">

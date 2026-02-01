@@ -19,7 +19,7 @@ import {
   Truck,
   Battery
 } from "lucide-react";
-import { format, formatDistanceToNow, subDays } from "date-fns";
+import { formatLagos, formatRelativeTime } from "@/lib/timezone";
 
 interface ProactiveEvent {
   id: string;
@@ -65,7 +65,9 @@ export function AlarmReport({ deviceIds, vehicles }: AlarmReportProps) {
     try {
       setLoading(true);
       
-      const fromDate = subDays(new Date(), parseInt(dateRange)).toISOString();
+      const date = new Date();
+      date.setDate(date.getDate() - parseInt(dateRange));
+      const fromDate = date.toISOString();
       const filterDevices = selectedDevice === "all" ? deviceIds : [selectedDevice];
       
       // Query proactive_vehicle_events directly - no client-side calculations!
@@ -269,7 +271,7 @@ export function AlarmReport({ deviceIds, vehicles }: AlarmReportProps) {
                             })}
                           </span>
                           <span className="text-xs text-muted-foreground">
-                            {formatDistanceToNow(new Date(event.created_at), { addSuffix: true })}
+                            {formatRelativeTime(event.created_at)}
                           </span>
                         </div>
                       </TableCell>

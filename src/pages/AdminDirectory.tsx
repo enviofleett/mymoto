@@ -58,7 +58,7 @@ import { VehicleLocationMap } from "@/components/fleet/VehicleLocationMap";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { format } from "date-fns";
+import { formatLagos } from "@/lib/timezone";
 
 interface DirectoryCategory {
   id: string;
@@ -827,9 +827,7 @@ export default function AdminDirectory() {
                                 {getStatusBadge(provider.approval_status)}
                               </TableCell>
                               <TableCell>
-                                {new Date(provider.created_at).toLocaleDateString('en-US', {
-                                  timeZone: 'Africa/Lagos'
-                                })}
+                                {formatLagos(new Date(provider.created_at), "M/d/yyyy")}
                               </TableCell>
                               <TableCell className="text-right">
                                 <div className="flex justify-end gap-2">
@@ -999,7 +997,7 @@ export default function AdminDirectory() {
                           <TableRow key={booking.id}>
                             <TableCell>
                               <div className="font-medium">
-                                {format(new Date(booking.booking_date), 'MMM dd, yyyy')}
+                                {formatLagos(new Date(booking.booking_date), 'MMM dd, yyyy')}
                               </div>
                               {booking.booking_time && (
                                 <div className="text-sm text-muted-foreground">
@@ -1025,9 +1023,7 @@ export default function AdminDirectory() {
                               {booking.notes || '-'}
                             </TableCell>
                             <TableCell className="text-muted-foreground text-sm">
-                              {new Date(booking.created_at).toLocaleDateString('en-US', {
-                                timeZone: 'Africa/Lagos'
-                              })}
+                              {formatLagos(new Date(booking.created_at), "M/d/yyyy")}
                             </TableCell>
                           </TableRow>
                         ))}

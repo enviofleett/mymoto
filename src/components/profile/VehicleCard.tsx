@@ -17,7 +17,7 @@ import {
   WifiOff,
   Route
 } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { formatRelativeTime } from "@/lib/timezone";
 import { getOfflineDuration } from "@/utils/vehicleStatus";
 
 interface VehiclePosition {
@@ -193,7 +193,7 @@ export function VehicleCard({ vehicle, onPlayTrip }: VehicleCardProps) {
               <div className="flex items-center gap-1.5 text-muted-foreground">
                 <Clock className="h-3 w-3" />
                 <span>
-                  Last update: {formatDistanceToNow(new Date(pos.gps_time), { addSuffix: true })}
+                  Last update: {formatRelativeTime(new Date(pos.gps_time))}
                 </span>
               </div>
             )}

@@ -31,7 +31,7 @@ import {
   Route, Bell, CalendarIcon, Eye, Loader2
 } from "lucide-react";
 import type { DateRange } from "react-day-picker";
-import { format } from "date-fns";
+import { formatLagos } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
 
 interface Driver {
@@ -401,7 +401,7 @@ const Fleet = () => {
                         <PopoverTrigger asChild>
                           <Button variant="outline" size="sm" className="h-8">
                             <CalendarIcon className="h-3 w-3 mr-1" />
-                            {dateRange?.from ? format(dateRange.from, "MMM d") : "Filter"}
+                            {dateRange?.from ? formatLagos(dateRange.from, "MMM d") : "Filter"}
                           </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-0" align="end">
