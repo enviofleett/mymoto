@@ -43,6 +43,7 @@ serve(async (req) => {
     // Format booking date
     const date = new Date(bookingDate);
     const formattedDate = date.toLocaleDateString('en-US', { 
+      timeZone: 'Africa/Lagos',
       weekday: 'long', 
       year: 'numeric', 
       month: 'long', 

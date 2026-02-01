@@ -26,7 +26,7 @@ import { CheckCircle2, XCircle, Clock, Search, Car } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { format } from "date-fns";
+import { formatLagos } from "@/lib/timezone";
 import { useAuth } from "@/contexts/AuthContext";
 
 export default function AdminVehicleRequests() {
@@ -150,9 +150,9 @@ export default function AdminVehicleRequests() {
                   {requests.map((request: any) => (
                     <TableRow key={request.id}>
                       <TableCell>
-                        {format(new Date(request.created_at), "MMM dd, yyyy")}
+                        {formatLagos(new Date(request.created_at), "MMM dd, yyyy")}
                         <div className="text-xs text-muted-foreground">
-                          {format(new Date(request.created_at), "HH:mm")}
+                          {formatLagos(new Date(request.created_at), "HH:mm")}
                         </div>
                       </TableCell>
                       <TableCell>

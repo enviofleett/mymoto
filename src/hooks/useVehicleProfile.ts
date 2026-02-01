@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { formatLagos } from "@/lib/timezone";
 
 // ============ Types ============
 
@@ -92,20 +93,7 @@ export interface TripDateRange {
   to?: Date;
 }
 
-// Calculate distance between two coordinates (Haversine formula)
-function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371; // Earth's radius in km
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
+
 
 async function fetchVehicleTrips(
   deviceId: string, 
@@ -189,8 +177,8 @@ async function fetchVehicleTrips(
   
   return filteredTrips
     .map((trip: any): VehicleTrip => {
-      // CRITICAL FIX: Use database distance (GPS51 source of truth)
-      // Do NOT estimate distance from duration/speed as it creates phantom mileage
+      // CRITICAL: Use database distance (GPS51 source of truth) ONLY
+      // Do NOT estimate distance from duration/speed or coordinates
       const distanceKm = trip.distance_km || 0;
 
       return {
@@ -248,39 +236,77 @@ async function fetchDailyMileage(deviceId: string): Promise<DailyMileage[]> {
   return (data || []) as unknown as DailyMileage[];
 }
 
-// New: Fetch from vehicle_daily_stats view - pre-calculated server-side
+// New: Pre-calculated daily stats from database view
+// CRITICAL FIX: Calculate client-side to avoid slow view timeouts
 async function fetchVehicleDailyStats(
   deviceId: string,
   days: number = 30
 ): Promise<VehicleDailyStats[]> {
+  // Use fetchVehicleTrips to get raw data
+  // Limit to 2000 trips which should be plenty for 30 days (avg ~66 trips/day)
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
   
-  // Use raw SQL query to avoid type issues with views
-  const { data, error } = await supabase
-    .rpc('get_vehicle_daily_stats' as any, {
-      p_device_id: deviceId,
-      p_days: days
+  try {
+    const trips = await fetchVehicleTrips(deviceId, 2000, {
+      from: startDate,
+      to: new Date()
     });
 
-  if (error) {
-    // Fallback to direct view query if RPC doesn't exist
-    const { data: viewData, error: viewError } = await (supabase as any)
-      .from("vehicle_daily_stats")
-      .select("*")
-      .eq("device_id", deviceId)
-      .gte("stat_date", startDate.toISOString().split('T')[0])
-      .order("stat_date", { ascending: false });
-
-    if (viewError) {
-      console.error("Error fetching vehicle daily stats:", viewError);
-      return [];
-    }
+    // Aggregate trips by day
+    const statsMap = new Map<string, VehicleDailyStats>();
     
-    return (viewData || []) as VehicleDailyStats[];
+    trips.forEach(trip => {
+      // Use Lagos time for date grouping
+      const dateStr = formatLagos(new Date(trip.start_time), "yyyy-MM-dd");
+      
+      if (!statsMap.has(dateStr)) {
+        statsMap.set(dateStr, {
+          device_id: deviceId,
+          stat_date: dateStr,
+          trip_count: 0,
+          total_distance_km: 0,
+          avg_distance_km: 0,
+          peak_speed: 0,
+          avg_speed: 0,
+          total_duration_seconds: 0,
+          first_trip_start: trip.start_time,
+          last_trip_end: trip.end_time
+        });
+      }
+      
+      const stat = statsMap.get(dateStr)!;
+      stat.trip_count++;
+      stat.total_distance_km += trip.distance_km;
+      stat.total_duration_seconds += (trip.duration_seconds || 0);
+      stat.peak_speed = Math.max(stat.peak_speed || 0, trip.max_speed || 0);
+      
+      // Update first/last times
+      if (new Date(trip.start_time) < new Date(stat.first_trip_start)) {
+        stat.first_trip_start = trip.start_time;
+      }
+      if (new Date(trip.end_time) > new Date(stat.last_trip_end)) {
+        stat.last_trip_end = trip.end_time;
+      }
+      
+      // Accumulate speed for avg calculation later
+      // Storing sum in avg_speed temporarily
+      stat.avg_speed = (stat.avg_speed || 0) + (trip.avg_speed || 0);
+    });
+    
+    // Finalize averages
+    return Array.from(statsMap.values()).map(stat => ({
+      ...stat,
+      avg_speed: stat.trip_count > 0 ? (stat.avg_speed || 0) / stat.trip_count : 0,
+      // Round numbers
+      total_distance_km: Math.round(stat.total_distance_km * 100) / 100,
+      avg_distance_km: Math.round((stat.trip_count > 0 ? stat.total_distance_km / stat.trip_count : 0) * 100) / 100,
+    })).sort((a, b) => b.stat_date.localeCompare(a.stat_date));
+    
+  } catch (error) {
+    console.error("[fetchVehicleDailyStats] Error calculating stats:", error);
+    return [];
   }
-  
-  return (data || []) as unknown as VehicleDailyStats[];
 }
 
 // ============ Command Execution ============

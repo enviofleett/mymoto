@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { Loader2, TrendingUp, Navigation, Calendar } from "lucide-react";
-import { format, parseISO, subDays } from "date-fns";
+import { formatLagos } from "@/lib/timezone";
 
 interface DailyMileage {
   date: string;
@@ -20,7 +20,9 @@ export function VehicleMileageChart({ deviceId, days = 7 }: VehicleMileageChartP
     queryKey: ['vehicle-mileage', deviceId, days],
     queryFn: async () => {
       // Fetch position history for last N days
-      const startDate = subDays(new Date(), days).toISOString();
+      const d = new Date();
+      d.setDate(d.getDate() - days);
+      const startDate = d.toISOString();
       
       const { data, error } = await (supabase as any)
         .from('position_history')
@@ -39,7 +41,7 @@ export function VehicleMileageChart({ deviceId, days = 7 }: VehicleMileageChartP
       (data || []).forEach((pos: any) => {
         if (!pos.gps_time || !pos.latitude || !pos.longitude) return;
         
-        const day = format(new Date(pos.gps_time), 'yyyy-MM-dd');
+        const day = formatLagos(new Date(pos.gps_time), 'yyyy-MM-dd');
         
         if (!dailyStats.has(day)) {
           dailyStats.set(day, { distance: 0, trips: 0 });
@@ -102,8 +104,8 @@ export function VehicleMileageChart({ deviceId, days = 7 }: VehicleMileageChartP
   // Prepare chart data
   const chartData = mileageData.map(item => ({
     date: item.date,
-    dateLabel: format(parseISO(item.date), 'MMM d'),
-    dayLabel: format(parseISO(item.date), 'EEE'),
+    dateLabel: formatLagos(new Date(item.date), 'MMM d'),
+    dayLabel: formatLagos(new Date(item.date), 'EEE'),
     distance: item.distance_km,
     trips: item.trip_count
   }));

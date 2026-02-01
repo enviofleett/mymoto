@@ -24,8 +24,10 @@ function isWithinActiveWindow(
   activeUntil: string | null, 
   activeDays: number[] | null
 ): boolean {
+  // Use Lagos time (UTC+1)
   const now = new Date()
-  const currentDay = now.getDay() // 0 = Sunday
+  const lagosTime = new Date(now.toLocaleString("en-US", { timeZone: "Africa/Lagos" }))
+  const currentDay = lagosTime.getDay() // 0 = Sunday
   
   // Check day of week
   if (activeDays && activeDays.length > 0 && !activeDays.includes(currentDay)) {
@@ -34,7 +36,7 @@ function isWithinActiveWindow(
   
   // Check time window
   if (activeFrom && activeUntil) {
-    const currentTime = now.toTimeString().slice(0, 5) // "HH:MM"
+    const currentTime = lagosTime.toTimeString().slice(0, 5) // "HH:MM"
     const fromTime = activeFrom.slice(0, 5)
     const untilTime = activeUntil.slice(0, 5)
     

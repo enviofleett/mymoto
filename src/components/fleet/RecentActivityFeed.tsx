@@ -4,8 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MapPin, Navigation, Power, AlertTriangle, Battery, ExternalLink, Clock, Gauge } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { formatDistanceToNow, format } from "date-fns";
-import { formatLagosDate, formatLagosTime } from "@/lib/timezone";
+import { formatLagosDate, formatLagosTime, formatRelativeTime } from "@/lib/timezone";
 import { useAddress } from "@/hooks/useAddress";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -545,7 +544,7 @@ function ActivityItemDetail({ item, index, deviceId }: { item: ActivityItem; ind
                   if (date.getTime() > now.getTime() + 3600000) {
                     return "Just now";
                   }
-                  return formatDistanceToNow(date, { addSuffix: true });
+                  return formatRelativeTime(date);
                 })()}
               </p>
             </div>

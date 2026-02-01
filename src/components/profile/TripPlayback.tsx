@@ -8,7 +8,7 @@ import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
-import { format, subDays, startOfDay, endOfDay, differenceInSeconds } from "date-fns";
+import { formatLagos } from "@/lib/timezone";
 import { 
   Play, 
   Pause, 
@@ -241,7 +241,7 @@ export function TripPlayback({ deviceId, deviceName, onClose }: TripPlaybackProp
 
     const startTime = new Date(positions[0].gps_time);
     const endTime = new Date(positions[positions.length - 1].gps_time);
-    const durationSeconds = differenceInSeconds(endTime, startTime);
+    const durationSeconds = Math.floor((endTime.getTime() - startTime.getTime()) / 1000);
 
     return {
       distance: totalDistance,
@@ -439,7 +439,7 @@ export function TripPlayback({ deviceId, deviceName, onClose }: TripPlaybackProp
                   <Popup>
                     <div className="text-sm">
                       <p className="font-semibold text-red-600">End Point</p>
-                      <p>{format(new Date(positions[positions.length - 1].gps_time), "PPpp")}</p>
+                      <p>{formatLagos(new Date(positions[positions.length - 1].gps_time), "MMM d, yyyy HH:mm:ss")}</p>
                     </div>
                   </Popup>
                 </Marker>
@@ -496,9 +496,9 @@ export function TripPlayback({ deviceId, deviceName, onClose }: TripPlaybackProp
               className="w-full"
             />
             <div className="flex justify-between text-xs text-muted-foreground">
-              <span>{positions.length > 0 ? format(new Date(positions[0].gps_time), "HH:mm") : "--:--"}</span>
+              <span>{positions.length > 0 ? formatLagos(new Date(positions[0].gps_time), "HH:mm") : "--:--"}</span>
               <span>{currentIndex + 1} / {positions.length}</span>
-              <span>{positions.length > 0 ? format(new Date(positions[positions.length - 1].gps_time), "HH:mm") : "--:--"}</span>
+              <span>{positions.length > 0 ? formatLagos(new Date(positions[positions.length - 1].gps_time), "HH:mm") : "--:--"}</span>
             </div>
           </div>
         )}

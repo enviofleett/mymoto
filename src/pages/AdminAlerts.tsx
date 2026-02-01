@@ -44,7 +44,7 @@ import {
   TrendingUp,
   AlertTriangle
 } from "lucide-react";
-import { formatDistanceToNow, format } from "date-fns";
+import { formatLagos, formatRelativeTime } from "@/lib/timezone";
 import { Navigate } from "react-router-dom";
 
 // Event type configurations
@@ -447,10 +447,10 @@ export default function AdminAlerts() {
                           <TableCell>
                             <div className="flex flex-col">
                               <span className="text-xs text-muted-foreground">
-                                {formatDistanceToNow(new Date(event.created_at), { addSuffix: true })}
+                                {formatRelativeTime(new Date(event.created_at))}
                               </span>
                               <span className="text-xs text-muted-foreground/60">
-                                {format(new Date(event.created_at), "MMM d, HH:mm")}
+                                {formatLagos(new Date(event.created_at), "MMM d, HH:mm")}
                               </span>
                             </div>
                           </TableCell>

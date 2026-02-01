@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { RefreshCw, CheckCircle, AlertCircle, Clock, Timer } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { formatLagos } from '@/lib/timezone';
 
 interface TokenStatus {
   hasToken: boolean;
@@ -108,7 +109,7 @@ export function AdminGpsStatus() {
 
       toast({
         title: 'Token Refreshed',
-        description: `GPS token refreshed. Valid until ${new Date(data.expires_at).toLocaleString()}`,
+        description: `GPS token refreshed. Valid until ${formatLagos(data.expires_at, "MMM d, yyyy h:mm:ss a")}`,
       });
 
       await fetchTokenStatus();
@@ -126,7 +127,7 @@ export function AdminGpsStatus() {
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'Never';
-    return new Date(dateString).toLocaleString();
+    return formatLagos(dateString, "MMM d, yyyy h:mm:ss a");
   };
 
   const getTimeUntilExpiry = (expiresAt: string | null) => {

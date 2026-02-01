@@ -24,7 +24,7 @@ import {
   Wallet,
   LogOut
 } from "lucide-react";
-import { format } from "date-fns";
+import { formatLagos } from "@/lib/timezone";
 import { VehicleCard } from "@/components/profile/VehicleCard";
 import { TripHistoryTable } from "@/components/profile/TripHistoryTable";
 import { AlarmReport } from "@/components/profile/AlarmReport";
@@ -379,7 +379,7 @@ const Profile = () => {
                   )}
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <Calendar className="h-4 w-4" />
-                    <span>Since {format(new Date(profile.created_at), "MMM yyyy")}</span>
+                    <span>Since {formatLagos(new Date(profile.created_at), "MMM yyyy")}</span>
                   </div>
                 </div>
                 {/* Terms Agreement Date */}

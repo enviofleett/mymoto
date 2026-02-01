@@ -170,6 +170,7 @@ const handler = async (req: Request): Promise<Response> => {
 
     // Generate email template
     const timestamp = new Date().toLocaleString("en-US", {
+      timeZone: "Africa/Lagos",
       weekday: "long",
       year: "numeric",
       month: "long",

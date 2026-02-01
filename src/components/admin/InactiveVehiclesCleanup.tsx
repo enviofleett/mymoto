@@ -18,7 +18,7 @@ import { Trash2, RefreshCw, AlertTriangle, CheckCircle2, Loader2 } from "lucide-
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { format } from "date-fns";
+import { formatLagos } from "@/lib/timezone";
 
 interface InactiveVehicle {
   device_id: string;
@@ -276,7 +276,7 @@ export function InactiveVehiclesCleanup() {
                       <TableCell>{vehicle.device_name}</TableCell>
                       <TableCell>
                         {vehicle.last_gps_time && vehicle.last_gps_time !== "1970-01-01T00:00:00Z" ? (
-                          format(new Date(vehicle.last_gps_time), "MMM dd, yyyy HH:mm")
+                          formatLagos(new Date(vehicle.last_gps_time), "MMM dd, yyyy HH:mm")
                         ) : (
                           <Badge variant="secondary">Never</Badge>
                         )}

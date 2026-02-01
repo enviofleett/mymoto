@@ -2,7 +2,7 @@ import { useDailyTravelStats } from '@/hooks/useDailyTravelStats'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Calendar, Clock, MapPin, TrendingUp, Car } from 'lucide-react'
-import { format, parseISO } from 'date-fns'
+import { formatLagos } from '@/lib/timezone'
 
 interface DailyTravelStatsProps {
   deviceId: string
@@ -136,7 +136,7 @@ export function DailyTravelStats({
                     <div className="flex items-center gap-2">
                       <Calendar className="h-4 w-4 text-muted-foreground" />
                       <span className="font-medium">
-                        {format(parseISO(day.travel_date), 'EEEE, MMM d, yyyy')}
+                        {formatLagos(day.travel_date, 'EEEE, MMM d, yyyy')}
                       </span>
                     </div>
                     <span className="text-sm text-muted-foreground">
@@ -167,8 +167,8 @@ export function DailyTravelStats({
                   
                   {day.first_trip_start && (
                     <div className="mt-3 pt-3 border-t text-xs text-muted-foreground">
-                      First trip: {format(parseISO(day.first_trip_start), 'h:mm a')} • 
-                      Last trip: {format(parseISO(day.last_trip_end), 'h:mm a')}
+                      First trip: {formatLagos(day.first_trip_start, 'h:mm a')} • 
+                      Last trip: {formatLagos(day.last_trip_end, 'h:mm a')}
                     </div>
                   )}
                 </CardContent>
@@ -195,7 +195,7 @@ export function DailyTravelStats({
           Travel time and distance between 7am - 6pm (Lagos time)
           {data.date_range.start && data.date_range.end && (
             <span className="block mt-1">
-              {format(parseISO(data.date_range.start), 'MMM d')} - {format(parseISO(data.date_range.end), 'MMM d, yyyy')}
+              {formatLagos(data.date_range.start, 'MMM d')} - {formatLagos(data.date_range.end, 'MMM d, yyyy')}
             </span>
           )}
         </CardDescription>

@@ -11,7 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Database, Download, Loader2, Check, AlertCircle, History, Calendar, Search, X } from "lucide-react";
-import { format, subDays } from "date-fns";
+import { formatLagos } from "@/lib/timezone";
 
 interface Vehicle {
   device_id: string;
@@ -195,10 +195,14 @@ export function DataBackfillCard() {
     });
   };
 
-  const dateRange = {
-    start: format(subDays(new Date(), parseInt(daysBack, 10)), "MMM d, yyyy"),
-    end: format(new Date(), "MMM d, yyyy"),
-  };
+  const dateRange = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - parseInt(daysBack, 10));
+    return {
+      start: formatLagos(d, "MMM d, yyyy"),
+      end: formatLagos(new Date(), "MMM d, yyyy"),
+    };
+  })();
 
   return (
     <Card>

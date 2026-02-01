@@ -11,7 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { Shield, Save, RotateCcw, Loader2, Eye, CheckCircle2, Clock } from "lucide-react";
-import { format } from "date-fns";
+import { formatLagos } from "@/lib/timezone";
 
 interface TermsData {
   id: string;
@@ -457,7 +457,7 @@ By using MyMoto, you acknowledge that you have read, understood, and agree to th
                       <span>Created</span>
                     </div>
                     <p className="text-sm font-medium">
-                      {format(new Date(termsData.created_at), "MMM d, yyyy 'at' h:mm a")}
+                      {formatLagos(new Date(termsData.created_at), "MMM d, yyyy 'at' h:mm a")}
                     </p>
                   </div>
 

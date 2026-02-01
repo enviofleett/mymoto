@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Sparkles, MessageSquare } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
+import { formatRelativeTime } from "@/lib/timezone";
 
 interface SmartBriefingCardProps {
   deviceId: string;
@@ -81,7 +81,7 @@ export function SmartBriefingCard({ deviceId }: SmartBriefingCardProps) {
               {briefing.content}
             </p>
             <span className="text-xs text-muted-foreground/60 mt-2 block">
-              {formatDistanceToNow(new Date(briefing.created_at), { addSuffix: true })}
+              {formatRelativeTime(new Date(briefing.created_at))}
             </span>
           </div>
         </div>

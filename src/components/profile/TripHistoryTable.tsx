@@ -17,8 +17,7 @@ import {
   Calendar,
   Truck
 } from "lucide-react";
-import { format, formatDistanceToNow, subDays } from "date-fns";
-import { formatLagosDate } from "@/lib/timezone";
+import { formatLagosDate, formatRelativeTime } from "@/lib/timezone";
 
 interface TripRecord {
   id: string;
@@ -64,7 +63,9 @@ export function TripHistoryTable({ deviceIds, vehicles }: TripHistoryTableProps)
     try {
       setLoading(true);
       
-      const fromDate = subDays(new Date(), parseInt(dateRange)).toISOString();
+      const date = new Date();
+      date.setDate(date.getDate() - parseInt(dateRange));
+      const fromDate = date.toISOString();
       const filterDevices = selectedDevice === "all" ? deviceIds : [selectedDevice];
       
       const { data, error } = await (supabase as any)
@@ -203,7 +204,7 @@ export function TripHistoryTable({ deviceIds, vehicles }: TripHistoryTableProps)
                             })}
                           </span>
                           <span className="text-xs text-muted-foreground">
-                            {formatDistanceToNow(new Date(trip.gps_time), { addSuffix: true })}
+                            {formatRelativeTime(trip.gps_time)}
                           </span>
                         </div>
                       </TableCell>

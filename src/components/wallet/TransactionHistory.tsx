@@ -1,4 +1,4 @@
-import { format } from "date-fns";
+import { formatLagos } from "@/lib/timezone";
 import { ArrowDownLeft, ArrowUpRight, History } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -105,7 +105,7 @@ export function TransactionHistory({
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-foreground truncate">{tx.description}</p>
                 <p className="text-xs text-muted-foreground">
-                  {format(new Date(tx.created_at), "MMM d, yyyy HH:mm")}
+                  {formatLagos(tx.created_at, "MMM d, yyyy HH:mm")}
                 </p>
               </div>
               

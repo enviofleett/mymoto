@@ -1,6 +1,6 @@
 import { ArrowLeft, Settings, Car } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
+import { formatLagos } from "@/lib/timezone";
 import { getPersonalityLabel } from "@/hooks/useVehicleProfile";
 
 interface ProfileHeaderProps {
@@ -95,7 +95,7 @@ export function ProfileHeader({
         <div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
           {lastSyncedAt && (
             <p>
-              Last synced {format(lastSyncedAt, "MMM d, HH:mm")}
+              Last synced {formatLagos(lastSyncedAt, "MMM d, HH:mm")}
             </p>
           )}
         </div>
