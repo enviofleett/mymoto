@@ -46,7 +46,7 @@ send_message() {
     else
         # Try to extract just the reply
         echo "✅ Response:"
-        echo "$response" | python3 -c "import sys, json; print(json.load(sys.stdin).get('reply', 'No reply field found'))" 2>/dev/null || echo "$response"
+        echo "$response" | python3 -c "import sys, json; print(json.load(sys.stdin).get('text', 'No text field found'))" 2>/dev/null || echo "$response"
     fi
 }
 

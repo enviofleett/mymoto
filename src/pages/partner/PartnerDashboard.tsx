@@ -110,7 +110,7 @@ export default function PartnerDashboard() {
         .order('booking_date', { ascending: true });
       
       if (error) throw error;
-      return data as Booking[];
+      return data as unknown as Booking[];
     },
     enabled: !!provider?.id,
   });
@@ -138,13 +138,14 @@ export default function PartnerDashboard() {
         .in('status', ['pending', 'confirmed']);
 
       // Get average rating
-      const { data: ratings } = await supabase
+      // @ts-ignore - Table exists but types are outdated
+      const { data: ratings } = await (supabase as any)
         .from('provider_ratings')
         .select('rating')
         .eq('provider_id', provider.id);
 
       const avgRating = ratings && ratings.length > 0
-        ? ratings.reduce((sum, r) => sum + r.rating, 0) / ratings.length
+        ? ratings.reduce((sum: any, r: any) => sum + r.rating, 0) / ratings.length
         : 0;
 
       return {

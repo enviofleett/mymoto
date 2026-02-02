@@ -157,6 +157,17 @@ function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
 }
 
 Deno.serve(async (req) => {
+  // DISABLED: This function creates ghost trips from position_history
+  // All trips should come from GPS51's querytrips API via sync-trips-incremental
+  return new Response(JSON.stringify({
+    success: false,
+    error: "Function disabled - use sync-trips-incremental for GPS51 trips only",
+    disabled: true
+  }), {
+    status: 410, // Gone
+    headers: { ...corsHeaders, "Content-Type": "application/json" }
+  });
+
   // Handle CORS
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });

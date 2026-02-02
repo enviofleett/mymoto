@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Shield, Loader2, AlertCircle, CheckCircle2, Clock } from "lucide-react";
 import { formatLagos } from "@/lib/timezone";
+import { format } from "date-fns";
 import myMotoLogo from "@/assets/mymoto-logo-new.png";
 
 interface TermsData {

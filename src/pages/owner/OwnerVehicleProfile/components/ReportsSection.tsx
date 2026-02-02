@@ -237,17 +237,15 @@ export function ReportsSection({
           <div className="flex items-center gap-2">
             {/* Force Sync Button */}
             {onForceSync && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-xs"
-                onClick={onForceSync}
-                disabled={isSyncing}
-                title="Force sync last 7 days of trips"
-              >
-                <RefreshCw className={cn("h-3 w-3 mr-1", isSyncing && "animate-spin")} />
-                Sync
-              </Button>
+              <button
+              className="inline-flex items-center justify-center gap-2 whitespace-nowrap font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 hover:bg-accent hover:text-accent-foreground rounded-md h-7 px-2 text-xs"
+              title="Force sync recent trips (last 24h)"
+              onClick={onForceSync}
+              disabled={isSyncing}
+            >
+              <RefreshCw className={cn("h-3 w-3 mr-1", isSyncing && "animate-spin")} />
+              Sync
+            </button>
             )}
             
             {isFilterActive && (
@@ -340,6 +338,12 @@ export function ReportsSection({
 
           {/* Trips Tab */}
           <TabsContent value="trips" className="mt-0">
+            <div className="flex justify-end mb-2 px-1">
+               <span className="text-[10px] text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded flex items-center gap-1">
+                 <CheckCircle2 className="h-3 w-3 text-green-500" />
+                 Source: GPS51
+               </span>
+            </div>
             <div className="space-y-4 max-h-96 overflow-y-auto">
               {tripsLoading ? (
                 <div className="space-y-2">
