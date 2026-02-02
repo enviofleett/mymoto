@@ -31,12 +31,33 @@ async function handler(req: Request) {
   } = await req.json()
 
   // Standardize on device_id (matching frontend)
-  const target_device_id = device_id || req_vehicle_id
+  let target_device_id = device_id || req_vehicle_id
 
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   )
+
+  // Device ID Resolution: If input is a name (e.g., "RBC784CX"), resolve to ID
+  // Heuristic: If it contains non-digits or is short, assume it's a name
+  if (target_device_id && !/^\d+$/.test(target_device_id)) {
+    console.log(`[Handler] Resolving device name to device_id: ${target_device_id}`)
+    
+    // Try to find by device_name
+    const { data: vehicles, error } = await supabase
+      .from('vehicles')
+      .select('device_id')
+      .ilike('device_name', target_device_id)
+      .limit(1)
+
+    if (vehicles && vehicles.length > 0) {
+      console.log(`[Handler] Resolved device_id: ${vehicles[0].device_id}`)
+      target_device_id = vehicles[0].device_id
+    } else {
+      console.warn(`[Handler] Could not resolve device name: ${target_device_id}`)
+      // We continue with the original ID, hoping it works or failing gracefully later
+    }
+  }
 
   // Get User ID from Auth Header
   const authHeader = req.headers.get('Authorization')
@@ -113,6 +134,7 @@ DATA SOURCE RULES:
 1. Real-Time Data: 'get_vehicle_status' queries the live 'vehicle_positions' table.
 2. Trip History: 'get_trip_history' queries the 'vehicle_trips' view.
 3. Alarms: 'create_geofence_alert' sets up monitoring.
+4. IMPORTANT: You CAN access history ('get_trip_history') even if 'get_vehicle_status' says "offline". Offline only means "no live GPS", not "database is down".
 `
 
     const finalSystemPrompt = `${systemPersona}\n${dateSystemInfo}`
