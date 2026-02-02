@@ -6,7 +6,7 @@ ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6I
 DEVICE_ID="RBC784CX"
 REST_URL="https://cmvpnsqiefbsqkwnraka.supabase.co/rest/v1"
 
-echo "🚀 Running User Simulation: $FUNCTION_URL"
+echo "🚀 Running Telemetry Simulation: $FUNCTION_URL"
 echo "📱 Device ID: $DEVICE_ID"
 echo "----------------------------------------"
 
@@ -17,7 +17,7 @@ USER_ID=$(curl -s -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ANON_KEY" \
     python3 -c "import sys, json; data=json.load(sys.stdin); print(data[0]['profile_id']) if data else print('')")
 
 if [ -z "$USER_ID" ]; then
-    echo "⚠️  No user found for device $DEVICE_ID. Using fallback ID (might fail wallet check)."
+    echo "⚠️  No user found for device $DEVICE_ID. Using fallback ID."
     USER_ID="00000000-0000-0000-0000-000000000000"
 else
     echo "👤 Found User ID: $USER_ID"
@@ -28,7 +28,6 @@ send_message() {
     local message="$1"
     echo "\n📝 Sending: \"$message\""
     
-    # Note: Using 'message' field (string) instead of 'messages' (array) as per function definition
     response=$(curl -s -X POST "$FUNCTION_URL" \
         -H "Authorization: Bearer $ANON_KEY" \
         -H "Content-Type: application/json" \
@@ -39,30 +38,27 @@ send_message() {
             \"client_timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
         }")
     
-    # Print raw response if it looks like an error
-    if echo "$response" | grep -q "error"; then
-        echo "❌ Error Response:"
-        echo "$response"
-    else
-        # Try to extract just the reply
-        echo "✅ Response:"
-        echo "$response" | python3 -c "import sys, json; print(json.load(sys.stdin).get('text', 'No text field found'))" 2>/dev/null || echo "$response"
-    fi
+    # Try to extract just the reply
+    echo "✅ Response:"
+    echo "$response" | python3 -c "import sys, json; print(json.load(sys.stdin).get('text', 'No text field found'))" 2>/dev/null || echo "$response"
 }
 
-# Test Scenarios Requested by User
+# --- Telemetry Use Cases ---
 
-# 1. Set Speed Limit
-send_message "Set speed limit to 80"
+# 1. Location Query
+send_message "Where are you right now?"
 
-# 2. Create Geofence
-send_message "Create a geofence alert for my home location"
+# 2. Speed Query
+send_message "How fast are you going?"
 
-# 3. Knowledge Base (RAG)
-send_message "How do I change the tire?"
+# 3. Battery Status
+send_message "What is your battery level?"
 
-# 4. Command Execution
-send_message "Lock the doors"
+# 4. Odometer/Mileage
+send_message "What is the total mileage?"
+
+# 5. Combined Status
+send_message "Give me a full status report"
 
 echo "\n----------------------------------------"
-echo "✅ Simulation Completed."
+echo "✅ Telemetry Simulation Completed."

@@ -243,6 +243,69 @@ const request_vehicle_command: ToolDefinition = {
   }
 }
 
+const search_knowledge_base: ToolDefinition = {
+  name: 'search_knowledge_base',
+  description: 'Search the vehicle manual, SOPs, and troubleshooting guides for answers to "how-to" or technical questions.',
+  parameters: {
+    type: 'object',
+    properties: {
+      query: { type: 'string', description: 'The search query (e.g., "how to change tire", "error code P0300")' }
+    },
+    required: ['query']
+  },
+  execute: async ({ query }, { supabase, device_id }) => {
+    // Generate embedding for the query using Lovable/OpenAI (via pg_vector if available, or just simple text search)
+    // Since we can't easily generate embeddings in this edge function without an API key,
+    // we'll assume the database has a function `match_vehicle_documents` that handles the embedding generation 
+    // OR we use a simple text search fallback if embeddings aren't set up.
+    
+    // Ideally: 
+    // 1. Call OpenAI to get embedding for `query`
+    // 2. Call `match_vehicle_documents` with embedding
+    
+    // For now, we will use a text search fallback if no embedding service is connected,
+    // or rely on the `match_vehicle_documents` to handle it if it wraps an extension.
+    
+    // CHECK: Does `match_vehicle_documents` take text or vector?
+    // Migration 20260201220000 says it takes `query_embedding vector(1536)`.
+    // We need to generate that embedding.
+    
+    try {
+      // We'll use the `lovable-ai` module to generate embedding if possible, 
+      // but `callLovableAPI` is chat-only.
+      // Let's fallback to a keyword search if we can't generate embeddings, 
+      // OR assume the user has configured `pg_net` or similar to generate it.
+      
+      // ALTERNATIVE: Use a simple text search on the `content` column for now.
+      const { data, error } = await supabase
+        .from('vehicle_documents')
+        .select('content, metadata')
+        .textSearch('content', query, { type: 'websearch', config: 'english' })
+        .limit(3);
+
+      if (error) throw error;
+
+      if (!data || data.length === 0) {
+        return {
+          found: false,
+          message: "I couldn't find any specific information in the manual about that."
+        };
+      }
+
+      return {
+        found: true,
+        results: data.map(d => ({
+          content: d.content,
+          source: d.metadata?.source || 'Manual'
+        }))
+      };
+    } catch (err: any) {
+      console.error('Knowledge base search failed:', err);
+      return { error: 'Failed to search knowledge base' };
+    }
+  }
+}
+
 const create_geofence_alert: ToolDefinition = {
   name: 'create_geofence_alert',
   description: 'Create a temporary geofence alert to notify when vehicle enters or leaves a location.',

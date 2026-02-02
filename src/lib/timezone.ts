@@ -139,28 +139,34 @@ export function formatLagos(date: Date | string, formatStr: string): string {
     const ampm = hour >= 12 ? 'PM' : 'AM';
     const ampmLower = hour >= 12 ? 'pm' : 'am';
     
-    // Format string replacements
-    let result = formatStr
-      .replace('yyyy', year.toString())
-      .replace('yy', String(year).slice(-2))
-      .replace('MMMM', monthNamesFull[month])
-      .replace('MMM', monthNames[month])
-      .replace('MM', String(month + 1).padStart(2, '0'))
-      .replace('M', String(month + 1))
-      .replace('dddd', dayNamesFull[dayOfWeek])
-      .replace('ddd', dayNames[dayOfWeek])
-      .replace('dd', String(day).padStart(2, '0'))
-      .replace('d', String(day))
-      .replace('HH', String(hour).padStart(2, '0'))
-      .replace('H', String(hour))
-      .replace('hh', String(hour12).padStart(2, '0'))
-      .replace('h', String(hour12))
-      .replace('mm', String(minute).padStart(2, '0'))
-      .replace('ss', String(second).padStart(2, '0'))
-      .replace('A', ampm)
-      .replace('a', ampmLower);
+    // Format string replacements using a single regex to prevent recursive replacements
+    const tokens = {
+      yyyy: year.toString(),
+      yy: String(year).slice(-2),
+      MMMM: monthNamesFull[month],
+      MMM: monthNames[month],
+      MM: String(month + 1).padStart(2, '0'),
+      M: String(month + 1),
+      dddd: dayNamesFull[dayOfWeek],
+      ddd: dayNames[dayOfWeek],
+      EEEE: dayNamesFull[dayOfWeek], // Alias for date-fns compatibility
+      EEE: dayNames[dayOfWeek],      // Alias for date-fns compatibility
+      dd: String(day).padStart(2, '0'),
+      d: String(day),
+      HH: String(hour).padStart(2, '0'),
+      H: String(hour),
+      hh: String(hour12).padStart(2, '0'),
+      h: String(hour12),
+      mm: String(minute).padStart(2, '0'),
+      ss: String(second).padStart(2, '0'),
+      A: ampm,
+      a: ampmLower
+    };
+
+    // Regex to match longest tokens first
+    const pattern = /yyyy|yy|MMMM|MMM|MM|M|dddd|ddd|EEEE|EEE|dd|d|HH|H|hh|h|mm|ss|A|a/g;
     
-    return result;
+    return formatStr.replace(pattern, match => tokens[match as keyof typeof tokens]);
   } catch (error) {
     console.warn('Error formatting date with Lagos timezone:', error);
     // Fallback to basic formatting
