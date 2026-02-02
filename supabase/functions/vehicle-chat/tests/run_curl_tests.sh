@@ -18,13 +18,11 @@ send_message() {
         -H "Authorization: Bearer $ANON_KEY" \
         -H "Content-Type: application/json" \
         -d "{
-            \"messages\": [
-                {\"role\": \"user\", \"content\": \"$message\"}
-            ],
+            \"message\": \"$message\",
             \"device_id\": \"$DEVICE_ID\",
             \"user_id\": \"test-user\",
             \"conversation_id\": \"test-conv-$(date +%s)\"
-        }" | python3 -c "import sys, json; print(json.load(sys.stdin).get('reply', 'No reply field found'))"
+        }" | python3 -c "import sys, json; print(json.load(sys.stdin).get('text', 'No text field found'))"
 }
 
 # Test Scenarios

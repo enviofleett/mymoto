@@ -12,6 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { Shield, Save, RotateCcw, Loader2, Eye, CheckCircle2, Clock } from "lucide-react";
 import { formatLagos } from "@/lib/timezone";
+import { format } from "date-fns";
 
 interface TermsData {
   id: string;

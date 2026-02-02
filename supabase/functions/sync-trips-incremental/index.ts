@@ -1223,23 +1223,38 @@ Deno.serve(async (req) => {
 
           for (const trip of batch) {
             const tripStartTime = new Date(trip.start_time);
-            // Check for existing trip within 2 minutes window (GPS51 trips are precise)
-            const startWindowMin = new Date(tripStartTime.getTime() - 2 * 60 * 1000).toISOString();
-            const startWindowMax = new Date(tripStartTime.getTime() + 2 * 60 * 1000).toISOString();
+            // Check for existing trip within 10 minutes window (increased from 2 mins to catch loose matches)
+            const startWindowMin = new Date(tripStartTime.getTime() - 10 * 60 * 1000).toISOString();
+            const startWindowMax = new Date(tripStartTime.getTime() + 10 * 60 * 1000).toISOString();
 
-            // Check for existing trip with similar start time AND similar distance
+            // Check for existing trip with similar start time (ignoring distance to prevent duplicates)
             const { data: existing } = await supabase
               .from("vehicle_trips")
-              .select("id, distance_km")
+              .select("id, distance_km, start_time, end_time")
               .eq("device_id", trip.device_id)
               .gte("start_time", startWindowMin)
               .lte("start_time", startWindowMax)
-              .gte("distance_km", trip.distance_km * 0.95) // Tighter match (5% tolerance)
-              .lte("distance_km", trip.distance_km * 1.05)
               .limit(1);
 
             if (existing && existing.length > 0) {
-              console.log(`[sync-trips-incremental] Skipping duplicate trip: ${trip.start_time} (existing: ${existing[0].id})`);
+              console.log(`[sync-trips-incremental] Skipping duplicate trip: ${trip.start_time} (existing: ${existing[0].id}, dist: ${existing[0].distance_km}km vs ${trip.distance_km}km)`);
+              deviceTripsSkipped++;
+              totalTripsSkipped++;
+              continue;
+            }
+
+            // CRITICAL FIX: Check for time overlap to prevent ghost trips
+            // If this trip is completely contained within an existing trip's time range
+            const { data: overlapping } = await supabase
+              .from("vehicle_trips")
+              .select("id")
+              .eq("device_id", trip.device_id)
+              .lte("start_time", trip.start_time)
+              .gte("end_time", trip.end_time)
+              .limit(1);
+
+            if (overlapping && overlapping.length > 0) {
+              console.log(`[sync-trips-incremental] Skipping overlapping trip: ${trip.start_time} (contained in ${overlapping[0].id})`);
               deviceTripsSkipped++;
               totalTripsSkipped++;
               continue;

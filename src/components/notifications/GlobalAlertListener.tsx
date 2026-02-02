@@ -176,6 +176,7 @@ export function GlobalAlertListener() {
     handleNewEventRef.current = handleNewEvent;
   }, [handleNewEvent]);
 
+  // Robust subscription with retry logic
   useEffect(() => {
     if (!user) {
       if (import.meta.env.DEV) {
@@ -185,52 +186,70 @@ export function GlobalAlertListener() {
     }
 
     authRedirectedRef.current = false;
-    if (import.meta.env.DEV) {
-      console.log('[GlobalAlertListener] Setting up realtime subscription');
-    }
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let retryTimeout: NodeJS.Timeout | undefined;
+    let retryCount = 0;
 
-    const channel = supabase
-      .channel('global_proactive_alerts')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'proactive_vehicle_events'
-        },
-        (payload) => {
-          const newEvent = payload.new as ProactiveEvent;
-          handleNewEventRef.current(newEvent);
-        }
-      )
-      .subscribe(async (status) => {
-        if (import.meta.env.DEV) {
-          console.log('[GlobalAlertListener] Subscription status:', status);
-        }
-        if (status === 'SUBSCRIBED') {
-          if (import.meta.env.DEV) {
-            console.log('[GlobalAlertListener] ✅ Successfully subscribed to proactive_vehicle_events');
+    const setupSubscription = () => {
+      if (import.meta.env.DEV) {
+        console.log(`[GlobalAlertListener] Setting up realtime subscription (Attempt ${retryCount + 1})`);
+      }
+
+      // Clean up previous channel if exists
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+
+      channel = supabase
+        .channel('global_proactive_alerts')
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'proactive_vehicle_events'
+          },
+          (payload) => {
+            const newEvent = payload.new as ProactiveEvent;
+            handleNewEventRef.current(newEvent);
           }
-          return;
-        }
-        if (status === 'CHANNEL_ERROR') {
-          console.warn('[GlobalAlertListener] ⚠️ Subscription channel error (retrying...)');
-          // Silent retry or refresh session if persistent
-          return;
-        }
-        if (status === 'TIMED_OUT') {
-          console.error('[GlobalAlertListener] ❌ Subscription timed out');
-        }
-      });
+        )
+        .subscribe((status) => {
+          if (import.meta.env.DEV) {
+            console.log(`[GlobalAlertListener] Subscription status: ${status}`);
+          }
+
+          if (status === 'SUBSCRIBED') {
+            if (import.meta.env.DEV) {
+              console.log('[GlobalAlertListener] ✅ Successfully subscribed to proactive_vehicle_events');
+            }
+            retryCount = 0; // Reset retry count on success
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            const delay = Math.min(1000 * Math.pow(2, retryCount), 30000); // Exponential backoff: 1s, 2s, 4s... max 30s
+            console.warn(`[GlobalAlertListener] ⚠️ Subscription ${status}. Retrying in ${delay}ms...`);
+            
+            retryCount++;
+            retryTimeout = setTimeout(() => {
+              setupSubscription();
+            }, delay);
+          }
+        });
+    };
+
+    // Initial subscription
+    setupSubscription();
 
     return () => {
       if (import.meta.env.DEV) {
         console.log('[GlobalAlertListener] Cleaning up subscription');
       }
-      try {
-        supabase.removeChannel(channel);
-      } catch {
-        /* ignore */
+      if (retryTimeout) clearTimeout(retryTimeout);
+      if (channel) {
+        try {
+          supabase.removeChannel(channel);
+        } catch {
+          /* ignore */
+        }
       }
     };
   }, [user, navigate]);

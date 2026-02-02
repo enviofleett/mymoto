@@ -228,7 +228,8 @@ export default function AdminEmailTemplates() {
   const fetchTemplates = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      // Cast supabase to any to bypass type check for missing table in types
+      const { data, error } = await (supabase as any)
         .from('email_templates')
         .select('*')
         .order('template_key');
@@ -272,7 +273,7 @@ export default function AdminEmailTemplates() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('email_templates')
         .update({
           subject: editedTemplate.subject,

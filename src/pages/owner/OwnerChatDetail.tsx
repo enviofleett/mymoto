@@ -14,7 +14,7 @@ import { useVehicleAlerts, formatAlertForChat } from "@/hooks/useVehicleAlerts";
 import { ArrowLeft, Car, User, Send, Loader2, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ChatMessageContent } from "@/components/chat/ChatMessageContent";
-import { formatLagos } from "@/lib/timezone";
+import { formatLagosDate } from "@/lib/timezone";
 import { useQuery } from "@tanstack/react-query";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
@@ -365,8 +365,36 @@ export default function OwnerChatDetail() {
       if (contentType.includes('application/json')) {
         const jsonData = await response.json();
         console.warn('[Chat] Received JSON instead of stream:', jsonData);
+        
         if (jsonData.error) {
           throw new Error(jsonData.error);
+        }
+
+        // Handle successful JSON response (non-streamed)
+        // This handles the case where the backend returns a simple JSON response
+        if (jsonData.text) {
+          const fullResponse = jsonData.text;
+          console.log('[Chat] JSON response received:', fullResponse.substring(0, 50) + '...');
+          
+          const tempAssistantMsg: ChatMessage = {
+            id: `temp-assistant-${Date.now()}`,
+            role: "assistant",
+            content: fullResponse,
+            created_at: new Date().toISOString(),
+          };
+          
+          setMessages(prev => {
+            const exists = prev.some(m => 
+              m.role === 'assistant' && 
+              m.content === fullResponse &&
+              !m.id.startsWith('temp-')
+            );
+            if (exists) return prev;
+            return [...prev, tempAssistantMsg];
+          });
+          
+          setStreamingContent("");
+          return; // Exit successfully
         }
       }
 

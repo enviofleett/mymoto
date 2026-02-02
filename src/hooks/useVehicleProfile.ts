@@ -104,18 +104,26 @@ async function fetchVehicleTrips(
     console.log('[fetchVehicleTrips] Fetching trips for device:', deviceId, 'limit:', limit, 'dateRange:', dateRange);
   }
   
-  // Use the optimized RPC function instead of querying the view directly
-  // This pushes the device_id filter down to the base table scan, preventing timeouts
-  const { data, error } = await (supabase as any).rpc('get_vehicle_trips_optimized', {
-    p_device_id: deviceId,
-    p_limit: limit,
-    p_start_date: dateRange?.from ? dateRange.from.toISOString() : null,
-    p_end_date: dateRange?.to ? (() => {
-      const d = new Date(dateRange.to);
-      d.setDate(d.getDate() + 1); // Include the whole day
-      return d.toISOString();
-    })() : null
-  });
+  // Use direct table query for GPS51 parity and to avoid RPC type errors
+  let query = (supabase as any)
+    .from('vehicle_trips')
+    .select('*')
+    .eq('device_id', deviceId)
+    .eq('source', 'gps51')
+    .order('start_time', { ascending: false })
+    .limit(limit);
+
+  if (dateRange?.from) {
+    query = query.gte('start_time', dateRange.from.toISOString());
+  }
+  
+  if (dateRange?.to) {
+    const d = new Date(dateRange.to);
+    d.setDate(d.getDate() + 1); // Include the whole day
+    query = query.lt('start_time', d.toISOString());
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     if (import.meta.env.DEV) {

@@ -148,7 +148,8 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
     table: string,
     select: string,
     ids: string[],
-    orderBy?: { column: string, ascending: boolean }
+    orderBy?: { column: string, ascending: boolean },
+    limit?: number
   ) => {
     const chunks = [];
     for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
@@ -166,6 +167,10 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
       
       if (orderBy) {
         query = query.order(orderBy.column, { ascending: orderBy.ascending });
+      }
+      
+      if (limit) {
+        query = query.limit(limit);
       }
       
       const { data, error } = await query;
@@ -197,11 +202,13 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
   const positionMap = new Map((positions as any[])?.map((p: any) => [p.device_id, p]) || []);
 
   // Fetch last chat messages for each device
+  // Limit to 50 per chunk to prevent huge payloads causing ERR_ABORTED
   const chatHistory = await fetchInChunks(
     "vehicle_chat_history",
     "device_id, content, created_at, role",
     deviceIds,
-    { column: "created_at", ascending: false }
+    { column: "created_at", ascending: false },
+    50
   );
 
   // Fetch LLM settings for personality and avatar

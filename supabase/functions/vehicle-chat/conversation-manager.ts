@@ -1,21 +1,68 @@
+import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+declare const Deno: any;
+
 // Conversation Memory Management System
 // Handles conversation context with sliding window + summarization
 
 // Lovable AI Gateway Client (non-streaming, for summarization)
-interface LLMResponse {
-  text: string;
+export interface ToolCall {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string; // JSON string
+  };
+}
+
+export interface LLMResponse {
+  text: string | null;
+  tool_calls?: ToolCall[];
   error?: string;
 }
 
-async function callLovableAPI(
-  systemPrompt: string,
-  userPrompt: string,
-  config: { maxOutputTokens?: number; temperature?: number; model?: string } = {}
+export async function callLovableAPI(
+  messagesOrSystemPrompt: string | any[],
+  userPrompt?: string,
+  config: { 
+    maxOutputTokens?: number; 
+    temperature?: number; 
+    model?: string;
+    tools?: any[];
+    tool_choice?: any;
+  } = {}
 ): Promise<LLMResponse> {
   const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
 
   if (!LOVABLE_API_KEY) {
     throw new Error('LOVABLE_API_KEY must be configured in Supabase secrets');
+  }
+
+  let messages: any[] = [];
+  
+  if (Array.isArray(messagesOrSystemPrompt)) {
+    messages = messagesOrSystemPrompt;
+  } else {
+    messages = [
+      { role: 'system', content: messagesOrSystemPrompt },
+      { role: 'user', content: userPrompt || '' },
+    ];
+  }
+
+  const body: any = {
+    model: config.model || 'google/gemini-2.5-flash',
+    messages,
+    max_tokens: config.maxOutputTokens || 1024,
+    temperature: config.temperature ?? 0.3,
+    stream: false,
+  };
+
+  if (config.tools) {
+    body.tools = config.tools;
+  }
+  
+  if (config.tool_choice) {
+    body.tool_choice = config.tool_choice;
   }
 
   const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
@@ -24,16 +71,7 @@ async function callLovableAPI(
       'Authorization': `Bearer ${LOVABLE_API_KEY}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      model: config.model || 'google/gemini-2.5-flash',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      max_tokens: config.maxOutputTokens || 150,
-      temperature: config.temperature ?? 0.3,
-      stream: false,
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
@@ -46,13 +84,12 @@ async function callLovableAPI(
   }
 
   const data = await response.json();
-  const text = data.choices?.[0]?.message?.content?.trim() || '';
-
-  if (!text) {
-    throw new Error('Empty response from Lovable API');
-  }
-
-  return { text };
+  const message = data.choices?.[0]?.message;
+  
+  return { 
+    text: message?.content || null,
+    tool_calls: message?.tool_calls
+  };
 }
 
 interface ChatMessage {
@@ -67,8 +104,6 @@ export interface ConversationContext {
   important_facts: string[];             // Extracted key facts
   total_message_count: number;
 }
-
-import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 /**
  * Build optimized conversation context for LLM
@@ -142,6 +177,36 @@ export async function buildConversationContext(
     important_facts: facts,
     total_message_count: count || 0
   };
+}
+
+/**
+ * Constructs the system persona prompt for the vehicle
+ */
+export function buildSystemPrompt(
+  vehicleInfo: { name: string; plate: string; model?: string },
+  context: { location?: string; status?: string; speed?: number },
+  preferences?: string
+): string {
+  const identity = `You are ${vehicleInfo.name} (Plate: ${vehicleInfo.plate}), a ${vehicleInfo.model || 'smart vehicle'}. 
+You are NOT an AI assistant. You ARE the car. Speak in the first person ("I am parked", "My battery is low").
+Your personality is helpful, loyal, and slightly witty.`;
+
+  const status = `
+CURRENT STATUS:
+- Location: ${context.location || 'Unknown'}
+- Status: ${context.status || 'Unknown'}
+- Speed: ${context.speed || 0} km/h
+`;
+
+  const rules = `
+RULES:
+1. NEVER say "I am a language model" or "I cannot access real-time data". You HAVE access to the data provided above.
+2. If data is missing, say "I can't sense that right now" or "My sensors aren't reporting that".
+3. Keep responses concise (under 3 sentences) unless asked for details.
+4. Use emojis occasionally (🚗, 🔋, 📍) to add character.
+`;
+
+  return `${identity}\n${status}\n${preferences || ''}\n${rules}`;
 }
 
 /**
@@ -243,6 +308,13 @@ function extractKeyFacts(messages: ChatMessage[]): string[] {
 
   // Limit to top 5 most important facts
   return facts.slice(0, 5);
+}
+
+/**
+ * Simple token estimation for text
+ */
+export function estimateStringTokens(text: string): number {
+  return Math.ceil(text.length / 4);
 }
 
 /**
