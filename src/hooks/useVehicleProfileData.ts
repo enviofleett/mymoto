@@ -112,7 +112,8 @@ async function fetchVehicleTrips(
     .not("start_time", "is", null)
     .not("end_time", "is", null);
 
-  // CRITICAL OPTIMIZATION: If no dateRange provided, prioritize last 24 hours for instant loading
+  // CRITICAL OPTIMIZATION: If no dateRange provided, prioritize last 7 days for better coverage
+  // Changed from 24 hours to 7 days to catch trips that may have been synced late
   if (dateRange?.from) {
     const fromDate = new Date(dateRange.from);
     fromDate.setHours(0, 0, 0, 0);
@@ -121,12 +122,13 @@ async function fetchVehicleTrips(
       console.log('[fetchVehicleTrips] Date filter FROM:', fromDate.toISOString());
     }
   } else {
-    // No explicit date range - prioritize last 24 hours for instant loading
-    const last24Hours = new Date();
-    last24Hours.setHours(last24Hours.getHours() - 24);
-    query = query.gte("start_time", last24Hours.toISOString());
+    // No explicit date range - fetch last 7 days (changed from 24 hours)
+    // This ensures recent trips are shown even if sync was delayed
+    const last7Days = new Date();
+    last7Days.setDate(last7Days.getDate() - 7);
+    query = query.gte("start_time", last7Days.toISOString());
     if (import.meta.env.DEV) {
-      console.log('[fetchVehicleTrips] Auto-filtering last 24 hours for instant load:', last24Hours.toISOString());
+      console.log('[fetchVehicleTrips] Auto-filtering last 7 days for better coverage:', last7Days.toISOString());
     }
   }
   
@@ -364,8 +366,9 @@ export function useVehicleTrips(
     queryKey: ["vehicle-trips", deviceId, dateRange?.from?.toISOString(), dateRange?.to?.toISOString(), limit],
     queryFn: () => fetchVehicleTrips(deviceId!, limit, dateRange),
     enabled: enabled && !!deviceId,
-    staleTime: live ? 30 * 1000 : 24 * 60 * 60 * 1000,
-    gcTime: 48 * 60 * 60 * 1000,
+    // Use shorter stale time (5 min) to catch newly synced trips faster
+    staleTime: live ? 30 * 1000 : 5 * 60 * 1000,
+    gcTime: 60 * 60 * 1000, // 1 hour cache
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
     refetchInterval: live ? 30 * 1000 : false,
@@ -569,18 +572,18 @@ export function usePrefetchVehicleProfile() {
   const queryClient = useQueryClient();
 
   const prefetchAll = (deviceId: string) => {
-    // Prefetch last 24 hours of trips for instant loading
+    // Prefetch last 7 days of trips for instant loading
     queryClient.prefetchQuery({
       queryKey: ["vehicle-trips", deviceId, undefined, undefined, 200],
-      queryFn: () => fetchVehicleTrips(deviceId, 200), // Will auto-filter last 24h
-      staleTime: 24 * 60 * 60 * 1000, // 24 hours
+      queryFn: () => fetchVehicleTrips(deviceId, 200), // Will auto-filter last 7 days
+      staleTime: 5 * 60 * 1000, // 5 minutes - refresh more often to catch new trips
     });
 
-    // Prefetch last 24 hours of events
+    // Prefetch events
     queryClient.prefetchQuery({
       queryKey: ["vehicle-events", deviceId, undefined, undefined, 50],
-      queryFn: () => fetchVehicleEvents(deviceId, 50), // Will auto-filter last 24h
-      staleTime: 24 * 60 * 60 * 1000, // 24 hours
+      queryFn: () => fetchVehicleEvents(deviceId, 50),
+      staleTime: 5 * 60 * 1000, // 5 minutes
     });
 
     // Prefetch live data (async import to avoid circular dependency)

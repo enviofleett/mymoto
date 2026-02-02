@@ -399,10 +399,17 @@ async function fetchTripsFromGps51(
   startDate: Date,
   endDate: Date
 ): Promise<TripData[]> {
-  console.log(`[fetchTripsFromGps51] Fetching trips for ${deviceId} from ${startDate.toISOString()} to ${endDate.toISOString()}`);
-  
+  const startDateUTC = startDate.toISOString();
+  const endDateUTC = endDate.toISOString();
+  const hoursDiff = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60);
+
+  console.log(`[fetchTripsFromGps51] === TRIP FETCH START ===`);
+  console.log(`[fetchTripsFromGps51] Device: ${deviceId}`);
+  console.log(`[fetchTripsFromGps51] UTC Range: ${startDateUTC} to ${endDateUTC} (${hoursDiff.toFixed(1)} hours)`);
+
   const begintime = formatDateForGps51(startDate);
   const endtime = formatDateForGps51(endDate);
+  console.log(`[fetchTripsFromGps51] GPS51 Request (GMT+8): ${begintime} to ${endtime}`);
   
   const result = await callGps51WithRateLimit(
     supabase,
@@ -414,7 +421,7 @@ async function fetchTripsFromGps51(
       deviceid: deviceId,
       begintime,
       endtime,
-      timezone: 0 // UTC (Aligns with Lagos time via frontend formatLagos)
+      timezone: 8 // GPS51 native timezone (GMT+8) - required because string parsing expects GMT+8
     }
   );
 
@@ -452,24 +459,36 @@ async function fetchTripsFromGps51(
       return true;
     })
     .map((trip: Gps51Trip): TripData => {
-      // GPS51 provides times as either timestamps (ms) or strings
+      // GPS51 TIMEZONE HANDLING:
+      // - We request timezone: 8 (GPS51 native = GMT+8 China Standard Time)
+      // - GPS51 returns timestamps either as:
+      //   a) Unix milliseconds (timezone-agnostic) - preferred
+      //   b) Strings in "yyyy-MM-dd HH:mm:ss" format in GMT+8
+      // - We convert all times to UTC ISO strings for database storage
+      // - Frontend converts UTC → user's local timezone for display
+
       let startTime: string;
       let endTime: string;
 
-      if (trip.starttime) {
+      if (trip.starttime && typeof trip.starttime === 'number') {
+        // Unix milliseconds - timezone agnostic, already in UTC epoch
         startTime = new Date(trip.starttime).toISOString();
       } else if (trip.starttime_str) {
-        // Parse yyyy-MM-dd HH:mm:ss format
+        // String format "yyyy-MM-dd HH:mm:ss" in GMT+8 - append timezone offset
         startTime = new Date(trip.starttime_str.replace(' ', 'T') + '+08:00').toISOString();
       } else {
+        console.error('[fetchTripsFromGps51] Trip missing start time:', trip);
         throw new Error('Trip missing start time');
       }
 
-      if (trip.endtime) {
+      if (trip.endtime && typeof trip.endtime === 'number') {
+        // Unix milliseconds - timezone agnostic
         endTime = new Date(trip.endtime).toISOString();
       } else if (trip.endtime_str) {
+        // String format in GMT+8
         endTime = new Date(trip.endtime_str.replace(' ', 'T') + '+08:00').toISOString();
       } else {
+        console.error('[fetchTripsFromGps51] Trip missing end time:', trip);
         throw new Error('Trip missing end time');
       }
 
@@ -1285,28 +1304,40 @@ Deno.serve(async (req) => {
 
           for (const trip of batch) {
             const tripStartTime = new Date(trip.start_time);
-            // Check for existing trip within 10 minutes window (increased from 2 mins to catch loose matches)
-            const startWindowMin = new Date(tripStartTime.getTime() - 10 * 60 * 1000).toISOString();
-            const startWindowMax = new Date(tripStartTime.getTime() + 10 * 60 * 1000).toISOString();
+            const tripEndTime = new Date(trip.end_time);
+            const tripDuration = (tripEndTime.getTime() - tripStartTime.getTime()) / 1000;
 
-            // Check for existing trip with similar start time (ignoring distance to prevent duplicates)
+            // DUPLICATE DETECTION: Use 5-minute window (reduced from 10 to allow legitimate close trips)
+            // AND require similar duration (within 2 minutes) to be considered a duplicate
+            const startWindowMin = new Date(tripStartTime.getTime() - 5 * 60 * 1000).toISOString();
+            const startWindowMax = new Date(tripStartTime.getTime() + 5 * 60 * 1000).toISOString();
+
+            // Check for existing trip with similar start time
             const { data: existing } = await supabase
               .from("vehicle_trips")
-              .select("id, distance_km, start_time, end_time")
+              .select("id, distance_km, start_time, end_time, duration_seconds")
               .eq("device_id", trip.device_id)
               .gte("start_time", startWindowMin)
               .lte("start_time", startWindowMax)
-              .limit(1);
+              .limit(3); // Get a few to check duration match
 
-            if (existing && existing.length > 0) {
-              console.log(`[sync-trips-incremental] Skipping duplicate trip: ${trip.start_time} (existing: ${existing[0].id}, dist: ${existing[0].distance_km}km vs ${trip.distance_km}km)`);
+            // Only skip if we find a trip with BOTH similar start time AND similar duration
+            const isDuplicate = existing?.some(e => {
+              const existingDuration = e.duration_seconds || 0;
+              const durationDiff = Math.abs(tripDuration - existingDuration);
+              // Consider duplicate if duration differs by less than 2 minutes
+              return durationDiff < 120;
+            });
+
+            if (isDuplicate && existing && existing.length > 0) {
+              const match = existing.find(e => Math.abs(tripDuration - (e.duration_seconds || 0)) < 120);
+              console.log(`[sync-trips-incremental] Skipping duplicate trip: ${trip.start_time} (existing: ${match?.id}, duration match: ${trip.duration_seconds}s vs ${match?.duration_seconds}s)`);
               deviceTripsSkipped++;
               totalTripsSkipped++;
               continue;
             }
 
-            // CRITICAL FIX: Check for time overlap to prevent ghost trips
-            // If this trip is completely contained within an existing trip's time range
+            // OVERLAP DETECTION: Check if this trip is completely contained within an existing trip's time range
             const { data: overlapping } = await supabase
               .from("vehicle_trips")
               .select("id")
@@ -1322,9 +1353,10 @@ Deno.serve(async (req) => {
               continue;
             }
 
-            // CRITICAL FIX: Validate trip coordinates before processing
-            // Filter trips with same start/end coordinates (within 100m)
-            if (trip.start_latitude && trip.start_longitude && 
+            // GHOST TRIP DETECTION: Filter trips where vehicle didn't actually move
+            // Skip trips with same start/end coordinates (within 100m) UNLESS they have significant distance
+            // This allows round trips (significant path distance but same start/end) while filtering ghost trips
+            if (trip.start_latitude && trip.start_longitude &&
                 trip.end_latitude && trip.end_longitude) {
               const startEndDistance = calculateDistance(
                 trip.start_latitude,
@@ -1332,11 +1364,14 @@ Deno.serve(async (req) => {
                 trip.end_latitude,
                 trip.end_longitude
               );
-              
+
               const MIN_START_END_DISTANCE = 0.1; // 100 meters
-              
-              if (startEndDistance < MIN_START_END_DISTANCE) {
-                console.log(`[sync-trips-incremental] Skipping trip with same start/end coordinates: ${startEndDistance.toFixed(3)}km`);
+              const MIN_PATH_DISTANCE = 0.5; // 500 meters (for round trips)
+
+              // Skip if start/end are same AND total path distance is negligible
+              // This allows valid round trips where trip.distance_km > MIN_PATH_DISTANCE
+              if (startEndDistance < MIN_START_END_DISTANCE && trip.distance_km < MIN_PATH_DISTANCE) {
+                console.log(`[sync-trips-incremental] Skipping ghost trip: start-end=${startEndDistance.toFixed(3)}km, path=${trip.distance_km}km`);
                 deviceTripsSkipped++;
                 totalTripsSkipped++;
                 continue;
@@ -1512,6 +1547,17 @@ Deno.serve(async (req) => {
         } else if (completionError) {
           console.warn('[sync-trips-incremental] Error updating completion status:', completionError.message);
         }
+
+        // Log detailed summary for this device
+        console.log(`[sync-trips-incremental] === DEVICE SYNC SUMMARY: ${deviceId} ===`);
+        console.log(`[sync-trips-incremental] GPS51 API returned: ${trips.length} trips`);
+        console.log(`[sync-trips-incremental] Trips created: ${deviceTripsCreated}`);
+        console.log(`[sync-trips-incremental] Trips skipped (duplicates/ghosts): ${deviceTripsSkipped}`);
+        console.log(`[sync-trips-incremental] Date range: ${startDate.toISOString()} to ${endDate.toISOString()}`);
+        if (trips.length === 0) {
+          console.warn(`[sync-trips-incremental] ⚠️ NO TRIPS from GPS51 - check if vehicle had trips in this period`);
+        }
+        console.log(`[sync-trips-incremental] === END DEVICE SUMMARY ===`);
 
         deviceResults[deviceId] = {
           trips: deviceTripsCreated,

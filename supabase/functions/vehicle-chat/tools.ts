@@ -131,6 +131,111 @@ const search_trip_locations: ToolDefinition = {
   }
 }
 
+const get_position_history: ToolDefinition = {
+  name: 'get_position_history',
+  description: 'Get detailed GPS position history for the vehicle. Use this to see where the vehicle was at a specific time, track movement patterns, or analyze driving behavior. Returns coordinates, speed, and ignition status at each recorded point.',
+  parameters: {
+    type: 'object',
+    properties: {
+      start_time: { type: 'string', description: 'ISO date string for start of period (e.g., "2024-01-15T09:00:00Z")' },
+      end_time: { type: 'string', description: 'ISO date string for end of period (e.g., "2024-01-15T17:00:00Z")' },
+      limit: { type: 'number', description: 'Maximum number of positions to return (default: 100, max: 500)' }
+    },
+    required: ['start_time', 'end_time']
+  },
+  execute: async ({ start_time, end_time, limit = 100 }, { supabase, device_id }) => {
+    // Validate and cap limit
+    const maxLimit = Math.min(limit || 100, 500)
+
+    // Query position_history table for raw GPS data
+    const { data: positions, error } = await supabase
+      .from('position_history')
+      .select('latitude, longitude, speed, heading, ignition_on, ignition_confidence, gps_time, battery_percent')
+      .eq('device_id', device_id)
+      .gte('gps_time', start_time)
+      .lte('gps_time', end_time)
+      .order('gps_time', { ascending: true })
+      .limit(maxLimit)
+
+    if (error) throw new Error(`Database error: ${error.message}`)
+    if (!positions || positions.length === 0) {
+      return {
+        found: false,
+        message: `No GPS position records found between ${start_time} and ${end_time}. The vehicle may have been offline or not moving during this period.`
+      }
+    }
+
+    // Calculate summary statistics
+    const speedsAboveZero = positions.filter((p: any) => p.speed > 0).map((p: any) => p.speed)
+    const ignitionOnCount = positions.filter((p: any) => p.ignition_on === true).length
+
+    // Calculate approximate distance traveled (sum of segments)
+    let totalDistanceKm = 0
+    for (let i = 1; i < positions.length; i++) {
+      const p1 = positions[i - 1]
+      const p2 = positions[i]
+      if (p1.latitude && p1.longitude && p2.latitude && p2.longitude) {
+        // Haversine distance calculation
+        const R = 6371 // Earth radius in km
+        const dLat = ((p2.latitude - p1.latitude) * Math.PI) / 180
+        const dLon = ((p2.longitude - p1.longitude) * Math.PI) / 180
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                  Math.cos((p1.latitude * Math.PI) / 180) * Math.cos((p2.latitude * Math.PI) / 180) *
+                  Math.sin(dLon / 2) * Math.sin(dLon / 2)
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+        const dist = R * c
+        // Filter out GPS jumps (> 10km between consecutive points)
+        if (dist < 10) totalDistanceKm += dist
+      }
+    }
+
+    const summary = {
+      total_positions: positions.length,
+      time_range: {
+        start: positions[0].gps_time,
+        end: positions[positions.length - 1].gps_time
+      },
+      movement: {
+        approximate_distance_km: Math.round(totalDistanceKm * 100) / 100,
+        max_speed_kmh: speedsAboveZero.length > 0 ? Math.max(...speedsAboveZero) : 0,
+        avg_speed_kmh: speedsAboveZero.length > 0
+          ? Math.round((speedsAboveZero.reduce((a: number, b: number) => a + b, 0) / speedsAboveZero.length) * 10) / 10
+          : 0,
+        ignition_on_percent: Math.round((ignitionOnCount / positions.length) * 100)
+      },
+      start_position: {
+        coordinates: { lat: positions[0].latitude, lng: positions[0].longitude },
+        time: positions[0].gps_time,
+        speed_kmh: Math.round(positions[0].speed || 0),
+        ignition: positions[0].ignition_on ? 'on' : 'off'
+      },
+      end_position: {
+        coordinates: { lat: positions[positions.length - 1].latitude, lng: positions[positions.length - 1].longitude },
+        time: positions[positions.length - 1].gps_time,
+        speed_kmh: Math.round(positions[positions.length - 1].speed || 0),
+        ignition: positions[positions.length - 1].ignition_on ? 'on' : 'off'
+      }
+    }
+
+    // Return positions with simplified format
+    const positionData = positions.map((p: any) => ({
+      time: p.gps_time,
+      lat: p.latitude,
+      lng: p.longitude,
+      speed_kmh: Math.round(p.speed || 0),
+      heading: p.heading,
+      ignition: p.ignition_on ? 'on' : 'off',
+      battery: p.battery_percent
+    }))
+
+    return {
+      found: true,
+      summary,
+      positions: positionData
+    }
+  }
+}
+
 const request_vehicle_command: ToolDefinition = {
   name: 'request_vehicle_command',
   description: 'Request a command to control the vehicle (lock, unlock, immobilize, mobilize).',
@@ -315,6 +420,7 @@ const create_geofence_alert: ToolDefinition = {
 export const TOOLS: ToolDefinition[] = [
   get_vehicle_status,
   get_trip_history,
+  get_position_history,  // NEW: Detailed GPS position history for tracking
   search_trip_locations,
   request_vehicle_command,
   search_knowledge_base,
