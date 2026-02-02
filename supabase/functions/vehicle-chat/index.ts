@@ -28,6 +28,7 @@ async function handler(req: Request) {
     conversation_id,
     client_timestamp,
     user_timezone,
+    user_id: req_user_id, // Allow passing user_id for testing/service calls
   } = await req.json()
 
   // Standardize on device_id (matching frontend)
@@ -71,6 +72,12 @@ async function handler(req: Request) {
     } else {
       console.warn('User authentication failed:', error)
     }
+  }
+
+  // Fallback: Use request body user_id (useful for testing or service-role calls)
+  if (!user_id && req_user_id) {
+    user_id = req_user_id
+    console.log('[Auth] Using user_id from request body:', user_id)
   }
 
   if (!user_id) {
