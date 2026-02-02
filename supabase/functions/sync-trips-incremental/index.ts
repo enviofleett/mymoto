@@ -414,7 +414,7 @@ async function fetchTripsFromGps51(
       deviceid: deviceId,
       begintime,
       endtime,
-      timezone: 8 // GMT+8 (China time zone, default)
+      timezone: 0 // UTC (Aligns with Lagos time via frontend formatLagos)
     }
   );
 
@@ -736,7 +736,7 @@ function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
         currentTrip = { 
           points: [point],
           startOdometer: null, // Will be set if odometer data available
-          lastMovingTime: normalizedSpeed > SPEED_THRESHOLD ? new Date(point.gps_time).getTime() : null
+          lastMovingTime: normalizedSpeed > SPEED_THRESHOLD ? new Date(point.gps_time).getTime() : undefined
         };
         console.log(`[extractTripsFromHistory] ✅ Trip START (ACC ON) at ${point.gps_time}${confidenceInfo}`);
       }
@@ -1025,7 +1025,7 @@ function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
         // Only reset if trip just started and immediately stopped
         const singlePointTime = new Date(currentTrip.points[0].gps_time).getTime();
         const currentTime = new Date(point.gps_time).getTime();
-        if (currentTime - singlePointTime > STOP_DURATION_MS) {
+        if (currentTime - singlePointTime > IDLE_TIMEOUT_MS) {
           currentTrip = null;
         }
       }
@@ -1168,8 +1168,8 @@ Deno.serve(async (req) => {
             .eq("device_id", deviceId);
         }
 
-        // Fetch trips from GPS51 API (with centralized rate limiting)
-        const trips = await fetchTripsFromGps51(
+        // 1. Fetch official trips from GPS51 API (Primary Source)
+        let trips = await fetchTripsFromGps51(
           supabase,
           DO_PROXY_URL,
           token,
@@ -1180,6 +1180,68 @@ Deno.serve(async (req) => {
         );
 
         console.log(`[sync-trips-incremental] Device ${deviceId}: received ${trips.length} trips from GPS51`);
+
+        // 2. Fallback/Gap-fill: Extract trips from raw position history
+        // This bridges the gap when the official API misses trips (e.g., short trips, signal drops)
+        try {
+          console.log(`[sync-trips-incremental] Fetching raw history for fallback analysis...`);
+          
+          // Fetch raw positions for the same period (plus buffer)
+          const { data: positions, error: posError } = await supabase
+            .from("position_history")
+            .select("id, device_id, latitude, longitude, speed, heading, gps_time, ignition_on, ignition_confidence, ignition_detection_method")
+            .eq("device_id", deviceId)
+            .gte("gps_time", startDate.toISOString())
+            .lte("gps_time", endDate.toISOString())
+            .order("gps_time", { ascending: true });
+
+          if (posError) {
+            console.warn(`[sync-trips-incremental] Failed to fetch position history: ${posError.message}`);
+          } else if (positions && positions.length > 0) {
+            const extractedTrips = extractTripsFromHistory(positions);
+            console.log(`[sync-trips-incremental] Extracted ${extractedTrips.length} trips from raw history`);
+
+            // Merge extracted trips with official trips
+            // Priority: Official trips > Extracted trips
+            // We only add extracted trips that don't overlap with official trips
+            let addedCount = 0;
+            
+            for (const extracted of extractedTrips) {
+              const extStart = new Date(extracted.start_time).getTime();
+              const extEnd = new Date(extracted.end_time).getTime();
+
+              // Check for overlap with any official trip
+              const overlaps = trips.some(official => {
+                const offStart = new Date(official.start_time).getTime();
+                const offEnd = new Date(official.end_time).getTime();
+                
+                // Check if time ranges overlap
+                return (extStart < offEnd && extEnd > offStart);
+              });
+
+              if (!overlaps) {
+                // Add source marker
+                const tripToAdd = {
+                  ...extracted,
+                  source: 'fallback_calculation' // Mark as calculated locally
+                };
+                trips.push(tripToAdd as any);
+                addedCount++;
+              }
+            }
+            
+            if (addedCount > 0) {
+              console.log(`[sync-trips-incremental] Added ${addedCount} fallback trips that were missing from official API`);
+              // Sort trips by start time again
+              trips.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+            }
+          } else {
+            console.log(`[sync-trips-incremental] No raw positions found for fallback analysis`);
+          }
+        } catch (err) {
+          console.error(`[sync-trips-incremental] Error in fallback logic: ${err}`);
+          // Continue with just official trips
+        }
 
         // Update progress: Set total trips to process
         // Include new progress fields - Supabase will ignore columns that don't exist
@@ -1284,7 +1346,7 @@ Deno.serve(async (req) => {
             // CRITICAL FIX: Backfill missing coordinates from position_history before inserting
             let tripToInsert = { 
               ...trip,
-              source: 'gps51' as const, // Mark as GPS51 trip for 100% parity verification
+              source: (trip as any).source || 'gps51', // Use existing source (e.g. fallback) or default to gps51
             };
             if (trip.start_latitude === 0 || trip.start_longitude === 0 || 
                 trip.end_latitude === 0 || trip.end_longitude === 0) {

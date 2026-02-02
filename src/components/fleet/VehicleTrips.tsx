@@ -45,6 +45,29 @@ export function VehicleTrips({ deviceId }: VehicleTripsProps) {
       
       // Map to Trip interface - GPS51 data is already accurate, no calculations needed
       const validTrips = (data || [])
+        .filter((trip: any) => {
+          // Ghost Trip Filtering
+          const distance = trip.distance_km || 0;
+          const duration = trip.duration_seconds || 0;
+          
+          // 1. Filter out short trips with negligible distance (Ignition flicker)
+          // Threshold: < 0.1 km distance AND < 2 minutes duration
+          if (distance < 0.1 && duration < 120) return false;
+
+          // 2. REMOVED: Filter out zero distance trips (Static drift)
+          // We MUST allow zero distance trips if they are long enough (handled by rule #1) because they represent "Idling"
+          // if (distance === 0) return false;
+
+          // 3. Filter out unrealistic speed (GPS Jump)
+          // Threshold: > 250 km/h
+          if (duration > 0) {
+            const hours = duration / 3600;
+            const speed = distance / hours;
+            if (speed > 250) return false;
+          }
+
+          return true;
+        })
         .map((trip: any): Trip => {
           const startTime = new Date(trip.start_time);
           const endTime = trip.end_time ? new Date(trip.end_time) : null;

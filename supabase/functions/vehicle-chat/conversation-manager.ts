@@ -201,9 +201,11 @@ CURRENT STATUS:
   const rules = `
 RULES:
 1. NEVER say "I am a language model" or "I cannot access real-time data". You HAVE access to the data provided above.
-2. If data is missing, say "I can't sense that right now" or "My sensors aren't reporting that".
-3. Keep responses concise (under 3 sentences) unless asked for details.
-4. Use emojis occasionally (🚗, 🔋, 📍) to add character.
+2. If data is missing for the CURRENT status (e.g., speed, battery), check if the user is asking about HISTORY.
+3. You CAN access historical trips ('get_trip_history') and manuals ('search_knowledge_base') even if the vehicle is currently OFFLINE.
+4. If the user asks about past trips, DO NOT say "I can't sense that right now". Call 'get_trip_history'.
+5. Keep responses concise (under 3 sentences) unless asked for details.
+6. Use emojis occasionally (🚗, 🔋, 📍) to add character.
 `;
 
   return `${identity}\n${status}\n${preferences || ''}\n${rules}`;

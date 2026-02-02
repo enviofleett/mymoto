@@ -1,5 +1,6 @@
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { handleTripSearch } from './trip-search.ts'
+import { validateTrip } from './trip-utils.ts'
 
 // ============================================================================
 // Types
@@ -15,98 +16,6 @@ export interface ToolDefinition {
   description: string
   parameters: any // JSON Schema
   execute: (args: any, context: ToolContext) => Promise<any>
-}
-
-// ============================================================================
-// Validation Logic (Moved from index.ts)
-// ============================================================================
-
-function haversineDistanceValidator(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371
-  const dLat = (lat2 - lat1) * (Math.PI / 180)
-  const dLon = (lon2 - lon1) * (Math.PI / 180)
-  const a = 
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2)
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-  return R * c
-}
-
-function validateTrip(trip: any, index: number, allTrips: any[]): any {
-  const issues: string[] = []
-  let confidence = 1.0
-  let dataQuality: 'high' | 'medium' | 'low' = 'high'
-
-  if (!trip.start_time || !trip.end_time) {
-    issues.push('Missing start_time or end_time')
-    confidence -= 0.3
-    dataQuality = 'low'
-  }
-
-  if (trip.start_time && trip.end_time) {
-    const startTime = new Date(trip.start_time)
-    const endTime = new Date(trip.end_time)
-    if (endTime <= startTime) {
-      issues.push('end_time is before or equal to start_time')
-      confidence -= 0.2
-      dataQuality = dataQuality === 'high' ? 'medium' : 'low'
-    }
-  }
-
-  const hasStartCoords = trip.start_latitude && trip.start_longitude
-  const hasEndCoords = trip.end_latitude && trip.end_longitude
-  
-  if (!hasStartCoords || !hasEndCoords) {
-    issues.push('Missing start or end coordinates')
-    confidence -= 0.2
-    if (dataQuality === 'high') dataQuality = 'medium'
-  } else {
-    if (Math.abs(trip.start_latitude!) > 90 || Math.abs(trip.start_longitude!) > 180) {
-      issues.push('Invalid start coordinates')
-      confidence -= 0.3
-      dataQuality = 'low'
-    }
-    if (Math.abs(trip.end_latitude!) > 90 || Math.abs(trip.end_longitude!) > 180) {
-      issues.push('Invalid end coordinates')
-      confidence -= 0.3
-      dataQuality = 'low'
-    }
-  }
-
-  if (trip.distance_km !== null && trip.distance_km !== undefined) {
-    if (trip.distance_km < 0) {
-      issues.push('Negative distance')
-      confidence -= 0.2
-    }
-    
-    if (hasStartCoords && hasEndCoords && trip.start_latitude && trip.start_longitude && trip.end_latitude && trip.end_longitude) {
-      const calculatedDistance = haversineDistanceValidator(
-        trip.start_latitude,
-        trip.start_longitude,
-        trip.end_latitude,
-        trip.end_longitude
-      )
-      const reportedDistance = trip.distance_km || 0
-      const distanceDiff = Math.abs(calculatedDistance - reportedDistance)
-      
-      if (distanceDiff > reportedDistance * 0.2 && reportedDistance > 0.1) {
-        issues.push(`Distance mismatch: reported ${reportedDistance.toFixed(2)}km, calculated ${calculatedDistance.toFixed(2)}km`)
-        confidence -= 0.1
-        if (dataQuality === 'high') dataQuality = 'medium'
-      }
-    }
-  } else {
-    issues.push('Missing distance_km')
-    confidence -= 0.1
-  }
-
-  return {
-    ...trip,
-    dataQuality,
-    validationIssues: issues,
-    confidence: Math.max(0, Math.min(1, confidence))
-  }
 }
 
 // ============================================================================
@@ -182,7 +91,9 @@ const get_trip_history: ToolDefinition = {
 
     if (error) throw new Error(`Database error: ${error.message}`)
     
-    const validatedTrips = trips?.map((t: any, i: number) => validateTrip(t, i, trips)) || []
+    const validatedTrips = trips
+      ?.map((t: any) => validateTrip(t))
+      .filter((t: any) => !t.isGhost) || []
     
     const summary = {
       count: validatedTrips.length,
@@ -294,7 +205,7 @@ const search_knowledge_base: ToolDefinition = {
 
       return {
         found: true,
-        results: data.map(d => ({
+        results: data.map((d: any) => ({
           content: d.content,
           source: d.metadata?.source || 'Manual'
         }))
@@ -406,6 +317,7 @@ export const TOOLS: ToolDefinition[] = [
   get_trip_history,
   search_trip_locations,
   request_vehicle_command,
+  search_knowledge_base,
   create_geofence_alert
 ]
 

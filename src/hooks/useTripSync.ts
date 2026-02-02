@@ -204,6 +204,7 @@ export function useTriggerTripSync() {
       queryClient.invalidateQueries({ queryKey: ["mileage-stats", deviceId] });
       queryClient.invalidateQueries({ queryKey: ["daily-mileage", deviceId] });
       queryClient.invalidateQueries({ queryKey: ["vehicle-daily-stats", deviceId] });
+      queryClient.invalidateQueries({ queryKey: ["vehicle-live-data", deviceId] }); // Ensure odometer is refreshed
     },
     onError: (error: Error, variables, context) => {
       // Revert optimistic update on error

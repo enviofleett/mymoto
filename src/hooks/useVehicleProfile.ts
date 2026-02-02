@@ -109,7 +109,7 @@ async function fetchVehicleTrips(
     .from('vehicle_trips')
     .select('*')
     .eq('device_id', deviceId)
-    .eq('source', 'gps51')
+    .in('source', ['gps51', 'fallback_calculation'])
     .order('start_time', { ascending: false })
     .limit(limit);
 
@@ -171,8 +171,31 @@ async function fetchVehicleTrips(
   // This allows trips with missing GPS data to still be displayed
   const filteredTrips = ((data as any[]) || [])
     .filter((trip: any) => {
-      // Only require start_time and end_time - coordinates can be 0 (missing GPS data)
-      return trip.start_time && trip.end_time;
+      // 1. Basic Validity: Must have start and end time
+      if (!trip.start_time || !trip.end_time) return false;
+
+      // Ghost Trip Filtering (Match Logic in VehicleTrips.tsx and Edge Functions)
+      const distance = trip.distance_km || 0;
+      const duration = trip.duration_seconds || 0;
+      
+      // 2. Filter out short trips with negligible distance (Ignition flicker)
+      // Threshold: < 0.1 km distance AND < 2 minutes duration
+      // This effectively filters out "Ghost Trips" while preserving valid "Idling" trips (long duration, 0 distance)
+      if (distance < 0.1 && duration < 120) return false;
+
+      // 3. REMOVED: Filter out zero distance trips (Static drift)
+      // We MUST allow zero distance trips if they are long enough (handled by rule #2) because they represent "Idling"
+      // if (distance === 0) return false;
+
+      // 4. Filter out unrealistic speed (GPS Jump)
+      // Threshold: > 250 km/h
+      if (duration > 0) {
+        const hours = duration / 3600;
+        const speed = distance / hours;
+        if (speed > 250) return false;
+      }
+
+      return true;
     });
   
   if (import.meta.env.DEV) {
@@ -202,6 +225,7 @@ async function fetchVehicleTrips(
         max_speed: trip.max_speed,
         avg_speed: trip.avg_speed,
         duration_seconds: trip.duration_seconds,
+        source: trip.source,
       };
     });
 }

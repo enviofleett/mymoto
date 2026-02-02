@@ -338,12 +338,6 @@ export function ReportsSection({
 
           {/* Trips Tab */}
           <TabsContent value="trips" className="mt-0">
-            <div className="flex justify-end mb-2 px-1">
-               <span className="text-[10px] text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded flex items-center gap-1">
-                 <CheckCircle2 className="h-3 w-3 text-green-500" />
-                 Source: GPS51
-               </span>
-            </div>
             <div className="space-y-4 max-h-96 overflow-y-auto">
               {tripsLoading ? (
                 <div className="space-y-2">

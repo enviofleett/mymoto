@@ -1,4 +1,5 @@
-import { SupabaseClient } from 'supabase-js'
+import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { validateTrip } from './trip-utils.ts'
 
 export interface TripData {
   id: string
@@ -83,16 +84,21 @@ export async function handleTripSearch(
         .eq('source', 'gps51') // Ensure parity with GPS51 source of truth
         .or(`start_location_name.ilike.%${loc.match_text}%,end_location_name.ilike.%${loc.match_text}%,start_address.ilike.%${loc.match_text}%,end_address.ilike.%${loc.match_text}%`)
         .order('start_time', { ascending: false })
-        .limit(10); // Fetch top 10 most recent
+        .limit(20); // Fetch more to allow for filtering
 
       if (tripError) {
           console.error('[Trip Search] Trip fetch error:', tripError);
           return { type: 'error', message: 'Failed to retrieve trip details' };
       }
 
+      const validTrips = (trips || [])
+        .map((t: any) => validateTrip(t))
+        .filter((t: any) => !t.isGhost)
+        .slice(0, 10); // Take top 10 valid
+
       return { 
         type: 'success', 
-        trips: trips || [], 
+        trips: validTrips, 
         locationName: loc.match_text 
       };
     }
