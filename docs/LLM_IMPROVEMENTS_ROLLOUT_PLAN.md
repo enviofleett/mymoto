@@ -28,8 +28,8 @@ This document outlines a comprehensive plan to enhance the Fleet Flow LLM system
 │                                                   │                  │
 │                                                   ▼                  │
 │  ┌──────────────┐     ┌──────────────┐     ┌──────────────┐         │
-│  │  Response    │◀────│   Gemini     │◀────│   Prompt     │         │
-│  │  Streaming   │     │   Flash      │     │   Builder    │         │
+│  │  Response    │◀────│   Lovable    │◀────│   Prompt     │         │
+│  │  Streaming   │     │   Gateway    │     │   Builder    │         │
 │  └──────────────┘     └──────────────┘     └──────────────┘         │
 │                                                                      │
 └─────────────────────────────────────────────────────────────────────┘

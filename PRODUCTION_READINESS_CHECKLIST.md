@@ -85,8 +85,7 @@ Verify these are set in Supabase Dashboard → Settings → Edge Functions:
 - [x] `SUPABASE_URL`
 - [x] `SUPABASE_SERVICE_ROLE_KEY`
 - [x] `DO_PROXY_URL`
-- [ ] `LOVABLE_API_KEY` (if using AI features)
-- [ ] `GEMINI_API_KEY` (if using Gemini)
+- [ ] `LOVABLE_API_KEY` (Required for AI features)
 
 ---
 

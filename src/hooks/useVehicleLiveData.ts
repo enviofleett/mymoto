@@ -116,6 +116,74 @@ export async function fetchVehicleLiveData(deviceId: string): Promise<VehicleLiv
   return mapToVehicleLiveData(data);
 }
 
+/**
+ * Maps the direct API response from gps-data Edge Function to VehicleLiveData.
+ * NOTE: The Edge Function 'gps-data' MUST return normalized records (with snake_case keys)
+ * for this to work correctly. Raw GPS51 records use different keys (deviceid, strstatus, etc.)
+ * and lack computed fields like is_online.
+ */
+export function mapDirectResponseToVehicleLiveData(record: any): VehicleLiveData {
+  return {
+    deviceId: record.device_id,
+    latitude: record.latitude ?? null,
+    longitude: record.longitude ?? null,
+    speed: record.speed ?? 0,
+    heading: record.heading ?? null,
+    batteryPercent: record.battery_percent ?? null,
+    ignitionOn: record.ignition_on ?? null,
+    isOnline: record.is_online ?? false,
+    isOverspeeding: record.is_overspeeding ?? false,
+    totalMileageKm: record.total_mileage ? Math.round(record.total_mileage / 1000) : null,
+    statusText: record.status_text ?? null,
+    lastUpdate: record.gps_time ? new Date(record.gps_time) : null,
+    lastGpsFix: record.gps_fix_time ? new Date(record.gps_fix_time) : null,
+    lastSyncedAt: new Date(), // It's fresh now
+    syncPriority: 'high',
+  };
+}
+
+/**
+ * Fetches live vehicle data DIRECTLY from the GPS 51 API via Edge Function.
+ * Bypasses the database read lag for 100% real-time accuracy.
+ */
+export async function fetchVehicleLiveDataDirect(deviceId: string): Promise<VehicleLiveData> {
+  const fetchStart = Date.now();
+  if (import.meta.env.DEV) {
+    console.log(`[fetchVehicleLiveDataDirect] 🚀 Fetching DIRECTLY from GPS 51 for: ${deviceId}`);
+  }
+
+  try {
+    const { data, error } = await supabase.functions.invoke("gps-data", {
+      body: { 
+        action: "lastposition", 
+        body_payload: { deviceids: [deviceId] },
+        use_cache: false 
+      },
+    });
+
+    const fetchDuration = Date.now() - fetchStart;
+
+    if (error) {
+      throw new Error(`Edge Function error: ${error.message}`);
+    }
+
+    if (!data?.data?.records?.[0]) {
+      throw new Error("No data returned from GPS 51");
+    }
+
+    const record = data.data.records[0];
+
+    if (import.meta.env.DEV) {
+      console.log(`[fetchVehicleLiveDataDirect] ✅ Received direct data in ${fetchDuration}ms`);
+    }
+
+    return mapDirectResponseToVehicleLiveData(record);
+  } catch (err) {
+    console.error(`[fetchVehicleLiveDataDirect] ❌ Failed:`, err);
+    throw err;
+  }
+}
+
 const LIVE_POLL_MS = 10 * 1000; // Reduced from 15s to 10s for more frequent updates
 
 /**

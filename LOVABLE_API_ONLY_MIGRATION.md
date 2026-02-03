@@ -6,30 +6,45 @@ All LLM services across the codebase now use **ONLY** `LOVABLE_API_KEY` from Sup
 
 ### Files Updated:
 
-1. ✅ **`supabase/functions/vehicle-chat/index.ts`**
+1. ✅ **`supabase/functions/_shared/llm-client.ts`**
+   - Created shared Lovable API client
+   - Replaced `gemini-client.ts`
+   - Implements consistent error handling and retries
+
+2. ✅ **`supabase/functions/vehicle-chat/index.ts`**
    - Removed all Gemini API direct calls
    - Uses only Lovable AI Gateway
    - Fixed `getReader` error by ensuring response.body exists
 
-2. ✅ **`supabase/functions/vehicle-chat/conversation-manager.ts`**
-   - Removed `callGeminiAPI` import from `_shared/gemini-client.ts`
-   - Inlined Lovable API client
+3. ✅ **`supabase/functions/vehicle-chat/conversation-manager.ts`**
+   - Removed `callGeminiAPI` import
+   - Uses shared `llm-client.ts` or inlined Lovable logic
    - Uses only `LOVABLE_API_KEY`
 
-3. ✅ **`supabase/functions/proactive-alarm-to-chat/index.ts`**
+4. ✅ **`supabase/functions/proactive-alarm-to-chat/index.ts`**
    - Removed all Gemini API direct calls
-   - Uses only Lovable AI Gateway
-   - Model changed to `google/gemini-2.5-flash`
+   - Uses shared `llm-client.ts`
+   - Model changed to `google/gemini-2.5-flash` (via Lovable)
 
-4. ✅ **`supabase/functions/analyze-completed-trip/index.ts`**
+5. ✅ **`supabase/functions/analyze-completed-trip/index.ts`**
    - Removed `callGeminiAPI` import
-   - Inlined Lovable API client
-   - Model changed to `google/gemini-2.5-flash`
+   - Uses shared `llm-client.ts`
 
-5. ✅ **`supabase/functions/fleet-insights/index.ts`**
+6. ✅ **`supabase/functions/fleet-insights/index.ts`**
    - Removed `callGeminiAPI` import
-   - Inlined Lovable API client
-   - Model changed to `google/gemini-2.5-flash`
+   - Uses shared `llm-client.ts`
+
+7. ✅ **`supabase/functions/generate-daily-reports/index.ts`**
+   - Uses shared `llm-client.ts`
+
+8. ✅ **`supabase/functions/morning-briefing/index.ts`**
+   - Uses shared `llm-client.ts`
+
+9. ✅ **`supabase/functions/welcome-new-vehicle/index.ts`**
+   - Uses shared `llm-client.ts`
+
+10. ✅ **`supabase/functions/handle-vehicle-event/index.ts`**
+    - Uses shared `llm-client.ts`
 
 ---
 

@@ -2,6 +2,7 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { generateDrivingEmbedding, formatEmbeddingForPg } from '../_shared/embedding-generator.ts';
+import { callLLM } from '../_shared/llm-client.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,67 +11,8 @@ const corsHeaders = {
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-// Lovable AI Gateway Client (using only LOVABLE_API_KEY from secrets)
-interface LLMConfig {
-  maxOutputTokens?: number;
-  temperature?: number;
-  model?: string;
-}
+// Replaced by callLLM from shared client
 
-interface LLMResponse {
-  text: string;
-  error?: string;
-}
-
-async function callGeminiAPI(
-  systemPrompt: string,
-  userPrompt: string,
-  config: LLMConfig = {}
-): Promise<LLMResponse> {
-  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-
-  if (!LOVABLE_API_KEY) {
-    throw new Error('LOVABLE_API_KEY must be configured in Supabase secrets');
-  }
-
-  console.log('[LLM Client] Using Lovable AI Gateway');
-
-  const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: config.model || 'google/gemini-2.5-flash',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      max_tokens: config.maxOutputTokens || 150,
-      temperature: config.temperature ?? 0.5,
-      stream: false,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('[LLM Client] Lovable API error:', {
-      status: response.status,
-      body: errorText.substring(0, 200),
-    });
-    throw new Error(`Lovable API error: ${response.status}`);
-  }
-
-  const data = await response.json();
-  const text = data.choices?.[0]?.message?.content?.trim() || '';
-
-  if (!text) {
-    throw new Error('Empty response from Lovable API');
-  }
-
-  return { text };
-}
 
 interface PositionPoint {
   latitude: number;
@@ -219,8 +161,8 @@ Harsh Events:
 Write a concise 2-sentence summary focusing on driving safety and behavior patterns.`;
 
   try {
-    // Use shared Gemini client
-    const result = await callGeminiAPI(
+    // Use shared Lovable client
+    const result = await callLLM(
       'You are a driving safety analyst. Analyze driving telemetry and provide concise summaries.',
       prompt,
       {

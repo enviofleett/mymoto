@@ -1,66 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-// Lovable AI Gateway Client (using only LOVABLE_API_KEY from secrets)
-interface LLMConfig {
-  maxOutputTokens?: number;
-  temperature?: number;
-  model?: string;
-}
+import { callLLM } from '../_shared/llm-client.ts';
 
-interface LLMResponse {
-  text: string;
-  error?: string;
-}
+// Replaced by callLLM from shared client
+const callGeminiAPI = callLLM;
 
-async function callGeminiAPI(
-  systemPrompt: string,
-  userPrompt: string,
-  config: LLMConfig = {}
-): Promise<LLMResponse> {
-  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-
-  if (!LOVABLE_API_KEY) {
-    throw new Error('LOVABLE_API_KEY must be configured in Supabase secrets');
-  }
-
-  console.log('[LLM Client] Using Lovable AI Gateway');
-
-  const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: config.model || 'google/gemini-2.5-flash',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      max_tokens: config.maxOutputTokens || 200,
-      temperature: config.temperature ?? 0.7,
-      stream: false,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('[LLM Client] Lovable API error:', {
-      status: response.status,
-      body: errorText.substring(0, 200),
-    });
-    throw new Error(`Lovable API error: ${response.status}`);
-  }
-
-  const data = await response.json();
-  const text = data.choices?.[0]?.message?.content?.trim() || '';
-
-  if (!text) {
-    throw new Error('Empty response from Lovable API');
-  }
-
-  return { text };
-}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

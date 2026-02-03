@@ -294,7 +294,10 @@ function checkJt808AccBit(status: number | string | null | undefined): boolean {
   }
   
   // Fallback: Check alternative base bit positions (device-specific variations)
-  // Bit 1 (0x02), Bit 2 (0x04), Bit 3 (0x08) - less common but used by some devices
+  // REMOVED: Previous implementation checked bits 1, 2, 3 (0x02, 0x04, 0x08).
+  // This was causing false positives because Bit 1 (0x02) is the standard JT808 "Positioning" bit.
+  // We should ONLY rely on Bit 0 (ACC) for standard JT808 compliance unless we have specific device config.
+  /*
   const ALT_ACC_BIT_MASKS = [0x02, 0x04, 0x08];
   for (const mask of ALT_ACC_BIT_MASKS) {
     if ((baseStatus & mask) === mask) {
@@ -304,6 +307,7 @@ function checkJt808AccBit(status: number | string | null | undefined): boolean {
       return true;
     }
   }
+  */
   
   // No ACC bit detected
   return false;

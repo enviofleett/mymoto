@@ -18,6 +18,7 @@ export interface VehicleTrip {
   max_speed: number | null;
   avg_speed: number | null;
   duration_seconds: number | null;
+  source?: string | null;
 }
 
 export interface VehicleEvent {
@@ -109,7 +110,8 @@ async function fetchVehicleTrips(
     .from('vehicle_trips')
     .select('*')
     .eq('device_id', deviceId)
-    .in('source', ['gps51', 'fallback_calculation'])
+    // CRITICAL FIX: Allow ALL valid sources including 'position_history' and legacy (null)
+    // .in('source', ['gps51', 'fallback_calculation']) 
     .order('start_time', { ascending: false })
     .limit(limit);
 
@@ -361,6 +363,27 @@ async function executeVehicleCommand(payload: CommandPayload): Promise<{ success
   return data as { success: boolean; message: string };
 }
 
+export function useVehicleCommand() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: executeVehicleCommand,
+    onSuccess: (data, variables) => {
+      if (data.success) {
+        toast.success(data.message || "Command sent successfully");
+        // Invalidate relevant queries
+        queryClient.invalidateQueries({ queryKey: ["vehicle-events", variables.device_id] });
+        queryClient.invalidateQueries({ queryKey: ["vehicle-live-data", variables.device_id] });
+      } else {
+        toast.error(data.message || "Command failed");
+      }
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to send command");
+    },
+  });
+}
+
 // ============ Hooks ============
 
 export interface TripFilterOptions {
@@ -605,25 +628,8 @@ export function deriveMileageFromStats(stats: VehicleDailyStats[]): DerivedMilea
   };
 }
 
-export function useVehicleCommand() {
-  const queryClient = useQueryClient();
 
-  return useMutation({
-    mutationFn: executeVehicleCommand,
-    onSuccess: (data, variables) => {
-      if (data.success) {
-        toast.success(data.message || "Command sent successfully");
-        // Invalidate relevant queries
-        queryClient.invalidateQueries({ queryKey: ["vehicle-events", variables.device_id] });
-      } else {
-        toast.error(data.message || "Command failed");
-      }
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || "Failed to send command");
-    },
-  });
-}
+
 
 // ============ Prefetch Function ============
 

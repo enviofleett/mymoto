@@ -77,7 +77,7 @@ export async function buildConversationContext(
 }
 
 async function summarizeConversation(messages: any[]): Promise<string> {
-  // Use Gemini Flash to create 2-3 sentence summary
+  // Use Lovable Gateway to create 2-3 sentence summary
   const conversationText = messages
     .map(m => `${m.role}: ${m.content}`)
     .join('\n');

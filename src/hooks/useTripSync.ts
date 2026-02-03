@@ -87,9 +87,9 @@ async function fetchTripSyncStatus(deviceId: string): Promise<TripSyncStatus | n
 }
 
 // Trigger manual sync
-async function triggerTripSync(deviceId: string, forceFullSync: boolean = false): Promise<any> {
+async function triggerTripSync(deviceId: string, forceFullSync: boolean = false, forceRecent: boolean = false): Promise<any> {
   // Get the current session - refresh if needed
-  let { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  let { data: { session } } = await supabase.auth.getSession();
   
   
   // If no session, try to get user to ensure we're authenticated
@@ -112,6 +112,7 @@ async function triggerTripSync(deviceId: string, forceFullSync: boolean = false)
     body: {
       device_ids: [deviceId],
       force_full_sync: forceFullSync,
+      force_recent: forceRecent,
     },
     headers: {
       Authorization: `Bearer ${session.access_token}`,
@@ -150,8 +151,8 @@ export function useTriggerTripSync() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ deviceId, forceFullSync }: { deviceId: string; forceFullSync?: boolean }) =>
-      triggerTripSync(deviceId, forceFullSync),
+    mutationFn: ({ deviceId, forceFullSync, forceRecent }: { deviceId: string; forceFullSync?: boolean; forceRecent?: boolean }) =>
+      triggerTripSync(deviceId, forceFullSync || false, forceRecent || false),
     onMutate: async ({ deviceId }) => {
       // Optimistically update status to "processing"
       await queryClient.cancelQueries({ queryKey: ["trip-sync-status", deviceId] });

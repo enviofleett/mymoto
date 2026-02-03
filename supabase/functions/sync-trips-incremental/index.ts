@@ -2,6 +2,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizeSpeed } from "../_shared/telemetry-normalizer.ts";
 import { getFeatureFlag } from "../_shared/feature-flags.ts";
 
+declare const Deno: any;
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -330,7 +332,7 @@ async function getValidGps51Token(supabase: any): Promise<{
 // END OF INLINED GPS51 CLIENT
 // ============================================================================
 
-interface PositionPoint {
+export interface PositionPoint {
   id: string;
   device_id: string;
   latitude: number;
@@ -355,6 +357,7 @@ interface TripData {
   max_speed: number | null;
   avg_speed: number | null;
   duration_seconds: number;
+  source?: string;
 }
 
 interface SyncStatus {
@@ -544,6 +547,7 @@ async function fetchTripsFromGps51(
         max_speed: maxSpeedKmh ? Math.round(maxSpeedKmh * 10) / 10 : null,
         avg_speed: avgSpeedKmh ? Math.round(avgSpeedKmh * 10) / 10 : null,
         duration_seconds: durationSeconds,
+        source: 'gps51', // Explicitly set source to ensure it matches frontend filter
       };
     })
     .filter((trip: TripData) => {
@@ -668,7 +672,7 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 
 // Extract trips from position history
 // Uses ignition-based detection (like GPS51) with speed-based fallback
-function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
+export function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
   if (positions.length < 2) return [];
 
   const trips: TripData[] = [];
@@ -1055,7 +1059,7 @@ function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
   return trips;
 }
 
-Deno.serve(async (req) => {
+Deno.serve(async (req: Request) => {
   // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
     return new Response(null, { 
@@ -1084,6 +1088,7 @@ Deno.serve(async (req) => {
     // Parse request body for optional parameters
     let deviceIds: string[] | null = null;
     let forceFullSync = false;
+    let forceRecent = false;
 
     try {
       const body = await req.json();
@@ -1093,11 +1098,14 @@ Deno.serve(async (req) => {
       if (body.force_full_sync === true) {
         forceFullSync = true;
       }
+      if (body.force_recent === true) {
+        forceRecent = true;
+      }
     } catch {
       // No body or invalid JSON, process all devices
     }
 
-    vlog("[sync-trips-incremental] params:", { deviceIdsCount: deviceIds?.length ?? null, forceFullSync });
+    vlog("[sync-trips-incremental] params:", { deviceIdsCount: deviceIds?.length ?? null, forceFullSync, forceRecent });
 
     // Get GPS51 credentials and proxy URL
     const DO_PROXY_URL = Deno.env.get("DO_PROXY_URL");
@@ -1123,7 +1131,7 @@ Deno.serve(async (req) => {
         throw new Error(`Failed to get devices: ${vehiclesError.message}`);
       }
       
-      uniqueDevices = [...new Set(vehicles?.map((v) => v.device_id).filter(Boolean))] as string[];
+      uniqueDevices = [...new Set(vehicles?.map((v: any) => v.device_id).filter(Boolean))] as string[];
     }
 
     console.log(`[sync-trips-incremental] Processing ${uniqueDevices.length} devices using GPS51 querytrips API`);
@@ -1158,11 +1166,26 @@ Deno.serve(async (req) => {
         let startDate: Date;
         let endDate: Date = new Date(); // End at now
 
-        if (!syncStatus || forceFullSync) {
-          // Only sync last 24 hours - no historical backfill
-          // First sync or force full sync: look back 24 hours
-          startDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
-          console.log(`[sync-trips-incremental] Full sync for ${deviceId}, processing last 24 hours (no backfill)`);
+        if (forceRecent) {
+           // CRITICAL FIX: Force sync last 24 hours to catch any delayed/missed trips
+           // This is triggered by "Sync" button and Ignition OFF events
+           const lookbackHours = 24;
+           startDate = new Date(Date.now() - lookbackHours * 60 * 60 * 1000);
+           console.log(`[sync-trips-incremental] Force recent sync for ${deviceId}, processing last ${lookbackHours} hours`);
+           
+           // Update status to processing
+           await supabase
+             .from("trip_sync_status")
+             .upsert({ 
+                device_id: deviceId,
+                sync_status: "processing" 
+             });
+        } else if (!syncStatus || forceFullSync) {
+          // Sync last 7 days to ensure recent history is captured
+          // If forceFullSync is true, sync last 30 days
+          const lookbackDays = forceFullSync ? 30 : 7;
+          startDate = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000);
+          console.log(`[sync-trips-incremental] Full sync for ${deviceId}, processing last ${lookbackDays} days`);
 
           // Initialize sync status
           await supabase
@@ -1173,12 +1196,18 @@ Deno.serve(async (req) => {
               last_position_processed: startDate.toISOString(),
             });
         } else {
-          // Incremental sync: process from last sync time or last 24 hours
+          // Incremental sync: process from last sync time with OVERLAP
+          // CRITICAL FIX: Overlap by 6 hours to ensure we don't miss trips that started before the last sync window
+          // but finished recently. Duplicate detection will handle the overlap.
           const lastProcessed = syncStatus.last_position_processed 
             ? new Date(syncStatus.last_position_processed)
-            : new Date(Date.now() - 24 * 60 * 60 * 1000);
-          startDate = lastProcessed;
-          console.log(`[sync-trips-incremental] Incremental sync for ${deviceId} from ${startDate.toISOString()}`);
+            : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+            
+          // Add 6 hour overlap lookback
+          const OVERLAP_MS = 6 * 60 * 60 * 1000;
+          startDate = new Date(lastProcessed.getTime() - OVERLAP_MS);
+          
+          console.log(`[sync-trips-incremental] Incremental sync for ${deviceId} from ${startDate.toISOString()} (includes 6h overlap)`);
 
           // Update status to processing
           await supabase
@@ -1199,6 +1228,40 @@ Deno.serve(async (req) => {
         );
 
         console.log(`[sync-trips-incremental] Device ${deviceId}: received ${trips.length} trips from GPS51`);
+
+        // PRE-FILTER: Remove obvious ghost trips from API results
+        // This ensures they don't block valid local trips from being added as fallback
+        const initialCount = trips.length;
+        trips = trips.filter(trip => {
+          // Calculate straight-line distance between start and end
+          let startEndDist = 0;
+          if (trip.start_latitude && trip.start_longitude && trip.end_latitude && trip.end_longitude) {
+            startEndDist = calculateDistance(
+              trip.start_latitude,
+              trip.start_longitude,
+              trip.end_latitude,
+              trip.end_longitude
+            );
+          }
+          
+          // Logic: If API says distance is tiny AND start/end are close, it's a ghost trip
+          // We remove it so local fallback logic can try to find a better trip from raw positions
+          const MIN_API_DIST = 0.1; // 100m
+          const MIN_START_END = 0.1; // 100m
+          
+          // Check if it's a ghost trip
+          // Note: trip.distance_km might be undefined/0 from API
+          const dist = trip.distance_km || 0;
+          
+          if (dist < MIN_API_DIST && startEndDist < MIN_START_END) {
+            return false; // Remove it
+          }
+          return true; // Keep it
+        });
+        
+        if (trips.length < initialCount) {
+             console.log(`[sync-trips-incremental] Pre-filtered ${initialCount - trips.length} ghost trips from API to allow local fallback`);
+        }
 
         // 2. Fallback/Gap-fill: Extract trips from raw position history
         // This bridges the gap when the official API misses trips (e.g., short trips, signal drops)
@@ -1322,7 +1385,7 @@ Deno.serve(async (req) => {
               .limit(3); // Get a few to check duration match
 
             // Only skip if we find a trip with BOTH similar start time AND similar duration
-            const isDuplicate = existing?.some(e => {
+            const isDuplicate = existing?.some((e: any) => {
               const existingDuration = e.duration_seconds || 0;
               const durationDiff = Math.abs(tripDuration - existingDuration);
               // Consider duplicate if duration differs by less than 2 minutes
@@ -1330,7 +1393,7 @@ Deno.serve(async (req) => {
             });
 
             if (isDuplicate && existing && existing.length > 0) {
-              const match = existing.find(e => Math.abs(tripDuration - (e.duration_seconds || 0)) < 120);
+              const match = existing.find((e: any) => Math.abs(tripDuration - (e.duration_seconds || 0)) < 120);
               console.log(`[sync-trips-incremental] Skipping duplicate trip: ${trip.start_time} (existing: ${match?.id}, duration match: ${trip.duration_seconds}s vs ${match?.duration_seconds}s)`);
               deviceTripsSkipped++;
               totalTripsSkipped++;
@@ -1630,7 +1693,7 @@ Deno.serve(async (req) => {
       JSON.stringify({
         success: false,
         error: errorMessage,
-        details: process.env.NODE_ENV === 'development' ? errorStack : undefined,
+        details: errorStack,
       }),
       {
         status: 500,

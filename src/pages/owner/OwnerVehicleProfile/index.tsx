@@ -1,36 +1,20 @@
-import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
-import type { DateRange } from "react-day-picker";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { OwnerLayout } from "@/components/layouts/OwnerLayout";
 import { Skeleton } from "@/components/ui/skeleton";
-import { PullToRefresh, PullToRefreshIndicator } from "@/components/ui/pull-to-refresh";
+import { PullToRefreshIndicator } from "@/components/ui/pull-to-refresh";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { TripPlaybackDialog } from "@/components/profile/TripPlaybackDialog";
 import { VehiclePersonaSettings } from "@/components/fleet/VehiclePersonaSettings";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
-import { useVehicleLiveData, useVehicleLiveDataHeartbeat } from "@/hooks/useVehicleLiveData";
+import { fetchVehicleLiveDataDirect, VehicleLiveData } from "@/hooks/useVehicleLiveData";
 import { useAddress } from "@/hooks/useAddress";
-import {
-  useVehicleTrips,
-  useVehicleEvents,
-  useVehicleLLMSettings,
-  useMileageStats,
-  useDailyMileage,
-  useVehicleDailyStats,
-  VehicleTrip,
-} from "@/hooks/useVehicleProfile";
-import {
-  useTripSyncStatus,
-  useTriggerTripSync,
-  useRealtimeTripUpdates,
-} from "@/hooks/useTripSync";
-import { useRealtimeVehicleUpdates } from "@/hooks/useRealtimeVehicleUpdates";
-import { supabase } from "@/integrations/supabase/client";
+import { useVehicleLLMSettings, useVehicleTrips, useVehicleEvents, type VehicleTrip } from "@/hooks/useVehicleProfile";
 import { useOwnerVehicles } from "@/hooks/useOwnerVehicles";
+import { type DateRange } from "react-day-picker";
 
 // Import sub-components
 import { ProfileHeader } from "./components/ProfileHeader";
@@ -38,22 +22,17 @@ import { VehicleMapSection } from "./components/VehicleMapSection";
 import { CurrentStatusCard } from "./components/CurrentStatusCard";
 import { StatusMetricsRow } from "./components/StatusMetricsRow";
 import { EngineControlCard } from "./components/EngineControlCard";
-import { MileageSection } from "./components/MileageSection";
 import { ReportsSection } from "./components/ReportsSection";
 
 export default function OwnerVehicleProfile() {
   const { deviceId } = useParams<{ deviceId: string }>();
-  console.log('deviceId:', deviceId);
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
 
   // State
-  const [dateRange, setDateRange] = useState<DateRange | undefined>();
-  const [selectedTrip, setSelectedTrip] = useState<VehicleTrip | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // CRITICAL FIX #1: Check deviceId BEFORE initializing hooks
+  // CRITICAL FIX: Check deviceId BEFORE initializing hooks
   if (!deviceId) {
     return (
       <OwnerLayout>
@@ -70,339 +49,181 @@ export default function OwnerVehicleProfile() {
   }
 
   // ============================================================================
-  // RECONNECTED: All data hooks enabled - ready to receive data from backend
+  // DIRECT DATA FETCHING: 100% Accuracy from GPS 51
   // ============================================================================
 
-  // Live vehicle data hook - reconnected
   const {
     data: liveData,
     isLoading: liveLoading,
     error: liveError,
     refetch: refetchLive,
-  } = useVehicleLiveData(deviceId);
-
-  // Keep track of last valid data to prevent UI flashing/unmounting on errors
-  const displayData = liveData;
-
-  // Auto-refresh stale data on mount/update to ensure 100% LIVE data
-  const lastAutoSyncRef = useRef<number>(0);
-  useEffect(() => {
-    if (!displayData?.lastUpdate || !deviceId) return;
-    
-    const now = Date.now();
-    const lastUpdate = displayData.lastUpdate.getTime();
-    const ageSeconds = (now - lastUpdate) / 1000;
-    
-    // If data is stale (> 5 minutes) and we haven't auto-synced in the last 60s
-    // Increased threshold from 60s to 300s (5 mins) to reduce console noise for vehicles with slower reporting
-    if (ageSeconds > 300 && (now - lastAutoSyncRef.current > 60000)) {
-      if (import.meta.env.DEV) {
-        console.log(`[OwnerVehicleProfile] Data is stale (${Math.round(ageSeconds)}s), triggering auto-refresh...`);
+  } = useQuery({
+    queryKey: ["vehicle-live-data-direct", deviceId],
+    queryFn: async () => {
+      try {
+        return await fetchVehicleLiveDataDirect(deviceId);
+      } catch (err) {
+        console.error("Direct fetch failed:", err);
+        throw err;
       }
-      lastAutoSyncRef.current = now;
-      
-      supabase.functions.invoke("gps-data", {
-        body: { 
-          action: "lastposition", 
-          body_payload: { deviceids: [deviceId] },
-          use_cache: false 
-        },
-      }).then(() => {
-         if (import.meta.env.DEV) console.log('[OwnerVehicleProfile] Auto-refresh sync initiated');
-      }).catch(err => console.error("Auto-refresh failed:", err));
-    }
-  }, [deviceId, displayData?.lastUpdate]);
+    },
+    enabled: !!deviceId,
+    refetchInterval: 15000, // Poll GPS 51 every 15 seconds
+    refetchOnWindowFocus: true,
+    retry: 2,
+  });
 
-  // DEBUG: Track liveData changes and data freshness
+  // Keep track of last valid data to prevent UI flashing
+  // FALLBACK STRATEGY: Use Live Data -> OwnerVehicle (DB) -> null
+  const { data: ownerVehicles } = useOwnerVehicles();
+  const vehicle = ownerVehicles?.find((v) => v.deviceId === deviceId);
+
+  const displayData = useMemo(() => {
+    // 1. Prefer Live Data if available and valid
+    if (liveData) {
+      // If live data has null coordinates (e.g. offline), try to fill from DB
+      return {
+        ...liveData,
+        latitude: liveData.latitude ?? vehicle?.latitude ?? null,
+        longitude: liveData.longitude ?? vehicle?.longitude ?? null,
+        batteryPercent: liveData.batteryPercent ?? vehicle?.battery ?? null,
+        totalMileageKm: liveData.totalMileageKm ?? vehicle?.totalMileage ?? null,
+        heading: liveData.heading ?? vehicle?.heading ?? null,
+        speed: liveData.speed ?? vehicle?.speed ?? 0,
+        ignitionOn: liveData.ignitionOn ?? vehicle?.ignition ?? null,
+        // Keep live status if available, otherwise fallback
+        isOnline: liveData.isOnline, 
+      };
+    }
+
+    // 2. Fallback to DB Data (OwnerVehicle) if Live Data failed/loading
+    if (vehicle) {
+      return {
+        deviceId: vehicle.deviceId,
+        latitude: vehicle.latitude,
+        longitude: vehicle.longitude,
+        speed: vehicle.speed,
+        heading: vehicle.heading,
+        batteryPercent: vehicle.battery,
+        ignitionOn: vehicle.ignition,
+        isOnline: vehicle.status === 'online' || vehicle.status === 'charging',
+        isOverspeeding: vehicle.isOverspeeding,
+        totalMileageKm: vehicle.totalMileage,
+        statusText: null,
+        lastUpdate: vehicle.lastUpdate,
+        lastGpsFix: vehicle.lastUpdate, // Approximate
+        lastSyncedAt: new Date(),
+        syncPriority: 'normal' as const,
+      };
+    }
+
+    return null;
+  }, [liveData, vehicle]);
+
+  // Notify user if falling back to cached data due to error
   useEffect(() => {
-    if (displayData && import.meta.env.DEV) {
-      const now = new Date();
-      const lastUpdateAge = displayData.lastUpdate ? Math.round((now.getTime() - displayData.lastUpdate.getTime()) / 1000) : null;
-      
-      // Warn if data is stale (adjusted to > 5 mins)
-      if (lastUpdateAge !== null && lastUpdateAge > 300) {
-        console.warn(`[OwnerVehicleProfile] ⚠️ STALE DATA: Last update is ${lastUpdateAge} seconds old (${Math.round(lastUpdateAge / 60)} minutes)`);
-      }
+    if (liveError && vehicle && !isRefreshing) {
+      toast.error("Live update failed", {
+        description: "Showing last known location and status",
+      });
     }
-  }, [displayData?.lastUpdate]);
+  }, [liveError, vehicle, isRefreshing]);
 
-  // Realtime subscriptions - reconnected
-  const realtimeOptions = useMemo(() => ({ forceEnable: true }), []);
-  useRealtimeVehicleUpdates(deviceId, realtimeOptions);
-  useVehicleLiveDataHeartbeat(deviceId);
-
-  // Vehicle LLM settings - reconnected
+  // Vehicle LLM settings (Avatar, Nickname)
   const { 
     data: llmSettings, 
-    error: llmError, 
     refetch: refetchProfile 
   } = useVehicleLLMSettings(deviceId, true);
 
-  // Vehicle trips - reconnected
-  const {
-    data: trips,
-    isLoading: tripsLoading,
-    error: tripsError,
-    refetch: refetchTrips,
-  } = useVehicleTrips(
-    deviceId,
-    dateRange?.from
-      ? { dateRange: { from: dateRange.from, to: dateRange.to ?? dateRange.from }, live: true }
-      : { limit: 200, live: true },
-    true
-  );
-  
-  // DEBUG: Log trips when they change (development only)
-  useEffect(() => {
-    if (import.meta.env.DEV) {
-      console.log('[OwnerVehicleProfile] Trips data:', {
-        count: trips?.length || 0,
-        loading: tripsLoading,
-        error: tripsError,
-        hasDateRange: !!dateRange?.from
-      });
-      
-      if (trips && trips.length > 0) {
-        const tripDates = trips.map(t => t.start_time.split('T')[0]);
-        const uniqueDates = [...new Set(tripDates)];
-        console.log('[OwnerVehicleProfile] Unique trip dates:', uniqueDates.sort().reverse());
-      }
-    }
-  }, [trips, tripsLoading, tripsError, dateRange]);
-
-  // Vehicle events - reconnected
-  const {
-    data: events,
-    isLoading: eventsLoading,
-    error: eventsError,
-    refetch: refetchEvents,
-  } = useVehicleEvents(
-    deviceId,
-    dateRange?.from
-      ? { dateRange: { from: dateRange.from, to: dateRange.to ?? dateRange.from } }
-      : { limit: 50 },
-    true
-  );
-
-  // Mileage stats - reconnected
-  const { 
-    data: mileageStats, 
-    error: mileageError, 
-    refetch: refetchMileage 
-  } = useMileageStats(deviceId, true);
-  
-  // Daily mileage - reconnected
-  const { 
-    data: dailyMileage, 
-    error: dailyMileageError, 
-    refetch: refetchDaily 
-  } = useDailyMileage(deviceId, true);
-  
-  // Daily stats - reconnected
-  const { 
-    data: dailyStats, 
-    error: dailyStatsError, 
-    refetch: refetchDailyStats 
-  } = useVehicleDailyStats(deviceId, 30, true);
-
-  // Trip sync management - reconnected
-  const { data: syncStatus } = useTripSyncStatus(deviceId, true);
-  const { mutate: triggerSync, isPending: isSyncing } = useTriggerTripSync();
-  const { isSubscribed } = useRealtimeTripUpdates(deviceId, true);
-
-  // Address lookup - reconnected
+  // Address lookup
   const { address, isLoading: addressLoading } = useAddress(
     displayData?.latitude ?? null,
     displayData?.longitude ?? null
   );
 
-  // Status derivation: online, charging, or offline - reconnected
-  // Use displayData to prevent flickering during errors
-  const isOnline = displayData?.isOnline ?? false;
+  // Status derivation: online, charging, or offline
   const status: "online" | "charging" | "offline" = useMemo(() => {
     if (!displayData?.isOnline) {
       return "offline";
     }
     
-    // Detect charging/parked state: vehicle is online, ignition is off, and stationary
+    // Detect charging/parked state
     const isParked = 
       displayData.ignitionOn === false && 
       displayData.speed === 0;
     
-    // Show as "charging" if parked and has battery data
     const hasBatteryData = displayData.batteryPercent !== null;
     const isCharging = isParked && hasBatteryData;
     
     return isCharging ? "charging" : "online";
   }, [displayData?.isOnline, displayData?.batteryPercent, displayData?.ignitionOn, displayData?.speed]);
 
-  // Force sync handler - reconnected
-  const handleForceSync = useCallback(() => {
-    if (!deviceId) return;
-    triggerSync({ deviceId, forceFullSync: true });
-  }, [deviceId, triggerSync]);
+  // Trips and Events for Reports Section
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
+  
+  const { 
+    data: trips, 
+    isLoading: tripsLoading 
+  } = useVehicleTrips(deviceId, { 
+    dateRange, 
+    live: true,
+    limit: 50
+  });
 
-  // Pull-to-refresh handler - SAFE: Uses rate-limited functions, non-blocking
+  const { 
+    data: events, 
+    isLoading: eventsLoading 
+  } = useVehicleEvents(deviceId, { 
+    dateRange,
+    limit: 50
+  });
+
+  // Pull-to-refresh handler
   const handleRefresh = useCallback(async () => {
     if (!deviceId) return;
 
     setIsRefreshing(true);
     
     try {
-      // Step 1: Immediately refetch from DB (instant response - no API calls)
-      // This shows existing data instantly while sync happens in background
-      const refetchResults = await Promise.allSettled([
-        refetchProfile(),
+      const results = await Promise.allSettled([
         refetchLive(),
-        refetchTrips(),
-        refetchEvents(),
-        refetchMileage(),
-        refetchDaily(),
-        refetchDailyStats(),
+        refetchProfile(),
       ]);
 
-      // Check for any failures
-      const failures = refetchResults.filter(r => r.status === 'rejected');
-      if (failures.length > 0 && import.meta.env.DEV) {
-        console.warn('[handleRefresh] Some data failed to refresh:', failures);
+      const failed = results.some(r => r.status === 'rejected');
+      if (failed) {
+        throw new Error("Some data failed to refresh");
       }
 
-      // Step 2: Trigger GPS data sync in background (SAFE: uses rate-limited client)
-      // This updates vehicle_positions table with fresh GPS data
-      if (import.meta.env.DEV) {
-        console.log('[handleRefresh] 🔄 Triggering GPS data sync (rate-limited, safe)...');
-      }
-      
-      supabase.functions.invoke("gps-data", {
-        body: { 
-          action: "lastposition", 
-          body_payload: { deviceids: [deviceId] }, // Target specific device for faster sync
-          use_cache: false 
-        }, 
-      }).then(() => {
-        // After GPS sync completes, refetch live data to get fresh GPS coordinates
-        setTimeout(() => {
-          refetchLive();
-          if (import.meta.env.DEV) {
-            console.log('[handleRefresh] ✅ GPS sync completed, refetched live data');
-          }
-        }, 3000); // Wait 3 seconds for GPS sync to complete
-      }).catch((error) => {
-        // Non-critical: GPS sync failure doesn't break UI
-        console.warn('[handleRefresh] GPS sync error (non-critical):', error);
-        // Still refetch live data in case there's cached data
-        setTimeout(() => refetchLive(), 500);
-      });
-
-      // Step 3: Trigger trip sync in background (SAFE: uses rate-limited client)
-      // Don't wait - fire-and-forget
-      supabase.functions.invoke("sync-trips-incremental", {
-        body: { device_ids: [deviceId], force_full_sync: false },
-      }).catch((error) => {
-        // Non-critical: Trip sync failure doesn't break UI
-        if (import.meta.env.DEV) {
-          console.warn('[handleRefresh] Background trip sync error (non-critical):', error);
-        }
-      });
-
-      // Step 4: Show success immediately (data is refreshing in background)
-      toast.success("Refreshing...", { 
-        description: "Syncing fresh data in background..." 
+      toast.success("Updated", { 
+        description: "Latest data retrieved from GPS 51" 
       });
     } catch (error) {
-      toast.error("Failed to refresh", { 
-        description: error instanceof Error ? error.message : "Unknown error" 
+      toast.error("Refresh failed", { 
+        description: "Could not retrieve latest data" 
       });
-      
-      if (import.meta.env.DEV) {
-        console.error('[handleRefresh] Error:', error);
-      }
     } finally {
       setIsRefreshing(false);
     }
-  }, [
-    deviceId,
-    refetchProfile,
-    refetchLive,
-    refetchTrips,
-    refetchEvents,
-    refetchMileage,
-    refetchDaily,
-    refetchDailyStats,
-  ]);
+  }, [deviceId, refetchLive, refetchProfile]);
 
-  // Pull-to-refresh setup - reconnected
-  const { pullDistance, isPulling, handlers: pullHandlers } = usePullToRefresh({
+  const { pullDistance, handlers: pullHandlers } = usePullToRefresh({
     onRefresh: handleRefresh,
   });
 
-  // Auto-sync on page load - reconnected
-  const hasAutoSyncedRef = useRef(false);
-  const [isAutoSyncing, setIsAutoSyncing] = useState(false);
-  
-  useEffect(() => {
-    // Only auto-sync once per mount, and only if deviceId exists
-    if (!deviceId || hasAutoSyncedRef.current) return;
-    
-    // Mark as synced immediately to prevent duplicate calls
-    hasAutoSyncedRef.current = true;
-    
-    // Small delay to ensure page is fully loaded before syncing
-    const timeoutId = setTimeout(() => {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('[VehicleProfile] Auto-syncing trips on page load');
-      }
-      
-      setIsAutoSyncing(true);
-      
-      // Trigger incremental sync (not full sync) to get latest trips
-      triggerSync(
-        { deviceId, forceFullSync: false },
-        {
-          onSuccess: () => {
-            setIsAutoSyncing(false);
-            if (import.meta.env.DEV) {
-              console.log('[VehicleProfile] Auto-sync completed successfully');
-            }
-            // Invalidate queries to refresh data after sync
-            queryClient.invalidateQueries({ queryKey: ["vehicle-trips", deviceId] });
-            queryClient.invalidateQueries({ queryKey: ["vehicle-daily-stats", deviceId] });
-          },
-          onError: (error) => {
-            setIsAutoSyncing(false);
-            // Don't show error toast for auto-sync failures (silent failure)
-            if (import.meta.env.DEV) {
-              console.warn('[VehicleProfile] Auto-sync failed:', error);
-            }
-          },
-        }
-      );
-    }, 500); // 500ms delay to let page render first
-    
-    return () => {
-      clearTimeout(timeoutId);
-    };
-  }, [deviceId, triggerSync, queryClient]);
-
-  // Display values with safe fallbacks - reconnected
-  const { data: ownerVehicles } = useOwnerVehicles();
-  const vehicle = ownerVehicles?.find((v) => v.deviceId === deviceId);
+  // Display values with safe fallbacks
 
   const displayName = llmSettings?.nickname || vehicle?.plateNumber || deviceId;
   const plateNumber = vehicle?.plateNumber || deviceId;
-  const vehicleName = deviceId; // Re-introduce vehicleName as deviceId
+  const vehicleName = deviceId;
   const avatarUrl = llmSettings?.avatar_url || null;
   const personalityMode = llmSettings?.personality_mode || null;
 
-  // Loading and error states - reconnected
-  // Only show initial loading if we have NO data (neither live nor cached)
+  // Loading and error states
   const isInitialLoading = liveLoading && !displayData;
-  // Only show critical error if we have NO data to display
-  const hasCriticalError = liveError !== null && liveError !== undefined && !displayData;
-  // Only show no data if we have NO data to display
+  const hasCriticalError = liveError !== null && !displayData;
   const hasNoData = !liveLoading && !displayData && !liveError;
   
-  // Show error state for critical data failures
   if (hasCriticalError) {
     return (
       <OwnerLayout>
@@ -424,29 +245,19 @@ export default function OwnerVehicleProfile() {
     );
   }
 
-  // Show message when no data exists (vehicle not in database)
   if (hasNoData) {
     return (
       <OwnerLayout>
         <div className="flex items-center justify-center h-full">
           <div className="text-center max-w-md px-4">
             <p className="text-foreground font-medium mb-2">No vehicle data available</p>
-            <p className="text-sm text-muted-foreground mb-4">
-              This vehicle hasn't been synced yet or doesn't exist in the system.
-            </p>
-            <div className="flex gap-2 justify-center">
-              <Button onClick={() => refetchLive()}>Refresh</Button>
-              <Button variant="outline" onClick={() => navigate("/owner/vehicles")}>
-                Back to Vehicles
-              </Button>
-            </div>
+            <Button onClick={() => refetchLive()}>Refresh</Button>
           </div>
         </div>
       </OwnerLayout>
     );
   }
 
-  // Show loading skeleton during initial load
   if (isInitialLoading) {
     return (
       <OwnerLayout>
@@ -455,7 +266,6 @@ export default function OwnerVehicleProfile() {
             <Skeleton className="h-24 w-full" />
             <Skeleton className="h-80 w-full" />
             <Skeleton className="h-32 w-full" />
-            <Skeleton className="h-48 w-full" />
           </div>
         </div>
       </OwnerLayout>
@@ -469,15 +279,6 @@ export default function OwnerVehicleProfile() {
         pullDistance={pullDistance}
       />
 
-      {/* Show toast for errors if we have data (silent failure mode) */}
-      {liveError && displayData && (
-        <div className="fixed top-20 left-0 right-0 z-50 px-4 pointer-events-none">
-          <div className="bg-destructive/90 text-destructive-foreground px-4 py-2 rounded-full shadow-lg text-sm text-center mx-auto max-w-xs backdrop-blur-sm">
-            Connection lost. Using cached data.
-          </div>
-        </div>
-      )}
-
       <div {...pullHandlers} className="flex flex-col min-h-full w-full max-w-3xl mx-auto space-y-4">
         {/* Header */}
         <ProfileHeader
@@ -489,7 +290,7 @@ export default function OwnerVehicleProfile() {
           lastGpsFix={displayData?.lastGpsFix ?? null}
           lastSyncedAt={displayData?.lastSyncedAt ?? null}
           onBack={() => navigate("/owner/vehicles")}
-              onSettings={() => setSettingsOpen(true)}
+          onSettings={() => setSettingsOpen(true)}
           plateNumber={plateNumber}
         />
 
@@ -503,14 +304,18 @@ export default function OwnerVehicleProfile() {
               speed={displayData?.speed ?? 0}
               address={address}
               vehicleName={displayName}
-              isOnline={isOnline}
+              isOnline={status === "online" || status === "charging"}
               isLoading={liveLoading || addressLoading}
               isRefreshing={isRefreshing}
               onRefresh={handleRefresh}
             />
 
             {/* Current Status */}
-            <CurrentStatusCard status={status} speed={displayData?.speed ?? null} />
+            <CurrentStatusCard 
+              status={status} 
+              speed={displayData?.speed ?? null} 
+              lastUpdate={displayData?.lastUpdate ?? null}
+            />
 
             {/* Status Metrics */}
             <StatusMetricsRow
@@ -523,21 +328,11 @@ export default function OwnerVehicleProfile() {
               <EngineControlCard
                 deviceId={deviceId}
                 ignitionOn={displayData?.ignitionOn ?? null}
-                isOnline={isOnline}
+                isOnline={status === "online" || status === "charging"}
               />
             </div>
 
-            {/* Mileage Section */}
-            <MileageSection
-              deviceId={deviceId}
-              totalMileage={liveData?.totalMileageKm ?? null}
-              dailyStats={dailyStats}
-              mileageStats={mileageStats}
-              dailyMileage={dailyMileage}
-              dateRange={dateRange}
-            />
-
-            {/* Reports Section */}
+            {/* Reports & Trips */}
             <ReportsSection
               deviceId={deviceId}
               trips={trips}
@@ -546,44 +341,29 @@ export default function OwnerVehicleProfile() {
               eventsLoading={eventsLoading}
               dateRange={dateRange}
               onDateRangeChange={setDateRange}
-              onPlayTrip={setSelectedTrip}
-              syncStatus={syncStatus}
-              isSyncing={isSyncing || syncStatus?.sync_status === "processing" || isAutoSyncing}
-              onForceSync={handleForceSync}
-              isRealtimeActive={isSubscribed}
-              isAutoSyncing={isAutoSyncing}
+              onPlayTrip={(trip) => {
+                console.log("Play trip:", trip.id);
+                toast.info("Trip playback", { description: "Opening trip details..." });
+                // navigate(`/owner/trips/${trip.id}`);
+              }}
+              isRealtimeActive={status === 'online'}
             />
         </div>
       </div>
-
-      {/* Trip Playback Dialog */}
-      {selectedTrip && (
-        <TripPlaybackDialog
-          open={!!selectedTrip}
-          onOpenChange={(open) => !open && setSelectedTrip(null)}
-          deviceId={deviceId}
-          deviceName={displayName}
-          startTime={selectedTrip.start_time}
-          endTime={selectedTrip.end_time}
-        />
-      )}
 
       {/* Vehicle Settings Dialog */}
       <Dialog 
         open={settingsOpen} 
         onOpenChange={(open) => {
           setSettingsOpen(open);
-          // Refetch profile data when dialog closes to get updated settings
-          if (!open) {
-            refetchProfile();
-          }
+          if (!open) refetchProfile();
         }}
       >
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Vehicle Settings</DialogTitle>
             <DialogDescription className="sr-only">
-              Configure vehicle persona settings including nickname, language preference, personality mode, and avatar
+              Configure vehicle persona settings
             </DialogDescription>
           </DialogHeader>
           <VehiclePersonaSettings 

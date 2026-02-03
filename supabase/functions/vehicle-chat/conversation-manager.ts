@@ -5,92 +5,12 @@ declare const Deno: any;
 // Conversation Memory Management System
 // Handles conversation context with sliding window + summarization
 
-// Lovable AI Gateway Client (non-streaming, for summarization)
-export interface ToolCall {
-  id: string;
-  type: 'function';
-  function: {
-    name: string;
-    arguments: string; // JSON string
-  };
-}
+import { callLLM, LLMResponse, ToolCall } from '../_shared/llm-client.ts';
 
-export interface LLMResponse {
-  text: string | null;
-  tool_calls?: ToolCall[];
-  error?: string;
-}
+export { type LLMResponse, type ToolCall };
 
-export async function callLovableAPI(
-  messagesOrSystemPrompt: string | any[],
-  userPrompt?: string,
-  config: { 
-    maxOutputTokens?: number; 
-    temperature?: number; 
-    model?: string;
-    tools?: any[];
-    tool_choice?: any;
-  } = {}
-): Promise<LLMResponse> {
-  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-
-  if (!LOVABLE_API_KEY) {
-    throw new Error('LOVABLE_API_KEY must be configured in Supabase secrets');
-  }
-
-  let messages: any[] = [];
-  
-  if (Array.isArray(messagesOrSystemPrompt)) {
-    messages = messagesOrSystemPrompt;
-  } else {
-    messages = [
-      { role: 'system', content: messagesOrSystemPrompt },
-      { role: 'user', content: userPrompt || '' },
-    ];
-  }
-
-  const body: any = {
-    model: config.model || 'google/gemini-2.5-flash',
-    messages,
-    max_tokens: config.maxOutputTokens || 1024,
-    temperature: config.temperature ?? 0.3,
-    stream: false,
-  };
-
-  if (config.tools) {
-    body.tools = config.tools;
-  }
-  
-  if (config.tool_choice) {
-    body.tool_choice = config.tool_choice;
-  }
-
-  const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('[LLM Client] Lovable API error:', {
-      status: response.status,
-      body: errorText.substring(0, 200),
-    });
-    throw new Error(`Lovable API error: ${response.status}`);
-  }
-
-  const data = await response.json();
-  const message = data.choices?.[0]?.message;
-  
-  return { 
-    text: message?.content || null,
-    tool_calls: message?.tool_calls
-  };
-}
+// Re-export callLLM as callLovableAPI for backward compatibility
+export const callLovableAPI = callLLM;
 
 interface ChatMessage {
   role: 'user' | 'assistant';

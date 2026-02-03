@@ -517,6 +517,20 @@ export default function OwnerChatDetail() {
       clearTimeout(timeoutId); // ✅ FIX #1: Clear timeout on error
       
       console.error("Chat error:", err);
+
+      // Check for specific Lovable API configuration error
+      if (err instanceof Error && (
+        err.message.includes("Lovable API error: 401") || 
+        err.message.includes("Invalid API Key")
+      )) {
+        toast({
+          title: "Configuration Error",
+          description: "The AI service is not correctly configured (Invalid API Key). Please contact support.",
+          variant: "destructive",
+        });
+        setMessages((prev) => prev.filter((m) => m.id !== tempUserMsg.id));
+        return;
+      }
       
       // ✅ FIX #1: Handle timeout errors specifically
       const isTimeout = err instanceof Error && (

@@ -4,6 +4,8 @@ import { callGps51WithRateLimit, getValidGps51Token } from "../_shared/gps51-cli
 import { normalizeVehicleTelemetry, detectIgnitionV2, type Gps51RawData } from "../_shared/telemetry-normalizer.ts"
 import { getFeatureFlag } from "../_shared/feature-flags.ts"
 
+declare const Deno: any;
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -123,7 +125,7 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 }
 
 // Sync positions from lastposition - batch insert with SMART HISTORY
-async function syncPositions(supabase: any, records: any[]) {
+async function syncPositions(supabase: any, records: any[]): Promise<any[]> {
   const now = new Date().toISOString()
   
   const shadowLogs: Array<Record<string, any>> = []
@@ -258,7 +260,7 @@ async function syncPositions(supabase: any, records: any[]) {
 
   // SMART HISTORY: Only record if position changed significantly (>50m) or 5 min elapsed
   const validPositions = positions.filter(p => p.latitude && p.longitude)
-  if (validPositions.length === 0) return
+  if (validPositions.length === 0) return []
   
   const deviceIds = validPositions.map(p => p.device_id)
   
@@ -345,6 +347,9 @@ async function syncPositions(supabase: any, records: any[]) {
     metadata: Record<string, unknown>;
   }> = []
 
+  // Collect devices that need trip sync (ignition turned off)
+  const devicesToSync = new Set<string>()
+
   for (const pos of positions) {
     // 1. OVERSPEEDING DETECTION (speed > 120 km/h)
     // Note: pos.speed is now in km/h (normalized)
@@ -406,6 +411,8 @@ async function syncPositions(supabase: any, records: any[]) {
 
     // 5. IGNITION OFF DETECTION (state change from on -> off)
     if (pos.ignition_on === false && prevIgnition === true) {
+      devicesToSync.add(pos.device_id)
+      
       eventsToInsert.push({
         device_id: pos.device_id,
         event_type: 'ignition_off',
@@ -417,6 +424,32 @@ async function syncPositions(supabase: any, records: any[]) {
           lon: pos.longitude, 
           detected_by: 'gps-data' 
         }
+      })
+    }
+  }
+
+  // Trigger trip sync for devices that just finished a trip (Ignition OFF)
+  if (devicesToSync.size > 0) {
+    const deviceIds = Array.from(devicesToSync)
+    console.log(`[gps-data] Triggering trip sync for ${deviceIds.length} devices (ignition OFF detected)`)
+    
+    // Non-blocking call to sync-trips-incremental
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    
+    if (supabaseUrl && serviceRoleKey) {
+       fetch(`${supabaseUrl}/functions/v1/sync-trips-incremental`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${serviceRoleKey}`,
+        },
+        body: JSON.stringify({
+          device_ids: deviceIds,
+          force_recent: true // Force recent sync to get the just-finished trip immediately
+        }),
+      }).catch(err => {
+        console.error(`[gps-data] Failed to trigger trip sync: ${err.message}`)
       })
     }
   }
@@ -450,6 +483,8 @@ async function syncPositions(supabase: any, records: any[]) {
       }
     }
   }
+
+  return positions;
 }
 
 // Get ALL device IDs from database (paginated to handle 600+ vehicles)
@@ -560,6 +595,110 @@ serve(async (req) => {
     const { token, username, serverid } = await getValidGps51Token(supabase)
     console.log(`Token retrieved: serverid=${serverid}, username=${username}`)
 
+    // DEBUG ACTION: Fetch raw data for specific device
+    if (action === 'debug_raw') {
+      const deviceName = body_payload?.device_name;
+      const deviceId = body_payload?.device_id;
+      
+      let targetDeviceId = deviceId;
+      let vehicles: any[] | null = null;
+      
+      // Initialize admin client for all debug operations
+      const supabaseAdmin = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      )
+      
+      if (!targetDeviceId && deviceName) {
+         // Use admin client to bypass RLS for debugging lookup
+
+             let query = supabaseAdmin
+               .from('vehicles')
+               .select('*')
+               .limit(50);
+
+             if (deviceName === 'CHECK_SCHEMA') {
+             const { data: tables, error: tableError } = await supabaseAdmin
+               .from('information_schema.tables')
+               .select('*')
+               .eq('table_schema', 'public');
+               
+             return new Response(JSON.stringify({ 
+                tables, 
+                error: tableError 
+             }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+          }
+
+          if (deviceName !== 'LIST_ALL') {
+                query = query.ilike('device_name', `%${deviceName}%`);
+             }
+ 
+             const { data: foundVehicles, error: searchError } = await query;
+             vehicles = foundVehicles;
+                
+              if (searchError) {
+                 return new Response(JSON.stringify({ error: 'Search error', details: searchError }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+              }
+                
+              if (vehicles && vehicles.length > 0) {
+           if (vehicles.length > 1) {
+             return new Response(JSON.stringify({ 
+               error: 'Multiple devices found', 
+               candidates: vehicles 
+             }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+           }
+          targetDeviceId = vehicles[0].device_id;
+        }
+      }
+      
+      if (!targetDeviceId) {
+            return new Response(JSON.stringify({ 
+                error: 'Device not found',
+                debug_context: {
+                    input_device_name: deviceName,
+                    found_vehicles_count: vehicles?.length ?? 0,
+                    has_service_key: !!Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'),
+                    supabase_url_set: !!Deno.env.get('SUPABASE_URL')
+                }
+            }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+          }
+      
+      // Call lastposition for this device
+      const gps51Result = await callGps51(DO_PROXY_URL, 'lastposition', token, serverid, {
+        deviceids: [targetDeviceId],
+        lastquerypositiontime: 0
+      }, supabase);
+
+      // Fetch DB position for comparison
+      const { data: dbPosition } = await supabaseAdmin
+        .from('vehicle_positions')
+        .select('*')
+        .eq('device_id', targetDeviceId)
+        .maybeSingle();
+      
+      // Also normalize it to see what we get
+      let normalized = null;
+      if (gps51Result?.result?.records?.[0]) {
+        normalized = normalizeVehicleTelemetry(gps51Result.result.records[0], {
+          offlineThresholdMs: OFFLINE_THRESHOLD_MS,
+        });
+      }
+      
+      return new Response(JSON.stringify({ 
+        debug_info: {
+          targetDeviceId,
+          deviceName,
+          server_time: new Date().toISOString(),
+          offline_threshold_ms: OFFLINE_THRESHOLD_MS
+        },
+        raw_response: gps51Result,
+        normalized_preview: normalized,
+        db_position: dbPosition
+      }), { 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      })
+    }
+
     // For lastposition, check cache first
     if (action === 'lastposition' && use_cache) {
       const cached = await getCachedPositions(supabase)
@@ -633,9 +772,24 @@ serve(async (req) => {
       await syncVehicles(supabase, allDevices)
     }
     
+    let normalizedRecords: any[] = [];
     if (action === 'lastposition' && apiResponse.records && apiResponse.records.length > 0) {
       console.log('Syncing positions:', apiResponse.records.length)
-      await syncPositions(supabase, apiResponse.records)
+      normalizedRecords = await syncPositions(supabase, apiResponse.records)
+    }
+
+    // CRITICAL FIX: Return normalized records if available
+    // The frontend expects snake_case keys (device_id) and computed fields (is_online)
+    // which are only present in the normalized data, not the raw GPS51 response.
+    if (action === 'lastposition' && normalizedRecords.length > 0) {
+      return new Response(JSON.stringify({ 
+        data: {
+          ...apiResponse,
+          records: normalizedRecords
+        }
+      }), { 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      })
     }
 
     return new Response(JSON.stringify({ data: apiResponse }), { 

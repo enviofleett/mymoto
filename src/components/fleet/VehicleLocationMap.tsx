@@ -399,12 +399,10 @@ export function VehicleLocationMap({
                 </div>
                 <p className={cn(
                   "text-sm font-medium truncate transition-colors",
-                  vehicleStatus === 'offline' ? "text-muted-foreground italic" : "text-foreground"
+                  vehicleStatus === 'offline' ? "text-muted-foreground" : "text-foreground"
                 )}>
-                  {vehicleStatus === 'offline'
-                    ? "Location unavailable (offline)"
-                    : (address || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`)
-                  }
+                  {address || `${latitude?.toFixed(5) ?? 0}, ${longitude?.toFixed(5) ?? 0}`}
+                  {vehicleStatus === 'offline' && <span className="text-xs ml-1 opacity-70">(Last known)</span>}
                 </p>
               </div>
               <a

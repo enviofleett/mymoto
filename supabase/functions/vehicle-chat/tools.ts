@@ -78,12 +78,12 @@ const get_trip_history: ToolDefinition = {
     required: ['start_date', 'end_date']
   },
   execute: async ({ start_date, end_date }, { supabase, device_id }) => {
-    // Correct source: vehicle_trips view with gps51 source
+    // Correct source: vehicle_trips view - allow all valid sources
     const { data: trips, error } = await supabase
       .from('vehicle_trips')
       .select('*')
       .eq('device_id', device_id)
-      .eq('source', 'gps51') // Critical filter for data parity
+      // .eq('source', 'gps51') // Removed strict source filter to include position_history and legacy trips
       .gte('start_time', start_date)
       .lte('end_time', end_date)
       .order('start_time', { ascending: true })

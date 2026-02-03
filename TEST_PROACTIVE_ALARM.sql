@@ -71,8 +71,8 @@ LIMIT 1;
 SELECT 
   'Message Quality Check' as test,
   CASE 
-    WHEN content LIKE '%Test - Gemini%' OR content LIKE '%Testing the new Gemini%' THEN 
-      '⚠️  FALLBACK - Message appears to be fallback format. Check if GEMINI_API_KEY is set or if API call failed.'
+    WHEN content LIKE '%Test - Lovable%' OR content LIKE '%Testing the new Lovable%' THEN 
+      '⚠️  FALLBACK - Message appears to be fallback format. Check if LOVABLE_API_KEY is set or if API call failed.'
     WHEN LENGTH(content) > 50 AND content NOT LIKE event.title || '%' THEN 
       '✅ LLM-GENERATED - Message appears to be AI-generated with personality'
     ELSE 

@@ -1,12 +1,14 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { formatRelativeTime } from "@/lib/timezone";
 
 interface CurrentStatusCardProps {
   status: 'online' | 'charging' | 'offline';
   speed: number | null;
+  lastUpdate?: Date | null;
 }
 
-export function CurrentStatusCard({ status, speed }: CurrentStatusCardProps) {
+export function CurrentStatusCard({ status, speed, lastUpdate }: CurrentStatusCardProps) {
   const getStatusInfo = () => {
     switch (status) {
       case 'online':
@@ -27,7 +29,7 @@ export function CurrentStatusCard({ status, speed }: CurrentStatusCardProps) {
         return {
           icon: "💤",
           label: "Offline",
-          description: "Vehicle is offline",
+          description: lastUpdate ? `Last seen ${formatRelativeTime(lastUpdate)}` : "Vehicle is offline",
           bgColor: "bg-muted",
         };
     }

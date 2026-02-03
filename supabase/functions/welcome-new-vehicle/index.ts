@@ -1,6 +1,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { callLLM } from '../_shared/llm-client.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -73,52 +74,31 @@ serve(async (req) => {
     const template = settings?.value || `Welcome to your new {{vehicle_name}}! I am your AI companion.`;
 
     // 4. Generate Message via LLM
-    const apiKey = Deno.env.get('LOVABLE_API_KEY');
+    
     let welcomeMessage = template
       .replace('{{vehicle_name}}', vehicle_name)
-      .replace('{{owner_name}}', 'Owner'); // We could fetch owner name if needed
+      .replace('{{owner_name}}', 'Owner');
 
-    if (apiKey) {
-      try {
-        const response = await fetch('https://api.lovable.ai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({
-            model: 'google-gemini-2.0-flash-001',
-            messages: [
-              {
-                role: 'system',
-                content: `You are the AI companion for a vehicle named "${vehicle_name}". 
-Your personality is friendly, helpful, and professional.
-The admin has set a welcome template: "${template}".
+    try {
+      const systemPrompt = `You are the AI companion for a vehicle named "${vehicle_name}". 
+Your personality is friendly, helpful, and professional.`;
+      
+      const userPrompt = `The admin has set a welcome template: "${template}".
 Your task is to generate a warm, engaging welcome message based on this template.
-incorporate the vehicle name and the fact that you are ready to assist with trips, health, and security.
-Keep it under 100 words.`
-              },
-              {
-                role: 'user',
-                content: `Generate the welcome message for ${vehicle_name}.`
-              }
-            ]
-          })
-        });
+Incorporate the vehicle name and the fact that you are ready to assist with trips, health, and security.
+Keep it under 100 words.`;
 
-        if (response.ok) {
-          const data = await response.json();
-          if (data.choices?.[0]?.message?.content) {
-            welcomeMessage = data.choices[0].message.content;
-          }
-        } else {
-          console.error('LLM API error:', await response.text());
-        }
-      } catch (e) {
-        console.error('LLM call failed:', e);
+      const response = await callLLM(systemPrompt, userPrompt, {
+        model: 'google/gemini-2.5-flash',
+        maxOutputTokens: 150
+      });
+      
+      if (response.text) {
+        welcomeMessage = response.text.trim();
       }
-    } else {
-        console.warn('LOVABLE_API_KEY not set, using raw template.');
+    } catch (e) {
+      console.error('LLM Error:', e);
+      // Fallback to template
     }
 
     // 5. Save to Chat History

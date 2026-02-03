@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { callLLM } from '../_shared/llm-client.ts';
 
 // Declare Deno for linter
 declare const Deno: any;
@@ -10,36 +11,20 @@ const corsHeaders = {
 
 // LLM Helper
 async function generateSummary(stats: any, template: any) {
-  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY')
-  if (!LOVABLE_API_KEY) return "Summary unavailable (LLM key missing)."
-
   const systemPrompt = `You are a helpful fleet assistant. Generate a brief, encouraging daily trip summary for a user based on their vehicle stats.
   Stats: ${JSON.stringify(stats)}
-  Keep it under 50 words. Highlight key metrics (distance, duration). Use a friendly tone.`
+  Keep it under 50 words. Highlight key metrics (distance, duration). Use a friendly tone.`;
 
   try {
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: "Generate summary." },
-        ],
-        max_tokens: 150,
-      }),
-    })
+    const response = await callLLM(systemPrompt, "Generate summary.", {
+      model: 'google/gemini-2.5-flash',
+      maxOutputTokens: 150
+    });
     
-    if (!response.ok) throw new Error(`API error: ${response.status}`)
-    const data = await response.json()
-    return data.choices[0].message.content
+    return response.text || "Summary unavailable.";
   } catch (e) {
-    console.error('LLM Error:', e)
-    return "Summary unavailable due to error."
+    console.error('LLM Error:', e);
+    return "Summary unavailable due to error.";
   }
 }
 
