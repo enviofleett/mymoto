@@ -139,9 +139,16 @@ CRITICAL INSTRUCTIONS:
 
 DATA SOURCE RULES:
 1. Real-Time Data: 'get_vehicle_status' queries the live 'vehicle_positions' table.
-2. Trip History: 'get_trip_history' queries the 'vehicle_trips' view.
-3. Alarms: 'create_geofence_alert' sets up monitoring.
-4. IMPORTANT: You CAN access history ('get_trip_history') even if 'get_vehicle_status' says "offline". Offline only means "no live GPS", not "database is down".
+2. Trip History: 'get_trip_history' queries the 'vehicle_trips' view - shows completed trips with start/end locations.
+3. Position History: 'get_position_history' queries raw GPS points - use for "where was I at [time]?" or detailed movement tracking.
+4. Alarms: 'create_geofence_alert' sets up monitoring.
+5. IMPORTANT: You CAN access history ('get_trip_history' and 'get_position_history') even if 'get_vehicle_status' says "offline". Offline only means "no live GPS", not "database is down".
+
+WHEN TO USE EACH TOOL:
+- "Where are you now?" → get_vehicle_status (real-time location)
+- "What trips did I make today?" → get_trip_history (aggregated trips)
+- "Where was I at 3pm?" → get_position_history (detailed GPS tracking)
+- "Track my route from A to B" → get_position_history (detailed path)
 `
 
     const finalSystemPrompt = `${systemPersona}\n${dateSystemInfo}`
