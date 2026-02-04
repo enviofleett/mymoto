@@ -428,7 +428,10 @@ export const TOOLS: ToolDefinition[] = [
 ]
 
 export const TOOLS_SCHEMA = TOOLS.map(t => ({
-  name: t.name,
-  description: t.description,
-  parameters: t.parameters
-})) // OpenAI/Gemini format
+  type: 'function' as const,
+  function: {
+    name: t.name,
+    description: t.description,
+    parameters: t.parameters
+  }
+})) // OpenAI-compatible format required by OpenRouter
