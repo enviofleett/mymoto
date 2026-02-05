@@ -526,22 +526,41 @@ function TripCard({
         )}
       </div>
 
-      {/* Stats Section */}
-      <div className="grid grid-cols-3 gap-4 mb-4 text-center">
+      {/* Stats Section - Enhanced with max speed */}
+      <div className="grid grid-cols-4 gap-3 mb-4 text-center">
         <div className="flex flex-col items-center justify-center">
-          <Milestone className="h-5 w-5 text-primary mb-1" />
+          <Milestone className="h-4 w-4 text-primary mb-1" />
           <span className="text-sm font-bold">{trip.distance_km.toFixed(1)}</span>
-          <span className="text-xs text-muted-foreground">km</span>
+          <span className="text-[10px] text-muted-foreground">km</span>
         </div>
         <div className="flex flex-col items-center justify-center">
-          <Clock className="h-5 w-5 text-primary mb-1" />
-          <span className="text-sm font-bold">{durationMinutes}</span>
-          <span className="text-xs text-muted-foreground">min</span>
+          <Clock className="h-4 w-4 text-primary mb-1" />
+          <span className="text-sm font-bold">
+            {durationMinutes >= 60
+              ? `${Math.floor(durationMinutes / 60)}h ${durationMinutes % 60}m`
+              : `${durationMinutes}m`
+            }
+          </span>
+          <span className="text-[10px] text-muted-foreground">duration</span>
         </div>
         <div className="flex flex-col items-center justify-center">
-          <Gauge className="h-5 w-5 text-primary mb-1" />
+          <Gauge className="h-4 w-4 text-blue-500 mb-1" />
           <span className="text-sm font-bold">{Math.round(trip.avg_speed || 0)}</span>
-          <span className="text-xs text-muted-foreground">km/h avg</span>
+          <span className="text-[10px] text-muted-foreground">avg km/h</span>
+        </div>
+        <div className="flex flex-col items-center justify-center">
+          <Gauge className={cn(
+            "h-4 w-4 mb-1",
+            (trip.max_speed || 0) > 120 ? "text-red-500" :
+            (trip.max_speed || 0) > 80 ? "text-orange-500" : "text-green-500"
+          )} />
+          <span className={cn(
+            "text-sm font-bold",
+            (trip.max_speed || 0) > 120 ? "text-red-600" : ""
+          )}>
+            {Math.round(trip.max_speed || 0)}
+          </span>
+          <span className="text-[10px] text-muted-foreground">max km/h</span>
         </div>
       </div>
 

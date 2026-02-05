@@ -570,16 +570,46 @@ serve(async (req) => {
     // 7. Update the event as notified
     const { error: updateError } = await supabase
       .from('proactive_vehicle_events')
-      .update({ notified_at: new Date().toISOString() })
+      .update({ notified_at: new Date().toISOString(), notified: true })
       .eq('id', event.id);
 
     if (updateError) {
       console.error('[handle-vehicle-event] Error updating event notified status:', updateError);
     }
 
-    return new Response(JSON.stringify({ 
+    // 8. INSTANT TRIP SYNC: Trigger trip sync when ignition turns off
+    // This ensures trip report is available immediately after trip ends
+    if (event.event_type === 'ignition_off') {
+      console.log(`[handle-vehicle-event] Ignition OFF detected - triggering instant trip sync for ${event.device_id}`);
+
+      // Non-blocking call to sync-trips-incremental
+      const syncUrl = `${supabaseUrl}/functions/v1/sync-trips-incremental`;
+      fetch(syncUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceKey}`,
+        },
+        body: JSON.stringify({
+          device_ids: [event.device_id],
+          force_recent: true, // Sync last 24 hours to catch the just-completed trip
+        }),
+      }).then(async (response) => {
+        if (response.ok) {
+          const result = await response.json();
+          console.log(`[handle-vehicle-event] Trip sync triggered successfully:`, result);
+        } else {
+          console.error(`[handle-vehicle-event] Trip sync failed: ${response.status}`);
+        }
+      }).catch((err) => {
+        console.error(`[handle-vehicle-event] Trip sync error (non-blocking):`, err);
+      });
+    }
+
+    return new Response(JSON.stringify({
       message: 'Proactive message generated and posted to chat.',
-      users_notified: enabledUserIds.length
+      users_notified: enabledUserIds.length,
+      trip_sync_triggered: event.event_type === 'ignition_off'
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

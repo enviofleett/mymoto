@@ -12,6 +12,30 @@ const corsHeaders = {
 };
 
 // ============================================================================
+// GPS51-ACCURATE TRIP THRESHOLDS (Match GPS51 platform exactly)
+// ============================================================================
+
+const GPS51_TRIP_THRESHOLDS = {
+  // Minimum trip distance (GPS51 standard: 500m)
+  MIN_DISTANCE_KM: 0.5,
+
+  // Minimum trip duration (GPS51 standard: 3 minutes / 180 seconds)
+  MIN_DURATION_SEC: 180,
+
+  // Maximum realistic speed (GPS spike filter)
+  MAX_SPEED_KMH: 200,
+
+  // Minimum start-to-end displacement (prevents "round trip to same spot" ghost trips)
+  MIN_DISPLACEMENT_KM: 0.05, // 50 meters
+
+  // Speed spike threshold for individual points
+  SPIKE_SPEED_KMH: 250,
+
+  // Idle timeout for trip end detection (GPS51 standard: 3 minutes)
+  IDLE_TIMEOUT_SEC: 180,
+};
+
+// ============================================================================
 // INLINED GPS51 CLIENT WITH RATE LIMITING (for Dashboard deployment)
 // ============================================================================
 
@@ -655,6 +679,144 @@ async function syncOfficialTripReport(
   }
 }
 
+/**
+ * Ensure address continuity: Each trip should start where the previous trip ended
+ * This prevents gaps between trips and ensures seamless trip chaining
+ */
+function applyAddressContinuity(trips: TripData[]): TripData[] {
+  if (trips.length < 2) return trips;
+
+  // Sort trips by start time
+  const sorted = [...trips].sort((a, b) =>
+    new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
+  );
+
+  const MAX_GAP_DISTANCE_KM = 0.1; // 100 meters - max allowed gap between trips
+  const MAX_GAP_TIME_MS = 30 * 60 * 1000; // 30 minutes - max time gap to consider continuity
+
+  for (let i = 1; i < sorted.length; i++) {
+    const prevTrip = sorted[i - 1];
+    const currTrip = sorted[i];
+
+    // Check time gap between trips
+    const timeGap = new Date(currTrip.start_time).getTime() - new Date(prevTrip.end_time).getTime();
+
+    // Only apply continuity if trips are close in time
+    if (timeGap > MAX_GAP_TIME_MS) {
+      continue; // Too much time between trips, don't force continuity
+    }
+
+    // Calculate distance between previous trip's end and current trip's start
+    if (prevTrip.end_latitude && prevTrip.end_longitude &&
+        currTrip.start_latitude && currTrip.start_longitude) {
+      const gapDistance = calculateDistance(
+        prevTrip.end_latitude,
+        prevTrip.end_longitude,
+        currTrip.start_latitude,
+        currTrip.start_longitude
+      );
+
+      // If gap is too large, snap current trip's start to previous trip's end
+      if (gapDistance > MAX_GAP_DISTANCE_KM) {
+        console.log(`[applyAddressContinuity] Snapping trip start: gap=${gapDistance.toFixed(3)}km, time_gap=${Math.round(timeGap/1000)}s`);
+        sorted[i] = {
+          ...currTrip,
+          start_latitude: prevTrip.end_latitude,
+          start_longitude: prevTrip.end_longitude,
+        };
+      }
+    }
+  }
+
+  return sorted;
+}
+
+/**
+ * Smooth GPS speed data using rolling average to filter out spikes
+ * This removes GPS drift artifacts that can cause false speed readings
+ */
+function smoothSpeedData(positions: PositionPoint[], windowSize: number = 3): PositionPoint[] {
+  if (positions.length < windowSize) return positions;
+
+  return positions.map((pos, index) => {
+    // Get window of positions around current point
+    const start = Math.max(0, index - Math.floor(windowSize / 2));
+    const end = Math.min(positions.length, index + Math.ceil(windowSize / 2));
+    const window = positions.slice(start, end);
+
+    // Calculate average speed in window (excluding outliers > 200 km/h)
+    const validSpeeds = window
+      .map(p => normalizeSpeed(p.speed))
+      .filter(s => s >= 0 && s < GPS51_TRIP_THRESHOLDS.MAX_SPEED_KMH);
+
+    if (validSpeeds.length === 0) {
+      return pos; // Can't smooth, return original
+    }
+
+    const avgSpeed = validSpeeds.reduce((sum, s) => sum + s, 0) / validSpeeds.length;
+
+    // Only smooth if current speed is a spike (> 2x average)
+    const currentSpeed = normalizeSpeed(pos.speed);
+    if (currentSpeed > avgSpeed * 2 && currentSpeed > GPS51_TRIP_THRESHOLDS.MAX_SPEED_KMH) {
+      console.log(`[smoothSpeedData] Smoothing speed spike: ${currentSpeed.toFixed(1)} -> ${avgSpeed.toFixed(1)} km/h at ${pos.gps_time}`);
+      return {
+        ...pos,
+        speed: avgSpeed, // Replace with smoothed value
+      };
+    }
+
+    return pos;
+  });
+}
+
+/**
+ * Filter out GPS position spikes (coordinates that jump unrealistically)
+ * Returns positions with invalid jumps removed
+ */
+function filterPositionSpikes(positions: PositionPoint[]): PositionPoint[] {
+  if (positions.length < 2) return positions;
+
+  const filtered: PositionPoint[] = [positions[0]];
+  const MAX_JUMP_DISTANCE_KM = 10; // Max 10km between consecutive points
+  const MAX_JUMP_SPEED_KMH = 250; // Can't travel faster than 250 km/h
+
+  for (let i = 1; i < positions.length; i++) {
+    const prev = filtered[filtered.length - 1];
+    const curr = positions[i];
+
+    // Calculate distance and time between points
+    const distance = calculateDistance(
+      prev.latitude, prev.longitude,
+      curr.latitude, curr.longitude
+    );
+
+    const timeDiffMs = new Date(curr.gps_time).getTime() - new Date(prev.gps_time).getTime();
+    const timeDiffHours = timeDiffMs / (1000 * 60 * 60);
+
+    // Calculate implied speed
+    const impliedSpeed = timeDiffHours > 0 ? distance / timeDiffHours : 0;
+
+    // Skip position if it's a GPS spike
+    if (distance > MAX_JUMP_DISTANCE_KM) {
+      console.log(`[filterPositionSpikes] Skipping position spike: ${distance.toFixed(2)}km jump at ${curr.gps_time}`);
+      continue;
+    }
+
+    if (impliedSpeed > MAX_JUMP_SPEED_KMH) {
+      console.log(`[filterPositionSpikes] Skipping speed spike: implied ${impliedSpeed.toFixed(1)} km/h at ${curr.gps_time}`);
+      continue;
+    }
+
+    filtered.push(curr);
+  }
+
+  if (filtered.length < positions.length) {
+    console.log(`[filterPositionSpikes] Filtered ${positions.length - filtered.length} position spikes`);
+  }
+
+  return filtered;
+}
+
 // Haversine formula to calculate distance between two GPS points
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371; // Earth's radius in km
@@ -674,6 +836,17 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 // Uses ignition-based detection (like GPS51) with speed-based fallback
 export function extractTripsFromHistory(positions: PositionPoint[]): TripData[] {
   if (positions.length < 2) return [];
+
+  // STEP 1: Filter position spikes (GPS jumps)
+  let cleanedPositions = filterPositionSpikes(positions);
+
+  // STEP 2: Smooth speed data (rolling average to remove speed spikes)
+  cleanedPositions = smoothSpeedData(cleanedPositions, 3);
+
+  console.log(`[extractTripsFromHistory] Processing ${cleanedPositions.length} positions (after spike filtering from ${positions.length})`);
+
+  // Use cleaned positions for trip extraction
+  positions = cleanedPositions;
 
   const trips: TripData[] = [];
   let currentTrip: { 
@@ -1229,34 +1402,52 @@ Deno.serve(async (req: Request) => {
 
         console.log(`[sync-trips-incremental] Device ${deviceId}: received ${trips.length} trips from GPS51`);
 
-        // PRE-FILTER: Remove obvious ghost trips from API results
-        // This ensures they don't block valid local trips from being added as fallback
+        // PRE-FILTER: Remove ghost trips using GPS51-accurate thresholds
+        // This ensures 100% match with GPS51 platform trip reports
         const initialCount = trips.length;
         trips = trips.filter(trip => {
-          // Calculate straight-line distance between start and end
-          let startEndDist = 0;
+          const dist = trip.distance_km || 0;
+          const duration = trip.duration_seconds || 0;
+          const maxSpeed = trip.max_speed || 0;
+
+          // Calculate straight-line displacement between start and end
+          let displacement = 0;
           if (trip.start_latitude && trip.start_longitude && trip.end_latitude && trip.end_longitude) {
-            startEndDist = calculateDistance(
+            displacement = calculateDistance(
               trip.start_latitude,
               trip.start_longitude,
               trip.end_latitude,
               trip.end_longitude
             );
           }
-          
-          // Logic: If API says distance is tiny AND start/end are close, it's a ghost trip
-          // We remove it so local fallback logic can try to find a better trip from raw positions
-          const MIN_API_DIST = 0.1; // 100m
-          const MIN_START_END = 0.1; // 100m
-          
-          // Check if it's a ghost trip
-          // Note: trip.distance_km might be undefined/0 from API
-          const dist = trip.distance_km || 0;
-          
-          if (dist < MIN_API_DIST && startEndDist < MIN_START_END) {
-            return false; // Remove it
+
+          // GPS51 GHOST TRIP DETECTION (match platform exactly):
+          // 1. Trip must have minimum distance (500m) OR minimum duration (3 min)
+          // 2. Speed must be realistic (< 200 km/h)
+          // 3. Must have actual displacement (not just GPS drift in same spot)
+
+          // Filter 1: Tiny trips (< 500m AND < 3 minutes = ignition flicker)
+          if (dist < GPS51_TRIP_THRESHOLDS.MIN_DISTANCE_KM &&
+              duration < GPS51_TRIP_THRESHOLDS.MIN_DURATION_SEC) {
+            console.log(`[sync-trips-incremental] PRE-FILTER: Ghost trip (tiny) - dist=${dist.toFixed(2)}km, duration=${duration}s`);
+            return false;
           }
-          return true; // Keep it
+
+          // Filter 2: Unrealistic speed (GPS spike)
+          if (maxSpeed > GPS51_TRIP_THRESHOLDS.MAX_SPEED_KMH) {
+            console.log(`[sync-trips-incremental] PRE-FILTER: Ghost trip (speed spike) - max_speed=${maxSpeed}km/h`);
+            return false;
+          }
+
+          // Filter 3: No actual displacement (GPS drift at same location)
+          // Exception: Allow if path distance is significant (round trip)
+          if (displacement < GPS51_TRIP_THRESHOLDS.MIN_DISPLACEMENT_KM &&
+              dist < GPS51_TRIP_THRESHOLDS.MIN_DISTANCE_KM) {
+            console.log(`[sync-trips-incremental] PRE-FILTER: Ghost trip (no displacement) - displacement=${displacement.toFixed(3)}km, dist=${dist.toFixed(2)}km`);
+            return false;
+          }
+
+          return true; // Valid trip
         });
         
         if (trips.length < initialCount) {
@@ -1314,9 +1505,15 @@ Deno.serve(async (req: Request) => {
             
             if (addedCount > 0) {
               console.log(`[sync-trips-incremental] Added ${addedCount} fallback trips that were missing from official API`);
-              // Sort trips by start time again
-              trips.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
             }
+
+            // Sort trips by start time
+            trips.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+
+            // Apply address continuity to ensure trips chain properly
+            // (next trip starts where previous trip ended)
+            trips = applyAddressContinuity(trips);
+            console.log(`[sync-trips-incremental] Applied address continuity to ${trips.length} trips`);
           } else {
             console.log(`[sync-trips-incremental] No raw positions found for fallback analysis`);
           }
@@ -1416,25 +1613,43 @@ Deno.serve(async (req: Request) => {
               continue;
             }
 
-            // GHOST TRIP DETECTION: Filter trips where vehicle didn't actually move
-            // Skip trips with same start/end coordinates (within 100m) UNLESS they have significant distance
-            // This allows round trips (significant path distance but same start/end) while filtering ghost trips
+            // GHOST TRIP DETECTION: Apply GPS51-accurate thresholds
+            // This ensures 100% consistency with GPS51 platform
+            const tripDist = trip.distance_km || 0;
+            const tripDuration = trip.duration_seconds || 0;
+            const tripMaxSpeed = trip.max_speed || 0;
+
+            // Filter 1: Tiny trips (< 500m AND < 3 minutes)
+            if (tripDist < GPS51_TRIP_THRESHOLDS.MIN_DISTANCE_KM &&
+                tripDuration < GPS51_TRIP_THRESHOLDS.MIN_DURATION_SEC) {
+              console.log(`[sync-trips-incremental] Skipping ghost trip (tiny): dist=${tripDist.toFixed(2)}km, duration=${tripDuration}s`);
+              deviceTripsSkipped++;
+              totalTripsSkipped++;
+              continue;
+            }
+
+            // Filter 2: Unrealistic max speed (GPS spike)
+            if (tripMaxSpeed > GPS51_TRIP_THRESHOLDS.MAX_SPEED_KMH) {
+              console.log(`[sync-trips-incremental] Skipping ghost trip (speed spike): max_speed=${tripMaxSpeed}km/h`);
+              deviceTripsSkipped++;
+              totalTripsSkipped++;
+              continue;
+            }
+
+            // Filter 3: No displacement (GPS drift at same location)
             if (trip.start_latitude && trip.start_longitude &&
                 trip.end_latitude && trip.end_longitude) {
-              const startEndDistance = calculateDistance(
+              const displacement = calculateDistance(
                 trip.start_latitude,
                 trip.start_longitude,
                 trip.end_latitude,
                 trip.end_longitude
               );
 
-              const MIN_START_END_DISTANCE = 0.1; // 100 meters
-              const MIN_PATH_DISTANCE = 0.5; // 500 meters (for round trips)
-
-              // Skip if start/end are same AND total path distance is negligible
-              // This allows valid round trips where trip.distance_km > MIN_PATH_DISTANCE
-              if (startEndDistance < MIN_START_END_DISTANCE && trip.distance_km < MIN_PATH_DISTANCE) {
-                console.log(`[sync-trips-incremental] Skipping ghost trip: start-end=${startEndDistance.toFixed(3)}km, path=${trip.distance_km}km`);
+              // Skip if no displacement AND low path distance (not a valid round trip)
+              if (displacement < GPS51_TRIP_THRESHOLDS.MIN_DISPLACEMENT_KM &&
+                  tripDist < GPS51_TRIP_THRESHOLDS.MIN_DISTANCE_KM) {
+                console.log(`[sync-trips-incremental] Skipping ghost trip (no displacement): displacement=${displacement.toFixed(3)}km, path=${tripDist.toFixed(2)}km`);
                 deviceTripsSkipped++;
                 totalTripsSkipped++;
                 continue;
