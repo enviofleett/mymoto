@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2";
 import { normalizeSpeed } from "../_shared/telemetry-normalizer.ts";
 import { getFeatureFlag } from "../_shared/feature-flags.ts";
 
