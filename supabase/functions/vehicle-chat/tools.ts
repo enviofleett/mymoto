@@ -427,8 +427,12 @@ export const TOOLS: ToolDefinition[] = [
   create_geofence_alert
 ]
 
+// OpenAI/OpenRouter compatible format - tools must be wrapped with type: "function"
 export const TOOLS_SCHEMA = TOOLS.map(t => ({
-  name: t.name,
-  description: t.description,
-  parameters: t.parameters
-})) // OpenAI/Gemini format
+  type: "function",
+  function: {
+    name: t.name,
+    description: t.description,
+    parameters: t.parameters
+  }
+}))
