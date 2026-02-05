@@ -2,9 +2,8 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { callLLM } from '../_shared/llm-client.ts';
 
-// Replaced by callLLM from shared client
+// OpenRouter LLM Client - all calls routed through shared client
 const callGeminiAPI = callLLM;
-
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -17,7 +16,6 @@ serve(async (req) => {
   }
 
   try {
-    // LOVABLE_API_KEY is checked in the function above
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',

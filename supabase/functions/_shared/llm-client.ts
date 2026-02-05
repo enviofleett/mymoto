@@ -1,5 +1,23 @@
+/**
+ * OpenRouter LLM Client
+ *
+ * All LLM calls are routed exclusively through OpenRouter.
+ * No fallback providers - 100% OpenRouter dependency.
+ *
+ * Required Supabase Secrets:
+ * - OPENROUTER_API_KEY: Your OpenRouter API key (get from https://openrouter.ai/keys)
+ *
+ * Optional Secrets:
+ * - LLM_MODEL: Override the default model (default: google/gemini-2.0-flash-exp:free)
+ *
+ * OpenRouter API Reference: https://openrouter.ai/docs/quickstart
+ */
 
 declare const Deno: any;
+
+// OpenRouter API Configuration
+const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+const DEFAULT_MODEL = 'google/gemini-2.0-flash-exp:free';
 
 export interface ToolCall {
   id: string;
@@ -25,46 +43,34 @@ export interface LLMResponse {
 }
 
 /**
- * Call LLM via OpenAI-compatible API
+ * Call OpenRouter API for LLM completions
  *
- * Uses OPENAI_API_KEY for authentication and OPENAI_BASE_URL for the endpoint.
- * Compatible with OpenRouter, OpenAI, Azure OpenAI, and any OpenAI-compatible provider.
- *
- * Required secrets:
- * - OPENAI_API_KEY: Your API key for the provider
- * - OPENAI_BASE_URL: The base URL for the API (e.g., https://openrouter.ai/api/v1)
- *
- * Optional secrets:
- * - LLM_MODEL: Override the default model (defaults to google/gemini-2.0-flash-exp)
+ * @param systemPromptOrMessages - Either a system prompt string or an array of messages
+ * @param userPrompt - User message (only used if systemPromptOrMessages is a string)
+ * @param config - Configuration options (model, temperature, tools, etc.)
+ * @returns LLM response with text and optional tool calls
  */
 export async function callLLM(
   systemPromptOrMessages: string | any[],
   userPrompt?: string,
   config: LLMConfig = {}
 ): Promise<LLMResponse> {
-  const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
-  const OPENAI_BASE_URL = Deno.env.get('OPENAI_BASE_URL');
+  const OPENROUTER_API_KEY = Deno.env.get('OPENROUTER_API_KEY');
+
+  // Strict validation - no fallbacks
+  if (!OPENROUTER_API_KEY) {
+    throw new Error(
+      'OPENROUTER_API_KEY is required but not set. ' +
+      'Get your API key from https://openrouter.ai/keys and add it to Supabase secrets.'
+    );
+  }
+
+  // Determine model (priority: config > env > default)
   const LLM_MODEL = Deno.env.get('LLM_MODEL');
+  const model = config.model || LLM_MODEL || DEFAULT_MODEL;
 
-  // Validate required configuration
-  if (!OPENAI_API_KEY) {
-    throw new Error('LLM Error: OPENAI_API_KEY is required but not set. Please configure the secret in Supabase.');
-  }
-
-  if (!OPENAI_BASE_URL) {
-    throw new Error('LLM Error: OPENAI_BASE_URL is required but not set. Please configure the secret in Supabase.');
-  }
-
-  // Construct the full API endpoint URL
-  // Handle both cases: URL with or without trailing slash
-  const baseUrl = OPENAI_BASE_URL.replace(/\/+$/, ''); // Remove trailing slashes
-  const apiUrl = `${baseUrl}/chat/completions`;
-
-  // Determine model to use (priority: config > env > default)
-  const model = config.model || LLM_MODEL || 'google/gemini-2.0-flash-exp';
-
-  // Construct messages
-  let messages: any[] = [];
+  // Construct messages array
+  let messages: any[];
   if (Array.isArray(systemPromptOrMessages)) {
     messages = systemPromptOrMessages;
   } else {
@@ -83,7 +89,8 @@ export async function callLLM(
     stream: false,
   };
 
-  if (config.tools) {
+  // Add tools if provided (for function calling)
+  if (config.tools && config.tools.length > 0) {
     body.tools = config.tools;
   }
 
@@ -91,22 +98,28 @@ export async function callLLM(
     body.tool_choice = config.tool_choice;
   }
 
-  console.log(`[LLM Client] Calling ${baseUrl} with model ${model}...`);
+  console.log(`[OpenRouter] Calling model: ${model}`);
 
-  const result = await callProvider(apiUrl, OPENAI_API_KEY, body);
+  // Make API request with retry logic
+  const result = await callOpenRouter(OPENROUTER_API_KEY, body);
 
   return result;
 }
 
-async function callProvider(url: string, apiKey: string, body: any): Promise<LLMResponse> {
-  const maxRetries = 3;
-  let lastError: any;
+/**
+ * Internal function to call OpenRouter API with retry logic
+ */
+async function callOpenRouter(apiKey: string, body: any): Promise<LLMResponse> {
+  const MAX_RETRIES = 3;
+  const url = `${OPENROUTER_BASE_URL}/chat/completions`;
+  let lastError: Error | null = null;
 
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
+      // Exponential backoff for retries
       if (attempt > 0) {
-        const delay = Math.pow(2, attempt) * 500;
-        console.log(`[LLM Client] Retry attempt ${attempt}, waiting ${delay}ms...`);
+        const delay = Math.pow(2, attempt) * 500; // 1s, 2s, 4s
+        console.log(`[OpenRouter] Retry ${attempt}/${MAX_RETRIES}, waiting ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
 
@@ -115,41 +128,85 @@ async function callProvider(url: string, apiKey: string, body: any): Promise<LLM
         headers: {
           'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://mymoto.app', // Required by OpenRouter
+          'X-Title': 'MyMoto Vehicle AI', // App identification
         },
         body: JSON.stringify(body),
       });
 
+      // Handle non-OK responses
       if (!response.ok) {
         const errorText = await response.text();
-        const errorMsg = `API Error ${response.status}: ${errorText.substring(0, 200)}`;
-        console.error(`[LLM Client] ${errorMsg}`);
-        throw new Error(errorMsg);
+        let errorMessage = `OpenRouter API error ${response.status}`;
+
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.error?.message || errorJson.message || errorText;
+        } catch {
+          errorMessage = errorText.substring(0, 200);
+        }
+
+        console.error(`[OpenRouter] Error: ${errorMessage}`);
+
+        // Don't retry auth errors or bad requests
+        if (response.status === 401 || response.status === 403 || response.status === 400) {
+          throw new Error(`OpenRouter auth error: ${errorMessage}`);
+        }
+
+        // Rate limit - retry with backoff
+        if (response.status === 429) {
+          lastError = new Error(`OpenRouter rate limit: ${errorMessage}`);
+          continue;
+        }
+
+        throw new Error(errorMessage);
       }
 
+      // Parse successful response
       const data = await response.json();
-      const message = data.choices?.[0]?.message;
 
-      if (!message) {
-        console.error('[LLM Client] Unexpected response format:', JSON.stringify(data).substring(0, 200));
-        throw new Error('Invalid response format: no message in response');
+      // Validate response structure
+      const choice = data.choices?.[0];
+      if (!choice) {
+        console.error('[OpenRouter] Invalid response:', JSON.stringify(data).substring(0, 200));
+        throw new Error('Invalid response from OpenRouter: no choices returned');
       }
 
-      console.log('[LLM Client] Success');
+      const message = choice.message;
+      if (!message) {
+        throw new Error('Invalid response from OpenRouter: no message in choice');
+      }
+
+      console.log('[OpenRouter] Success');
+
+      // Return standardized response
       return {
-        text: message?.content || null,
-        tool_calls: message?.tool_calls
+        text: message.content || null,
+        tool_calls: message.tool_calls || undefined,
       };
 
-    } catch (e: any) {
-      lastError = e;
-      // Don't retry auth errors or bad requests - these won't succeed on retry
-      if (e.message.includes('401') || e.message.includes('403') || e.message.includes('404') || e.message.includes('400')) {
-        throw e;
+    } catch (error: any) {
+      lastError = error;
+
+      // Don't retry certain errors
+      if (
+        error.message.includes('auth error') ||
+        error.message.includes('401') ||
+        error.message.includes('403') ||
+        error.message.includes('400')
+      ) {
+        throw error;
       }
-      console.warn(`[LLM Client] Attempt ${attempt} failed: ${e.message}`);
+
+      console.warn(`[OpenRouter] Attempt ${attempt + 1} failed: ${error.message}`);
     }
   }
 
-  console.error(`[LLM Client] All ${maxRetries + 1} attempts failed`);
-  throw lastError;
+  // All retries exhausted
+  console.error(`[OpenRouter] All ${MAX_RETRIES + 1} attempts failed`);
+  throw lastError || new Error('OpenRouter request failed after all retries');
 }
+
+// Legacy export for backward compatibility
+export const callLovableAPI = callLLM;
+export const callGeminiAPI = callLLM;

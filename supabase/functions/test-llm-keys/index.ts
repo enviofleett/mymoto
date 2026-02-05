@@ -1,3 +1,9 @@
+/**
+ * Test OpenRouter API Connection
+ *
+ * This function tests the OpenRouter API integration.
+ * Call it to verify your OPENROUTER_API_KEY is correctly configured.
+ */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { callLLM } from '../_shared/llm-client.ts';
 
@@ -13,33 +19,47 @@ serve(async (req: Request) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
-  const results: any = {};
+  const results: any = {
+    provider: 'OpenRouter',
+    endpoint: 'https://openrouter.ai/api/v1/chat/completions',
+  };
 
-  const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
-  const OPENAI_BASE_URL = Deno.env.get('OPENAI_BASE_URL');
+  // Check configuration
+  const OPENROUTER_API_KEY = Deno.env.get('OPENROUTER_API_KEY');
   const LLM_MODEL = Deno.env.get('LLM_MODEL');
 
   results.config = {
-    openai_key_exists: !!OPENAI_API_KEY,
-    openai_base_url_exists: !!OPENAI_BASE_URL,
-    openai_base_url: OPENAI_BASE_URL ? OPENAI_BASE_URL.replace(/\/+$/, '') : null,
-    llm_model: LLM_MODEL || 'google/gemini-2.0-flash-exp (default)',
+    api_key_exists: !!OPENROUTER_API_KEY,
+    api_key_prefix: OPENROUTER_API_KEY ? OPENROUTER_API_KEY.substring(0, 8) + '...' : null,
+    model: LLM_MODEL || 'google/gemini-2.0-flash-exp:free (default)',
   };
 
+  // Test API call
   try {
+    const startTime = Date.now();
+
     const response = await callLLM(
-      'You are a test bot. Respond with exactly: "LLM connection successful"',
-      'Test connection',
-      { maxOutputTokens: 30 }
+      'You are a test bot. Respond with exactly: "OpenRouter connection successful!"',
+      'Test the connection.',
+      { maxOutputTokens: 30, temperature: 0.1 }
     );
-    results.success = true;
-    results.response = response;
+
+    const latency = Date.now() - startTime;
+
+    results.test = {
+      success: true,
+      latency_ms: latency,
+      response: response.text,
+    };
   } catch (e: any) {
-    results.success = false;
-    results.error = e.message;
+    results.test = {
+      success: false,
+      error: e.message,
+    };
   }
 
   return new Response(JSON.stringify(results, null, 2), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    status: results.test?.success ? 200 : 500,
   });
 });
