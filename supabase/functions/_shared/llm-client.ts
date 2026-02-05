@@ -25,10 +25,10 @@ export interface LLMResponse {
 }
 
 /**
- * Call Lovable AI Gateway with Fallback to Gemini
- * 
- * Primary: Lovable AI Gateway (requires LOVABLE_API_KEY)
- * Fallback: Google Gemini via OpenAI-compatible endpoint (requires GEMINI_API_KEY)
+ * Call Lovable AI Gateway (LOVABLE_API_KEY only)
+ *
+ * All LLM calls are routed exclusively through the Lovable AI Gateway.
+ * No fallback providers are supported.
  */
 export async function callLLM(
   systemPromptOrMessages: string | any[],
@@ -36,7 +36,14 @@ export async function callLLM(
   config: LLMConfig = {}
 ): Promise<LLMResponse> {
   const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-  const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
+
+  if (!LOVABLE_API_KEY) {
+    throw new Error('LLM Error: LOVABLE_API_KEY is required but not set. Please configure the secret in Supabase.');
+  }
+
+  if (!LOVABLE_API_KEY.startsWith('sk_')) {
+    console.warn('[LLM Client] Warning: LOVABLE_API_KEY does not start with "sk_". This may be an invalid key format.');
+  }
 
   // Construct messages
   let messages: any[] = [];
@@ -61,71 +68,20 @@ export async function callLLM(
   if (config.tools) {
     body.tools = config.tools;
   }
-  
+
   if (config.tool_choice) {
     body.tool_choice = config.tool_choice;
   }
 
-  // Attempt Lovable First
-  if (LOVABLE_API_KEY) {
-    try {
-      if (!LOVABLE_API_KEY.startsWith('sk_')) {
-        console.warn('[LLM Client] Warning: LOVABLE_API_KEY does not start with "sk_". This may be an invalid key format.');
-      }
+  console.log('[LLM Client] Calling Lovable AI Gateway...');
 
-      console.log('[LLM Client] Calling Lovable AI Gateway...');
-      const result = await callProvider(
-        'https://ai.gateway.lovable.dev/v1/chat/completions',
-        LOVABLE_API_KEY,
-        body
-      );
-      return result;
+  const result = await callProvider(
+    'https://ai.gateway.lovable.dev/v1/chat/completions',
+    LOVABLE_API_KEY,
+    body
+  );
 
-    } catch (e: any) {
-      console.error(`[LLM Client] Lovable API failed: ${e.message}`);
-      
-      // If auth error (401) or explicit Lovable error, try fallback immediately
-      if (e.message.includes('401') || e.message.includes('Lovable API error')) {
-        console.warn('[LLM Client] Lovable auth failed. Attempting fallback to Gemini...');
-      } else {
-        // For other errors, maybe we should also fallback?
-        // Let's fallback for any error to be safe and "restore functionality"
-        console.warn('[LLM Client] Lovable failed. Attempting fallback to Gemini...');
-      }
-    }
-  } else {
-    console.warn('[LLM Client] LOVABLE_API_KEY not found. Attempting fallback to Gemini...');
-  }
-
-  // Fallback to Gemini
-  if (GEMINI_API_KEY) {
-    try {
-      console.log('[LLM Client] Using Gemini Fallback (OpenAI Compatible Endpoint)...');
-      
-      // Adjust model for Gemini direct usage if needed
-      // The OpenAI endpoint usually accepts standard model names like 'gemini-1.5-flash'
-      // If 'google/gemini-2.5-flash' is passed, we might need to strip 'google/'
-      // or use a known working model for Gemini API.
-      // Safe bet: 'gemini-1.5-flash'
-      const fallbackBody = { ...body };
-      if (fallbackBody.model.includes('google/')) {
-        fallbackBody.model = 'gemini-1.5-flash'; // Fallback to stable model
-      }
-
-      const result = await callProvider(
-        'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
-        GEMINI_API_KEY,
-        fallbackBody
-      );
-      return result;
-
-    } catch (e: any) {
-      console.error(`[LLM Client] Gemini Fallback failed: ${e.message}`);
-      throw new Error(`All LLM providers failed. Lovable: ${!LOVABLE_API_KEY ? 'Missing Key' : 'Error'}, Gemini: ${e.message}`);
-    }
-  }
-
-  throw new Error('LLM Error: No working provider found. Check LOVABLE_API_KEY or GEMINI_API_KEY.');
+  return result;
 }
 
 async function callProvider(url: string, apiKey: string, body: any): Promise<LLMResponse> {

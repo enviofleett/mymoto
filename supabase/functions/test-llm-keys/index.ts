@@ -16,11 +16,10 @@ serve(async (req: Request) => {
   const results: any = {};
 
   const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-  const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
 
   results.config = {
     lovable_key_exists: !!LOVABLE_API_KEY,
-    gemini_key_exists: !!GEMINI_API_KEY,
+    lovable_key_format_valid: LOVABLE_API_KEY?.startsWith('sk_') ?? false,
   };
 
   try {
