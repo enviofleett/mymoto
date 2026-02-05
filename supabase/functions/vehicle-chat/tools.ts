@@ -1,4 +1,4 @@
-import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { SupabaseClient } from 'npm:@supabase/supabase-js@2'
 import { handleTripSearch } from './trip-search.ts'
 import { validateTrip } from './trip-utils.ts'
 import { reverseGeocode } from '../_shared/geocoding.ts'
