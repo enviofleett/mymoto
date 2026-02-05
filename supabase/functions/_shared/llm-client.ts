@@ -25,25 +25,43 @@ export interface LLMResponse {
 }
 
 /**
- * Call Lovable AI Gateway (LOVABLE_API_KEY only)
+ * Call LLM via OpenAI-compatible API
  *
- * All LLM calls are routed exclusively through the Lovable AI Gateway.
- * No fallback providers are supported.
+ * Uses OPENAI_API_KEY for authentication and OPENAI_BASE_URL for the endpoint.
+ * Compatible with OpenRouter, OpenAI, Azure OpenAI, and any OpenAI-compatible provider.
+ *
+ * Required secrets:
+ * - OPENAI_API_KEY: Your API key for the provider
+ * - OPENAI_BASE_URL: The base URL for the API (e.g., https://openrouter.ai/api/v1)
+ *
+ * Optional secrets:
+ * - LLM_MODEL: Override the default model (defaults to google/gemini-2.0-flash-exp)
  */
 export async function callLLM(
   systemPromptOrMessages: string | any[],
   userPrompt?: string,
   config: LLMConfig = {}
 ): Promise<LLMResponse> {
-  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+  const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+  const OPENAI_BASE_URL = Deno.env.get('OPENAI_BASE_URL');
+  const LLM_MODEL = Deno.env.get('LLM_MODEL');
 
-  if (!LOVABLE_API_KEY) {
-    throw new Error('LLM Error: LOVABLE_API_KEY is required but not set. Please configure the secret in Supabase.');
+  // Validate required configuration
+  if (!OPENAI_API_KEY) {
+    throw new Error('LLM Error: OPENAI_API_KEY is required but not set. Please configure the secret in Supabase.');
   }
 
-  if (!LOVABLE_API_KEY.startsWith('sk_')) {
-    console.warn('[LLM Client] Warning: LOVABLE_API_KEY does not start with "sk_". This may be an invalid key format.');
+  if (!OPENAI_BASE_URL) {
+    throw new Error('LLM Error: OPENAI_BASE_URL is required but not set. Please configure the secret in Supabase.');
   }
+
+  // Construct the full API endpoint URL
+  // Handle both cases: URL with or without trailing slash
+  const baseUrl = OPENAI_BASE_URL.replace(/\/+$/, ''); // Remove trailing slashes
+  const apiUrl = `${baseUrl}/chat/completions`;
+
+  // Determine model to use (priority: config > env > default)
+  const model = config.model || LLM_MODEL || 'google/gemini-2.0-flash-exp';
 
   // Construct messages
   let messages: any[] = [];
@@ -56,9 +74,9 @@ export async function callLLM(
     ];
   }
 
-  // Construct body
+  // Construct request body (OpenAI-compatible format)
   const body: any = {
-    model: config.model || 'google/gemini-2.5-flash',
+    model,
     messages,
     max_tokens: config.maxOutputTokens || 1024,
     temperature: config.temperature ?? 0.7,
@@ -73,13 +91,9 @@ export async function callLLM(
     body.tool_choice = config.tool_choice;
   }
 
-  console.log('[LLM Client] Calling Lovable AI Gateway...');
+  console.log(`[LLM Client] Calling ${baseUrl} with model ${model}...`);
 
-  const result = await callProvider(
-    'https://ai.gateway.lovable.dev/v1/chat/completions',
-    LOVABLE_API_KEY,
-    body
-  );
+  const result = await callProvider(apiUrl, OPENAI_API_KEY, body);
 
   return result;
 }
@@ -92,6 +106,7 @@ async function callProvider(url: string, apiKey: string, body: any): Promise<LLM
     try {
       if (attempt > 0) {
         const delay = Math.pow(2, attempt) * 500;
+        console.log(`[LLM Client] Retry attempt ${attempt}, waiting ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
 
@@ -106,25 +121,35 @@ async function callProvider(url: string, apiKey: string, body: any): Promise<LLM
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`API Error ${response.status}: ${errorText.substring(0, 200)}`);
+        const errorMsg = `API Error ${response.status}: ${errorText.substring(0, 200)}`;
+        console.error(`[LLM Client] ${errorMsg}`);
+        throw new Error(errorMsg);
       }
 
       const data = await response.json();
       const message = data.choices?.[0]?.message;
-      
-      return { 
+
+      if (!message) {
+        console.error('[LLM Client] Unexpected response format:', JSON.stringify(data).substring(0, 200));
+        throw new Error('Invalid response format: no message in response');
+      }
+
+      console.log('[LLM Client] Success');
+      return {
         text: message?.content || null,
         tool_calls: message?.tool_calls
       };
 
     } catch (e: any) {
       lastError = e;
-      // Don't retry 401/403/404/400
+      // Don't retry auth errors or bad requests - these won't succeed on retry
       if (e.message.includes('401') || e.message.includes('403') || e.message.includes('404') || e.message.includes('400')) {
         throw e;
       }
       console.warn(`[LLM Client] Attempt ${attempt} failed: ${e.message}`);
     }
   }
+
+  console.error(`[LLM Client] All ${maxRetries + 1} attempts failed`);
   throw lastError;
 }

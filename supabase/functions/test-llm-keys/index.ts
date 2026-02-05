@@ -15,25 +15,28 @@ serve(async (req: Request) => {
 
   const results: any = {};
 
-  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+  const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+  const OPENAI_BASE_URL = Deno.env.get('OPENAI_BASE_URL');
+  const LLM_MODEL = Deno.env.get('LLM_MODEL');
 
   results.config = {
-    lovable_key_exists: !!LOVABLE_API_KEY,
-    lovable_key_format_valid: LOVABLE_API_KEY?.startsWith('sk_') ?? false,
+    openai_key_exists: !!OPENAI_API_KEY,
+    openai_base_url_exists: !!OPENAI_BASE_URL,
+    openai_base_url: OPENAI_BASE_URL ? OPENAI_BASE_URL.replace(/\/+$/, '') : null,
+    llm_model: LLM_MODEL || 'google/gemini-2.0-flash-exp (default)',
   };
 
   try {
     const response = await callLLM(
-      'You are a test bot.',
-      'Hello, are you working?',
-      { maxOutputTokens: 20 }
+      'You are a test bot. Respond with exactly: "LLM connection successful"',
+      'Test connection',
+      { maxOutputTokens: 30 }
     );
     results.success = true;
     results.response = response;
   } catch (e: any) {
     results.success = false;
     results.error = e.message;
-    results.stack = e.stack;
   }
 
   return new Response(JSON.stringify(results, null, 2), {
