@@ -1,6 +1,7 @@
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { handleTripSearch } from './trip-search.ts'
 import { validateTrip } from './trip-utils.ts'
+import { reverseGeocode } from '../_shared/geocoding.ts'
 
 // ============================================================================
 // Types
@@ -34,7 +35,6 @@ const get_vehicle_status: ToolDefinition = {
   },
   execute: async (_args, { supabase, device_id }) => {
     // Correct source: vehicle_positions (Real-time cache)
-    // Note: 'address' column does not exist in vehicle_positions, so we only fetch coordinates.
     const { data: positions, error } = await supabase
       .from('vehicle_positions')
       .select('latitude, longitude, speed, heading, gps_time, is_online, ignition_on, battery_percent, total_mileage')
@@ -46,14 +46,19 @@ const get_vehicle_status: ToolDefinition = {
     if (!positions) return { status: 'unknown', message: 'No location data found.' }
 
     const timeAgoMinutes = Math.round((Date.now() - new Date(positions.gps_time).getTime()) / 60000)
-    
+
+    // Reverse geocode to get address and map links
+    const geocodeResult = await reverseGeocode(positions.latitude, positions.longitude)
+
     return {
       status: positions.is_online ? 'online' : 'offline',
       last_updated_minutes_ago: timeAgoMinutes,
       data_quality: timeAgoMinutes > 15 ? 'stale' : 'fresh',
       location: {
-        address: "Address not available (use map)",
-        coordinates: { lat: positions.latitude, lng: positions.longitude }
+        address: geocodeResult.address,
+        map_link: geocodeResult.mapUrl,
+        static_map: geocodeResult.staticMapUrl,
+        coordinates: geocodeResult.coordinates
       },
       telemetry: {
         speed_kmh: Math.round(positions.speed),
