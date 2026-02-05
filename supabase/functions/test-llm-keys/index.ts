@@ -31,7 +31,8 @@ serve(async (req: Request) => {
   results.config = {
     api_key_exists: !!OPENROUTER_API_KEY,
     api_key_prefix: OPENROUTER_API_KEY ? OPENROUTER_API_KEY.substring(0, 8) + '...' : null,
-    model: LLM_MODEL || 'google/gemini-2.0-flash-exp:free (default)',
+    model_exists: !!LLM_MODEL,
+    model: LLM_MODEL || '(NOT SET - required)',
   };
 
   // Test API call
