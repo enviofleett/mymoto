@@ -1,4 +1,4 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from 'npm:@supabase/supabase-js@2'
 import { buildConversationContext, callLovableAPI, buildSystemPrompt } from './conversation-manager.ts'
 import { learnAndGetPreferences, buildPreferenceContext, getUserPreferences } from './preference-learner.ts'
 import { extractDateContext } from './date-extractor.ts'

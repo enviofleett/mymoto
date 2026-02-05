@@ -5,7 +5,7 @@
  * Uses pattern matching and confidence scoring to learn and adapt.
  */
 
-import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient, SupabaseClient } from 'npm:@supabase/supabase-js@2'
 
 // Preference categories and extraction patterns
 export type PreferenceCategory = 
