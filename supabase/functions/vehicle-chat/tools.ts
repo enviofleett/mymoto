@@ -422,10 +422,276 @@ const create_geofence_alert: ToolDefinition = {
   }
 }
 
+// ============================================================================
+// NEW: Trip Analytics Tool
+// ============================================================================
+
+const get_trip_analytics: ToolDefinition = {
+  name: 'get_trip_analytics',
+  description: 'Get comprehensive trip analytics including trip count, total drive time, parking duration, distance covered, and daily breakdown. Use this for questions like "How many trips today?", "How long was I driving?", "What are my stats for this week?"',
+  parameters: {
+    type: 'object',
+    properties: {
+      start_date: { type: 'string', description: 'ISO date string for start of period (e.g., "2024-01-15")' },
+      end_date: { type: 'string', description: 'ISO date string for end of period (e.g., "2024-01-15")' },
+      period: { type: 'string', enum: ['today', 'yesterday', 'this_week', 'last_week', 'this_month', 'custom'], description: 'Predefined period or custom range' }
+    },
+    required: []
+  },
+  execute: async ({ start_date, end_date, period = 'today' }, { supabase, device_id }) => {
+    // Calculate date range based on period
+    const now = new Date()
+    let startDate: Date
+    let endDate: Date = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59)
+
+    switch (period) {
+      case 'today':
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0)
+        break
+      case 'yesterday':
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 0, 0, 0)
+        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 23, 59, 59)
+        break
+      case 'this_week':
+        const dayOfWeek = now.getDay()
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek, 0, 0, 0)
+        break
+      case 'last_week':
+        const lastWeekDay = now.getDay()
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - lastWeekDay - 7, 0, 0, 0)
+        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - lastWeekDay - 1, 23, 59, 59)
+        break
+      case 'this_month':
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0)
+        break
+      case 'custom':
+        startDate = start_date ? new Date(start_date) : new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0)
+        endDate = end_date ? new Date(end_date) : endDate
+        break
+      default:
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0)
+    }
+
+    // Query vehicle_daily_stats view for aggregated data
+    const { data: dailyStats, error: statsError } = await supabase
+      .from('vehicle_daily_stats')
+      .select('*')
+      .eq('device_id', device_id)
+      .gte('stat_date', startDate.toISOString().split('T')[0])
+      .lte('stat_date', endDate.toISOString().split('T')[0])
+      .order('stat_date', { ascending: false })
+
+    if (statsError) {
+      console.error('Error fetching daily stats:', statsError)
+    }
+
+    // Query trips for more detailed analysis
+    const { data: trips, error: tripsError } = await supabase
+      .from('vehicle_trips')
+      .select('start_time, end_time, duration_seconds, distance_km, start_address, end_address, start_latitude, start_longitude, end_latitude, end_longitude')
+      .eq('device_id', device_id)
+      .gte('start_time', startDate.toISOString())
+      .lte('end_time', endDate.toISOString())
+      .order('start_time', { ascending: true })
+
+    if (tripsError) throw new Error(`Database error: ${tripsError.message}`)
+
+    // Calculate analytics
+    const tripCount = trips?.length || 0
+    const totalDriveTimeSeconds = trips?.reduce((sum: number, t: any) => sum + (t.duration_seconds || 0), 0) || 0
+    const totalDistanceKm = trips?.reduce((sum: number, t: any) => sum + (t.distance_km || 0), 0) || 0
+
+    // Calculate time between trips (parking/idle time)
+    let totalParkingTimeSeconds = 0
+    if (trips && trips.length > 1) {
+      for (let i = 1; i < trips.length; i++) {
+        const prevEnd = new Date(trips[i - 1].end_time).getTime()
+        const currStart = new Date(trips[i].start_time).getTime()
+        const gapSeconds = (currStart - prevEnd) / 1000
+        // Only count gaps less than 12 hours as parking (otherwise might be overnight)
+        if (gapSeconds > 0 && gapSeconds < 12 * 3600) {
+          totalParkingTimeSeconds += gapSeconds
+        }
+      }
+    }
+
+    // Format durations
+    const formatDuration = (seconds: number) => {
+      const hours = Math.floor(seconds / 3600)
+      const minutes = Math.floor((seconds % 3600) / 60)
+      if (hours > 0) {
+        return `${hours}h ${minutes}m`
+      }
+      return `${minutes} minutes`
+    }
+
+    // Get first and last trip locations for summary
+    const firstTrip = trips?.[0]
+    const lastTrip = trips?.[trips.length - 1]
+
+    return {
+      period: {
+        name: period,
+        start: startDate.toISOString(),
+        end: endDate.toISOString()
+      },
+      summary: {
+        total_trips: tripCount,
+        total_distance_km: Math.round(totalDistanceKm * 100) / 100,
+        total_drive_time: formatDuration(totalDriveTimeSeconds),
+        total_drive_time_seconds: totalDriveTimeSeconds,
+        total_parking_time: formatDuration(totalParkingTimeSeconds),
+        total_parking_time_seconds: totalParkingTimeSeconds,
+        average_trip_distance_km: tripCount > 0 ? Math.round((totalDistanceKm / tripCount) * 100) / 100 : 0,
+        average_trip_duration: tripCount > 0 ? formatDuration(totalDriveTimeSeconds / tripCount) : '0 minutes'
+      },
+      daily_breakdown: dailyStats?.map((d: any) => ({
+        date: d.stat_date,
+        trips: d.trip_count,
+        distance_km: d.total_distance_km,
+        drive_time: formatDuration(d.total_duration_seconds),
+        peak_speed_kmh: d.peak_speed,
+        avg_speed_kmh: d.avg_speed
+      })) || [],
+      first_trip: firstTrip ? {
+        time: firstTrip.start_time,
+        from: firstTrip.start_address || 'Unknown'
+      } : null,
+      last_trip: lastTrip ? {
+        time: lastTrip.end_time,
+        to: lastTrip.end_address || 'Unknown'
+      } : null
+    }
+  }
+}
+
+// ============================================================================
+// NEW: Favorite Locations Tool
+// ============================================================================
+
+const get_favorite_locations: ToolDefinition = {
+  name: 'get_favorite_locations',
+  description: 'Get the most frequently visited parking spots and locations. Analyzes trip end points to identify favorite/common destinations. Use for questions like "Where do I usually park?", "What are my favorite spots?", "Where do I go most often?"',
+  parameters: {
+    type: 'object',
+    properties: {
+      days: { type: 'number', description: 'Number of days to analyze (default: 30, max: 90)' },
+      limit: { type: 'number', description: 'Number of top locations to return (default: 5, max: 10)' }
+    },
+    required: []
+  },
+  execute: async ({ days = 30, limit = 5 }, { supabase, device_id }) => {
+    const maxDays = Math.min(days || 30, 90)
+    const maxLimit = Math.min(limit || 5, 10)
+    const startDate = new Date()
+    startDate.setDate(startDate.getDate() - maxDays)
+
+    // Get all trip end points (parking locations)
+    const { data: trips, error } = await supabase
+      .from('vehicle_trips')
+      .select('end_latitude, end_longitude, end_address, end_time')
+      .eq('device_id', device_id)
+      .gte('start_time', startDate.toISOString())
+      .not('end_latitude', 'is', null)
+      .not('end_longitude', 'is', null)
+      .order('end_time', { ascending: false })
+
+    if (error) throw new Error(`Database error: ${error.message}`)
+    if (!trips || trips.length === 0) {
+      return {
+        found: false,
+        message: `No trip data found in the last ${maxDays} days to analyze parking patterns.`
+      }
+    }
+
+    // Cluster nearby locations (within ~100m radius)
+    const CLUSTER_RADIUS_KM = 0.1 // 100 meters
+    const clusters: Array<{
+      lat: number
+      lng: number
+      count: number
+      addresses: string[]
+      lastVisit: string
+    }> = []
+
+    for (const trip of trips) {
+      const lat = trip.end_latitude
+      const lng = trip.end_longitude
+
+      // Find existing cluster within radius
+      let foundCluster = false
+      for (const cluster of clusters) {
+        const R = 6371 // Earth radius in km
+        const dLat = ((lat - cluster.lat) * Math.PI) / 180
+        const dLon = ((lng - cluster.lng) * Math.PI) / 180
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                  Math.cos((cluster.lat * Math.PI) / 180) * Math.cos((lat * Math.PI) / 180) *
+                  Math.sin(dLon / 2) * Math.sin(dLon / 2)
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+        const distance = R * c
+
+        if (distance <= CLUSTER_RADIUS_KM) {
+          cluster.count++
+          if (trip.end_address && !cluster.addresses.includes(trip.end_address)) {
+            cluster.addresses.push(trip.end_address)
+          }
+          if (trip.end_time > cluster.lastVisit) {
+            cluster.lastVisit = trip.end_time
+          }
+          foundCluster = true
+          break
+        }
+      }
+
+      if (!foundCluster) {
+        clusters.push({
+          lat,
+          lng,
+          count: 1,
+          addresses: trip.end_address ? [trip.end_address] : [],
+          lastVisit: trip.end_time
+        })
+      }
+    }
+
+    // Sort by visit count and take top locations
+    clusters.sort((a, b) => b.count - a.count)
+    const topLocations = clusters.slice(0, maxLimit)
+
+    // Reverse geocode locations without addresses
+    const locationsWithAddresses = await Promise.all(
+      topLocations.map(async (loc, index) => {
+        let address = loc.addresses[0]
+        if (!address) {
+          const geocoded = await reverseGeocode(loc.lat, loc.lng)
+          address = geocoded.address
+        }
+        return {
+          rank: index + 1,
+          address: address,
+          visit_count: loc.count,
+          last_visited: loc.lastVisit,
+          coordinates: { lat: loc.lat, lng: loc.lng },
+          map_link: `https://www.google.com/maps?q=${loc.lat},${loc.lng}`
+        }
+      })
+    )
+
+    return {
+      found: true,
+      analysis_period_days: maxDays,
+      total_trips_analyzed: trips.length,
+      favorite_locations: locationsWithAddresses
+    }
+  }
+}
+
 export const TOOLS: ToolDefinition[] = [
   get_vehicle_status,
   get_trip_history,
-  get_position_history,  // NEW: Detailed GPS position history for tracking
+  get_trip_analytics,      // NEW: Comprehensive trip analytics
+  get_favorite_locations,  // NEW: Frequently visited spots
+  get_position_history,
   search_trip_locations,
   request_vehicle_command,
   search_knowledge_base,

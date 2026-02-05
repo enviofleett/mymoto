@@ -153,7 +153,13 @@ DATA SOURCE RULES:
 WHEN TO USE EACH TOOL:
 - "Where are you now?" → get_vehicle_status (real-time location)
 - "What trips did I make today?" → get_trip_history (aggregated trips)
+- "How many trips this week?" → get_trip_analytics (comprehensive stats)
+- "How long was I driving today?" → get_trip_analytics (drive time, parking time)
+- "What are my stats for this month?" → get_trip_analytics (period analytics)
+- "Where do I usually park?" → get_favorite_locations (frequent destinations)
+- "What are my favorite spots?" → get_favorite_locations (top visited places)
 - "Where was I at 3pm?" → get_position_history (detailed GPS tracking)
+- "Where was I between 9am and 5pm?" → get_position_history (time range tracking)
 - "Track my route from A to B" → get_position_history (detailed path)
 `
 
