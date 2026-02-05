@@ -168,33 +168,42 @@ async function fetchVehicleTrips(
     }
   }
   
-  // Filter and process trips
-  // CRITICAL FIX: Include ALL trips that have start_time and end_time, even if coordinates are 0
-  // This allows trips with missing GPS data to still be displayed
+  // Filter and process trips using GPS51-accurate thresholds
+  // CRITICAL: These thresholds MUST match the backend (sync-trips-incremental) for 100% consistency
+  const GPS51_THRESHOLDS = {
+    MIN_DISTANCE_KM: 0.5,      // 500m minimum (GPS51 standard)
+    MIN_DURATION_SEC: 180,     // 3 minutes minimum (GPS51 standard)
+    MAX_SPEED_KMH: 200,        // Maximum realistic speed
+  };
+
   const filteredTrips = ((data as any[]) || [])
     .filter((trip: any) => {
       // 1. Basic Validity: Must have start and end time
       if (!trip.start_time || !trip.end_time) return false;
 
-      // Ghost Trip Filtering (Match Logic in VehicleTrips.tsx and Edge Functions)
       const distance = trip.distance_km || 0;
       const duration = trip.duration_seconds || 0;
-      
-      // 2. Filter out short trips with negligible distance (Ignition flicker)
-      // Threshold: < 0.1 km distance AND < 2 minutes duration
-      // This effectively filters out "Ghost Trips" while preserving valid "Idling" trips (long duration, 0 distance)
-      if (distance < 0.1 && duration < 120) return false;
+      const maxSpeed = trip.max_speed || 0;
 
-      // 3. REMOVED: Filter out zero distance trips (Static drift)
-      // We MUST allow zero distance trips if they are long enough (handled by rule #2) because they represent "Idling"
-      // if (distance === 0) return false;
+      // 2. GPS51 Ghost Trip Filter: Tiny trips (< 500m AND < 3 min)
+      // Allow either condition to pass - a long idling session (3+ min, 0 km) is valid
+      // A short drive that covers distance (500m+) is also valid
+      if (distance < GPS51_THRESHOLDS.MIN_DISTANCE_KM &&
+          duration < GPS51_THRESHOLDS.MIN_DURATION_SEC) {
+        return false;
+      }
 
-      // 4. Filter out unrealistic speed (GPS Jump)
-      // Threshold: > 250 km/h
-      if (duration > 0) {
+      // 3. GPS51 Speed Spike Filter: Unrealistic max speed
+      // Use actual max_speed from trip data (more accurate than calculated)
+      if (maxSpeed > GPS51_THRESHOLDS.MAX_SPEED_KMH) {
+        return false;
+      }
+
+      // 4. Fallback: Filter calculated speed spikes (for trips without max_speed data)
+      if (!maxSpeed && duration > 0) {
         const hours = duration / 3600;
-        const speed = distance / hours;
-        if (speed > 250) return false;
+        const avgSpeed = distance / hours;
+        if (avgSpeed > GPS51_THRESHOLDS.MAX_SPEED_KMH) return false;
       }
 
       return true;
