@@ -6,10 +6,9 @@
  *
  * Required Supabase Secrets:
  * - OPENROUTER_API_KEY: Your OpenRouter API key (get from https://openrouter.ai/keys)
+ * - LLM_MODEL: The model to use (e.g., google/gemini-2.0-flash-exp:free, openai/gpt-4o-mini)
  *
- * Optional Secrets:
- * - LLM_MODEL: Override the default model (default: google/gemini-2.0-flash-exp:free)
- *
+ * Browse available models: https://openrouter.ai/models
  * OpenRouter API Reference: https://openrouter.ai/docs/quickstart
  */
 
@@ -17,7 +16,6 @@ declare const Deno: any;
 
 // OpenRouter API Configuration
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
-const DEFAULT_MODEL = 'google/gemini-2.0-flash-exp:free';
 
 export interface ToolCall {
   id: string;
@@ -65,9 +63,16 @@ export async function callLLM(
     );
   }
 
-  // Determine model (priority: config > env > default)
+  // Get model from config or environment (no default - fully configurable)
   const LLM_MODEL = Deno.env.get('LLM_MODEL');
-  const model = config.model || LLM_MODEL || DEFAULT_MODEL;
+  const model = config.model || LLM_MODEL;
+
+  if (!model) {
+    throw new Error(
+      'LLM_MODEL is required but not set. ' +
+      'Set it in Supabase secrets. Browse models at https://openrouter.ai/models'
+    );
+  }
 
   // Construct messages array
   let messages: any[];
