@@ -167,69 +167,123 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
 
   // Fetch positions only - no joins to avoid FK issues
   // Filter invalid coordinates at query level (lat -90 to 90, lon -180 to 180, not 0,0)
-  const { data: positions, error: posError } = await (supabase as any)
-    .from('vehicle_positions')
-    .select(`
-      device_id,
-      latitude,
-      longitude,
-      speed,
-      heading,
-      battery_percent,
-      ignition_on,
-      is_online,
-      is_overspeeding,
-      total_mileage,
-      status_text,
-      gps_time,
-      cached_at
-    `)
-    .not('latitude', 'is', null)
-    .not('longitude', 'is', null)
-    .gte('latitude', -90)
-    .lte('latitude', 90)
-    .gte('longitude', -180)
-    .lte('longitude', 180)
-    .or('latitude.neq.0,longitude.neq.0'); // Not (0,0)
+  let allPositions: any[] = [];
+  let posFrom = 0;
+  const BATCH_SIZE = 1000;
+  let posHasMore = true;
 
-  if (posError) throw new Error(`Fleet data error: ${posError.message}`);
+  while (posHasMore) {
+    const { data: positions, error: posError } = await (supabase as any)
+      .from('vehicle_positions')
+      .select(`
+        device_id,
+        latitude,
+        longitude,
+        speed,
+        heading,
+        battery_percent,
+        ignition_on,
+        is_online,
+        is_overspeeding,
+        total_mileage,
+        status_text,
+        gps_time,
+        cached_at
+      `)
+      .not('latitude', 'is', null)
+      .not('longitude', 'is', null)
+      .gte('latitude', -90)
+      .lte('latitude', 90)
+      .gte('longitude', -180)
+      .lte('longitude', 180)
+      .or('latitude.neq.0,longitude.neq.0') // Not (0,0)
+      .range(posFrom, posFrom + BATCH_SIZE - 1);
+
+    if (posError) throw new Error(`Fleet data error: ${posError.message}`);
+
+    if (positions && positions.length > 0) {
+      allPositions = [...allPositions, ...positions];
+      if (positions.length < BATCH_SIZE) {
+        posHasMore = false;
+      } else {
+        posFrom += BATCH_SIZE;
+      }
+    } else {
+      posHasMore = false;
+    }
+  }
 
   // Fetch vehicles separately
-  const { data: vehiclesList, error: vehiclesError } = await (supabase as any)
-    .from('vehicles')
-    .select('device_id, device_name, gps_owner');
+  let allVehicles: any[] = [];
+  let vehFrom = 0;
+  let vehHasMore = true;
 
-  if (vehiclesError) {
-    console.warn('[useFleetData] Could not fetch vehicles:', vehiclesError.message);
+  while (vehHasMore) {
+    const { data: vehiclesList, error: vehiclesError } = await (supabase as any)
+      .from('vehicles')
+      .select('device_id, device_name, gps_owner')
+      .range(vehFrom, vehFrom + BATCH_SIZE - 1);
+
+    if (vehiclesError) {
+      console.warn('[useFleetData] Could not fetch vehicles:', vehiclesError.message);
+      // Don't throw here, just stop fetching vehicles
+      vehHasMore = false;
+    } else if (vehiclesList && vehiclesList.length > 0) {
+      allVehicles = [...allVehicles, ...vehiclesList];
+      if (vehiclesList.length < BATCH_SIZE) {
+        vehHasMore = false;
+      } else {
+        vehFrom += BATCH_SIZE;
+      }
+    } else {
+      vehHasMore = false;
+    }
   }
 
   // Fetch assignments with profiles separately
-  const { data: assignments, error: assignError } = await (supabase as any)
-    .from('vehicle_assignments')
-    .select(`
-      device_id,
-      vehicle_alias,
-      profiles (
-        id,
-        name,
-        phone,
-        license_number
-      )
-    `);
+  let allAssignments: any[] = [];
+  let assignFrom = 0;
+  let assignHasMore = true;
 
-  if (assignError) {
-    console.warn('[useFleetData] Could not fetch assignments:', assignError.message);
+  while (assignHasMore) {
+    const { data: assignments, error: assignError } = await (supabase as any)
+      .from('vehicle_assignments')
+      .select(`
+        device_id,
+        vehicle_alias,
+        profiles (
+          id,
+          name,
+          phone,
+          license_number
+        )
+      `)
+      .range(assignFrom, assignFrom + BATCH_SIZE - 1);
+
+    if (assignError) {
+      console.warn('[useFleetData] Could not fetch assignments:', assignError.message);
+      assignHasMore = false;
+    } else if (assignments && assignments.length > 0) {
+      allAssignments = [...allAssignments, ...assignments];
+      if (assignments.length < BATCH_SIZE) {
+        assignHasMore = false;
+      } else {
+        assignFrom += BATCH_SIZE;
+      }
+    } else {
+      assignHasMore = false;
+    }
   }
 
   // Create lookup maps
   const vehiclesMap = new Map<string, any>();
-  (vehiclesList || []).forEach(v => vehiclesMap.set(v.device_id, v));
+  allVehicles.forEach(v => vehiclesMap.set(v.device_id, v));
 
   const assignmentMap = new Map<string, any>();
-  (assignments || []).forEach(a => assignmentMap.set(a.device_id, a));
+  allAssignments.forEach(a => assignmentMap.set(a.device_id, a));
 
   // Merge positions with vehicles and assignments
-  const mergedData = (positions || []).map(pos => ({
+  const mergedData = allPositions.map(pos => ({
     ...pos,
     vehicles: vehiclesMap.get(pos.device_id) || null,
     vehicle_assignments: assignmentMap.has(pos.device_id) 

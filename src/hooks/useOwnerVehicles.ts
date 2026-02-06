@@ -46,13 +46,33 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
   if (isAdmin) {
     // Admins see ALL vehicles - fetch all device_ids from vehicles table
     console.log("[useOwnerVehicles] Admin user - fetching all vehicles");
-    const { data: allVehicles, error: vehiclesError } = await (supabase as any)
-      .from("vehicles")
-      .select("device_id, device_name");
     
-    if (vehiclesError) {
-      console.error("[useOwnerVehicles] Error fetching all vehicles:", vehiclesError);
-      throw vehiclesError;
+    let allVehicles: any[] = [];
+    let from = 0;
+    const batchSize = 1000;
+    let hasMore = true;
+
+    while (hasMore) {
+      const { data, error: vehiclesError } = await (supabase as any)
+        .from("vehicles")
+        .select("device_id, device_name")
+        .range(from, from + batchSize - 1);
+      
+      if (vehiclesError) {
+        console.error("[useOwnerVehicles] Error fetching all vehicles:", vehiclesError);
+        throw vehiclesError;
+      }
+
+      if (data && data.length > 0) {
+        allVehicles = [...allVehicles, ...data];
+        if (data.length < batchSize) {
+          hasMore = false;
+        } else {
+          from += batchSize;
+        }
+      } else {
+        hasMore = false;
+      }
     }
     
     deviceIds = (allVehicles || []).map((v: any) => v.device_id);
