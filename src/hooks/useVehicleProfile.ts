@@ -176,7 +176,24 @@ async function fetchVehicleTrips(
     MAX_SPEED_KMH: 200,        // Maximum realistic speed
   };
 
-  const filteredTrips = ((data as any[]) || [])
+  const normalizedTrips = ((data as any[]) || []).map((trip: any) => {
+    if (!trip.start_time) {
+      return trip;
+    }
+
+    const startTime = new Date(trip.start_time);
+    const endTime = trip.end_time ? new Date(trip.end_time) : null;
+    const durationSeconds = trip.duration_seconds ?? (endTime ? Math.max(0, Math.round((endTime.getTime() - startTime.getTime()) / 1000)) : 0);
+
+    if (!trip.end_time) {
+      const calculatedEnd = new Date(startTime.getTime() + durationSeconds * 1000);
+      return { ...trip, end_time: calculatedEnd.toISOString(), duration_seconds: durationSeconds };
+    }
+
+    return { ...trip, duration_seconds: durationSeconds };
+  });
+
+  const filteredTrips = normalizedTrips
     .filter((trip: any) => {
       // 1. Basic Validity: Must have start and end time
       if (!trip.start_time || !trip.end_time) return false;
