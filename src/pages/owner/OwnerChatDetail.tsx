@@ -327,7 +327,9 @@ export default function OwnerChatDetail() {
         return;
       }
       
-      console.log('[Chat] Sending message:', { deviceId, message: userMessage, userId: user.id });
+      if (import.meta.env.DEV) {
+        console.log('[Chat] Sending message:', { deviceId, message: userMessage, userId: user.id });
+      }
       
       const response = await fetch(CHAT_URL, {
         method: "POST",
@@ -345,8 +347,10 @@ export default function OwnerChatDetail() {
       
       clearTimeout(timeoutId); // Clear timeout on success
 
-      console.log('[Chat] Response status:', response.status, response.statusText);
-      console.log('[Chat] Response headers:', Object.fromEntries(response.headers.entries()));
+      if (import.meta.env.DEV) {
+        console.log('[Chat] Response status:', response.status, response.statusText);
+        console.log('[Chat] Response headers:', Object.fromEntries(response.headers.entries()));
+      }
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => 'Unknown error');
@@ -360,11 +364,13 @@ export default function OwnerChatDetail() {
         throw new Error(errorData.error || `Failed to get response: ${response.status}`);
       }
 
-      // Check content type - might be JSON error instead of stream
+      // Check content type - backend may return JSON instead of stream
       const contentType = response.headers.get('content-type') || '';
       if (contentType.includes('application/json')) {
         const jsonData = await response.json();
-        console.warn('[Chat] Received JSON instead of stream:', jsonData);
+        if (import.meta.env.DEV) {
+          console.log('[Chat] Received JSON response:', jsonData);
+        }
         
         if (jsonData.error) {
           throw new Error(jsonData.error);
@@ -374,7 +380,9 @@ export default function OwnerChatDetail() {
         // This handles the case where the backend returns a simple JSON response
         if (jsonData.text) {
           const fullResponse = jsonData.text;
-          console.log('[Chat] JSON response received:', fullResponse.substring(0, 50) + '...');
+          if (import.meta.env.DEV) {
+            console.log('[Chat] JSON response received:', fullResponse.substring(0, 50) + '...');
+          }
           
           const tempAssistantMsg: ChatMessage = {
             id: `temp-assistant-${Date.now()}`,
@@ -426,7 +434,9 @@ export default function OwnerChatDetail() {
           const { done, value } = await reader.read();
           
           if (done) {
-            console.log('[Chat] Stream done. Full response length:', fullResponse.length);
+            if (import.meta.env.DEV) {
+              console.log('[Chat] Stream done. Full response length:', fullResponse.length);
+            }
             break;
           }
 
@@ -447,7 +457,9 @@ export default function OwnerChatDetail() {
                 if (parsed.delta) {
                   fullResponse += parsed.delta;
                   setStreamingContent(fullResponse);
-                  console.log('[Chat] Received delta, total length:', fullResponse.length);
+                  if (import.meta.env.DEV) {
+                    console.log('[Chat] Received delta, total length:', fullResponse.length);
+                  }
                 } else if (parsed.error) {
                   console.error('[Chat] Error in stream:', parsed.error);
                   throw new Error(parsed.error);
@@ -473,7 +485,9 @@ export default function OwnerChatDetail() {
 
         // ✅ FIX: Keep streaming content visible, add as temporary message if realtime doesn't arrive
         if (fullResponse) {
-          console.log('[Chat] Full response received:', fullResponse.substring(0, 50) + '...');
+          if (import.meta.env.DEV) {
+            console.log('[Chat] Full response received:', fullResponse.substring(0, 50) + '...');
+          }
           
           // Add as temporary assistant message immediately so user sees it
           const tempAssistantMsg: ChatMessage = {
@@ -490,7 +504,9 @@ export default function OwnerChatDetail() {
               !m.id.startsWith('temp-')
             );
             if (exists) {
-              console.log('[Chat] Message already exists from realtime, skipping temp');
+              if (import.meta.env.DEV) {
+                console.log('[Chat] Message already exists from realtime, skipping temp');
+              }
               return prev;
             }
             // Add temporary message
@@ -503,7 +519,9 @@ export default function OwnerChatDetail() {
           // Don't set timeout to remove - keep temp message permanently if realtime doesn't arrive
           // The realtime subscription will replace it when it arrives
           // If realtime never arrives, the temp message stays (better than losing the message)
-          console.log('[Chat] Temp assistant message added, will be replaced by realtime when it arrives');
+          if (import.meta.env.DEV) {
+            console.log('[Chat] Temp assistant message added, will be replaced by realtime when it arrives');
+          }
         } else {
           setStreamingContent("");
         }

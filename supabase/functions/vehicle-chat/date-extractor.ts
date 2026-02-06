@@ -340,6 +340,18 @@ export function extractDateContext(message: string, clientTimestamp?: string, us
       humanReadable: 'recently (last 24 hours)'
     }
   }
+
+  // Generic trip history requests without explicit dates
+  if (/\btrip\s+(history|log|records?)\b/i.test(lowerMessage)) {
+    const searchStart = subDays(now, 30)
+    return {
+      hasDateReference: true,
+      period: 'custom',
+      startDate: startOfDay(searchStart).toISOString(),
+      endDate: endOfDay(now).toISOString(),
+      humanReadable: 'last 30 days'
+    }
+  }
   
   // No date reference found
   return {
@@ -364,6 +376,7 @@ export function isHistoricalMovementQuery(message: string): boolean {
     /\btravel(led|ed)?\b.*\b(yesterday|last|ago|week|month)\b/i,
     /\b(yesterday|last\s+week|last\s+month)\b.*\b(trip|journey|drive|move|travel)\b/i,
     /\b(last|latest)\s+(trip|journey)\b/i, // Added last trip check
+    /\btrip\s+(history|log|records?)\b/i,
   ]
   
   return patterns.some(p => p.test(message))

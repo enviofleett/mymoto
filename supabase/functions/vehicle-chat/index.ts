@@ -1,7 +1,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { buildConversationContext, callLovableAPI, buildSystemPrompt } from './conversation-manager.ts'
 import { learnAndGetPreferences, buildPreferenceContext, getUserPreferences } from './preference-learner.ts'
-import { extractDateContext } from './date-extractor.ts'
+import { extractDateContext, isHistoricalMovementQuery } from './date-extractor.ts'
 import { TOOLS, TOOLS_SCHEMA } from './tools.ts'
 
 // Declare Deno for linter
@@ -178,6 +178,43 @@ WHEN TO USE EACH TOOL:
     let metadata: any = {}
     const MAX_TURNS = 5
     let turnCount = 0
+
+    // Pre-fetch trip history for historical queries to ensure data is available
+    if (isHistoricalMovementQuery(message)) {
+      const startDate = dateContext.hasDateReference
+        ? dateContext.startDate
+        : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+      const endDate = dateContext.hasDateReference
+        ? dateContext.endDate
+        : new Date().toISOString()
+
+      const toolArgs = { start_date: startDate, end_date: endDate }
+      const toolDef = TOOLS.find(t => t.name === 'get_trip_history')
+
+      if (toolDef) {
+        const toolCallId = crypto.randomUUID()
+        const toolResult = await toolDef.execute(toolArgs, { supabase, device_id: target_device_id })
+        metadata['get_trip_history'] = toolResult
+
+        messages.push({
+          role: 'assistant',
+          content: null,
+          tool_calls: [{
+            id: toolCallId,
+            type: 'function',
+            function: {
+              name: 'get_trip_history',
+              arguments: JSON.stringify(toolArgs)
+            }
+          }]
+        })
+        messages.push({
+          role: 'tool',
+          tool_call_id: toolCallId,
+          content: JSON.stringify(toolResult)
+        })
+      }
+    }
     
     for (let turn = 0; turn < MAX_TURNS; turn++) {
       turnCount = turn + 1
