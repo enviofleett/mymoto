@@ -27,7 +27,7 @@ export interface OwnerVehicle {
 }
 
 async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
-  console.log("[useOwnerVehicles] Starting fetch for userId:", userId);
+  // console.log("[useOwnerVehicles] Starting fetch for userId:", userId);
   
   // Check if user is admin
   const { data: adminRole } = await supabase
@@ -38,14 +38,14 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
     .maybeSingle();
   
   const isAdmin = !!adminRole;
-  console.log("[useOwnerVehicles] User is admin:", isAdmin);
+  // console.log("[useOwnerVehicles] User is admin:", isAdmin);
   
   let deviceIds: string[] = [];
   let assignments: any[] = [];
   
   if (isAdmin) {
     // Admins see ALL vehicles - fetch all device_ids from vehicles table
-    console.log("[useOwnerVehicles] Admin user - fetching all vehicles");
+    // console.log("[useOwnerVehicles] Admin user - fetching all vehicles");
     
     let allVehicles: any[] = [];
     let from = 0;
@@ -75,14 +75,16 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
       }
     }
     
-    deviceIds = (allVehicles || []).map((v: any) => v.device_id);
+    // Deduplicate deviceIds
+    deviceIds = [...new Set(deviceIds)];
+    
     // Create mock assignments for admin (so the mapping logic works)
     assignments = (allVehicles || []).map((v: any) => ({
       device_id: v.device_id,
       vehicle_alias: v.device_name
     }));
     
-    console.log("[useOwnerVehicles] Admin - found", deviceIds.length, "vehicles");
+    // console.log("[useOwnerVehicles] Admin - found", deviceIds.length, "vehicles");
   } else {
     // Regular users - fetch only assigned vehicles
     // First get the profile for this user
@@ -92,15 +94,15 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
       .eq("user_id", userId)
       .maybeSingle();
 
-    console.log("[useOwnerVehicles] Profile lookup result:", { profile, profileError });
+    // console.log("[useOwnerVehicles] Profile lookup result:", { profile, profileError });
 
     let profileId = profile?.id;
 
     if (profileError || !profile) {
       // Try by email
-      console.log("[useOwnerVehicles] No profile by user_id, trying email lookup...");
+      // console.log("[useOwnerVehicles] No profile by user_id, trying email lookup...");
       const { data: { user } } = await supabase.auth.getUser();
-      console.log("[useOwnerVehicles] Auth user:", user?.email);
+      // console.log("[useOwnerVehicles] Auth user:", user?.email);
       
       if (user?.email) {
         const { data: emailProfile, error: emailError } = await supabase
@@ -109,7 +111,7 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
           .eq("email", user.email)
           .maybeSingle();
         
-        console.log("[useOwnerVehicles] Email profile lookup:", { emailProfile, emailError });
+        // console.log("[useOwnerVehicles] Email profile lookup:", { emailProfile, emailError });
         
         if (!emailProfile) {
           console.warn("[useOwnerVehicles] No profile found for user");
@@ -127,7 +129,7 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
       return [];
     }
     
-    console.log("[useOwnerVehicles] Using profileId:", profileId);
+    // console.log("[useOwnerVehicles] Using profileId:", profileId);
 
     // Fetch assignments for this profile
     const { data: userAssignments, error } = await (supabase as any)
@@ -138,7 +140,7 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
       `)
       .eq("profile_id", profileId);
 
-    console.log("[useOwnerVehicles] Assignments query:", { assignments: userAssignments, error, count: userAssignments?.length });
+    // console.log("[useOwnerVehicles] Assignments query:", { assignments: userAssignments, error, count: userAssignments?.length });
 
     if (error) {
       console.error("[useOwnerVehicles] Assignments error:", error);
@@ -150,18 +152,19 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
     }
 
     assignments = userAssignments;
-    deviceIds = (userAssignments as any[]).map((a: any) => a.device_id);
-    console.log("[useOwnerVehicles] Regular user - found", deviceIds.length, "assigned vehicles");
+    deviceIds = [...new Set((userAssignments as any[]).map((a: any) => a.device_id))];
+    // console.log("[useOwnerVehicles] Regular user - found", deviceIds.length, "assigned vehicles");
   }
   
   if (deviceIds.length === 0) {
     return [];
   }
   
-  console.log("[useOwnerVehicles] Fetching data for deviceIds:", deviceIds);
+  // console.log("[useOwnerVehicles] Fetching data for deviceIds:", deviceIds);
 
-  // Reduced chunk size to prevent URL length errors (net::ERR_ABORTED) with Supabase .in() filter
-  const CHUNK_SIZE = 10;
+  // Increased chunk size to 50 (safe limit for URL length is ~2000 chars, 50 UUIDs is ~1800)
+  // This reduces the number of requests significantly (e.g. 3000 vehicles -> 60 requests instead of 300)
+  const CHUNK_SIZE = 50;
 
   // Helper to fetch in chunks
   const fetchInChunks = async (
@@ -205,38 +208,132 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
     return aggregatedData;
   };
 
-  // Fetch vehicle info
-  const vehicles = await fetchInChunks("vehicles", "device_id, device_name, device_type", deviceIds);
-  console.log("[useOwnerVehicles] Vehicles data:", { vehicles, count: vehicles?.length });
+  // Helper to fetch ALL rows from a table using pagination (for Admin)
+  const fetchAllTable = async (table: string, select: string) => {
+    let allRows: any[] = [];
+    let from = 0;
+    const BATCH_SIZE = 1000;
+    let hasMore = true;
 
-  // Fetch positions in chunks
-  const positions = await fetchInChunks(
-    "vehicle_positions", 
-    "device_id, latitude, longitude, speed, heading, battery_percent, ignition_on, is_online, is_overspeeding, gps_time, total_mileage", 
-    deviceIds
-  );
-  console.log("[useOwnerVehicles] Positions data:", { positions, count: positions?.length });
+    while (hasMore) {
+      const { data, error } = await (supabase as any)
+        .from(table)
+        .select(select)
+        .range(from, from + BATCH_SIZE - 1);
+      
+      if (error) {
+        console.error(`[useOwnerVehicles] Error fetching all ${table}:`, error);
+        // Don't throw, just return what we have to avoid breaking everything
+        hasMore = false;
+      } else if (data && data.length > 0) {
+        allRows = [...allRows, ...data];
+        if (data.length < BATCH_SIZE) {
+          hasMore = false;
+        } else {
+          from += BATCH_SIZE;
+        }
+      } else {
+        hasMore = false;
+      }
+    }
+    return allRows;
+  };
+
+  let vehicles: any[] = [];
+  let positions: any[] = [];
+  let chatHistory: any[] = [];
+  let llmSettings: any[] = [];
+
+  if (isAdmin) {
+    // Admin Optimization: Use efficient bulk fetching instead of 1000s of small requests
+    // console.log("[useOwnerVehicles] Admin optimization: Fetching tables in bulk...");
+    
+    // 1. Vehicles are already fetched in the ID discovery phase (allVehicles), but we need to ensure we have device_type
+    // Note: The initial fetch only got device_id and device_name. 
+    // Since we didn't store device_type there, we can either:
+    // a) modify the initial fetch (requires refactoring the loop above)
+    // b) just fetch all vehicles again with device_type (efficient enough via range)
+    // Let's do (b) for simplicity and code separation, or better:
+    // actually, let's fetch 'vehicles' using fetchAllTable.
+    
+    const vehiclesPromise = fetchAllTable("vehicles", "device_id, device_name, device_type");
+
+    const positionsPromise = fetchAllTable(
+      "vehicle_positions", 
+      "device_id, latitude, longitude, speed, heading, battery_percent, ignition_on, is_online, is_overspeeding, gps_time, total_mileage"
+    );
+
+    const settingsPromise = fetchAllTable(
+      "vehicle_llm_settings",
+      "device_id, personality_mode, nickname, avatar_url"
+    );
+
+    // Chat history is still fetched in chunks because "latest per device" is hard to do efficiently in one query without a view
+    // But with CHUNK_SIZE=50, it's manageable (e.g. 60 requests for 3000 vehicles)
+    const chatPromise = fetchInChunks(
+      "vehicle_chat_history",
+      "device_id, content, created_at, role",
+      deviceIds,
+      { column: "created_at", ascending: false },
+      200 // Increased limit to ensure we get messages for most vehicles in the chunk
+    );
+
+    // Run parallel
+    const [vehData, posData, settingsData, chatData] = await Promise.all([
+      vehiclesPromise,
+      positionsPromise,
+      settingsPromise,
+      chatPromise
+    ]);
+
+    vehicles = vehData;
+    positions = posData;
+    llmSettings = settingsData;
+    chatHistory = chatData;
+
+  } else {
+    // Regular User: Fetch specific IDs in chunks
+    vehicles = await fetchInChunks("vehicles", "device_id, device_name, device_type", deviceIds);
+    
+    positions = await fetchInChunks(
+      "vehicle_positions", 
+      "device_id, latitude, longitude, speed, heading, battery_percent, ignition_on, is_online, is_overspeeding, gps_time, total_mileage", 
+      deviceIds
+    );
+
+    chatHistory = await fetchInChunks(
+      "vehicle_chat_history",
+      "device_id, content, created_at, role",
+      deviceIds,
+      { column: "created_at", ascending: false },
+      200
+    );
+
+    llmSettings = await fetchInChunks(
+      "vehicle_llm_settings",
+      "device_id, personality_mode, nickname, avatar_url",
+      deviceIds
+    );
+  }
+
+  // console.log("[useOwnerVehicles] Data fetched:", { 
+  //   vehicles: vehicles?.length, 
+  //   positions: positions?.length, 
+  //   chat: chatHistory?.length 
+  // });
+
+  // Sort positions by gps_time so the Map keeps the latest one (Map constructor overwrites duplicates)
+  if (positions) {
+    (positions as any[]).sort((a, b) => {
+      const timeA = a.gps_time ? new Date(a.gps_time).getTime() : 0;
+      const timeB = b.gps_time ? new Date(b.gps_time).getTime() : 0;
+      return timeA - timeB; // Ascending, so latest is last
+    });
+  }
 
   // Create maps for easy lookup
   const vehicleMap = new Map((vehicles as any[])?.map((v: any) => [v.device_id, v]) || []);
   const positionMap = new Map((positions as any[])?.map((p: any) => [p.device_id, p]) || []);
-
-  // Fetch last chat messages for each device
-  // Limit to 50 per chunk to prevent huge payloads causing ERR_ABORTED
-  const chatHistory = await fetchInChunks(
-    "vehicle_chat_history",
-    "device_id, content, created_at, role",
-    deviceIds,
-    { column: "created_at", ascending: false },
-    50
-  );
-
-  // Fetch LLM settings for personality and avatar
-  const llmSettings = await fetchInChunks(
-    "vehicle_llm_settings",
-    "device_id, personality_mode, nickname, avatar_url",
-    deviceIds
-  );
 
   // Group chat history by device
   const chatByDevice = new Map<string, { content: string; time: Date; unread: number }>();
@@ -276,7 +373,7 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
       alias: a.vehicle_alias,
       avatarUrl: settings?.avatar_url || null,
       deviceType: vehicle?.device_type || null,
-      status: !isOnline ? "offline" : isCharging ? "charging" : "online" as const,
+      status: (!isOnline ? "offline" : isCharging ? "charging" : "online") as OwnerVehicle['status'],
       battery: pos?.battery_percent ?? null,
       speed: pos?.speed ?? 0,
       latitude: pos?.latitude ?? null,

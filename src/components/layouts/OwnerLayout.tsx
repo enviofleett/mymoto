@@ -12,11 +12,11 @@ interface OwnerLayoutProps {
 }
 
 const ownerNavItems = [{
-  icon: MessageCircle,
-  path: "/owner"
-}, {
   icon: Car,
   path: "/owner/vehicles"
+}, {
+  icon: MessageCircle,
+  path: "/owner"
 }, {
   icon: Store,
   path: "/owner/directory"

@@ -1,6 +1,15 @@
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { mapDirectResponseToVehicleLiveData } from '../useVehicleLiveData';
+
+// Mock Supabase client to prevent localStorage access during tests
+vi.mock('@/integrations/supabase/client', () => ({
+  supabase: {
+    functions: {
+      invoke: vi.fn(),
+    },
+  },
+}));
 
 /**
  * Unit tests for Vehicle Status Synchronization Logic

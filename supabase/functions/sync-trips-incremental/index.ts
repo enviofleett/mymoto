@@ -1,4 +1,4 @@
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizeSpeed } from "../_shared/telemetry-normalizer.ts";
 import { getFeatureFlag } from "../_shared/feature-flags.ts";
 
@@ -1616,13 +1616,13 @@ Deno.serve(async (req: Request) => {
             // GHOST TRIP DETECTION: Apply GPS51-accurate thresholds
             // This ensures 100% consistency with GPS51 platform
             const tripDist = trip.distance_km || 0;
-            const tripDuration = trip.duration_seconds || 0;
+            const tripDurationForGhostCheck = trip.duration_seconds || 0;
             const tripMaxSpeed = trip.max_speed || 0;
 
             // Filter 1: Tiny trips (< 500m AND < 3 minutes)
             if (tripDist < GPS51_TRIP_THRESHOLDS.MIN_DISTANCE_KM &&
-                tripDuration < GPS51_TRIP_THRESHOLDS.MIN_DURATION_SEC) {
-              console.log(`[sync-trips-incremental] Skipping ghost trip (tiny): dist=${tripDist.toFixed(2)}km, duration=${tripDuration}s`);
+                tripDurationForGhostCheck < GPS51_TRIP_THRESHOLDS.MIN_DURATION_SEC) {
+              console.log(`[sync-trips-incremental] Skipping ghost trip (tiny): dist=${tripDist.toFixed(2)}km, duration=${tripDurationForGhostCheck}s`);
               deviceTripsSkipped++;
               totalTripsSkipped++;
               continue;

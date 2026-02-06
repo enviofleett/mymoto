@@ -5,8 +5,9 @@ import { VitePWA } from "vite-plugin-pwa";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
+  base: "/partner/",
   server: {
-    port: 5174, // Different port from main PWA
+    port: 5175, // Different port from main PWA
     strictPort: false,
   },
   build: {

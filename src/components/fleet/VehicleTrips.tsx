@@ -1,12 +1,12 @@
 import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MapPin, Navigation, Clock, TrendingUp, Loader2 } from "lucide-react";
+import { MapPin, Navigation, Clock, Loader2 } from "lucide-react";
 import { formatLagos, formatLagosDate } from "@/lib/timezone";
 import { useAddress } from "@/hooks/useAddress";
+import { useVehicleTrips } from "@/hooks/useVehicleProfile";
+import { useRealtimeTripUpdates } from "@/hooks/useTripSync";
 
 interface Trip {
   id: string;
@@ -27,106 +27,37 @@ interface VehicleTripsProps {
 }
 
 export function VehicleTrips({ deviceId }: VehicleTripsProps) {
-  const { data: trips, isLoading } = useQuery({
-    queryKey: ['vehicle-trips-direct', deviceId],
-    queryFn: async () => {
-      // Fetch trips DIRECTLY from vehicle_trips table (synced from GPS51)
-      // This ensures 100% match with GPS51 platform
-      // @ts-ignore
-      const { data, error } = await supabase
-        .from('vehicle_trips' as any)
-        .select('*')
-        .eq('device_id', deviceId)
-        .eq('source', 'gps51') // STRICT PARITY: Only show trips from GPS51
-        .order('start_time', { ascending: false })
-        .limit(50);
+  // Enable real-time updates for trips
+  useRealtimeTripUpdates(deviceId);
 
-      if (error) throw error;
-      
-      // Map to Trip interface - GPS51 data is already accurate, no calculations needed
-      const validTrips = (data || [])
-        .filter((trip: any) => {
-          // Ghost Trip Filtering
-          const distance = trip.distance_km || 0;
-          const duration = trip.duration_seconds || 0;
-          
-          // 1. Filter out short trips with negligible distance (Ignition flicker)
-          // Threshold: < 0.1 km distance AND < 2 minutes duration
-          if (distance < 0.1 && duration < 120) return false;
+    // Use centralized hook with live polling (30s) and standard filtering
+    // Increased limit to 100 to ensure we get enough trips after filtering ghost trips
+    const { data: rawTrips, isLoading } = useVehicleTrips(
+      deviceId,
+      { 
+        limit: 100,
+        live: true 
+      }
+    );
 
-          // 2. REMOVED: Filter out zero distance trips (Static drift)
-          // We MUST allow zero distance trips if they are long enough (handled by rule #1) because they represent "Idling"
-          // if (distance === 0) return false;
-
-          // 3. Filter out unrealistic speed (GPS Jump)
-          // Threshold: > 250 km/h
-          if (duration > 0) {
-            const hours = duration / 3600;
-            const speed = distance / hours;
-            if (speed > 250) return false;
-          }
-
-          return true;
-        })
-        .map((trip: any): Trip => {
-          const startTime = new Date(trip.start_time);
-          const endTime = trip.end_time ? new Date(trip.end_time) : null;
-          const durationMinutes = trip.duration_seconds ? trip.duration_seconds / 60 : null;
-
-          // GPS51 data is already accurate - use it directly (NO calculations)
-          return {
-            id: trip.id,
-            start_time: trip.start_time,
-            end_time: trip.end_time,
-            start_latitude: trip.start_latitude,
-            start_longitude: trip.start_longitude,
-            end_latitude: trip.end_latitude,
-            end_longitude: trip.end_longitude,
-            distance_km: trip.distance_km || 0, // Synced from GPS51
-            avg_speed_kmh: Math.round(trip.avg_speed || 0),
-            max_speed_kmh: Math.round(trip.max_speed || 0),
-            duration_minutes: durationMinutes ? Math.round(durationMinutes) : null
-          };
-        });
-
-      // Group trips by day and sort each day's trips by start_time ASC (earliest first)
-      const tripsByDay = new Map<string, Trip[]>();
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      validTrips.forEach(trip => {
-        const tripDate = new Date(trip.start_time);
-        tripDate.setHours(0, 0, 0, 0);
-        const dayKey = tripDate.toISOString().split('T')[0];
-        
-        if (!tripsByDay.has(dayKey)) {
-          tripsByDay.set(dayKey, []);
-        }
-        tripsByDay.get(dayKey)!.push(trip);
-      });
-
-      // Sort trips within each day by start_time ASC (earliest first = Trip 1)
-      tripsByDay.forEach((dayTrips, dayKey) => {
-        dayTrips.sort((a, b) => 
-          new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
-        );
-      });
-
-      // Flatten back to array, keeping days in descending order (today first)
-      const sortedTrips: Trip[] = [];
-      const sortedDays = Array.from(tripsByDay.entries()).sort((a, b) => 
-        b[0].localeCompare(a[0]) // Latest day first
-      );
-
-      sortedDays.forEach(([dayKey, dayTrips]) => {
-        sortedTrips.push(...dayTrips);
-      });
-
-      return sortedTrips;
-    },
-    enabled: !!deviceId,
-    refetchInterval: 60000
-  });
+  // Map raw trips to component Trip interface
+  const trips = useMemo(() => {
+    if (!rawTrips) return [];
+    
+    return rawTrips.map((trip): Trip => ({
+      id: trip.id,
+      start_time: trip.start_time,
+      end_time: trip.end_time || null, // Handle potentially undefined end_time
+      start_latitude: trip.start_latitude,
+      start_longitude: trip.start_longitude,
+      end_latitude: trip.end_latitude,
+      end_longitude: trip.end_longitude,
+      distance_km: trip.distance_km,
+      avg_speed_kmh: Math.round(trip.avg_speed || 0),
+      max_speed_kmh: Math.round(trip.max_speed || 0),
+      duration_minutes: trip.duration_seconds ? Math.round(trip.duration_seconds / 60) : null
+    }));
+  }, [rawTrips]);
 
   const formatDuration = (minutes: number | null) => {
     if (!minutes) return 'N/A';
@@ -159,36 +90,39 @@ export function VehicleTrips({ deviceId }: VehicleTripsProps) {
     );
   }
 
-  // Group trips by day for display
-  const tripsByDay = useMemo(() => {
-    if (!trips) return [];
-    
-    const groups: { date: Date; label: string; trips: Trip[] }[] = [];
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    trips.forEach(trip => {
-      const tripDate = new Date(trip.start_time);
-      tripDate.setHours(0, 0, 0, 0);
-      const existingGroup = groups.find(g => g.date.getTime() === tripDate.getTime());
+    // Group trips by day for display
+    const tripsByDay = useMemo(() => {
+      if (!trips) return [];
       
-      if (existingGroup) {
-        existingGroup.trips.push(trip);
-      } else {
-        let label: string;
-        if (tripDate.getTime() === today.getTime()) {
-          label = "Today";
-        } else if (tripDate.getTime() === today.getTime() - 86400000) {
-          label = "Yesterday";
+      const groups: { date: Date; label: string; trips: Trip[] }[] = [];
+      const todayStr = formatLagos(new Date(), "yyyy-MM-dd");
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = formatLagos(yesterday, "yyyy-MM-dd");
+      
+      trips.forEach(trip => {
+        const tripDate = new Date(trip.start_time);
+        const tripDateStr = formatLagos(tripDate, "yyyy-MM-dd");
+        
+        const existingGroup = groups.find(g => formatLagos(g.date, "yyyy-MM-dd") === tripDateStr);
+        
+        if (existingGroup) {
+          existingGroup.trips.push(trip);
         } else {
-          label = formatLagos(tripDate, "EEE, MMM d");
+          let label: string;
+          if (tripDateStr === todayStr) {
+            label = "Today";
+          } else if (tripDateStr === yesterdayStr) {
+            label = "Yesterday";
+          } else {
+            label = formatLagos(tripDate, "EEE, MMM d");
+          }
+          groups.push({ date: tripDate, label, trips: [trip] });
         }
-        groups.push({ date: tripDate, label, trips: [trip] });
-      }
-    });
-    
-    return groups.sort((a, b) => b.date.getTime() - a.date.getTime());
-  }, [trips]);
+      });
+      
+      return groups.sort((a, b) => b.date.getTime() - a.date.getTime());
+    }, [trips]);
 
   return (
     <ScrollArea className="h-[400px] pr-4">
@@ -258,23 +192,32 @@ export function VehicleTrips({ deviceId }: VehicleTripsProps) {
             </div>
 
                   {/* Trip Metrics */}
-                  <div className="grid grid-cols-3 gap-3 p-2 rounded bg-muted/30">
+                  <div className="grid grid-cols-4 gap-2 p-2 rounded bg-muted/30">
                     <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Distance</p>
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Distance</p>
                       <p className="text-sm font-semibold text-primary">
                         {trip.distance_km > 0 ? trip.distance_km.toFixed(1) : '0.0'} km
                       </p>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Duration</p>
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Duration</p>
                       <p className="text-sm font-semibold">
                         {formatDuration(trip.duration_minutes)}
                       </p>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Avg Speed</p>
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Avg Speed</p>
                       <p className="text-sm font-semibold">
                         {trip.avg_speed_kmh} km/h
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Max Speed</p>
+                      <p className={`text-sm font-semibold ${
+                        trip.max_speed_kmh > 120 ? 'text-destructive' : 
+                        trip.max_speed_kmh >= 80 ? 'text-orange-500' : 'text-green-500'
+                      }`}>
+                        {trip.max_speed_kmh} km/h
                       </p>
                     </div>
                   </div>
@@ -286,14 +229,6 @@ export function VehicleTrips({ deviceId }: VehicleTripsProps) {
                     endLat={trip.end_latitude}
                     endLon={trip.end_longitude}
                   />
-
-                  {/* Max Speed Alert */}
-                  {trip.max_speed_kmh > 100 && (
-                    <div className="mt-2 flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-500">
-                      <TrendingUp className="h-3 w-3" />
-                      <span>Max speed: {trip.max_speed_kmh} km/h</span>
-                    </div>
-                  )}
                 </div>
               );
             })}

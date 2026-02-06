@@ -180,7 +180,19 @@ export async function fetchVehicleLiveDataDirect(deviceId: string): Promise<Vehi
     return mapDirectResponseToVehicleLiveData(record);
   } catch (err) {
     console.error(`[fetchVehicleLiveDataDirect] ❌ Failed:`, err);
-    throw err;
+    
+    // Fallback to Database if Edge Function fails (e.g. AdBlocker, Network, Timeout)
+    if (import.meta.env.DEV) {
+      console.warn(`[fetchVehicleLiveDataDirect] ⚠️ Falling back to DB for: ${deviceId}`);
+    }
+    
+    try {
+      return await fetchVehicleLiveData(deviceId);
+    } catch (dbErr) {
+      // If even DB fails, then throw the original error
+      console.error(`[fetchVehicleLiveDataDirect] ❌ DB Fallback also failed:`, dbErr);
+      throw err;
+    }
   }
 }
 

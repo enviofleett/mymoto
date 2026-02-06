@@ -58,7 +58,7 @@ const InstallApp = () => {
 
   const handleInstallClick = async () => {
     if (isInstalled) {
-      navigate("/owner");
+      navigate("/owner/vehicles");
       return;
     }
 

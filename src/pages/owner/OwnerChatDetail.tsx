@@ -624,7 +624,7 @@ export default function OwnerChatDetail() {
         <div className="flex items-center gap-3 px-4 py-3">
           {/* Neumorphic back button */}
           <button
-            onClick={() => navigate("/owner")}
+            onClick={() => navigate("/owner/vehicles")}
             className="w-10 h-10 rounded-full bg-card shadow-neumorphic-sm flex items-center justify-center transition-all duration-200 active:shadow-neumorphic-inset shrink-0"
           >
             <ArrowLeft className="h-5 w-5 text-foreground" />

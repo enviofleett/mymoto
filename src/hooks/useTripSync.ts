@@ -264,8 +264,8 @@ export function useRealtimeTripUpdates(deviceId: string | null, enabled: boolean
           }
 
           // Directly update cache instead of invalidating (instant update, no refetch delay)
-          queryClient.setQueryData(
-            ["vehicle-trips", deviceId],
+          queryClient.setQueriesData(
+            { queryKey: ["vehicle-trips", deviceId] },
             (oldData: VehicleTrip[] | undefined) => {
               if (!oldData) return [newTrip];
               

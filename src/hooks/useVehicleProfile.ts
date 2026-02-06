@@ -9,7 +9,7 @@ export interface VehicleTrip {
   id: string;
   device_id: string;
   start_time: string;
-  end_time: string;
+  end_time: string | null; // CRITICAL: Allow null for ongoing trips
   start_latitude: number;
   start_longitude: number;
   end_latitude: number;
@@ -121,8 +121,8 @@ async function fetchVehicleTrips(
   
   if (dateRange?.to) {
     const d = new Date(dateRange.to);
-    d.setDate(d.getDate() + 1); // Include the whole day
-    query = query.lt('start_time', d.toISOString());
+    d.setHours(23, 59, 59, 999); // Include the entire end day
+    query = query.lte('start_time', d.toISOString());
   }
 
   const { data, error } = await query;
@@ -195,8 +195,8 @@ async function fetchVehicleTrips(
 
   const filteredTrips = normalizedTrips
     .filter((trip: any) => {
-      // 1. Basic Validity: Must have start and end time
-      if (!trip.start_time || !trip.end_time) return false;
+      // 1. Basic Validity: Must have start time (end time optional for ongoing trips)
+      if (!trip.start_time) return false;
 
       const distance = trip.distance_km || 0;
       const duration = trip.duration_seconds || 0;
@@ -430,7 +430,9 @@ export function useVehicleTrips(
     queryKey: ["vehicle-trips", deviceId, dateRange?.from?.toISOString(), dateRange?.to?.toISOString(), limit],
     queryFn: () => fetchVehicleTrips(deviceId!, limit, dateRange),
     enabled: enabled && !!deviceId,
-    staleTime: live ? 30 * 1000 : 24 * 60 * 60 * 1000,
+    // CRITICAL: Reduce staleTime for non-live queries to ensure fresh data on navigation
+    // Was 24h, now 5 min. Live queries remain 30s.
+    staleTime: live ? 30 * 1000 : 5 * 60 * 1000,
     gcTime: 48 * 60 * 60 * 1000,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,

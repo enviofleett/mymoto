@@ -166,8 +166,8 @@ export function VehicleDetailsModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh]">
-        <DialogHeader>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col p-0">
+        <DialogHeader className="px-6 py-4 border-b">
           <DialogTitle className="flex items-center gap-2">
             <Car className="h-5 w-5" />
             {vehicle.name}
@@ -183,22 +183,81 @@ export function VehicleDetailsModal({
           )}
         </DialogHeader>
 
-        <Tabs defaultValue="overview" className="w-full">
-          <TabsList className="grid w-full grid-cols-11 text-xs">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="chat">AI Chat</TabsTrigger>
-            <TabsTrigger value="commands">Commands</TabsTrigger>
-            <TabsTrigger value="geofences">Geofences</TabsTrigger>
-            <TabsTrigger value="health">Health</TabsTrigger>
-            <TabsTrigger value="locations">Locations</TabsTrigger>
-            <TabsTrigger value="trips">Trips</TabsTrigger>
-            <TabsTrigger value="alarms">Alarms</TabsTrigger>
-            <TabsTrigger value="mileage">Mileage</TabsTrigger>
-            <TabsTrigger value="history">History</TabsTrigger>
-            <TabsTrigger value="persona">Persona</TabsTrigger>
-          </TabsList>
+        <Tabs defaultValue="overview" className="flex-1 flex flex-col overflow-hidden">
+          <div className="px-6 pt-2 bg-muted/20 border-b">
+            <TabsList className="w-full flex h-auto p-0 bg-transparent gap-6 overflow-x-auto no-scrollbar justify-start">
+              <TabsTrigger 
+                value="overview" 
+                className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-primary data-[state=active]:text-primary border-b-2 border-transparent rounded-none px-2 pb-3 pt-2"
+              >
+                Overview
+              </TabsTrigger>
+              <TabsTrigger 
+                value="chat" 
+                className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-primary data-[state=active]:text-primary border-b-2 border-transparent rounded-none px-2 pb-3 pt-2"
+              >
+                AI Chat
+              </TabsTrigger>
+              <TabsTrigger 
+                value="commands" 
+                className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-primary data-[state=active]:text-primary border-b-2 border-transparent rounded-none px-2 pb-3 pt-2"
+              >
+                Commands
+              </TabsTrigger>
+              <TabsTrigger 
+                value="geofences" 
+                className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-primary data-[state=active]:text-primary border-b-2 border-transparent rounded-none px-2 pb-3 pt-2"
+              >
+                Geofences
+              </TabsTrigger>
+              <TabsTrigger 
+                value="health" 
+                className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-primary data-[state=active]:text-primary border-b-2 border-transparent rounded-none px-2 pb-3 pt-2"
+              >
+                Health
+              </TabsTrigger>
+              <TabsTrigger 
+                value="locations" 
+                className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-primary data-[state=active]:text-primary border-b-2 border-transparent rounded-none px-2 pb-3 pt-2"
+              >
+                Locations
+              </TabsTrigger>
+              <TabsTrigger 
+                value="trips" 
+                className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-primary data-[state=active]:text-primary border-b-2 border-transparent rounded-none px-2 pb-3 pt-2"
+              >
+                Trips
+              </TabsTrigger>
+              <TabsTrigger 
+                value="alarms" 
+                className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-primary data-[state=active]:text-primary border-b-2 border-transparent rounded-none px-2 pb-3 pt-2"
+              >
+                Alarms
+              </TabsTrigger>
+              <TabsTrigger 
+                value="mileage" 
+                className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-primary data-[state=active]:text-primary border-b-2 border-transparent rounded-none px-2 pb-3 pt-2"
+              >
+                Mileage
+              </TabsTrigger>
+              <TabsTrigger 
+                value="history" 
+                className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-primary data-[state=active]:text-primary border-b-2 border-transparent rounded-none px-2 pb-3 pt-2"
+              >
+                History
+              </TabsTrigger>
+              <TabsTrigger 
+                value="persona" 
+                className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-primary data-[state=active]:text-primary border-b-2 border-transparent rounded-none px-2 pb-3 pt-2"
+              >
+                Persona
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
-          <TabsContent value="overview" className="space-y-6 mt-4">
+          <ScrollArea className="flex-1">
+            <div className="p-6">
+              <TabsContent value="overview" className="space-y-6 mt-0">
             {/* Status Overview */}
             <div className="flex items-center justify-between p-4 rounded-lg bg-muted/50">
               <div className="flex items-center gap-3">
@@ -469,6 +528,8 @@ export function VehicleDetailsModal({
           <TabsContent value="persona" className="mt-4">
             <VehiclePersonaSettings deviceId={vehicle.id} vehicleName={vehicle.name} />
           </TabsContent>
+            </div>
+          </ScrollArea>
         </Tabs>
       </DialogContent>
     </Dialog>

@@ -12,7 +12,7 @@ export default defineConfig(({ mode }) => ({
     strictPort: false, // Try next available port if busy
     proxy: {
       '/partner': {
-        target: 'http://localhost:5174',
+        target: 'http://localhost:5175',
         changeOrigin: true,
         secure: false,
       }

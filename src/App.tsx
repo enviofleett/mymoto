@@ -72,7 +72,7 @@ const RoleBasedRedirect = () => {
       if (isAdmin) {
         navigate('/', { replace: true });
       } else {
-        navigate('/owner', { replace: true });
+        navigate('/owner/vehicles', { replace: true });
       }
     }
   }, [user, isAdmin, isProvider, isLoading, isRoleLoaded, navigate]);

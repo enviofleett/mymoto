@@ -85,6 +85,12 @@ export function VehicleCard({ vehicle, onPlayTrip }: VehicleCardProps) {
     );
   };
 
+  const getSpeedColor = (speed: number) => {
+    if (speed > 120) return "text-destructive";
+    if (speed >= 80) return "text-orange-500";
+    return "text-green-500";
+  };
+
   const getBatteryColor = (percent: number) => {
     if (percent < 20) return "text-destructive";
     if (percent < 50) return "text-yellow-500";
@@ -117,7 +123,7 @@ export function VehicleCard({ vehicle, onPlayTrip }: VehicleCardProps) {
               <Gauge className="h-3.5 w-3.5" />
               <span className="text-xs">Speed</span>
             </div>
-            <p className={`text-lg font-bold ${isOverspeeding ? 'text-destructive' : 'text-foreground'}`}>
+            <p className={`text-lg font-bold ${getSpeedColor(pos?.speed ?? 0)}`}>
               {pos?.speed ?? 0} km/h
             </p>
           </div>

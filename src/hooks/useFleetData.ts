@@ -275,15 +275,41 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
     }
   }
 
+  // Deduplicate positions to avoid React key warnings and pagination drift
+  const uniquePositionsMap = new Map<string, any>();
+  allPositions.forEach(pos => {
+    const existing = uniquePositionsMap.get(pos.device_id);
+    if (!existing) {
+      uniquePositionsMap.set(pos.device_id, pos);
+    } else {
+      // If duplicate, prefer newer gps_time
+      const newTime = pos.gps_time ? new Date(pos.gps_time).getTime() : 0;
+      const existingTime = existing.gps_time ? new Date(existing.gps_time).getTime() : 0;
+      if (newTime > existingTime) {
+        uniquePositionsMap.set(pos.device_id, pos);
+      }
+    }
+  });
+  
   // Create lookup maps
   const vehiclesMap = new Map<string, any>();
-  allVehicles.forEach(v => vehiclesMap.set(v.device_id, v));
+  // Deduplicate vehicles
+  allVehicles.forEach(v => {
+    if (!vehiclesMap.has(v.device_id)) {
+      vehiclesMap.set(v.device_id, v);
+    }
+  });
 
   const assignmentMap = new Map<string, any>();
-  allAssignments.forEach(a => assignmentMap.set(a.device_id, a));
+  // Deduplicate assignments
+  allAssignments.forEach(a => {
+    if (!assignmentMap.has(a.device_id)) {
+      assignmentMap.set(a.device_id, a);
+    }
+  });
 
   // Merge positions with vehicles and assignments
-  const mergedData = allPositions.map(pos => ({
+  const mergedData = Array.from(uniquePositionsMap.values()).map(pos => ({
     ...pos,
     vehicles: vehiclesMap.get(pos.device_id) || null,
     vehicle_assignments: assignmentMap.has(pos.device_id) 
@@ -361,7 +387,7 @@ export function useFleetData() {
         }
       )
       .subscribe((subStatus) => {
-        console.log('[useFleetData] Subscription status:', subStatus);
+        // console.log('[useFleetData] Subscription status:', subStatus);
       });
 
     return () => {

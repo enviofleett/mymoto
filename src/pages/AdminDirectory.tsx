@@ -53,6 +53,7 @@ import {
   Mail,
   User,
   FileText,
+  Lock,
 } from "lucide-react";
 import { VehicleLocationMap } from "@/components/fleet/VehicleLocationMap";
 import { supabase } from "@/integrations/supabase/client";
@@ -130,6 +131,8 @@ export default function AdminDirectory() {
   const [providerRegisterDialogOpen, setProviderRegisterDialogOpen] = useState(false);
   const [providerEditDialogOpen, setProviderEditDialogOpen] = useState(false);
   const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
+  const [resetPasswordDialogOpen, setResetPasswordDialogOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
   const [selectedProvider, setSelectedProvider] = useState<ServiceProvider | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -609,6 +612,49 @@ export default function AdminDirectory() {
     });
   };
 
+  const resetProviderPassword = useMutation({
+    mutationFn: async ({ userId, newPassword }: { userId: string, newPassword: string }) => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Not authenticated");
+
+      const { data, error } = await supabase.functions.invoke('admin-reset-provider-password', {
+        body: { userId, newPassword },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`
+        }
+      });
+      
+      if (error) {
+        console.error('Edge function invocation error:', error);
+        
+        if (error.name === 'FunctionsHttpError') {
+          try {
+             const errorContext = await error.context.json();
+             throw new Error(errorContext.error || 'Failed to reset password');
+          } catch (e) {
+             if (e instanceof Error && e.message !== 'Failed to reset password') {
+               if (e.message !== 'Failed to parse error context') throw e;
+             }
+             throw new Error('Internal server error in password reset service.');
+          }
+        }
+        throw error;
+      }
+      
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: () => {
+      toast.success("Password reset successfully");
+      setResetPasswordDialogOpen(false);
+      setNewPassword("");
+      setSelectedProvider(null);
+    },
+    onError: (error) => {
+      toast.error(`Failed to reset password: ${error.message}`);
+    }
+  });
+
   const handleOpenRegisterProvider = () => {
     resetProviderForm();
     setProviderRegisterDialogOpen(true);
@@ -874,6 +920,18 @@ export default function AdminDirectory() {
                                     variant="outline"
                                     onClick={() => {
                                       setSelectedProvider(provider);
+                                      setNewPassword("");
+                                      setResetPasswordDialogOpen(true);
+                                    }}
+                                    title="Reset Password"
+                                  >
+                                    <Lock className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setSelectedProvider(provider);
                                       setProviderDialogOpen(true);
                                     }}
                                   >
@@ -1116,6 +1174,57 @@ export default function AdminDirectory() {
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 )}
                 Approve & Send Email
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Password Reset Dialog */}
+        <Dialog open={resetPasswordDialogOpen} onOpenChange={setResetPasswordDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Reset Password</DialogTitle>
+              <DialogDescription>
+                Set a new password for {selectedProvider?.business_name}. The user will be notified via email.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div>
+                <Label htmlFor="new-password">New Password</Label>
+                <Input
+                  id="new-password"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Enter new password"
+                  className="mt-2"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Must be at least 6 characters long.
+                </p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setResetPasswordDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  if (selectedProvider && newPassword.length >= 6) {
+                    resetProviderPassword.mutate({
+                      userId: selectedProvider.user_id,
+                      newPassword
+                    });
+                  } else if (newPassword.length < 6) {
+                    toast.error("Password must be at least 6 characters");
+                  }
+                }}
+                disabled={resetProviderPassword.isPending || newPassword.length < 6}
+              >
+                {resetProviderPassword.isPending && (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                )}
+                Reset Password
               </Button>
             </DialogFooter>
           </DialogContent>

@@ -30,8 +30,8 @@ const Auth = () => {
 
   useEffect(() => {
     if (user && !isLoading && isRoleLoaded) {
-      // Role-based redirect: admins go to dashboard, providers go to partner dashboard, owners go to chat
-      let targetPath = '/owner';
+      // Role-based redirect: admins go to dashboard, providers go to partner dashboard, owners go to vehicles
+      let targetPath = '/owner/vehicles';
       if (isAdmin) {
         targetPath = '/';
       } else if (isProvider) {

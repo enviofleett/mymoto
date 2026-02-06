@@ -68,9 +68,9 @@ export default function PwaLogin() {
           return;
         }
 
-        // Navigate to owner dashboard
+        // Navigate to owner dashboard (vehicles list)
         setTimeout(() => {
-          navigate('/owner');
+          navigate('/owner/vehicles');
         }, 1000);
       } else {
         setError('Unexpected response. Please try again.');

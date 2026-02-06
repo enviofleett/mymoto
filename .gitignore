@@ -23,5 +23,6 @@ dist-ssr
 *.sln
 *.sw?
 .vercel
+.vercel_home
 .env*.local
 .trae
