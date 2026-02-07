@@ -90,7 +90,7 @@ const get_trip_history: ToolDefinition = {
       .eq('device_id', device_id)
       // .eq('source', 'gps51') // Removed strict source filter to include position_history and legacy trips
       .gte('start_time', start_date)
-      .lte('end_time', end_date)
+      .lte('start_time', end_date)
       .order('start_time', { ascending: true })
       .limit(50)
 
@@ -491,7 +491,7 @@ const get_trip_analytics: ToolDefinition = {
       .select('start_time, end_time, duration_seconds, distance_km, start_address, end_address, start_latitude, start_longitude, end_latitude, end_longitude')
       .eq('device_id', device_id)
       .gte('start_time', startDate.toISOString())
-      .lte('end_time', endDate.toISOString())
+      .lte('start_time', endDate.toISOString())
       .order('start_time', { ascending: true })
 
     if (tripsError) throw new Error(`Database error: ${tripsError.message}`)
@@ -505,6 +505,9 @@ const get_trip_analytics: ToolDefinition = {
     let totalParkingTimeSeconds = 0
     if (trips && trips.length > 1) {
       for (let i = 1; i < trips.length; i++) {
+        if (!trips[i - 1].end_time) {
+          continue
+        }
         const prevEnd = new Date(trips[i - 1].end_time).getTime()
         const currStart = new Date(trips[i].start_time).getTime()
         const gapSeconds = (currStart - prevEnd) / 1000

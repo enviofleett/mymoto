@@ -102,14 +102,16 @@ export function VehicleLocationMap({
   }, [hasValidCoordinates, latitude, longitude]);
 
   // Initialize map once
-  console.log('hasValidCoordinates:', hasValidCoordinates);
-    console.log('latitude:', latitude);
-    console.log('longitude:', longitude);
-    console.log('heading:', heading);
-    useEffect(() => {
-    console.log('Initializing map...');
-    console.log('Initializing map...');
-    console.log('Initializing map...');
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      console.log('[VehicleLocationMap] Coordinates update:', {
+        hasValidCoordinates,
+        latitude,
+        longitude,
+        heading
+      });
+      console.log('[VehicleLocationMap] Initializing map...');
+    }
     if (!mapContainer.current || !hasValidCoordinates || map.current) return;
 
     const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
