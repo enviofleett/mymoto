@@ -83,14 +83,14 @@ const get_trip_history: ToolDefinition = {
     required: ['start_date', 'end_date']
   },
   execute: async ({ start_date, end_date }, { supabase, device_id }) => {
-    // Correct source: vehicle_trips view - allow all valid sources
+    // Correct source: vehicle_trips table - allow all valid sources
+    // Use or-filter to include ongoing trips (end_time is null) within the date range
     const { data: trips, error } = await supabase
       .from('vehicle_trips')
       .select('*')
       .eq('device_id', device_id)
-      // .eq('source', 'gps51') // Removed strict source filter to include position_history and legacy trips
       .gte('start_time', start_date)
-      .lte('end_time', end_date)
+      .or(`end_time.lte.${end_date},end_time.is.null`)
       .order('start_time', { ascending: true })
       .limit(50)
 
@@ -485,13 +485,13 @@ const get_trip_analytics: ToolDefinition = {
       console.error('Error fetching daily stats:', statsError)
     }
 
-    // Query trips for more detailed analysis
+    // Query trips for more detailed analysis - include ongoing trips (end_time is null)
     const { data: trips, error: tripsError } = await supabase
       .from('vehicle_trips')
       .select('start_time, end_time, duration_seconds, distance_km, start_address, end_address, start_latitude, start_longitude, end_latitude, end_longitude')
       .eq('device_id', device_id)
       .gte('start_time', startDate.toISOString())
-      .lte('end_time', endDate.toISOString())
+      .or(`end_time.lte.${endDate.toISOString()},end_time.is.null`)
       .order('start_time', { ascending: true })
 
     if (tripsError) throw new Error(`Database error: ${tripsError.message}`)

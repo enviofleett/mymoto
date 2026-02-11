@@ -40,20 +40,22 @@ export async function buildConversationContext(
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
   const cutoffDate = thirtyDaysAgo.toISOString();
 
-  // Fetch total message count in last 30 days
+  // Fetch total message count in last 30 days for this user
   const { count } = await supabase
     .from('vehicle_chat_history')
     .select('*', { count: 'exact', head: true })
     .eq('device_id', deviceId)
+    .eq('user_id', userId)
     .gte('created_at', cutoffDate);
 
-  console.log(`Total messages in last 30 days for device ${deviceId}: ${count}`);
+  console.log(`Total messages in last 30 days for device ${deviceId}, user ${userId}: ${count}`);
 
-  // Get recent 20 messages from last 30 days
+  // Get recent 20 messages from last 30 days for this user
   const { data: recentMessages, error: recentError } = await supabase
     .from('vehicle_chat_history')
     .select('role, content, created_at')
     .eq('device_id', deviceId)
+    .eq('user_id', userId)
     .gte('created_at', cutoffDate)
     .order('created_at', { ascending: false })
     .limit(20);
@@ -80,6 +82,7 @@ export async function buildConversationContext(
       .from('vehicle_chat_history')
       .select('role, content')
       .eq('device_id', deviceId)
+      .eq('user_id', userId)
       .gte('created_at', cutoffDate)
       .order('created_at', { ascending: false })
       .range(30, 100);

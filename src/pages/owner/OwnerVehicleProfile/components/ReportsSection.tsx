@@ -101,8 +101,8 @@ export function ReportsSection({
   const groupedTrips = useMemo(() => {
     if (!trips || trips.length === 0) return [];
     
-    // Filter valid trips
-    const validTrips = trips.filter(trip => trip.start_time && trip.end_time);
+    // Filter valid trips - allow ongoing trips (end_time may be null)
+    const validTrips = trips.filter(trip => trip.start_time);
     
     const groups: { date: Date; label: string; trips: VehicleTrip[] }[] = [];
     
@@ -492,8 +492,11 @@ function TripCard({
 
   const durationMinutes = trip.duration_seconds
     ? Math.round(trip.duration_seconds / 60)
-    : Math.round((new Date(trip.end_time).getTime() - new Date(trip.start_time).getTime()) / 60000);
+    : trip.end_time
+      ? Math.round((new Date(trip.end_time).getTime() - new Date(trip.start_time).getTime()) / 60000)
+      : Math.round((Date.now() - new Date(trip.start_time).getTime()) / 60000);
 
+  const isOngoing = !trip.end_time;
   const isIdling = trip.distance_km === 0;
 
   return (
@@ -503,14 +506,19 @@ function TripCard({
         <div>
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-semibold text-foreground">Trip {index + 1}</h3>
-            {isIdling && (
+            {isOngoing && (
+              <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-normal bg-green-500/10 text-green-600 border-green-200">
+                Ongoing
+              </Badge>
+            )}
+            {isIdling && !isOngoing && (
               <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-normal bg-blue-500/10 text-blue-600 border-blue-200">
                 Idling
               </Badge>
             )}
           </div>
           <p className="text-xs text-muted-foreground">
-            {formatLagos(trip.start_time, 'h:mm a')} - {formatLagos(trip.end_time, 'h:mm a')}
+            {formatLagos(trip.start_time, 'h:mm a')} - {trip.end_time ? formatLagos(trip.end_time, 'h:mm a') : 'Ongoing'}
           </p>
         </div>
         {canPlayback && (
