@@ -106,17 +106,61 @@ const get_trip_history: ToolDefinition = {
       total_duration_hours: validatedTrips.reduce((sum: number, t: any) => sum + (t.duration_seconds || 0), 0) / 3600
     }
 
+    // Reverse geocode trips that have coordinates but no addresses
+    // Limit to first 10 trips to avoid excessive API calls
+    const tripsWithAddresses = await Promise.all(
+      validatedTrips.slice(0, 10).map(async (t: any) => {
+        let fromAddr = t.start_address || t.start_location_name
+        let toAddr = t.end_address || t.end_location_name
+
+        // Geocode start if missing but coordinates exist
+        if (!fromAddr && t.start_latitude && t.start_longitude &&
+            t.start_latitude !== 0 && t.start_longitude !== 0) {
+          try {
+            const geo = await reverseGeocode(t.start_latitude, t.start_longitude)
+            fromAddr = geo.address
+          } catch { /* non-blocking */ }
+        }
+
+        // Geocode end if missing but coordinates exist
+        if (!toAddr && t.end_latitude && t.end_longitude &&
+            t.end_latitude !== 0 && t.end_longitude !== 0) {
+          try {
+            const geo = await reverseGeocode(t.end_latitude, t.end_longitude)
+            toAddr = geo.address
+          } catch { /* non-blocking */ }
+        }
+
+        return {
+          start: t.start_time,
+          end: t.end_time,
+          from: fromAddr || 'Unknown location',
+          to: toAddr || 'Unknown location',
+          distance_km: t.distance_km,
+          duration_min: Math.round((t.duration_seconds || 0) / 60),
+          max_speed_kmh: t.max_speed ? Math.round(t.max_speed) : null,
+          avg_speed_kmh: t.avg_speed ? Math.round(t.avg_speed) : null,
+          quality: t.dataQuality
+        }
+      })
+    )
+
+    // Append remaining trips without geocoding (index 10+)
+    const remainingTrips = validatedTrips.slice(10).map((t: any) => ({
+      start: t.start_time,
+      end: t.end_time,
+      from: t.start_address || t.start_location_name || 'Unknown location',
+      to: t.end_address || t.end_location_name || 'Unknown location',
+      distance_km: t.distance_km,
+      duration_min: Math.round((t.duration_seconds || 0) / 60),
+      max_speed_kmh: t.max_speed ? Math.round(t.max_speed) : null,
+      avg_speed_kmh: t.avg_speed ? Math.round(t.avg_speed) : null,
+      quality: t.dataQuality
+    }))
+
     return {
       summary,
-      trips: validatedTrips.map((t: any) => ({
-        start: t.start_time,
-        end: t.end_time,
-        from: t.start_address || t.start_location_name,
-        to: t.end_address || t.end_location_name,
-        distance_km: t.distance_km,
-        duration_min: Math.round((t.duration_seconds || 0) / 60),
-        quality: t.dataQuality
-      }))
+      trips: [...tripsWithAddresses, ...remainingTrips]
     }
   }
 }

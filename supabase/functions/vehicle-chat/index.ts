@@ -128,8 +128,9 @@ async function handler(req: Request) {
     )
 
     const dateSystemInfo = `
-Current Date/Time: ${dateContext.humanReadable} (${dateContext.startDate})
-User Timezone: ${user_timezone || 'UTC'}
+Current Date/Time: ${dateContext.humanReadable}
+Date Range: ${dateContext.startDate} to ${dateContext.endDate}
+User Timezone: ${user_timezone || 'Africa/Lagos'}
 
 CRITICAL INSTRUCTIONS:
 1. You have NO internal knowledge of the vehicle's current state.
@@ -166,8 +167,22 @@ WHEN TO USE EACH TOOL:
     const finalSystemPrompt = `${systemPersona}\n${dateSystemInfo}`
 
     // 4. Construct Message History
+    // Inject conversation summary and important facts so the agent retains context
+    // beyond the sliding window of recent messages
+    let contextPreamble = ''
+    if (conversationContext.conversation_summary) {
+      contextPreamble += `\nCONVERSATION HISTORY SUMMARY (older messages):\n${conversationContext.conversation_summary}\n`
+    }
+    if (conversationContext.important_facts.length > 0) {
+      contextPreamble += `\nKEY FACTS FROM PAST CONVERSATIONS:\n${conversationContext.important_facts.map(f => `- ${f}`).join('\n')}\n`
+    }
+
+    const systemContent = contextPreamble
+      ? `${finalSystemPrompt}\n${contextPreamble}`
+      : finalSystemPrompt
+
     const messages: any[] = [
-      { role: 'system', content: finalSystemPrompt },
+      { role: 'system', content: systemContent },
       ...conversationContext.recent_messages,
       { role: 'user', content: message }
     ]
