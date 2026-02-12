@@ -91,6 +91,33 @@ async function handler(req: Request) {
     return new Response(JSON.stringify({ error: 'Unauthorized: User ID required' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   }
 
+  // Wallet Balance Check
+  // Users without wallet credit wont be able to use the LLM services
+  if (user_id) {
+    const { data: wallet, error: walletError } = await supabase
+      .from('wallets')
+      .select('balance')
+      .eq('profile_id', user_id)
+      .maybeSingle()
+    
+    if (walletError) {
+      console.error('[Vehicle Chat] Error checking wallet:', walletError)
+    }
+
+    const balance = wallet?.balance || 0
+    // Allow small negative balance (grace) or strictly > 0? Requirement says "credit", implying > 0.
+    if (balance <= 0) {
+      console.warn(`[Vehicle Chat] User ${user_id} has insufficient balance (${balance}). Denying chat.`)
+      return new Response(JSON.stringify({ 
+        error: 'Insufficient funds', 
+        message: 'Please top up your wallet to continue chatting with your vehicle.' 
+      }), { 
+        status: 402, // Payment Required
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      })
+    }
+  }
+
   try {
     // 1. Gather Context in Parallel
     const [
