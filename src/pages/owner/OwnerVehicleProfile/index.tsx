@@ -14,6 +14,7 @@ import { fetchVehicleLiveDataDirect, VehicleLiveData } from "@/hooks/useVehicleL
 import { useAddress } from "@/hooks/useAddress";
 import { useVehicleLLMSettings, useVehicleTrips, useVehicleEvents, type VehicleTrip } from "@/hooks/useVehicleProfile";
 import { useOwnerVehicles } from "@/hooks/useOwnerVehicles";
+import { useTripSyncStatus, useTriggerTripSync, useRealtimeTripUpdates } from "@/hooks/useTripSync";
 import { type DateRange } from "react-day-picker";
 
 // Import sub-components
@@ -160,23 +161,33 @@ export default function OwnerVehicleProfile() {
 
   // Trips and Events for Reports Section
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
-  
-  const { 
-    data: trips, 
-    isLoading: tripsLoading 
-  } = useVehicleTrips(deviceId, { 
-    dateRange, 
+
+  const {
+    data: trips,
+    isLoading: tripsLoading
+  } = useVehicleTrips(deviceId, {
+    dateRange,
     live: true,
-    limit: 50
+    limit: 200
   });
 
-  const { 
-    data: events, 
-    isLoading: eventsLoading 
-  } = useVehicleEvents(deviceId, { 
+  const {
+    data: events,
+    isLoading: eventsLoading
+  } = useVehicleEvents(deviceId, {
     dateRange,
     limit: 50
   });
+
+  // Trip sync: status, manual trigger, and realtime updates
+  const { data: syncStatus } = useTripSyncStatus(deviceId);
+  const triggerSync = useTriggerTripSync();
+  const { isSubscribed: isRealtimeSubscribed } = useRealtimeTripUpdates(deviceId);
+
+  const handleForceSync = useCallback(() => {
+    if (!deviceId) return;
+    triggerSync.mutate({ deviceId, forceRecent: true });
+  }, [deviceId, triggerSync]);
 
   // Pull-to-refresh handler
   const handleRefresh = useCallback(async () => {
@@ -346,7 +357,11 @@ export default function OwnerVehicleProfile() {
                 toast.info("Trip playback", { description: "Opening trip details..." });
                 // navigate(`/owner/trips/${trip.id}`);
               }}
-              isRealtimeActive={status === 'online'}
+              syncStatus={syncStatus}
+              isSyncing={triggerSync.isPending}
+              onForceSync={handleForceSync}
+              isRealtimeActive={isRealtimeSubscribed}
+              isAutoSyncing={syncStatus?.sync_status === 'processing' && !triggerSync.isPending}
             />
         </div>
       </div>
