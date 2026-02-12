@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
-import mapboxgl from 'mapbox-gl';
-import 'mapbox-gl/dist/mapbox-gl.css';
+import type { Map as MapboxMap, Marker as MapboxMarker } from 'mapbox-gl';
+import { loadMapbox } from "@/utils/loadMapbox";
 import { cn } from '@/lib/utils';
 import { Card } from '@/components/ui/card';
 import { MapPin, Navigation, ExternalLink, WifiOff } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { useFeatureFlag } from "@/hooks/useFeatureFlags";
 
 interface VehicleLocationMapProps {
   latitude: number | null | undefined;
@@ -69,11 +70,14 @@ export function VehicleLocationMap({
   mapHeight = 'h-64',
 }: VehicleLocationMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
-  const map = useRef<mapboxgl.Map | null>(null);
-  const marker = useRef<mapboxgl.Marker | null>(null);
+  const map = useRef<MapboxMap | null>(null);
+  const marker = useRef<MapboxMarker | null>(null);
   const markerElement = useRef<HTMLDivElement | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
+  const [mapboxLoading, setMapboxLoading] = useState(false);
+  const { data: mapboxFlag } = useFeatureFlag("mapbox_enabled");
+  const mapboxEnabled = mapboxFlag?.enabled ?? true;
 
   // Validate coordinates
   const hasValidCoordinates = useMemo(() => {
@@ -102,56 +106,58 @@ export function VehicleLocationMap({
   }, [hasValidCoordinates, latitude, longitude]);
 
   // Initialize map once
-  console.log('hasValidCoordinates:', hasValidCoordinates);
-    console.log('latitude:', latitude);
-    console.log('longitude:', longitude);
-    console.log('heading:', heading);
-    useEffect(() => {
-    console.log('Initializing map...');
-    console.log('Initializing map...');
-    console.log('Initializing map...');
+  useEffect(() => {
+    if (!mapboxEnabled) return;
     if (!mapContainer.current || !hasValidCoordinates || map.current) return;
 
-    const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
-    if (!token) {
-      setMapError('Map configuration missing');
-      return;
-    }
+    const initMap = async () => {
+      const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
+      if (!token) {
+        setMapError('Map configuration missing');
+        return;
+      }
 
-    try {
-      mapboxgl.accessToken = token;
+      try {
+        setMapboxLoading(true);
+        const mapboxgl = await loadMapbox();
+        mapboxgl.accessToken = token;
 
-      const mapInstance = new mapboxgl.Map({
-        container: mapContainer.current,
-        style: 'mapbox://styles/mapbox/dark-v11',
-        center: [longitude as number, latitude as number],
-        zoom: MAP_ZOOM,
-        pitch: MAP_PITCH,
-        bearing: heading || 0,
-        attributionControl: false,
-        interactive: true,
-      });
+        const mapInstance = new mapboxgl.Map({
+          container: mapContainer.current,
+          style: 'mapbox://styles/mapbox/dark-v11',
+          center: [longitude as number, latitude as number],
+          zoom: MAP_ZOOM,
+          pitch: MAP_PITCH,
+          bearing: heading || 0,
+          attributionControl: false,
+          interactive: true,
+        });
 
-      mapInstance.addControl(
-        new mapboxgl.NavigationControl({ showCompass: true, visualizePitch: true }),
-        'top-right'
-      );
+        mapInstance.addControl(
+          new mapboxgl.NavigationControl({ showCompass: true, visualizePitch: true }),
+          'top-right'
+        );
 
-      mapInstance.on('load', () => {
-        setMapLoaded(true);
-        setMapError(null);
-      });
+        mapInstance.on('load', () => {
+          setMapLoaded(true);
+          setMapError(null);
+          setMapboxLoading(false);
+        });
 
-      mapInstance.on('error', (e) => {
-        console.error('[Map Error]', e);
-        setMapError('Failed to load map');
-      });
+        mapInstance.on('error', (e) => {
+          console.error('[Map Error]', e);
+          setMapError('Failed to load map');
+          setMapboxLoading(false);
+        });
 
-      map.current = mapInstance;
+        map.current = mapInstance;
+      } catch (error) {
+        setMapError(error instanceof Error ? error.message : 'Map initialization failed');
+        setMapboxLoading(false);
+      }
+    };
 
-    } catch (error) {
-      setMapError(error instanceof Error ? error.message : 'Map initialization failed');
-    }
+    void initMap();
 
     return () => {
       marker.current?.remove();
@@ -161,53 +167,73 @@ export function VehicleLocationMap({
       map.current = null;
       setMapLoaded(false);
     };
-  }, [hasValidCoordinates, latitude, longitude, heading]);
+  }, [mapboxEnabled, hasValidCoordinates]);
 
   // Update marker when position/status changes
   useEffect(() => {
     if (!map.current || !mapLoaded || !hasValidCoordinates) return;
 
-    const lng = longitude as number;
-    const lat = latitude as number;
-    const currentHeading = heading || 0;
-    const currentSpeed = speed || 0;
+    const updateMarker = async () => {
+      const lng = longitude as number;
+      const lat = latitude as number;
+      const currentHeading = heading || 0;
+      const currentSpeed = speed || 0;
 
-    try {
-      // OPTIMIZED: Update existing marker instead of recreating
-      if (marker.current && markerElement.current) {
-        marker.current.setLngLat([lng, lat]);
-        markerElement.current.innerHTML = createMarkerHTML(
-          vehicleStatus,
-          currentHeading,
-          currentSpeed
-        );
-      } else {
-        const el = document.createElement('div');
-        el.className = 'vehicle-car-marker';
-        el.innerHTML = createMarkerHTML(vehicleStatus, currentHeading, currentSpeed);
+      try {
+        const mapboxgl = await loadMapbox();
+        
+        // OPTIMIZED: Update existing marker instead of recreating
+        if (marker.current && markerElement.current) {
+          marker.current.setLngLat([lng, lat]);
+          markerElement.current.innerHTML = createMarkerHTML(
+            vehicleStatus,
+            currentHeading,
+            currentSpeed
+          );
+        } else {
+          const el = document.createElement('div');
+          el.className = 'vehicle-car-marker';
+          el.innerHTML = createMarkerHTML(vehicleStatus, currentHeading, currentSpeed);
 
-        markerElement.current = el;
-        marker.current = new mapboxgl.Marker({
-          element: el,
-          anchor: 'center',
-          rotationAlignment: 'map',
-          pitchAlignment: 'map'
-        })
-          .setLngLat([lng, lat])
-          .addTo(map.current);
+          markerElement.current = el;
+          marker.current = new mapboxgl.Marker({
+            element: el,
+            anchor: 'center',
+            rotationAlignment: 'map',
+            pitchAlignment: 'map'
+          })
+            .setLngLat([lng, lat])
+            .addTo(map.current!);
+        }
+
+        // Smooth camera follow
+        map.current!.flyTo({
+          center: [lng, lat],
+          duration: MAP_ANIMATION_DURATION,
+          essential: true,
+        });
+
+      } catch (error) {
+        console.error('[Marker Update Error]', error);
       }
+    };
 
-      // Smooth camera follow
-      map.current.flyTo({
-        center: [lng, lat],
-        duration: MAP_ANIMATION_DURATION,
-        essential: true,
-      });
-
-    } catch (error) {
-      console.error('[Marker Update Error]', error);
-    }
+    updateMarker();
   }, [latitude, longitude, heading, speed, vehicleStatus, mapLoaded, hasValidCoordinates]);
+
+  if (!mapboxEnabled) {
+    return (
+      <div className={cn("relative", className)}>
+        <div className={cn("w-full rounded-xl bg-muted/50 flex items-center justify-center", mapHeight)}>
+          <div className="text-center p-8">
+            <MapPin className="h-12 w-12 mx-auto text-muted-foreground opacity-60 mb-3" />
+            <p className="text-sm font-medium text-muted-foreground mb-1">Map Disabled</p>
+            <p className="text-xs text-muted-foreground">Map loading is disabled to save resources.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Error state
   if (mapError) {
@@ -240,6 +266,11 @@ export function VehicleLocationMap({
 
   return (
     <div className={cn("relative", className)}>
+      {mapboxLoading && (
+        <div className={cn("absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-background/60 backdrop-blur-sm", mapHeight)}>
+          <div className="text-sm text-muted-foreground">Loading map...</div>
+        </div>
+      )}
       <style>{`
         .vehicle-car-marker {
           cursor: pointer;

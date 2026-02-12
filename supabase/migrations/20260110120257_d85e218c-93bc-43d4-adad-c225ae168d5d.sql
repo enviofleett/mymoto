@@ -1,4 +1,5 @@
--- Create vehicle_trips table for pre-calculated trip data
+DROP VIEW IF EXISTS public.vehicle_trips;
+DROP TABLE IF EXISTS public.vehicle_trips;
 CREATE TABLE public.vehicle_trips (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   device_id TEXT NOT NULL,

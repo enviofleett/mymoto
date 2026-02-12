@@ -5,8 +5,6 @@
 -- 2. Calculates distance using GPS coordinates (ST_Distance) to fix missing odometer history.
 -- 3. Ensures PostGIS extension is available for geography calculations.
 
-CREATE EXTENSION IF NOT EXISTS postgis SCHEMA extensions;
-
 CREATE OR REPLACE FUNCTION get_vehicle_trips_optimized(
   p_device_id TEXT,
   p_limit INTEGER DEFAULT 200,
@@ -75,9 +73,9 @@ BEGIN
         WHEN device_time - prev_time > INTERVAL '3 minutes' THEN 0::float -- Start of new trip has 0 dist from prev
         ELSE 
           -- Use PostGIS ST_Distance for accurate geodetic distance in meters
-          extensions.ST_Distance(
-            extensions.ST_SetSRID(extensions.ST_MakePoint(longitude, latitude), 4326)::extensions.geography,
-            extensions.ST_SetSRID(extensions.ST_MakePoint(prev_lon, prev_lat), 4326)::extensions.geography
+          ST_Distance(
+            ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)::geography,
+            ST_SetSRID(ST_MakePoint(prev_lon, prev_lat), 4326)::geography
           ) / 1000.0 -- Convert to KM
       END AS dist_segment
     FROM ordered_points 

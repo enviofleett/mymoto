@@ -129,7 +129,7 @@ async function handler(req: Request) {
 
     const dateSystemInfo = `
 Current Date/Time: ${dateContext.humanReadable}
-Date Range: ${dateContext.startDate} to ${dateContext.endDate}
+Date Range Context: ${dateContext.startDate} to ${dateContext.endDate || dateContext.startDate}
 User Timezone: ${user_timezone || 'Africa/Lagos'}
 
 CRITICAL INSTRUCTIONS:
@@ -146,10 +146,11 @@ When reporting location from tool results:
 
 DATA SOURCE RULES:
 1. Real-Time Data: 'get_vehicle_status' queries the live 'vehicle_positions' table.
-2. Trip History: 'get_trip_history' queries the 'vehicle_trips' view - shows completed trips with start/end locations.
+2. Trip History: 'get_trip_history' queries the 'vehicle_trips' view. If it returns 0 trips, verify with 'get_position_history' before claiming "no movement".
 3. Position History: 'get_position_history' queries raw GPS points - use for "where was I at [time]?" or detailed movement tracking.
 4. Alarms: 'create_geofence_alert' sets up monitoring.
 5. IMPORTANT: You CAN access history ('get_trip_history' and 'get_position_history') even if 'get_vehicle_status' says "offline". Offline only means "no live GPS", not "database is down".
+6. SHORT TRIPS: If 'get_trip_history' returns "Short Trip" entries, mention them if relevant (e.g. "I moved a short distance"). Do not ignore them unless clearly requested to show only long trips.
 
 WHEN TO USE EACH TOOL:
 - "Where are you now?" → get_vehicle_status (real-time location)
@@ -164,7 +165,14 @@ WHEN TO USE EACH TOOL:
 - "Track my route from A to B" → get_position_history (detailed path)
 `
 
-    const finalSystemPrompt = `${systemPersona}\n${dateSystemInfo}`
+    const finalSystemPrompt = `${systemPersona}\n${dateSystemInfo}
+    
+    PREVIOUS CONVERSATION SUMMARY:
+    ${conversationContext.conversation_summary || 'None'}
+    
+    KNOWN FACTS ABOUT USER:
+    ${conversationContext.important_facts?.join('\n') || 'None'}
+    `
 
     // 4. Construct Message History
     // Inject conversation summary and important facts so the agent retains context

@@ -82,13 +82,19 @@ export function validateTrip(trip: any): TripData {
   // Criterion A: REMOVED (Zero distance trips can be valid "Idling" if duration is long enough)
   // if (dist === 0) { ... }
 
-  // Criterion B: Short duration and negligible distance (e.g. ignition flicker)
-  // < 2 mins (120s) and < 0.1 km
-  if (dur < 120 && dist < 0.1) {
+  // Criterion B: Very short duration and negligible distance (e.g. ignition flicker)
+  // < 60s and < 0.01 km (10 meters)
+  if (dur < 60 && dist < 0.01) {
     issues.push('Ghost Trip: Negligible distance and duration')
     isGhost = true
     confidence = 0
     dataQuality = 'low'
+  }
+  // Criterion B2: Short Move (Valid but small)
+  else if (dist < 0.2) { // Less than 200m
+     issues.push('Short Trip: Valid but short distance')
+     // NOT a ghost, just short.
+     if (dataQuality === 'high') dataQuality = 'medium'
   }
   // Criterion C: Unrealistic Speed (GPS Jump)
   // > 250 km/h

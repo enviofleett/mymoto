@@ -442,6 +442,7 @@ END;
 $$;
 
 -- Function to get latest health metrics
+DROP FUNCTION IF EXISTS get_vehicle_health(TEXT);
 CREATE OR REPLACE FUNCTION get_vehicle_health(
   p_device_id TEXT
 )

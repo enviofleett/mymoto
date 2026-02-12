@@ -49,6 +49,18 @@ interface ServiceProvider {
   review_count?: number;
 }
 
+interface DirectoryCategory {
+  id: string;
+  name: string;
+  icon: string | null;
+}
+
+interface ProviderStats {
+  provider_id: string;
+  avg_rating: number | null;
+  review_count: number | null;
+}
+
 export default function OwnerDirectory() {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedCity, setSelectedCity] = useState<string>("all");
@@ -60,32 +72,29 @@ export default function OwnerDirectory() {
   const { data: categories = [] } = useQuery({
     queryKey: ['directory-categories'],
     queryFn: async () => {
-      // @ts-ignore
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('directory_categories')
         .select('*')
         .eq('is_active', true)
         .order('display_order', { ascending: true });
       
       if (error) throw error;
-      return data as any[];
+      return (data || []) as DirectoryCategory[];
     },
   });
 
-  // Fetch provider stats
+  // Fetch provider stats via secure RPC
   const { data: stats = [] } = useQuery({
     queryKey: ['provider-stats'],
     queryFn: async () => {
-      // @ts-ignore
-      const { data, error } = await (supabase as any)
-        .from('provider_stats_view')
-        .select('*');
+      const { data, error } = await supabase
+        .rpc('get_provider_stats');
       
       if (error) {
-        console.warn('Failed to fetch provider stats (view might not exist yet):', error);
+        console.warn('Failed to fetch provider stats:', error);
         return [];
       }
-      return data as any[];
+      return (data || []) as ProviderStats[];
     },
   });
 
@@ -93,8 +102,7 @@ export default function OwnerDirectory() {
   const { data: providers = [], isLoading } = useQuery({
     queryKey: ['approved-providers'],
     queryFn: async () => {
-      // @ts-ignore
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('service_providers')
         .select(`
           *,
@@ -106,17 +114,18 @@ export default function OwnerDirectory() {
       if (error) throw error;
       
       // Transform data to match ServiceProvider interface
-      return (data as any[]).map(provider => ({
+      const rows = (data || []) as Array<ServiceProvider & { category?: ServiceProvider['category'] }>;
+      return rows.map(provider => ({
         ...provider,
         category: provider.category
-      })) as ServiceProvider[];
+      }));
     },
   });
 
   // Merge stats into providers
   const providersWithStats = useMemo(() => {
     return providers.map(p => {
-      const stat = stats.find((s: any) => s.provider_id === p.id);
+      const stat = stats.find((s) => s.provider_id === p.id);
       return {
         ...p,
         avg_rating: stat?.avg_rating || 0,

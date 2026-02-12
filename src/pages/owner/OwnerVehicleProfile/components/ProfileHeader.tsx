@@ -5,7 +5,6 @@ import { getPersonalityLabel } from "@/hooks/useVehicleProfile";
 
 interface ProfileHeaderProps {
   displayName: string;
-  vehicleName: string;
   plateNumber: string; // Add plate number prop
   avatarUrl: string | null;
   personalityMode: string | null;
@@ -18,7 +17,6 @@ interface ProfileHeaderProps {
 
 export function ProfileHeader({
   displayName,
-  vehicleName,
   plateNumber, // Destructure new prop
   avatarUrl,
   personalityMode,
@@ -28,7 +26,7 @@ export function ProfileHeader({
   onBack,
   onSettings,
 }: ProfileHeaderProps) {
-  const showOriginalName = displayName !== vehicleName;
+  const showOriginalName = displayName !== plateNumber;
 
   return (
     <>

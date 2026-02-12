@@ -2,8 +2,10 @@ import type { Config } from "tailwindcss";
 
 export default {
   darkMode: ["class"],
-  content: ["./pages/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./app/**/*.{ts,tsx}", "./src/**/*.{ts,tsx}"],
-  prefix: "",
+  content: [
+    "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx}",
+  ],
   theme: {
     container: {
       center: true,
@@ -62,48 +64,20 @@ export default {
           maintenance: "hsl(var(--status-maintenance))",
           inactive: "hsl(var(--status-inactive))",
         },
-        // Orange accent scale for premium highlights
-        orange: {
-          50: "hsl(33 100% 96%)",
-          100: "hsl(34 100% 92%)",
-          200: "hsl(32 98% 83%)",
-          300: "hsl(31 97% 72%)",
-          400: "hsl(27 96% 61%)",
-          500: "hsl(24 95% 53%)",
-          600: "hsl(21 90% 48%)",
-          700: "hsl(17 88% 40%)",
-          800: "hsl(15 79% 34%)",
-          900: "hsl(15 75% 28%)",
-        },
       },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
-        xl: "calc(var(--radius) + 4px)",
-        "2xl": "calc(var(--radius) + 8px)",
-      },
-      boxShadow: {
-        neumorphic: "8px 8px 16px rgba(0, 0, 0, 0.4), -4px -4px 12px rgba(60, 68, 85, 0.15)",
-        "neumorphic-sm": "4px 4px 8px rgba(0, 0, 0, 0.35), -2px -2px 6px rgba(60, 68, 85, 0.12)",
-        "neumorphic-inset": "inset 4px 4px 8px rgba(0, 0, 0, 0.3), inset -2px -2px 6px rgba(60, 68, 85, 0.1)",
       },
       keyframes: {
         "accordion-down": {
-          from: {
-            height: "0",
-          },
-          to: {
-            height: "var(--radix-accordion-content-height)",
-          },
+          from: { height: "0" },
+          to: { height: "var(--radix-accordion-content-height)" },
         },
         "accordion-up": {
-          from: {
-            height: "var(--radix-accordion-content-height)",
-          },
-          to: {
-            height: "0",
-          },
+          from: { height: "var(--radix-accordion-content-height)" },
+          to: { height: "0" },
         },
       },
       animation: {

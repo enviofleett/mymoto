@@ -9,9 +9,6 @@
 DROP VIEW IF EXISTS public.vehicle_daily_stats CASCADE;
 DROP VIEW IF EXISTS public.vehicle_trips CASCADE;
 
--- Ensure PostGIS is available
-CREATE EXTENSION IF NOT EXISTS postgis SCHEMA extensions;
-
 -- 2. Recreate vehicle_trips with IMPROVED LOGIC
 CREATE VIEW public.vehicle_trips WITH (security_invoker = true) AS 
 WITH vehicle_telematics_data AS (
@@ -53,9 +50,9 @@ trip_boundaries AS (
       WHEN device_time - prev_time > INTERVAL '3 minutes' THEN 0::float -- Start of new trip has 0 dist from prev
       ELSE 
         -- Use PostGIS ST_Distance for accurate geodetic distance in meters
-        extensions.ST_Distance(
-          extensions.ST_SetSRID(extensions.ST_MakePoint(longitude, latitude), 4326)::extensions.geography,
-          extensions.ST_SetSRID(extensions.ST_MakePoint(prev_lon, prev_lat), 4326)::extensions.geography
+        ST_Distance(
+          ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)::geography,
+          ST_SetSRID(ST_MakePoint(prev_lon, prev_lat), 4326)::geography
         ) / 1000.0 -- Convert to KM
     END AS dist_segment
   FROM ordered_points 
@@ -122,6 +119,7 @@ GROUP BY device_id, date_trunc('day', start_time AT TIME ZONE 'Africa/Lagos')::d
 -- 4. Recreate Dependent Functions
 
 -- 4.1 get_daily_travel_stats
+DROP FUNCTION IF EXISTS get_daily_travel_stats(TEXT, DATE);
 CREATE OR REPLACE FUNCTION get_daily_travel_stats(
   p_device_id TEXT,
   p_date DATE
@@ -159,6 +157,7 @@ END;
 $$;
 
 -- 4.2 get_vehicle_mileage_stats
+DROP FUNCTION IF EXISTS get_vehicle_mileage_stats(TEXT);
 CREATE OR REPLACE FUNCTION get_vehicle_mileage_stats(
   p_device_id TEXT
 )
@@ -204,6 +203,7 @@ END;
 $$;
 
 -- 4.3 get_daily_mileage
+DROP FUNCTION IF EXISTS get_daily_mileage(TEXT, DATE, DATE);
 CREATE OR REPLACE FUNCTION get_daily_mileage(
   p_device_id TEXT,
   p_start_date DATE,
@@ -233,6 +233,7 @@ END;
 $$;
 
 -- 4.4 get_recent_trips
+DROP FUNCTION IF EXISTS get_recent_trips(TEXT, INTEGER);
 CREATE OR REPLACE FUNCTION get_recent_trips(
   p_device_id TEXT,
   p_limit INTEGER DEFAULT 10

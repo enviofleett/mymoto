@@ -203,6 +203,7 @@ GRANT EXECUTE ON FUNCTION get_daily_travel_stats(TEXT, DATE, DATE) TO authentica
 -- 5. Recreate get_vehicle_mileage_stats function
 -- =====================================================
 
+DROP FUNCTION IF EXISTS public.get_vehicle_mileage_stats(TEXT);
 CREATE OR REPLACE FUNCTION public.get_vehicle_mileage_stats(p_device_id TEXT)
 RETURNS JSON
 LANGUAGE plpgsql

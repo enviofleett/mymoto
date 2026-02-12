@@ -19,7 +19,9 @@ export default defineConfig(({ mode }) => ({
     }
   },
   build: {
-    sourcemap: true,
+    sourcemap: false,
+    // Use esbuild minifier to avoid terser + workbox SW generation conflicts
+    minify: "esbuild",
     rollupOptions: {
       output: {
         manualChunks: {
@@ -27,6 +29,11 @@ export default defineConfig(({ mode }) => ({
           'mapbox': ['mapbox-gl'],
           'recharts': ['recharts'],
           'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          'query-vendor': ['@tanstack/react-query'],
+          'date-vendor': ['date-fns', 'react-day-picker'],
+          'icons-vendor': ['lucide-react'],
+          'map-vendor': ['leaflet', 'react-leaflet', 'react-leaflet-cluster'],
+          'supabase-vendor': ['@supabase/supabase-js'],
           'ui-vendor': ['@radix-ui/react-dialog', '@radix-ui/react-popover', '@radix-ui/react-tabs'],
         },
       },
@@ -37,6 +44,11 @@ export default defineConfig(({ mode }) => ({
     mode === "development" && componentTagger(),
     VitePWA({
       registerType: "autoUpdate",
+      devOptions: {
+        enabled: false, // Disable PWA in development to avoid caching/network issues
+      },
+      // Avoid SW minification to prevent build-time terser deadlocks
+      minify: false,
       includeAssets: ["favicon.ico", "robots.txt", "sw-custom.js"], // ✅ Include custom service worker
       manifest: {
         name: "MyMoto - Vehicle Companion",
@@ -68,6 +80,9 @@ export default defineConfig(({ mode }) => ({
         ],
       },
       workbox: {
+        // Force development mode to avoid workbox minification (terser)
+        mode: "development",
+        sourcemap: false,
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MiB
         skipWaiting: true,

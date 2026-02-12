@@ -339,6 +339,9 @@ export default function OwnerChatDetail() {
           device_id: deviceId,
           message: userMessage,
           user_id: user.id,
+          conversation_id: deviceId,
+          client_timestamp: new Date().toISOString(),
+          user_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         }),
         signal: controller.signal, // ✅ FIX #1: Add abort signal
       });
@@ -408,7 +411,7 @@ export default function OwnerChatDetail() {
       let fullResponse = "";
       let buffer = "";
       let hasReceivedData = false;
-      let streamStartTime = Date.now();
+      const streamStartTime = Date.now();
       const STREAM_TIMEOUT = 120000; // 120 seconds max for stream
       const MAX_ITERATIONS = 10000; // Safety limit for iterations
       let iterationCount = 0;

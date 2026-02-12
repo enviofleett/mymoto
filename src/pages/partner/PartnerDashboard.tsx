@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { OwnerLayout } from "@/components/layouts/OwnerLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -53,6 +52,12 @@ interface ProviderMetrics {
   averageRating: number;
 }
 
+interface ProviderProfile {
+  id: string;
+  business_name: string;
+  approval_status: 'pending' | 'approved' | 'rejected' | 'needs_reapproval';
+}
+
 export default function PartnerDashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -65,28 +70,16 @@ export default function PartnerDashboard() {
       if (!user?.id) return null;
       
       const { data, error } = await supabase
-        // @ts-ignore - Table exists but types are outdated
         .from('service_providers')
-        .select('*')
+        .select('id, business_name, approval_status')
         .eq('user_id', user.id)
         .single();
       
       if (error) throw error;
-      return data as any;
+      return data as ProviderProfile;
     },
     enabled: !!user?.id,
   });
-
-  // Redirect if not found
-  if (!providerLoading && !provider) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-4 text-center">
-        <h2 className="text-2xl font-bold mb-2">Partner Profile Not Found</h2>
-        <p className="text-muted-foreground mb-4">You need to register as a service provider to view this dashboard.</p>
-        <Button onClick={() => navigate('/partner/signup')}>Register Now</Button>
-      </div>
-    );
-  }
 
   // Fetch bookings
   const { data: bookings = [], isLoading: bookingsLoading } = useQuery({
@@ -138,14 +131,14 @@ export default function PartnerDashboard() {
         .in('status', ['pending', 'confirmed']);
 
       // Get average rating
-      // @ts-ignore - Table exists but types are outdated
-      const { data: ratings } = await (supabase as any)
+      const { data: ratings } = await supabase
         .from('provider_ratings')
         .select('rating')
         .eq('provider_id', provider.id);
 
-      const avgRating = ratings && ratings.length > 0
-        ? ratings.reduce((sum: any, r: any) => sum + r.rating, 0) / ratings.length
+      const ratingValues = (ratings || []) as Array<{ rating: number }>;
+      const avgRating = ratingValues.length > 0
+        ? ratingValues.reduce((sum, r) => sum + r.rating, 0) / ratingValues.length
         : 0;
 
       return {
@@ -183,8 +176,9 @@ export default function PartnerDashboard() {
       queryClient.invalidateQueries({ queryKey: ['provider-metrics'] });
       toast.success('Booking marked as delivered');
     },
-    onError: (error: any) => {
-      toast.error('Failed to mark as delivered', { description: error.message });
+    onError: (error: unknown) => {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      toast.error('Failed to mark as delivered', { description: message });
     },
   });
 
@@ -218,15 +212,40 @@ export default function PartnerDashboard() {
     );
   }
 
+  // Redirect if not found
   if (!provider) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-4 text-center">
+        <h2 className="text-2xl font-bold mb-2">Partner Profile Not Found</h2>
+        <p className="text-muted-foreground mb-4">You need to register as a service provider to view this dashboard.</p>
+        <Button onClick={() => navigate('/partner/signup')}>Register Now</Button>
+      </div>
+    );
+  }
+
+  if (provider.approval_status !== 'approved') {
+    const statusCopy =
+      provider.approval_status === 'pending'
+        ? 'Your registration is pending approval.'
+        : provider.approval_status === 'needs_reapproval'
+          ? 'Your profile changes are pending re-approval.'
+          : 'Your registration was rejected. Please update your profile or contact support.';
+
     return (
       <OwnerLayout>
         <div className="space-y-4 p-4">
           <Card>
-            <CardContent className="pt-6">
-              <p className="text-center text-muted-foreground">
-                Provider profile not found. Please contact support.
-              </p>
+            <CardContent className="pt-6 text-center space-y-2">
+              <h2 className="text-xl font-semibold">Approval Required</h2>
+              <p className="text-muted-foreground">{statusCopy}</p>
+              <div className="flex items-center justify-center gap-2 pt-2">
+                <Button onClick={() => navigate('/partner/profile')} variant="outline">
+                  Update Profile
+                </Button>
+                <Button onClick={() => navigate('/auth')}>
+                  Sign Out
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>

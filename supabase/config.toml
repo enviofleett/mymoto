@@ -60,9 +60,6 @@ verify_jwt = false
 [functions.create-test-user]
 verify_jwt = false
 
-[functions.sync-trips-incremental]
-verify_jwt = false
-
 [functions.admin-wallet-topup]
 verify_jwt = false
 

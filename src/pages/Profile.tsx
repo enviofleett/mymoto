@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { PullToRefresh } from "@/components/ui/pull-to-refresh";
 import { DashboardLayout } from "@/components/layouts/DashboardLayout";
@@ -63,6 +63,27 @@ interface AssignedVehicle {
   } | null;
 }
 
+interface VehicleAssignmentRow {
+  device_id: string;
+  vehicle_alias: string | null;
+  vehicles: {
+    device_name: string | null;
+    gps_owner: string | null;
+    group_name: string | null;
+  } | null;
+  vehicle_positions: {
+    latitude: number | null;
+    longitude: number | null;
+    speed: number | null;
+    battery_percent: number | null;
+    ignition_on: boolean | null;
+    is_online: boolean | null;
+    is_overspeeding: boolean | null;
+    gps_time: string | null;
+    total_mileage: number | null;
+  } | null;
+}
+
 const Profile = () => {
   const { user, isAdmin, signOut } = useAuth();
   const [searchParams] = useSearchParams();
@@ -73,6 +94,14 @@ const Profile = () => {
   
   const defaultTab = searchParams.get("tab") || "vehicles";
 
+  const assignedVehicleIds = useMemo(
+    () => assignedVehicles.map((v) => v.device_id),
+    [assignedVehicles]
+  );
+
+  // Enable realtime updates for all assigned vehicles (safe even if empty)
+  useRealtimeFleetUpdates(assignedVehicleIds);
+
   const handleLogout = async () => {
     try {
       await signOut();
@@ -81,18 +110,13 @@ const Profile = () => {
     }
   };
 
-  useEffect(() => {
-    if (user) {
-      fetchUserData();
-    }
-  }, [user]);
-
-  const fetchUserData = async () => {
+  const fetchUserData = useCallback(async () => {
     try {
+      if (!user?.id && !user?.email) return;
       setLoading(true);
 
       // First check if user has a profile linked
-      const { data: profileData, error: profileError } = await (supabase as any)
+      const { data: profileData, error: profileError } = await supabase
         .from("profiles")
         .select("*")
         .eq("user_id", user?.id)
@@ -103,22 +127,22 @@ const Profile = () => {
       }
 
       // If no profile exists with user_id, try to find by email
-      let finalProfile = profileData as UserProfile | null;
+      let finalProfile = (profileData as UserProfile | null) ?? null;
       if (!profileData && user?.email) {
-        const { data: emailProfile } = await (supabase as any)
+        const { data: emailProfile } = await supabase
           .from("profiles")
           .select("*")
           .eq("email", user.email)
           .maybeSingle();
         
-        finalProfile = emailProfile as UserProfile | null;
+        finalProfile = (emailProfile as UserProfile | null) ?? null;
       }
 
       setProfile(finalProfile);
 
       // Fetch assigned vehicles with current positions
       if (finalProfile) {
-        const { data: assignments, error: assignError } = await (supabase as any)
+        const { data: assignments, error: assignError } = await supabase
           .from("vehicle_assignments")
           .select(`
             device_id,
@@ -145,7 +169,8 @@ const Profile = () => {
         if (assignError) {
           console.error("Error fetching assignments:", assignError);
         } else if (assignments) {
-          const vehiclesWithPositions: AssignedVehicle[] = assignments.map((a: any) => ({
+          const rows = assignments as VehicleAssignmentRow[];
+          const vehiclesWithPositions: AssignedVehicle[] = rows.map((a) => ({
             device_id: a.device_id,
             vehicle_alias: a.vehicle_alias,
             device_name: a.vehicles?.device_name || a.device_id,
@@ -154,11 +179,11 @@ const Profile = () => {
             position: a.vehicle_positions ? {
               latitude: a.vehicle_positions.latitude,
               longitude: a.vehicle_positions.longitude,
-              speed: a.vehicle_positions.speed || 0,
+              speed: a.vehicle_positions.speed ?? 0,
               battery_percent: a.vehicle_positions.battery_percent,
               ignition_on: a.vehicle_positions.ignition_on,
-              is_online: a.vehicle_positions.is_online || false,
-              is_overspeeding: a.vehicle_positions.is_overspeeding || false,
+              is_online: a.vehicle_positions.is_online ?? false,
+              is_overspeeding: a.vehicle_positions.is_overspeeding ?? false,
               gps_time: a.vehicle_positions.gps_time,
               total_mileage: a.vehicle_positions.total_mileage
             } : null
@@ -166,12 +191,18 @@ const Profile = () => {
           setAssignedVehicles(vehiclesWithPositions);
         }
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Error loading user data:", err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.id, user?.email]);
+
+  useEffect(() => {
+    if (user) {
+      fetchUserData();
+    }
+  }, [user, fetchUserData]);
 
   const getInitials = (name: string) => {
     return name
@@ -324,9 +355,6 @@ const Profile = () => {
   // Get primary vehicle for AI insights
   const primaryVehicleId = assignedVehicles[0]?.device_id || null;
   
-  // Enable realtime updates for all assigned vehicles
-  useRealtimeFleetUpdates(assignedVehicles.map(v => v.device_id));
-
   // Stats summary
   const onlineVehicles = assignedVehicles.filter(v => v.position?.is_online).length;
   const movingVehicles = assignedVehicles.filter(v => v.position?.speed && v.position.speed > 0).length;

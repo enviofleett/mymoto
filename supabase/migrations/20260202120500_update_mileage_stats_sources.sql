@@ -10,6 +10,7 @@
 -- 1. Update get_vehicle_mileage_stats
 -- =====================================================
 
+DROP FUNCTION IF EXISTS public.get_vehicle_mileage_stats(TEXT);
 CREATE OR REPLACE FUNCTION public.get_vehicle_mileage_stats(p_device_id TEXT)
 RETURNS JSONB
 LANGUAGE plpgsql

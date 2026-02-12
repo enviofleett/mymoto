@@ -117,26 +117,24 @@ export async function fetchVehicleLiveData(deviceId: string): Promise<VehicleLiv
 }
 
 /**
- * Maps the direct API response from gps-data Edge Function to VehicleLiveData.
- * NOTE: The Edge Function 'gps-data' MUST return normalized records (with snake_case keys)
- * for this to work correctly. Raw GPS51 records use different keys (deviceid, strstatus, etc.)
- * and lack computed fields like is_online.
+ * Maps the direct API response from get-vehicle-live-status Edge Function to VehicleLiveData.
+ * This handles the NormalizedVehicleState returned by the live proxy.
  */
 export function mapDirectResponseToVehicleLiveData(record: any): VehicleLiveData {
   return {
-    deviceId: record.device_id,
-    latitude: record.latitude ?? null,
-    longitude: record.longitude ?? null,
-    speed: record.speed ?? 0,
+    deviceId: record.vehicle_id || record.device_id,
+    latitude: record.lat ?? null,
+    longitude: record.lon ?? null,
+    speed: record.speed_kmh ?? 0,
     heading: record.heading ?? null,
-    batteryPercent: record.battery_percent ?? null,
+    batteryPercent: record.battery_level ?? null,
     ignitionOn: record.ignition_on ?? null,
     isOnline: record.is_online ?? false,
-    isOverspeeding: record.is_overspeeding ?? false,
-    totalMileageKm: record.total_mileage ? Math.round(record.total_mileage / 1000) : null,
-    statusText: record.status_text ?? null,
-    lastUpdate: record.gps_time ? new Date(record.gps_time) : null,
-    lastGpsFix: record.gps_fix_time ? new Date(record.gps_fix_time) : null,
+    isOverspeeding: (record.speed_kmh ?? 0) > 100, // Basic client-side check if flag missing
+    totalMileageKm: null, // Live proxy doesn't return total mileage, handled by DB fallback or separate query
+    statusText: record.ignition_on ? 'Engine Running' : 'Engine Off',
+    lastUpdate: record.last_updated_at ? new Date(record.last_updated_at) : null,
+    lastGpsFix: record.gps_fix_at ? new Date(record.gps_fix_at) : null,
     lastSyncedAt: new Date(), // It's fresh now
     syncPriority: 'high',
   };
@@ -155,9 +153,12 @@ export async function fetchVehicleLiveDataDirect(deviceId: string): Promise<Vehi
   try {
     const { data, error } = await supabase.functions.invoke("gps-data", {
       body: { 
-        action: "lastposition", 
-        body_payload: { deviceids: [deviceId] },
-        use_cache: false 
+        action: 'lastposition',
+        body_payload: {
+          deviceids: [deviceId],
+          lastquerypositiontime: 0
+        },
+        use_cache: false
       },
     });
 
@@ -167,11 +168,25 @@ export async function fetchVehicleLiveDataDirect(deviceId: string): Promise<Vehi
       throw new Error(`Edge Function error: ${error.message}`);
     }
 
-    if (!data?.data?.records?.[0]) {
-      throw new Error("No data returned from GPS 51");
+    if (!data) {
+      throw new Error("No data returned from GPS 51 Proxy");
+    }
+    
+    // Check for explicit error object returned by function
+    if (data.error) {
+       throw new Error(`Proxy returned error: ${data.error}`);
     }
 
-    const record = data.data.records[0];
+    // gps-data returns { data: { records: [...] } } or { data: { ...apiResponse, records: [...] } }
+    // The structure is usually nested in 'data' property of the response JSON
+    const responseData = data.data || data;
+    const records = responseData.records || [];
+    
+    if (records.length === 0) {
+      throw new Error("No records returned from GPS 51");
+    }
+
+    const record = records[0];
 
     if (import.meta.env.DEV) {
       console.log(`[fetchVehicleLiveDataDirect] ✅ Received direct data in ${fetchDuration}ms`);

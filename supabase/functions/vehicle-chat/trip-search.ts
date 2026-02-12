@@ -81,7 +81,7 @@ export async function handleTripSearch(
         .from('vehicle_trips')
         .select('id, start_time, end_time, start_location_name, end_location_name, start_address, end_address, distance_km, duration_seconds, start_latitude, start_longitude, end_latitude, end_longitude, max_speed, avg_speed')
         .eq('device_id', deviceId)
-        .eq('source', 'gps51') // Ensure parity with GPS51 source of truth
+        // .eq('source', 'gps51') // Removed source restriction to include all valid trips
         .or(`start_location_name.ilike.%${loc.match_text}%,end_location_name.ilike.%${loc.match_text}%,start_address.ilike.%${loc.match_text}%,end_address.ilike.%${loc.match_text}%`)
         .order('start_time', { ascending: false })
         .limit(20); // Fetch more to allow for filtering

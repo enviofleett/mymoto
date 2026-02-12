@@ -12,7 +12,7 @@ import { VehiclePersonaSettings } from "@/components/fleet/VehiclePersonaSetting
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { fetchVehicleLiveDataDirect, VehicleLiveData } from "@/hooks/useVehicleLiveData";
 import { useAddress } from "@/hooks/useAddress";
-import { useVehicleLLMSettings, useVehicleTrips, useVehicleEvents, type VehicleTrip } from "@/hooks/useVehicleProfile";
+import { useVehicleLLMSettings, useVehicleTrips, useVehicleEvents, useVehicleDailyStats, type VehicleTrip } from "@/hooks/useVehicleProfile";
 import { useOwnerVehicles } from "@/hooks/useOwnerVehicles";
 import { useTripSyncStatus, useTriggerTripSync, useRealtimeTripUpdates } from "@/hooks/useTripSync";
 import { type DateRange } from "react-day-picker";
@@ -28,26 +28,12 @@ import { ReportsSection } from "./components/ReportsSection";
 export default function OwnerVehicleProfile() {
   const { deviceId } = useParams<{ deviceId: string }>();
   const navigate = useNavigate();
+  const resolvedDeviceId = deviceId ?? "";
+  const hasDeviceId = Boolean(deviceId);
 
   // State
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-
-  // CRITICAL FIX: Check deviceId BEFORE initializing hooks
-  if (!deviceId) {
-    return (
-      <OwnerLayout>
-        <div className="flex items-center justify-center h-full">
-          <div className="text-center">
-            <p className="text-muted-foreground mb-4">Vehicle not found</p>
-            <Button variant="outline" onClick={() => navigate("/owner/vehicles")}>
-              Back to Vehicles
-            </Button>
-          </div>
-        </div>
-      </OwnerLayout>
-    );
-  }
 
   // ============================================================================
   // DIRECT DATA FETCHING: 100% Accuracy from GPS 51
@@ -59,16 +45,16 @@ export default function OwnerVehicleProfile() {
     error: liveError,
     refetch: refetchLive,
   } = useQuery({
-    queryKey: ["vehicle-live-data-direct", deviceId],
+    queryKey: ["vehicle-live-data-direct", resolvedDeviceId],
     queryFn: async () => {
       try {
-        return await fetchVehicleLiveDataDirect(deviceId);
+        return await fetchVehicleLiveDataDirect(resolvedDeviceId);
       } catch (err) {
         console.error("Direct fetch failed:", err);
         throw err;
       }
     },
-    enabled: !!deviceId,
+    enabled: hasDeviceId,
     refetchInterval: 15000, // Poll GPS 51 every 15 seconds
     refetchOnWindowFocus: true,
     retry: 2,
@@ -77,7 +63,7 @@ export default function OwnerVehicleProfile() {
   // Keep track of last valid data to prevent UI flashing
   // FALLBACK STRATEGY: Use Live Data -> OwnerVehicle (DB) -> null
   const { data: ownerVehicles } = useOwnerVehicles();
-  const vehicle = ownerVehicles?.find((v) => v.deviceId === deviceId);
+  const vehicle = ownerVehicles?.find((v) => v.deviceId === resolvedDeviceId);
 
   const displayData = useMemo(() => {
     // 1. Prefer Live Data if available and valid
@@ -134,10 +120,10 @@ export default function OwnerVehicleProfile() {
   const { 
     data: llmSettings, 
     refetch: refetchProfile 
-  } = useVehicleLLMSettings(deviceId, true);
+  } = useVehicleLLMSettings(resolvedDeviceId, hasDeviceId);
 
   // Address lookup
-  const { address, isLoading: addressLoading } = useAddress(
+  const { address } = useAddress(
     displayData?.latitude ?? null,
     displayData?.longitude ?? null
   );
@@ -160,24 +146,54 @@ export default function OwnerVehicleProfile() {
   }, [displayData?.isOnline, displayData?.batteryPercent, displayData?.ignitionOn, displayData?.speed]);
 
   // Trips and Events for Reports Section
-  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
-
-  const {
-    data: trips,
-    isLoading: tripsLoading
-  } = useVehicleTrips(deviceId, {
-    dateRange,
-    live: true,
-    limit: 200
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
+    const to = new Date();
+    const from = new Date();
+    from.setDate(from.getDate() - 30);
+    return { from, to };
   });
-
+  const [shouldFetchTrips, setShouldFetchTrips] = useState(false);
+  
   const {
-    data: events,
-    isLoading: eventsLoading
-  } = useVehicleEvents(deviceId, {
+    data: trips, 
+    isLoading: tripsLoading,
+    refetch: refetchTrips
+  } = useVehicleTrips(resolvedDeviceId, { 
+    dateRange, 
+    live: true, // Enable live updates for trip status
+  }, hasDeviceId && shouldFetchTrips);
+
+  const { 
+    data: events, 
+    isLoading: eventsLoading 
+  } = useVehicleEvents(resolvedDeviceId, { 
     dateRange,
     limit: 50
-  });
+  }, hasDeviceId);
+
+  // Daily Mileage Stats (Default: Last 30 days, or Custom Range)
+  const {
+    data: dailyStats,
+    isLoading: statsLoading,
+    refetch: refetchStats
+  } = useVehicleDailyStats(
+    resolvedDeviceId, 
+    dateRange || 30, // Pass 30 (number) or DateRange object
+    hasDeviceId
+  );
+
+  const handleRequestTrips = useCallback(() => {
+    setShouldFetchTrips(true);
+    // Always refetch when requested, regardless of previous state
+    refetchTrips();
+    refetchStats();
+  }, [refetchTrips, refetchStats]);
+
+  useEffect(() => {
+    if (hasDeviceId) {
+      setShouldFetchTrips(true);
+    }
+  }, [hasDeviceId]);
 
   // Trip sync: status, manual trigger, and realtime updates
   const { data: syncStatus } = useTripSyncStatus(deviceId);
@@ -191,7 +207,7 @@ export default function OwnerVehicleProfile() {
 
   // Pull-to-refresh handler
   const handleRefresh = useCallback(async () => {
-    if (!deviceId) return;
+    if (!hasDeviceId) return;
 
     setIsRefreshing(true);
     
@@ -216,7 +232,7 @@ export default function OwnerVehicleProfile() {
     } finally {
       setIsRefreshing(false);
     }
-  }, [deviceId, refetchLive, refetchProfile]);
+  }, [hasDeviceId, refetchLive, refetchProfile]);
 
   const { pullDistance, handlers: pullHandlers } = usePullToRefresh({
     onRefresh: handleRefresh,
@@ -224,9 +240,8 @@ export default function OwnerVehicleProfile() {
 
   // Display values with safe fallbacks
 
-  const displayName = llmSettings?.nickname || vehicle?.plateNumber || deviceId;
-  const plateNumber = vehicle?.plateNumber || deviceId;
-  const vehicleName = deviceId;
+  const displayName = llmSettings?.nickname || vehicle?.plateNumber || resolvedDeviceId;
+  const plateNumber = vehicle?.plateNumber || resolvedDeviceId;
   const avatarUrl = llmSettings?.avatar_url || null;
   const personalityMode = llmSettings?.personality_mode || null;
 
@@ -235,6 +250,21 @@ export default function OwnerVehicleProfile() {
   const hasCriticalError = liveError !== null && !displayData;
   const hasNoData = !liveLoading && !displayData && !liveError;
   
+  if (!hasDeviceId) {
+    return (
+      <OwnerLayout>
+        <div className="flex items-center justify-center h-full">
+          <div className="text-center">
+            <p className="text-muted-foreground mb-4">Vehicle not found</p>
+            <Button variant="outline" onClick={() => navigate("/owner/vehicles")}>
+              Back to Vehicles
+            </Button>
+          </div>
+        </div>
+      </OwnerLayout>
+    );
+  }
+
   if (hasCriticalError) {
     return (
       <OwnerLayout>
@@ -294,7 +324,6 @@ export default function OwnerVehicleProfile() {
         {/* Header */}
         <ProfileHeader
           displayName={displayName}
-          vehicleName={vehicleName}
           avatarUrl={avatarUrl}
           personalityMode={personalityMode}
           status={status}
@@ -316,7 +345,7 @@ export default function OwnerVehicleProfile() {
               address={address}
               vehicleName={displayName}
               isOnline={status === "online" || status === "charging"}
-              isLoading={liveLoading || addressLoading}
+              isLoading={liveLoading}
               isRefreshing={isRefreshing}
               onRefresh={handleRefresh}
             />
@@ -337,7 +366,7 @@ export default function OwnerVehicleProfile() {
             {/* Engine Control */}
             <div className="grid grid-cols-1 gap-4">
               <EngineControlCard
-                deviceId={deviceId}
+                deviceId={resolvedDeviceId}
                 ignitionOn={displayData?.ignitionOn ?? null}
                 isOnline={status === "online" || status === "charging"}
               />
@@ -345,13 +374,16 @@ export default function OwnerVehicleProfile() {
 
             {/* Reports & Trips */}
             <ReportsSection
-              deviceId={deviceId}
+              deviceId={resolvedDeviceId}
               trips={trips}
               events={events}
+              dailyStats={dailyStats}
               tripsLoading={tripsLoading}
               eventsLoading={eventsLoading}
+              statsLoading={statsLoading}
               dateRange={dateRange}
               onDateRangeChange={setDateRange}
+              onRequestTrips={handleRequestTrips}
               onPlayTrip={(trip) => {
                 console.log("Play trip:", trip.id);
                 toast.info("Trip playback", { description: "Opening trip details..." });
@@ -382,7 +414,7 @@ export default function OwnerVehicleProfile() {
             </DialogDescription>
           </DialogHeader>
           <VehiclePersonaSettings 
-            deviceId={deviceId} 
+            deviceId={resolvedDeviceId} 
             vehicleName={displayName}
           />
         </DialogContent>

@@ -12,6 +12,13 @@ interface CompletedBooking {
   };
 }
 
+interface BookingRow {
+  id: string;
+  provider_id: string;
+  status: string;
+  fulfilled_at: string | null;
+}
+
 export default function RatingListener() {
   const { user, isLoading } = useAuth();
   const [pendingRating, setPendingRating] = useState<CompletedBooking | null>(null);
@@ -31,13 +38,14 @@ export default function RatingListener() {
           filter: `user_id=eq.${user.id}`,
         },
         async (payload) => {
-          const booking = payload.new as any;
+          const booking = payload.new as BookingRow;
+          const previousBooking = payload.old as BookingRow | null;
           
           // Check if booking was just completed
           if (
             booking.status === 'completed' &&
             booking.fulfilled_at &&
-            payload.old.status !== 'completed'
+            previousBooking?.status !== 'completed'
           ) {
             // Fetch provider name
             const { data: provider } = await supabase

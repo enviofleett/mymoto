@@ -258,18 +258,15 @@ async function syncPositions(supabase: any, records: any[]): Promise<any[]> {
     }
   }
 
-  // SMART HISTORY: Only record if position changed significantly (>50m) or 5 min elapsed
+  // SMART HISTORY: Only record if position changed significantly or time elapsed
   const validPositions = positions.filter(p => p.latitude && p.longitude)
   if (validPositions.length === 0) return []
   
   const deviceIds = validPositions.map(p => p.device_id)
   
-  // Fetch most recent history record for each device
+  // Fetch most recent history record for each device (efficient, per-device)
   const { data: lastPositions } = await supabase
-    .from('position_history')
-    .select('device_id, latitude, longitude, recorded_at')
-    .in('device_id', deviceIds)
-    .order('recorded_at', { ascending: false })
+    .rpc('get_last_position_history', { device_ids: deviceIds })
   
   // Build lookup map of last position per device
   const lastPosMap = new Map<string, any>()
@@ -281,8 +278,8 @@ async function syncPositions(supabase: any, records: any[]): Promise<any[]> {
     }
   }
   
-  const DISTANCE_THRESHOLD_M = 50 // 50 meters
-  const TIME_THRESHOLD_MS = 5 * 60 * 1000 // 5 minutes
+  const DISTANCE_THRESHOLD_M = 75 // 75 meters
+  const TIME_THRESHOLD_MS = 7 * 60 * 1000 // 7 minutes
   
   const historyRecords = validPositions.filter(p => {
     const last = lastPosMap.get(p.device_id)
@@ -431,25 +428,34 @@ async function syncPositions(supabase: any, records: any[]): Promise<any[]> {
   // Trigger trip sync for devices that just finished a trip (Ignition OFF)
   if (devicesToSync.size > 0) {
     const deviceIds = Array.from(devicesToSync)
-    console.log(`[gps-data] Triggering trip sync for ${deviceIds.length} devices (ignition OFF detected)`)
+    console.log(`[gps-data] Triggering GPS51 trip sync for ${deviceIds.length} devices (ignition OFF detected)`)
     
-    // Non-blocking call to sync-trips-incremental
+    // Non-blocking call to sync-gps51-trips
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
     
     if (supabaseUrl && serviceRoleKey) {
-       fetch(`${supabaseUrl}/functions/v1/sync-trips-incremental`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${serviceRoleKey}`,
-        },
-        body: JSON.stringify({
-          device_ids: deviceIds,
-          force_recent: true // Force recent sync to get the just-finished trip immediately
-        }),
-      }).catch(err => {
-        console.error(`[gps-data] Failed to trigger trip sync: ${err.message}`)
+      const now = new Date();
+      const begin = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const syncUrl = `${supabaseUrl}/functions/v1/sync-gps51-trips`;
+
+      Promise.allSettled(
+        deviceIds.map((deviceId) =>
+          fetch(syncUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${serviceRoleKey}`,
+            },
+            body: JSON.stringify({
+              deviceid: deviceId,
+              begintime: begin.toISOString(),
+              endtime: now.toISOString(),
+            }),
+          })
+        )
+      ).catch(err => {
+        console.error(`[gps-data] Failed to trigger GPS51 trip sync: ${err.message}`)
       })
     }
   }

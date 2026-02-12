@@ -4,25 +4,22 @@ import { toast } from "sonner";
 import { useEffect, useState } from "react";
 import type { VehicleTrip } from "./useVehicleProfile";
 
-export interface TripSyncStatus {
+export interface Gps51TripSyncStatus {
   id: string;
   device_id: string;
-  last_sync_at: string;
-  last_position_processed: string | null;
-  sync_status: "idle" | "processing" | "completed" | "error";
-  trips_processed: number;
-  trips_total: number | null;
-  sync_progress_percent: number | null;
-  current_operation: string | null;
-  error_message: string | null;
+  last_trip_sync_at: string | null;
+  last_trip_synced: string | null;
+  trips_synced_count: number | null;
+  trip_sync_error: string | null;
+  sync_status: "idle" | "syncing" | "completed" | "error";
   created_at: string;
   updated_at: string;
 }
 
 // Fetch sync status for a device
-async function fetchTripSyncStatus(deviceId: string): Promise<TripSyncStatus | null> {
+async function fetchTripSyncStatus(deviceId: string): Promise<Gps51TripSyncStatus | null> {
   const { data, error } = await (supabase as any)
-    .from("trip_sync_status")
+    .from("gps51_sync_status")
     .select("*")
     .eq("device_id", deviceId)
     .maybeSingle();
@@ -34,56 +31,7 @@ async function fetchTripSyncStatus(deviceId: string): Promise<TripSyncStatus | n
 
   if (!data) return null;
 
-  const status = data as TripSyncStatus;
-  
-  // CRITICAL FIX: Detect and reset stuck sync statuses
-  // A sync is "stuck" if it's been "processing" for more than 10 minutes
-  if (status.sync_status === "processing" && status.updated_at) {
-    const updatedAt = new Date(status.updated_at);
-    const now = new Date();
-    const minutesStuck = (now.getTime() - updatedAt.getTime()) / (1000 * 60);
-    
-    if (minutesStuck > 10) {
-      console.warn(`[useTripSync] Detected stuck sync status for device ${deviceId} (stuck for ${minutesStuck.toFixed(1)} minutes). Resetting in database...`);
-      
-      // Call RPC function to reset stuck status in database
-      try {
-        const { data: resetResult, error: resetError } = await (supabase as any)
-          .rpc('reset_stuck_sync_status', { p_device_id: deviceId });
-        
-        if (resetError) {
-          // Check if RPC function doesn't exist yet (graceful degradation)
-          if (resetError.message?.includes('function') && resetError.message?.includes('does not exist')) {
-            console.warn(`[useTripSync] RPC function not found. Please run migration 20260126000000_reset_stuck_sync_status.sql. Using frontend-only reset.`);
-            // Fall through to frontend-only reset
-          } else {
-            console.error(`[useTripSync] Failed to reset stuck sync status:`, resetError);
-            // Fall through to frontend-only reset
-          }
-        } else if (resetResult?.success) {
-          console.log(`[useTripSync] Successfully reset stuck sync status in database:`, resetResult.message);
-          
-          // Return reset status (will be fetched fresh on next query)
-          return {
-            ...status,
-            sync_status: "idle" as const,
-            error_message: resetResult.message || `Previous sync was stuck for ${minutesStuck.toFixed(1)} minutes and has been reset`,
-          };
-        }
-      } catch (err) {
-        console.error(`[useTripSync] Error calling reset RPC:`, err);
-      }
-      
-      // Fallback: return reset status even if RPC call failed (frontend-only)
-      return {
-        ...status,
-        sync_status: "idle" as const,
-        error_message: `Previous sync was stuck for ${minutesStuck.toFixed(1)} minutes and has been reset`,
-      };
-    }
-  }
-
-  return status;
+  return data as Gps51TripSyncStatus;
 }
 
 // Trigger manual sync
@@ -108,11 +56,25 @@ async function triggerTripSync(deviceId: string, forceFullSync: boolean = false,
     throw new Error("Authentication token is missing. Please sign in again.");
   }
   
+  const now = new Date();
+  const FULL_LOOKBACK_DAYS = 30;
+  const DEFAULT_LOOKBACK_DAYS = 7;
+  const RECENT_LOOKBACK_HOURS = 24;
+
+  let begin = new Date(now);
+  if (forceRecent) {
+    begin = new Date(now.getTime() - RECENT_LOOKBACK_HOURS * 60 * 60 * 1000);
+  } else if (forceFullSync) {
+    begin = new Date(now.getTime() - FULL_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+  } else {
+    begin = new Date(now.getTime() - DEFAULT_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+  }
+
   const { data, error } = await supabase.functions.invoke("sync-trips-incremental", {
     body: {
-      device_ids: [deviceId],
-      force_full_sync: forceFullSync,
-      force_recent: forceRecent,
+      deviceid: deviceId,
+      begintime: begin.toISOString(),
+      endtime: now.toISOString(),
     },
     headers: {
       Authorization: `Bearer ${session.access_token}`,
@@ -139,9 +101,9 @@ export function useTripSyncStatus(deviceId: string | null, enabled: boolean = tr
     enabled: enabled && !!deviceId,
     staleTime: 5 * 1000, // Increased to 5 seconds to reduce refetch frequency
     refetchInterval: (query) => {
-      // CRITICAL FIX: Only refetch every 5 seconds when processing (was 2s), and every 30s when idle
+      // CRITICAL FIX: Only refetch every 5 seconds when syncing (was 2s), and every 30s when idle
       const status = query.state.data?.sync_status;
-      return status === "processing" ? 5000 : (status === "idle" ? 30000 : false);
+      return status === "syncing" ? 5000 : (status === "idle" ? 30000 : false);
     },
   });
 }
@@ -154,37 +116,31 @@ export function useTriggerTripSync() {
     mutationFn: ({ deviceId, forceFullSync, forceRecent }: { deviceId: string; forceFullSync?: boolean; forceRecent?: boolean }) =>
       triggerTripSync(deviceId, forceFullSync || false, forceRecent || false),
     onMutate: async ({ deviceId }) => {
-      // Optimistically update status to "processing"
+      // Optimistically update status to "syncing"
       await queryClient.cancelQueries({ queryKey: ["trip-sync-status", deviceId] });
 
       const previousStatus = queryClient.getQueryData(["trip-sync-status", deviceId]);
 
       // Create or update sync status optimistically
-      queryClient.setQueryData(["trip-sync-status", deviceId], (old: TripSyncStatus | null) => {
+      queryClient.setQueryData(["trip-sync-status", deviceId], (old: Gps51TripSyncStatus | null) => {
         if (!old) {
           // If no status exists, create a new one optimistically
           return {
             id: '',
             device_id: deviceId,
-            last_sync_at: new Date().toISOString(),
-            last_position_processed: null,
-            sync_status: "processing" as const,
-            trips_processed: 0,
-            trips_total: null,
-            sync_progress_percent: 0,
-            current_operation: "Initializing sync...",
-            error_message: null,
+            last_trip_sync_at: new Date().toISOString(),
+            last_trip_synced: null,
+            trips_synced_count: 0,
+            trip_sync_error: null,
+            sync_status: "syncing" as const,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           };
         }
         return { 
           ...old, 
-          sync_status: "processing" as const,
-          trips_processed: 0,
-          trips_total: null,
-          sync_progress_percent: 0,
-          current_operation: "Starting sync...",
+          sync_status: "syncing" as const,
+          last_trip_sync_at: new Date().toISOString(),
         };
       });
 
@@ -193,9 +149,23 @@ export function useTriggerTripSync() {
     onSuccess: (data, variables) => {
       const { deviceId } = variables;
 
-      // Show success toast
-      toast.success(`Synced ${data.trips_created || 0} new trips`, {
-        description: `Processed ${data.devices_processed || 1} device(s) in ${data.duration_ms}ms`,
+      // Handle both direct sync and incremental sync response formats
+      let resultData = data;
+      if (data?.results && Array.isArray(data.results)) {
+        // Find the result for this device in batch response
+        const deviceResult = data.results.find((r: any) => r.device_id === deviceId);
+        if (deviceResult?.result) {
+          resultData = deviceResult.result;
+        }
+      }
+
+      const inserted = resultData?.trips_inserted || 0;
+      const updated = resultData?.trips_updated || 0;
+      const received = resultData?.records_received || 0;
+      const total = inserted + updated;
+
+      toast.success(`Synced ${total} trip${total === 1 ? "" : "s"}`, {
+        description: `Received ${received} trip${received === 1 ? "" : "s"} from GPS51`,
       });
 
       // Invalidate and refetch related queries
@@ -283,30 +253,6 @@ export function useRealtimeTripUpdates(deviceId: string | null, enabled: boolean
             }
           );
           
-          // Update sync status to reflect new trip processed (real-time countdown)
-          queryClient.setQueryData(
-            ["trip-sync-status", deviceId],
-            (oldStatus: TripSyncStatus | null | undefined) => {
-              if (!oldStatus || oldStatus.sync_status !== 'processing') {
-                return oldStatus;
-              }
-              
-              const newTripsProcessed = (oldStatus.trips_processed || 0) + 1;
-              const tripsTotal = oldStatus.trips_total;
-              
-              // Calculate new progress
-              const newProgress = tripsTotal && tripsTotal > 0
-                ? Math.round((newTripsProcessed / tripsTotal) * 100)
-                : oldStatus.sync_progress_percent;
-              
-              return {
-                ...oldStatus,
-                trips_processed: newTripsProcessed,
-                sync_progress_percent: newProgress,
-              };
-            }
-          );
-          
           // Invalidate related queries (for derived stats)
           queryClient.invalidateQueries({ queryKey: ["mileage-stats", deviceId] });
           queryClient.invalidateQueries({ queryKey: ["vehicle-daily-stats", deviceId] });
@@ -328,7 +274,7 @@ export function useRealtimeTripUpdates(deviceId: string | null, enabled: boolean
         {
           event: "*",
           schema: "public",
-          table: "trip_sync_status",
+          table: "gps51_sync_status",
           filter: `device_id=eq.${deviceId}`,
         },
         (payload) => {
@@ -337,7 +283,7 @@ export function useRealtimeTripUpdates(deviceId: string | null, enabled: boolean
           // Update sync status query
           queryClient.setQueryData(
             ["trip-sync-status", deviceId],
-            payload.new as TripSyncStatus
+            payload.new as Gps51TripSyncStatus
           );
         }
       )

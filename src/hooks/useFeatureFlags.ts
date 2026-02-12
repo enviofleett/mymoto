@@ -18,6 +18,24 @@ async function fetchFeatureFlag(key: string): Promise<FeatureFlagRow | null> {
   return (data as FeatureFlagRow) ?? null;
 }
 
+/**
+ * Returns the global flag (no device allowlist).
+ * Defaults to enabled when the flag is missing.
+ */
+export function useFeatureFlag(flagKey: string) {
+  return useQuery({
+    queryKey: ["feature-flag", flagKey],
+    enabled: !!flagKey,
+    staleTime: 60 * 1000, // 1 min
+    gcTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const flag = await fetchFeatureFlag(flagKey);
+      if (!flag) return { enabled: true, config: null as Record<string, unknown> | null };
+      return { enabled: !!flag.enabled, config: flag.config ?? null };
+    },
+  });
+}
+
 async function fetchDeviceFlagEnabled(flagKey: string, deviceId: string): Promise<boolean> {
   const { data, error } = await supabase
     .from("feature_flag_devices")
@@ -56,4 +74,3 @@ export function useDeviceFeatureFlag(flagKey: string, deviceId: string | null) {
     },
   });
 }
-

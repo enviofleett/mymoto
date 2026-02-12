@@ -10,22 +10,23 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-router-dom": "^6.8.1",
+    "@hookform/resolvers": "^3.10.0",
+    "@radix-ui/react-label": "^2.0.2",
+    "@radix-ui/react-slot": "^1.0.2",
     "@supabase/supabase-js": "^2.89.0",
     "@tanstack/react-query": "^5.83.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.263.1",
-    "@radix-ui/react-label": "^2.0.2",
-    "@radix-ui/react-slot": "^1.0.2",
+    "pg": "^8.18.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-hook-form": "^7.48.2",
+    "react-router-dom": "^6.8.1",
     "sonner": "^1.4.1",
     "tailwind-merge": "^2.0.0",
     "tailwindcss-animate": "^1.0.7",
-    "zod": "^3.22.4",
-    "@hookform/resolvers": "^3.10.0",
-    "react-hook-form": "^7.48.2"
+    "zod": "^3.22.4"
   },
   "devDependencies": {
     "@types/react": "^18.2.37",

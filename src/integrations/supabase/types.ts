@@ -319,22 +319,7 @@ export type Database = {
       }
     }
     Views: {
-      provider_stats_view: {
-        Row: {
-          provider_id: string
-          avg_rating: number
-          review_count: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "provider_stats_view_provider_id_fkey"
-            columns: ["provider_id"]
-            isOneToOne: true
-            referencedRelation: "service_providers"
-            referencedColumns: ["id"]
-          }
-        ]
-      }
+      [_ in never]: never
     }
     Functions: {
       has_role: {

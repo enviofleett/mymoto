@@ -71,6 +71,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return roles.some((r) => r.role === 'service_provider' || r.role === 'provider');
   };
 
+  const refreshRoles = async (userId: string) => {
+    setIsRoleLoaded(false);
+    const [isAdminResult, isProviderResult] = await Promise.all([
+      checkAdminRole(userId),
+      checkProviderRole(userId),
+    ]);
+    setIsAdmin(isAdminResult);
+    setIsProvider(isProviderResult);
+    setIsRoleLoaded(true);
+  };
+
 
   useEffect(() => {
     // Set up auth state listener FIRST
@@ -81,16 +92,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         // Defer role checks with setTimeout to prevent deadlock
         if (session?.user) {
-          setIsRoleLoaded(false);
           setTimeout(() => {
-            Promise.all([
-              checkAdminRole(session.user.id),
-              checkProviderRole(session.user.id),
-            ]).then(([isAdminResult, isProviderResult]) => {
-              setIsAdmin(isAdminResult);
-              setIsProvider(isProviderResult);
-              setIsRoleLoaded(true);
-            });
+            refreshRoles(session.user.id);
           }, 0);
         } else {
           setIsAdmin(false);
@@ -106,14 +109,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        Promise.all([
-          checkAdminRole(session.user.id),
-          checkProviderRole(session.user.id),
-        ]).then(([isAdminResult, isProviderResult]) => {
-          setIsAdmin(isAdminResult);
-          setIsProvider(isProviderResult);
-          setIsRoleLoaded(true);
-        });
+        refreshRoles(session.user.id);
       } else {
         setIsRoleLoaded(true);
       }
@@ -122,6 +118,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!session?.user) return;
+    const intervalId = setInterval(() => {
+      refreshRoles(session.user.id);
+    }, 60_000);
+    return () => clearInterval(intervalId);
+  }, [session?.user?.id]);
 
   const signIn = async (email: string, password: string) => {
     try {

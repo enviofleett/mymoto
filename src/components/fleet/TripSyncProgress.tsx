@@ -1,8 +1,6 @@
 import { useTripSyncStatus } from "@/hooks/useTripSync";
-import { Progress } from "@/components/ui/progress";
 import { Card, CardContent } from "@/components/ui/card";
-import { Loader2, CheckCircle2, AlertCircle, Route } from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Loader2, AlertCircle, Route } from "lucide-react";
 import { useMemo } from "react";
 
 interface TripSyncProgressProps {
@@ -19,31 +17,21 @@ export function TripSyncProgress({ deviceId, isSyncing = false }: TripSyncProgre
   }
 
   // Extract values safely (hooks must be called before any early returns)
-  const progress = syncStatus?.sync_progress_percent ?? 0;
-  const tripsProcessed = syncStatus?.trips_processed ?? 0;
-  const tripsTotal = syncStatus?.trips_total ?? null;
-  const currentOperation = syncStatus?.current_operation ?? 'Processing trips...';
+  const tripsSynced = syncStatus?.trips_synced_count ?? 0;
+  const lastTripSynced = syncStatus?.last_trip_synced ?? null;
+  const syncError = syncStatus?.trip_sync_error ?? null;
 
-  // Calculate trips remaining (countdown) - MUST be before early return
-  const tripsRemaining = useMemo(() => {
-    if (tripsTotal === null || tripsTotal === 0) {
-      // If total is unknown, show processed count
-      return tripsProcessed > 0 ? `${tripsProcessed} trips processed` : 'Processing...';
-    }
-    
-    const remaining = tripsTotal - tripsProcessed;
-    if (remaining <= 0) {
-      return 'Completing...';
-    }
-    
-    return `${remaining} trip${remaining !== 1 ? 's' : ''} remaining`;
-  }, [tripsTotal, tripsProcessed]);
+  const lastTripLabel = useMemo(() => {
+    if (!lastTripSynced) return null;
+    const date = new Date(lastTripSynced);
+    return isNaN(date.getTime()) ? null : date.toLocaleString();
+  }, [lastTripSynced]);
 
   // Show progress if:
   // 1. Status is "processing" OR
   // 2. isSyncing is true (optimistic state) OR
   // 3. We're loading and isSyncing is true (initial sync start)
-  const isProcessing = syncStatus?.sync_status === 'processing' || isSyncing;
+  const isProcessing = syncStatus?.sync_status === 'syncing' || isSyncing;
   
   // Don't show anything if not processing
   if (!isProcessing && !isSyncing) {
@@ -51,7 +39,7 @@ export function TripSyncProgress({ deviceId, isSyncing = false }: TripSyncProgre
   }
 
   // If we're syncing but don't have status yet, show initial state
-  if (isSyncing && (!syncStatus || syncStatus.sync_status !== 'processing')) {
+  if (isSyncing && (!syncStatus || syncStatus.sync_status !== 'syncing')) {
     return (
       <Card className="border-primary/20 bg-primary/5 mb-4">
         <CardContent className="p-4">
@@ -77,9 +65,6 @@ export function TripSyncProgress({ deviceId, isSyncing = false }: TripSyncProgre
     );
   }
 
-  // Show progress details
-  const showProgressDetails = tripsTotal !== null && tripsTotal > 0;
-
   return (
     <Card className="border-primary/20 bg-primary/5 mb-4">
       <CardContent className="p-4">
@@ -91,39 +76,21 @@ export function TripSyncProgress({ deviceId, isSyncing = false }: TripSyncProgre
                 <Route className="h-4 w-4 text-primary" />
                 <span className="text-sm font-medium text-foreground">Syncing Trips</span>
               </div>
-              {/* Countdown display - prominent */}
               <div className="flex items-center gap-2">
                 <span className="text-sm font-bold text-primary tabular-nums">
-                  {tripsRemaining}
+                  {tripsSynced} trip{tripsSynced === 1 ? "" : "s"} synced
                 </span>
-                {showProgressDetails && (
-                  <span className="text-xs text-muted-foreground tabular-nums">
-                    ({tripsProcessed}/{tripsTotal})
-                  </span>
-                )}
               </div>
             </div>
             
-            {/* Progress bar */}
-            {showProgressDetails && (
-              <Progress 
-                value={progress} 
-                className="h-2 mb-2" 
-              />
-            )}
-            
-            {/* Current operation */}
             <p className="text-xs text-muted-foreground">
-              {currentOperation}
+              {lastTripLabel ? `Last trip synced: ${lastTripLabel}` : "Processing latest trips from GPS51..."}
             </p>
-            
-            {/* Visual countdown indicator */}
-            {showProgressDetails && tripsTotal > 0 && (
-              <div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
-                <span>Progress:</span>
-                <span className="font-medium text-primary tabular-nums">
-                  {Math.round(progress)}%
-                </span>
+
+            {syncError && (
+              <div className="mt-2 flex items-center gap-1 text-xs text-destructive">
+                <AlertCircle className="h-3 w-3" />
+                <span>{syncError}</span>
               </div>
             )}
           </div>

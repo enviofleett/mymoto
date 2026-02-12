@@ -20,11 +20,19 @@ interface VehicleTableProps {
   onAssignmentChange?: () => void;
   onVehicleSelect?: (vehicle: FleetVehicle) => void;
   selectedVehicleId?: string | null;
+  showDetailsModal?: boolean;
 }
 
 type StatusFilter = "all" | "online" | "offline";
 
-export function VehicleTable({ vehicles, loading, onAssignmentChange, onVehicleSelect, selectedVehicleId }: VehicleTableProps) {
+export function VehicleTable({
+  vehicles,
+  loading,
+  onAssignmentChange,
+  onVehicleSelect,
+  selectedVehicleId,
+  showDetailsModal = true
+}: VehicleTableProps) {
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState<FleetVehicle | null>(null);
@@ -49,7 +57,9 @@ export function VehicleTable({ vehicles, loading, onAssignmentChange, onVehicleS
 
   const handleRowClick = (vehicle: FleetVehicle) => {
     setSelectedVehicle(vehicle);
-    setDetailsModalOpen(true);
+    if (showDetailsModal) {
+      setDetailsModalOpen(true);
+    }
     // Also call onVehicleSelect if provided (for side panel selection)
     onVehicleSelect?.(vehicle);
   };
@@ -322,7 +332,7 @@ export function VehicleTable({ vehicles, loading, onAssignmentChange, onVehicleS
                   <TableHead>Speed</TableHead>
                   <TableHead>Mileage</TableHead>
                   <TableHead>Location</TableHead>
-                  <TableHead className="w-[60px]"></TableHead>
+                  {showDetailsModal && <TableHead className="w-[60px]"></TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -400,18 +410,20 @@ export function VehicleTable({ vehicles, loading, onAssignmentChange, onVehicleS
                     <TableCell className="max-w-[200px]">
                       <LocationCell lat={v.lat} lon={v.lon} />
                     </TableCell>
-                    <TableCell>
-                      <Button 
-                        variant="ghost" 
-                        size="icon"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleRowClick(v);
-                        }}
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
+                    {showDetailsModal && (
+                      <TableCell>
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRowClick(v);
+                          }}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
@@ -427,12 +439,14 @@ export function VehicleTable({ vehicles, loading, onAssignmentChange, onVehicleS
         onSuccess={handleAssignmentComplete}
       />
 
-      <VehicleDetailsModal
-        open={detailsModalOpen}
-        onOpenChange={setDetailsModalOpen}
-        vehicle={selectedVehicle}
-        onAssignmentChange={handleAssignmentComplete}
-      />
+      {showDetailsModal && (
+        <VehicleDetailsModal
+          open={detailsModalOpen}
+          onOpenChange={setDetailsModalOpen}
+          vehicle={selectedVehicle}
+          onAssignmentChange={handleAssignmentComplete}
+        />
+      )}
     </>
   );
 }

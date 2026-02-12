@@ -449,7 +449,7 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
       const decoder = new TextDecoder();
       let fullResponse = '';
       let buffer = '';
-      let streamStartTime = Date.now();
+      const streamStartTime = Date.now();
       const STREAM_TIMEOUT = 60000; // 60 seconds
       const MAX_ITERATIONS = 10000;
       let iterationCount = 0;
@@ -479,7 +479,9 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
                 fullResponse += parsed.delta;
                 setStreamingContent(fullResponse);
               }
-            } catch {}
+            } catch (parseError) {
+              console.warn('[Chat] Failed to parse stream data:', line, parseError);
+            }
           }
         }
         

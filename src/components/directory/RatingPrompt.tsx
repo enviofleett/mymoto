@@ -96,9 +96,10 @@ export default function RatingPrompt({
       toast.success('Thank you for your feedback!');
       setOpen(false);
       onSuccess?.();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Rating error:', error);
-      toast.error('Failed to submit rating', { description: error.message });
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      toast.error('Failed to submit rating', { description: message });
     } finally {
       setIsSubmitting(false);
     }

@@ -582,8 +582,10 @@ serve(async (req) => {
     if (event.event_type === 'ignition_off') {
       console.log(`[handle-vehicle-event] Ignition OFF detected - triggering instant trip sync for ${event.device_id}`);
 
-      // Non-blocking call to sync-trips-incremental
-      const syncUrl = `${supabaseUrl}/functions/v1/sync-trips-incremental`;
+      // Non-blocking call to sync-gps51-trips
+      const syncUrl = `${supabaseUrl}/functions/v1/sync-gps51-trips`;
+      const now = new Date();
+      const begin = new Date(now.getTime() - 24 * 60 * 60 * 1000);
       fetch(syncUrl, {
         method: 'POST',
         headers: {
@@ -591,8 +593,9 @@ serve(async (req) => {
           'Authorization': `Bearer ${supabaseServiceKey}`,
         },
         body: JSON.stringify({
-          device_ids: [event.device_id],
-          force_recent: true, // Sync last 24 hours to catch the just-completed trip
+          deviceid: event.device_id,
+          begintime: begin.toISOString(),
+          endtime: now.toISOString(),
         }),
       }).then(async (response) => {
         if (response.ok) {

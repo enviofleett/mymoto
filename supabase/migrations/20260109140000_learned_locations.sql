@@ -1,8 +1,8 @@
 -- Learned Locations System
 -- Automatically identifies and names frequently visited locations
 
--- Enable PostGIS extension for spatial operations
-CREATE EXTENSION IF NOT EXISTS postgis;
+-- Ensure PostGIS is enabled
+CREATE EXTENSION IF NOT EXISTS "postgis";
 
 -- Learned locations table
 CREATE TABLE public.learned_locations (

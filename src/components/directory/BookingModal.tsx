@@ -112,9 +112,10 @@ export default function BookingModal({
       setBookingDate("");
       setBookingTime("");
       setNotes("");
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Booking error:', error);
-      toast.error('Failed to create booking', { description: error.message });
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      toast.error('Failed to create booking', { description: message });
     } finally {
       setIsSubmitting(false);
     }

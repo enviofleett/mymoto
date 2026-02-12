@@ -46,6 +46,8 @@ interface ProviderProfile {
   approval_status: 'pending' | 'approved' | 'rejected' | 'needs_reapproval';
 }
 
+type ProviderProfileData = ProviderProfile['profile_data'];
+
 export default function PartnerProfile() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -121,7 +123,7 @@ export default function PartnerProfile() {
 
   // Update profile mutation
   const updateProfile = useMutation({
-    mutationFn: async (profileData: any) => {
+    mutationFn: async (profileData: ProviderProfileData) => {
       if (!provider?.id) throw new Error('Provider not found');
 
       const { error } = await supabase
@@ -142,8 +144,9 @@ export default function PartnerProfile() {
           : 'Profile updated successfully'
       );
     },
-    onError: (error: any) => {
-      toast.error('Failed to update profile', { description: error.message });
+    onError: (error: unknown) => {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      toast.error('Failed to update profile', { description: message });
     },
   });
 
@@ -169,9 +172,10 @@ export default function PartnerProfile() {
 
       setLogoPreview(urlData.publicUrl);
       toast.success('Logo uploaded successfully');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error uploading logo:', error);
-      toast.error('Failed to upload logo', { description: error.message });
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      toast.error('Failed to upload logo', { description: message });
     } finally {
       setUploadingLogo(false);
     }
@@ -240,7 +244,10 @@ export default function PartnerProfile() {
     );
   }
 
-  const needsReapproval = provider.approval_status === 'approved';
+  const isApproved = provider.approval_status === 'approved';
+  const isPending = provider.approval_status === 'pending';
+  const isRejected = provider.approval_status === 'rejected';
+  const needsReapproval = provider.approval_status === 'needs_reapproval';
 
   return (
     <OwnerLayout>
@@ -250,7 +257,34 @@ export default function PartnerProfile() {
           <p className="text-muted-foreground">{provider.business_name}</p>
         </div>
 
+        {isPending && (
+          <Alert>
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              Your registration is pending approval. You can edit your profile, but your dashboard stays locked until approval.
+            </AlertDescription>
+          </Alert>
+        )}
+
         {needsReapproval && (
+          <Alert>
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              Your latest changes are pending admin re-approval. The previously approved profile is still live.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {isRejected && (
+          <Alert>
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              Your registration was rejected. Please update your profile and contact support if you need help.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {isApproved && (
           <Alert>
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription>

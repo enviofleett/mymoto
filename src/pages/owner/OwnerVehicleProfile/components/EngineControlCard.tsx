@@ -27,14 +27,14 @@ export function EngineControlCard({
   isOnline 
 }: EngineControlCardProps) {
   const [showConfirm, setShowConfirm] = useState(false);
-  const [pendingCommand, setPendingCommand] = useState<"immobilize_engine" | "demobilize_engine" | "shutdown_engine" | null>(null);
+  const [pendingCommand, setPendingCommand] = useState<"immobilize_engine" | "demobilize_engine" | null>(null);
   const { mutate: executeCommand, isPending: isCommandPending } = useVehicleCommand();
 
   // Note: True relay status is not always available in basic GPS heartbeat.
   // We use ignition status only as a safety warning.
   const isEngineRunning = ignitionOn === true;
 
-  const handleCommandRequest = (command: "demobilize_engine" | "shutdown_engine") => {
+  const handleCommandRequest = (command: "demobilize_engine" | "immobilize_engine") => {
     setPendingCommand(command);
     setShowConfirm(true);
   };
@@ -85,7 +85,7 @@ export function EngineControlCard({
 
             {/* Shutdown (Emergency) Button - Critical Style */}
             <button
-              onClick={() => handleCommandRequest("shutdown_engine")}
+              onClick={() => handleCommandRequest("immobilize_engine")}
               disabled={isCommandPending || !isOnline}
               className={cn(
                 "w-full py-3 rounded-xl font-medium transition-all duration-200 flex items-center justify-center",
@@ -94,12 +94,12 @@ export function EngineControlCard({
                 "disabled:opacity-50 disabled:cursor-not-allowed"
               )}
             >
-              {isCommandPending && pendingCommand === "shutdown_engine" ? (
+              {isCommandPending && pendingCommand === "immobilize_engine" ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               ) : (
                 <Power className="h-4 w-4 mr-2" />
               )}
-              Shutdown
+              Immobilize
             </button>
           </div>
 
@@ -113,13 +113,13 @@ export function EngineControlCard({
         <AlertDialogContent className="bg-card border-border shadow-neumorphic">
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {pendingCommand === "shutdown_engine"
-                ? "Emergency Shutdown?"
+              {pendingCommand === "immobilize_engine"
+                ? "Emergency Immobilization?"
                 : "Enable Engine?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {pendingCommand === "shutdown_engine"
-                ? "WARNING: This will issue a STOP command using the 'zhuyi' password authentication. This is a critical safety command. Only use in emergencies."
+              {pendingCommand === "immobilize_engine"
+                ? "WARNING: This will cut the fuel supply to stop the engine. This is a critical safety command. Only use in emergencies."
                 : "This will restore the fuel supply, allowing the engine to start."
               }
             </AlertDialogDescription>
@@ -135,13 +135,13 @@ export function EngineControlCard({
               onClick={handleConfirm}
               className={cn(
                 "shadow-neumorphic-sm border-0",
-                (pendingCommand === "shutdown_engine")
+                (pendingCommand === "immobilize_engine")
                   ? "bg-destructive hover:bg-destructive/90"
                   : "bg-green-600 hover:bg-green-700 text-white"
               )}
             >
               {isCommandPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              {pendingCommand === "shutdown_engine" ? "SHUTDOWN" : "Confirm"}
+              {pendingCommand === "immobilize_engine" ? "IMMOBILIZE" : "Confirm"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

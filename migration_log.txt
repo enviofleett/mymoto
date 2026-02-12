@@ -1,0 +1,366 @@
+open supabase/.temp/profile: no such file or directory
+Supabase CLI 2.76.7
+Using profile: supabase (supabase.co)
+Connecting to local database...
+2026/02/11 09:05:53 PG Send: {"Type":"StartupMessage","ProtocolVersion":196608,"Parameters":{"database":"postgres","user":"postgres"}}
+2026/02/11 09:05:53 PG Recv: {"Type":"AuthenticationSASL","AuthMechanisms":["SCRAM-SHA-256"]}
+2026/02/11 09:05:53 PG Send: {"Type":"SASLInitialResponse","AuthMechanism":"SCRAM-SHA-256","Data":"n,,n=,r=e9BjgygB6w5MWjSQ2nJmUL/6"}
+2026/02/11 09:05:53 PG Recv: {"Type":"AuthenticationSASLContinue","Data":"r=e9BjgygB6w5MWjSQ2nJmUL/6/DkfBF6EjDq4m3QCXF/IFW7R,s=+9WhH0JeyL87JJEICyLE8w==,i=4096"}
+2026/02/11 09:05:53 PG Send: {"Type":"SASLResponse","Data":"c=biws,r=e9BjgygB6w5MWjSQ2nJmUL/6/DkfBF6EjDq4m3QCXF/IFW7R,p=9ojNP+/CQJdFoU+MZ/m1vVsWq5DxKxFPYfFOXMlg3oY="}
+2026/02/11 09:05:53 PG Recv: {"Type":"AuthenticationSASLFinal","Data":"v=+sDPHPlM4AXkKAmV4qSus2Xd6CQ1wURBlJTZ0JEpOpY="}
+2026/02/11 09:05:53 PG Recv: {"Type":"AuthenticationOK"}
+2026/02/11 09:05:53 PG Recv: {"Type":"ParameterStatus","Name":"in_hot_standby","Value":"off"}
+2026/02/11 09:05:53 PG Recv: {"Type":"ParameterStatus","Name":"integer_datetimes","Value":"on"}
+2026/02/11 09:05:53 PG Recv: {"Type":"ParameterStatus","Name":"TimeZone","Value":"UTC"}
+2026/02/11 09:05:53 PG Recv: {"Type":"ParameterStatus","Name":"IntervalStyle","Value":"postgres"}
+2026/02/11 09:05:53 PG Recv: {"Type":"ParameterStatus","Name":"is_superuser","Value":"off"}
+2026/02/11 09:05:53 PG Recv: {"Type":"ParameterStatus","Name":"application_name","Value":""}
+2026/02/11 09:05:53 PG Recv: {"Type":"ParameterStatus","Name":"default_transaction_read_only","Value":"off"}
+2026/02/11 09:05:53 PG Recv: {"Type":"ParameterStatus","Name":"scram_iterations","Value":"4096"}
+2026/02/11 09:05:53 PG Recv: {"Type":"ParameterStatus","Name":"DateStyle","Value":"ISO, MDY"}
+2026/02/11 09:05:53 PG Recv: {"Type":"ParameterStatus","Name":"standard_conforming_strings","Value":"on"}
+2026/02/11 09:05:53 PG Recv: {"Type":"ParameterStatus","Name":"session_authorization","Value":"postgres"}
+2026/02/11 09:05:53 PG Recv: {"Type":"ParameterStatus","Name":"client_encoding","Value":"UTF8"}
+2026/02/11 09:05:53 PG Recv: {"Type":"ParameterStatus","Name":"server_version","Value":"17.6"}
+2026/02/11 09:05:53 PG Recv: {"Type":"ParameterStatus","Name":"server_encoding","Value":"UTF8"}
+2026/02/11 09:05:53 PG Recv: {"Type":"BackendKeyData","ProcessID":19011,"SecretKey":3145585413}
+2026/02/11 09:05:53 PG Recv: {"Type":"ReadyForQuery","TxStatus":"I"}
+2026/02/11 09:05:53 PG Send: {"Type":"Parse","Name":"lrupsc_1_0","Query":"SELECT version FROM supabase_migrations.schema_migrations ORDER BY version","ParameterOIDs":null}
+2026/02/11 09:05:53 PG Send: {"Type":"Describe","ObjectType":"S","Name":"lrupsc_1_0"}
+2026/02/11 09:05:53 PG Send: {"Type":"Sync"}
+2026/02/11 09:05:53 PG Recv: {"Type":"ParseComplete"}
+2026/02/11 09:05:53 PG Recv: {"Type":"ParameterDescription","ParameterOIDs":[]}
+2026/02/11 09:05:53 PG Recv: {"Type":"RowDescription","Fields":[{"Name":"version","TableOID":17691,"TableAttributeNumber":1,"DataTypeOID":25,"DataTypeSize":-1,"TypeModifier":-1,"Format":0}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"ReadyForQuery","TxStatus":"I"}
+2026/02/11 09:05:53 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"lrupsc_1_0","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[0]}
+2026/02/11 09:05:53 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/02/11 09:05:53 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/02/11 09:05:53 PG Send: {"Type":"Sync"}
+2026/02/11 09:05:53 PG Recv: {"Type":"BindComplete"}
+2026/02/11 09:05:53 PG Recv: {"Type":"RowDescription","Fields":[{"Name":"version","TableOID":17691,"TableAttributeNumber":1,"DataTypeOID":25,"DataTypeSize":-1,"TypeModifier":-1,"Format":0}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260106210830"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260107081735"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260107121151"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260107140218"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260107153154"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260107174038"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260107193621"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260107194901"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260108081639"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260108083238"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260108085232"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260108090446"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260108091213"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260109080546"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260109120000"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260109130000"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260109131500"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260109132000"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260109140000"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260109140500"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260109141000"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260109141500"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260109150000"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260109150500"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260109151000"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260110063018"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260110112113"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260110112724"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260110120257"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260110121103"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260110121916"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260110122249"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260110123052"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260110123257"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260110135952"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260110141348"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260110142019"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260110142304"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260110144036"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260110153402"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260110154635"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260111025605"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260111031441"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260111032236"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260111032352"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260111034328"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260111091921"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260111091937"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260111093128"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260111095357"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260111102124"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260111110102"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260111145822"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260111151554"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260113180000"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260113180100"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260114000000"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260114000001"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260114000003"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260114000004"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260114000005"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260114000006"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260114000007"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260115000001"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260115000002"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260116000001"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260117000001"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260117000002"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260118000001"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260118000002"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260118051247"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260118051409"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260118051442"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260118093632"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260118095652"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260118103411"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260118103741"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260119000000"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260119000001"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260119000002"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260119000003"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260119000004"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260119000005"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260120000000"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260120000001"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260120000002"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260120000003"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260120000004"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260120000006"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260120000007"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260120000008"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260120000009"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260120000010"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260121000001"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260122000001"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260122000002"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260122000003"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260122000004"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260122111554"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260122111555"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260122111556"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260122111557"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260122111558"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260122111559"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260122111600"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260122111601"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260122120000"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260123000000"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260123000001"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260123000002"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260124000000"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260124000001"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260124000002"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260124000003"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260124000005"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260124000006"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260124102658"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260125000000"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260125000010"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260125000020"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260125000021"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260125000022"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260125000023"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260125150000"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260126000000"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260126000001"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260126000002"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260126000003"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260126180000"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260127000000"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260127000001"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260128000000"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260128000001"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260128000002"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260128000003"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260128000004"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260128000005"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260129000000"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260129000001"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260129000002"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260129000003"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260129000004"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260129000006"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260129000007"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"DataRow","Values":[{"text":"20260129000008"}]}
+2026/02/11 09:05:53 PG Recv: {"Type":"CommandComplete","CommandTag":"SELECT 145"}
+2026/02/11 09:05:53 PG Recv: {"Type":"ReadyForQuery","TxStatus":"I"}
+2026/02/11 09:05:53 PG Send: {"Type":"Parse","Name":"","Query":"SET lock_timeout = '4s'","ParameterOIDs":null}
+2026/02/11 09:05:53 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/02/11 09:05:53 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/02/11 09:05:53 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/02/11 09:05:53 PG Send: {"Type":"Parse","Name":"","Query":"CREATE SCHEMA IF NOT EXISTS supabase_migrations","ParameterOIDs":null}
+2026/02/11 09:05:53 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/02/11 09:05:53 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/02/11 09:05:53 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/02/11 09:05:53 PG Send: {"Type":"Parse","Name":"","Query":"CREATE TABLE IF NOT EXISTS supabase_migrations.schema_migrations (version text NOT NULL PRIMARY KEY)","ParameterOIDs":null}
+2026/02/11 09:05:53 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/02/11 09:05:53 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/02/11 09:05:53 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/02/11 09:05:53 PG Send: {"Type":"Parse","Name":"","Query":"ALTER TABLE supabase_migrations.schema_migrations ADD COLUMN IF NOT EXISTS statements text[]","ParameterOIDs":null}
+2026/02/11 09:05:53 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/02/11 09:05:53 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/02/11 09:05:53 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/02/11 09:05:53 PG Send: {"Type":"Parse","Name":"","Query":"ALTER TABLE supabase_migrations.schema_migrations ADD COLUMN IF NOT EXISTS name text","ParameterOIDs":null}
+2026/02/11 09:05:53 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/02/11 09:05:53 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/02/11 09:05:53 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/02/11 09:05:53 PG Send: {"Type":"Sync"}
+2026/02/11 09:05:53 PG Recv: {"Type":"ParseComplete"}
+2026/02/11 09:05:53 PG Recv: {"Type":"BindComplete"}
+2026/02/11 09:05:53 PG Recv: {"Type":"NoData"}
+2026/02/11 09:05:53 PG Recv: {"Type":"CommandComplete","CommandTag":"SET"}
+2026/02/11 09:05:53 PG Recv: {"Type":"ParseComplete"}
+2026/02/11 09:05:53 PG Recv: {"Type":"BindComplete"}
+2026/02/11 09:05:53 PG Recv: {"Type":"NoData"}
+2026/02/11 09:05:53 PG Recv: {"Severity":"NOTICE","SeverityUnlocalized":"NOTICE","Code":"42P06","Message":"schema \"supabase_migrations\" already exists, skipping","Detail":"","Hint":"","Position":0,"InternalPosition":0,"InternalQuery":"","Where":"","SchemaName":"","TableName":"","ColumnName":"","DataTypeName":"","ConstraintName":"","File":"schemacmds.c","Line":132,"Routine":"CreateSchemaCommand","UnknownFields":null}
+2026/02/11 09:05:53 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE SCHEMA"}
+2026/02/11 09:05:53 PG Recv: {"Type":"ParseComplete"}
+2026/02/11 09:05:53 PG Recv: {"Type":"BindComplete"}
+2026/02/11 09:05:53 PG Recv: {"Type":"NoData"}
+2026/02/11 09:05:53 PG Recv: {"Severity":"NOTICE","SeverityUnlocalized":"NOTICE","Code":"42P07","Message":"relation \"schema_migrations\" already exists, skipping","Detail":"","Hint":"","Position":0,"InternalPosition":0,"InternalQuery":"","Where":"","SchemaName":"","TableName":"","ColumnName":"","DataTypeName":"","ConstraintName":"","File":"parse_utilcmd.c","Line":207,"Routine":"transformCreateStmt","UnknownFields":null}
+2026/02/11 09:05:53 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE TABLE"}
+2026/02/11 09:05:53 PG Recv: {"Type":"ParseComplete"}
+2026/02/11 09:05:53 PG Recv: {"Type":"BindComplete"}
+2026/02/11 09:05:53 PG Recv: {"Type":"NoData"}
+2026/02/11 09:05:53 PG Recv: {"Severity":"NOTICE","SeverityUnlocalized":"NOTICE","Code":"42701","Message":"column \"statements\" of relation \"schema_migrations\" already exists, skipping","Detail":"","Hint":"","Position":0,"InternalPosition":0,"InternalQuery":"","Where":"","SchemaName":"","TableName":"","ColumnName":"","DataTypeName":"","ConstraintName":"","File":"tablecmds.c","Line":7471,"Routine":"check_for_column_name_collision","UnknownFields":null}
+2026/02/11 09:05:53 PG Recv: {"Type":"CommandComplete","CommandTag":"ALTER TABLE"}
+2026/02/11 09:05:53 PG Recv: {"Type":"ParseComplete"}
+2026/02/11 09:05:53 PG Recv: {"Type":"BindComplete"}
+2026/02/11 09:05:53 PG Recv: {"Type":"NoData"}
+2026/02/11 09:05:53 PG Recv: {"Severity":"NOTICE","SeverityUnlocalized":"NOTICE","Code":"42701","Message":"column \"name\" of relation \"schema_migrations\" already exists, skipping","Detail":"","Hint":"","Position":0,"InternalPosition":0,"InternalQuery":"","Where":"","SchemaName":"","TableName":"","ColumnName":"","DataTypeName":"","ConstraintName":"","File":"tablecmds.c","Line":7471,"Routine":"check_for_column_name_collision","UnknownFields":null}
+2026/02/11 09:05:53 PG Recv: {"Type":"CommandComplete","CommandTag":"ALTER TABLE"}
+2026/02/11 09:05:53 PG Recv: {"Type":"ReadyForQuery","TxStatus":"I"}
+Applying migration 20260129000009_update_vehicle_trips_view.sql...
+2026/02/11 09:05:53 PG Send: {"Type":"Query","String":"RESET ALL"}
+2026/02/11 09:05:53 PG Recv: {"Type":"CommandComplete","CommandTag":"RESET"}
+2026/02/11 09:05:53 PG Recv: {"Type":"ReadyForQuery","TxStatus":"I"}
+2026/02/11 09:05:53 PG Send: {"Type":"Parse","Name":"","Query":"-- Migration: Update Vehicle Trips View for Historical Accuracy\n-- Description:\n-- Updates the main `vehicle_trips` view to use the improved \"Smart Trip Merging\" logic\n-- (3-minute gap detection) and PostGIS distance calculation.\n-- This effectively \"backfills\" the accuracy improvements to all historical data queries,\n-- reports, and statistics that rely on this view.\n\n-- 1. Drop existing views and functions (Cascade handles dependencies)\nDROP VIEW IF EXISTS public.vehicle_daily_stats CASCADE","ParameterOIDs":null}
+2026/02/11 09:05:53 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/02/11 09:05:53 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/02/11 09:05:53 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/02/11 09:05:53 PG Send: {"Type":"Parse","Name":"","Query":"DROP VIEW IF EXISTS public.vehicle_trips CASCADE","ParameterOIDs":null}
+2026/02/11 09:05:53 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/02/11 09:05:53 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/02/11 09:05:53 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/02/11 09:05:53 PG Send: {"Type":"Parse","Name":"","Query":"-- 2. Recreate vehicle_trips with IMPROVED LOGIC\nCREATE VIEW public.vehicle_trips WITH (security_invoker = true) AS \nWITH vehicle_telematics_data AS (\n  SELECT\n    ph.device_id AS vehicle_id,\n    ph.gps_time AS device_time,\n    ph.ignition_on AS ignition,\n    ph.speed,\n    ph.latitude,\n    ph.longitude\n  FROM position_history ph\n  WHERE ph.ignition_on = true -- CRITICAL: Only look at ON points to ignore short OFF periods\n),\nordered_points AS ( \n  SELECT \n    vtd.vehicle_id, \n    vtd.device_time, \n    vtd.speed, \n    vtd.latitude,\n    vtd.longitude,\n    LAG(vtd.device_time) OVER (PARTITION BY vtd.vehicle_id ORDER BY vtd.device_time) AS prev_time, \n    LAG(vtd.latitude) OVER (PARTITION BY vtd.vehicle_id ORDER BY vtd.device_time) AS prev_lat,\n    LAG(vtd.longitude) OVER (PARTITION BY vtd.vehicle_id ORDER BY vtd.device_time) AS prev_lon\n  FROM vehicle_telematics_data vtd \n), \ntrip_boundaries AS ( \n  SELECT \n    *, \n    CASE \n      -- First point is always a start\n      WHEN prev_time IS NULL THEN 1\n      -- Gap \u003e 3 minutes means new trip (GPS51 Logic)\n      WHEN device_time - prev_time \u003e INTERVAL '3 minutes' THEN 1 \n      ELSE 0 \n    END AS trip_start_flag,\n    -- Calculate distance segment (if not new trip)\n    CASE\n      WHEN prev_time IS NULL THEN 0::float\n      WHEN device_time - prev_time \u003e INTERVAL '3 minutes' THEN 0::float -- Start of new trip has 0 dist from prev\n      ELSE \n        -- Use PostGIS ST_Distance for accurate geodetic distance in meters\n        extensions.ST_Distance(\n          extensions.ST_SetSRID(extensions.ST_MakePoint(longitude, latitude), 4326)::extensions.geography,\n          extensions.ST_SetSRID(extensions.ST_MakePoint(prev_lon, prev_lat), 4326)::extensions.geography\n        ) / 1000.0 -- Convert to KM\n    END AS dist_segment\n  FROM ordered_points \n), \ntrip_groups AS ( \n  SELECT \n    *, \n    SUM(trip_start_flag) OVER (PARTITION BY vehicle_id ORDER BY device_time ROWS UNBOUNDED PRECEDING) AS trip_group \n  FROM trip_boundaries \n), \ntrip_aggregation AS ( \n  SELECT \n    vehicle_id, \n    trip_group, \n    MIN(device_time) AS trip_start_time, \n    MAX(device_time) AS trip_end_time, \n    SUM(dist_segment) AS distance_km,\n    -- Coordinates\n    (array_agg(latitude ORDER BY device_time ASC))[1] as start_latitude,\n    (array_agg(longitude ORDER BY device_time ASC))[1] as start_longitude,\n    (array_agg(latitude ORDER BY device_time DESC))[1] as end_latitude,\n    (array_agg(longitude ORDER BY device_time DESC))[1] as end_longitude,\n    -- Speed\n    MAX(speed) as max_speed,\n    AVG(speed) as avg_speed\n  FROM trip_groups \n  GROUP BY vehicle_id, trip_group \n) \nSELECT \n  gen_random_uuid() AS id, \n  vehicle_id AS device_id,\n  trip_start_time AS start_time, \n  trip_end_time AS end_time, \n  GREATEST(distance_km, 0)::numeric AS distance_km, \n  EXTRACT(EPOCH FROM (trip_end_time - trip_start_time))::INT AS duration_seconds, \n  start_latitude,\n  start_longitude,\n  end_latitude,\n  end_longitude,\n  max_speed,\n  avg_speed,\n  'gps51'::text AS source, \n  now() AS created_at \nFROM trip_aggregation \nWHERE trip_end_time \u003e trip_start_time\nAND distance_km \u003e= 0.05","ParameterOIDs":null}
+2026/02/11 09:05:53 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/02/11 09:05:53 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/02/11 09:05:53 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/02/11 09:05:53 PG Send: {"Type":"Parse","Name":"","Query":"-- 3. Recreate vehicle_daily_stats VIEW\nCREATE VIEW public.vehicle_daily_stats WITH (security_invoker = true) AS\nSELECT\n    device_id,\n    date_trunc('day', start_time AT TIME ZONE 'Africa/Lagos')::date as stat_date,\n    count(*) as trip_count,\n    coalesce(sum(distance_km), 0) as total_distance_km,\n    coalesce(avg(distance_km), 0) as avg_distance_km,\n    max(max_speed) as peak_speed,\n    avg(avg_speed) as avg_speed,\n    coalesce(sum(duration_seconds), 0) as total_duration_seconds,\n    min(start_time) as first_trip_start,\n    max(end_time) as last_trip_end\nFROM public.vehicle_trips\nGROUP BY device_id, date_trunc('day', start_time AT TIME ZONE 'Africa/Lagos')::date","ParameterOIDs":null}
+2026/02/11 09:05:53 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/02/11 09:05:53 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/02/11 09:05:53 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/02/11 09:05:53 PG Send: {"Type":"Parse","Name":"","Query":"-- 4. Recreate Dependent Functions\n\n-- 4.1 get_daily_travel_stats\nDROP FUNCTION IF EXISTS get_daily_travel_stats(TEXT, DATE)","ParameterOIDs":null}
+2026/02/11 09:05:53 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/02/11 09:05:53 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/02/11 09:05:53 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/02/11 09:05:53 PG Send: {"Type":"Parse","Name":"","Query":"CREATE OR REPLACE FUNCTION get_daily_travel_stats(\n  p_device_id TEXT,\n  p_date DATE\n)\nRETURNS JSON\nLANGUAGE plpgsql\nSTABLE\nAS $$\nDECLARE\n  v_stats RECORD;\nBEGIN\n  SELECT \n    trip_count,\n    total_distance_km,\n    total_duration_seconds\n  INTO v_stats\n  FROM vehicle_daily_stats\n  WHERE device_id = p_device_id \n  AND stat_date = p_date;\n\n  IF NOT FOUND THEN\n    RETURN json_build_object(\n      'total_trips', 0,\n      'total_distance_km', 0,\n      'total_duration_hours', 0\n    );\n  END IF;\n\n  RETURN json_build_object(\n    'total_trips', v_stats.trip_count,\n    'total_distance_km', v_stats.total_distance_km,\n    'total_duration_hours', ROUND((v_stats.total_duration_seconds / 3600.0)::numeric, 2)\n  );\nEND;\n$$","ParameterOIDs":null}
+2026/02/11 09:05:53 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/02/11 09:05:53 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/02/11 09:05:53 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/02/11 09:05:53 PG Send: {"Type":"Parse","Name":"","Query":"-- 4.2 get_vehicle_mileage_stats\nDROP FUNCTION IF EXISTS get_vehicle_mileage_stats(TEXT)","ParameterOIDs":null}
+2026/02/11 09:05:53 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/02/11 09:05:53 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/02/11 09:05:53 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/02/11 09:05:53 PG Send: {"Type":"Parse","Name":"","Query":"CREATE OR REPLACE FUNCTION get_vehicle_mileage_stats(\n  p_device_id TEXT\n)\nRETURNS JSON\nLANGUAGE plpgsql\nSTABLE\nAS $$\nDECLARE\n  v_today DATE := (now() AT TIME ZONE 'Africa/Lagos')::date;\n  v_week_start DATE := date_trunc('week', now() AT TIME ZONE 'Africa/Lagos')::date;\n  v_month_start DATE := date_trunc('month', now() AT TIME ZONE 'Africa/Lagos')::date;\n  \n  v_today_stats RECORD;\n  v_week_stats RECORD;\n  v_month_stats RECORD;\nBEGIN\n  -- Today\n  SELECT COALESCE(SUM(total_distance_km), 0) as dist, COALESCE(SUM(trip_count), 0) as trips\n  INTO v_today_stats\n  FROM vehicle_daily_stats\n  WHERE device_id = p_device_id AND stat_date = v_today;\n\n  -- Week\n  SELECT COALESCE(SUM(total_distance_km), 0) as dist, COALESCE(SUM(trip_count), 0) as trips\n  INTO v_week_stats\n  FROM vehicle_daily_stats\n  WHERE device_id = p_device_id AND stat_date \u003e= v_week_start;\n\n  -- Month\n  SELECT COALESCE(SUM(total_distance_km), 0) as dist\n  INTO v_month_stats\n  FROM vehicle_daily_stats\n  WHERE device_id = p_device_id AND stat_date \u003e= v_month_start;\n\n  RETURN json_build_object(\n    'today', COALESCE(v_today_stats.dist, 0),\n    'week', COALESCE(v_week_stats.dist, 0),\n    'month', COALESCE(v_month_stats.dist, 0),\n    'trips_today', COALESCE(v_today_stats.trips, 0),\n    'trips_week', COALESCE(v_week_stats.trips, 0)\n  );\nEND;\n$$","ParameterOIDs":null}
+2026/02/11 09:05:53 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/02/11 09:05:53 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/02/11 09:05:53 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/02/11 09:05:53 PG Send: {"Type":"Parse","Name":"","Query":"-- 4.3 get_daily_mileage\nDROP FUNCTION IF EXISTS get_daily_mileage(TEXT, DATE, DATE)","ParameterOIDs":null}
+2026/02/11 09:05:53 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/02/11 09:05:53 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/02/11 09:05:53 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/02/11 09:05:53 PG Send: {"Type":"Parse","Name":"","Query":"CREATE OR REPLACE FUNCTION get_daily_mileage(\n  p_device_id TEXT,\n  p_start_date DATE,\n  p_end_date DATE\n)\nRETURNS TABLE (\n  day TEXT,\n  date TEXT,\n  distance NUMERIC,\n  trips INTEGER\n)\nLANGUAGE plpgsql\nSTABLE\nAS $$\nBEGIN\n  RETURN QUERY\n  SELECT\n    to_char(stat_date, 'Day') AS day,\n    stat_date::TEXT AS date,\n    total_distance_km::NUMERIC AS distance,\n    trip_count::INTEGER AS trips\n  FROM vehicle_daily_stats\n  WHERE device_id = p_device_id\n    AND stat_date BETWEEN p_start_date AND p_end_date\n  ORDER BY stat_date DESC;\nEND;\n$$","ParameterOIDs":null}
+2026/02/11 09:05:53 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/02/11 09:05:53 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/02/11 09:05:53 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/02/11 09:05:53 PG Send: {"Type":"Parse","Name":"","Query":"-- 4.4 get_recent_trips\nDROP FUNCTION IF EXISTS get_recent_trips(TEXT, INTEGER)","ParameterOIDs":null}
+2026/02/11 09:05:53 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/02/11 09:05:53 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/02/11 09:05:53 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/02/11 09:05:53 PG Send: {"Type":"Parse","Name":"","Query":"CREATE OR REPLACE FUNCTION get_recent_trips(\n  p_device_id TEXT,\n  p_limit INTEGER DEFAULT 10\n)\nRETURNS TABLE (\n  id UUID,\n  device_id TEXT,\n  start_time TIMESTAMP WITH TIME ZONE,\n  end_time TIMESTAMP WITH TIME ZONE,\n  start_latitude NUMERIC,\n  start_longitude NUMERIC,\n  end_latitude NUMERIC,\n  end_longitude NUMERIC,\n  distance_km NUMERIC,\n  avg_speed_kmh NUMERIC,\n  max_speed_kmh NUMERIC,\n  duration_minutes NUMERIC\n)\nLANGUAGE plpgsql\nSTABLE\nAS $$\nBEGIN\n  RETURN QUERY\n  SELECT\n    vt.id,\n    vt.device_id,\n    vt.start_time,\n    vt.end_time,\n    vt.start_latitude::NUMERIC,\n    vt.start_longitude::NUMERIC,\n    vt.end_latitude::NUMERIC,\n    vt.end_longitude::NUMERIC,\n    vt.distance_km::NUMERIC,\n    vt.avg_speed::NUMERIC AS avg_speed_kmh,\n    vt.max_speed::NUMERIC AS max_speed_kmh,\n    (vt.duration_seconds / 60.0)::NUMERIC AS duration_minutes\n  FROM vehicle_trips vt\n  WHERE vt.device_id = p_device_id\n    AND vt.end_time IS NOT NULL\n  ORDER BY vt.start_time DESC\n  LIMIT p_limit;\nEND;\n$$","ParameterOIDs":null}
+2026/02/11 09:05:53 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/02/11 09:05:53 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/02/11 09:05:53 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/02/11 09:05:53 PG Send: {"Type":"Parse","Name":"","Query":"-- 5. Permissions\nGRANT SELECT ON public.vehicle_trips TO authenticated","ParameterOIDs":null}
+2026/02/11 09:05:53 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/02/11 09:05:53 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/02/11 09:05:53 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/02/11 09:05:53 PG Send: {"Type":"Parse","Name":"","Query":"GRANT SELECT ON public.vehicle_trips TO service_role","ParameterOIDs":null}
+2026/02/11 09:05:53 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/02/11 09:05:53 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/02/11 09:05:53 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/02/11 09:05:53 PG Send: {"Type":"Parse","Name":"","Query":"GRANT SELECT ON public.vehicle_daily_stats TO authenticated","ParameterOIDs":null}
+2026/02/11 09:05:53 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/02/11 09:05:53 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/02/11 09:05:53 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/02/11 09:05:53 PG Send: {"Type":"Parse","Name":"","Query":"GRANT SELECT ON public.vehicle_daily_stats TO service_role","ParameterOIDs":null}
+2026/02/11 09:05:53 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/02/11 09:05:53 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/02/11 09:05:53 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/02/11 09:05:53 PG Send: {"Type":"Parse","Name":"","Query":"INSERT INTO supabase_migrations.schema_migrations(version, name, statements) VALUES($1, $2, $3)","ParameterOIDs":[25,25,1009]}
+2026/02/11 09:05:53 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":[0,0,1],"Parameters":[{"text":"20260129000009"},{"text":"update_vehicle_trips_view"},{"binary":"0000000100000000000000190000001000000001000001f12d2d204d6967726174696f6e3a205570646174652056656869636c65205472697073205669657720666f7220486973746f726963616c2041636375726163790a2d2d204465736372697074696f6e3a0a2d2d205570646174657320746865206d61696e206076656869636c655f747269707360207669657720746f207573652074686520696d70726f7665642022536d6172742054726970204d657267696e6722206c6f6769630a2d2d2028332d6d696e7574652067617020646574656374696f6e2920616e6420506f73744749532064697374616e63652063616c63756c6174696f6e2e0a2d2d2054686973206566666563746976656c7920226261636b66696c6c73222074686520616363757261637920696d70726f76656d656e747320746f20616c6c20686973746f726963616c206461746120717565726965732c0a2d2d207265706f7274732c20616e64207374617469737469637320746861742072656c79206f6e207468697320766965772e0a0a2d2d20312e2044726f70206578697374696e6720766965777320616e642066756e6374696f6e732028436173636164652068616e646c657320646570656e64656e63696573290a44524f50205649455720494620455849535453207075626c69632e76656869636c655f6461696c795f737461747320434153434144450000003044524f50205649455720494620455849535453207075626c69632e76656869636c655f7472697073204341534341444500000c282d2d20322e2052656372656174652076656869636c655f7472697073207769746820494d50524f564544204c4f4749430a4352454154452056494557207075626c69632e76656869636c655f74726970732057495448202873656375726974795f696e766f6b6572203d207472756529204153200a574954482076656869636c655f74656c656d61746963735f6461746120415320280a202053454c4543540a2020202070682e6465766963655f69642041532076656869636c655f69642c0a2020202070682e6770735f74696d65204153206465766963655f74696d652c0a2020202070682e69676e6974696f6e5f6f6e2041532069676e6974696f6e2c0a2020202070682e73706565642c0a2020202070682e6c617469747564652c0a2020202070682e6c6f6e6769747564650a202046524f4d20706f736974696f6e5f686973746f72792070680a202057484552452070682e69676e6974696f6e5f6f6e203d2074727565202d2d20435249544943414c3a204f6e6c79206c6f6f6b206174204f4e20706f696e747320746f2069676e6f72652073686f7274204f464620706572696f64730a292c0a6f7264657265645f706f696e74732041532028200a202053454c454354200a202020207674642e76656869636c655f69642c200a202020207674642e6465766963655f74696d652c200a202020207674642e73706565642c200a202020207674642e6c617469747564652c0a202020207674642e6c6f6e6769747564652c0a202020204c4147287674642e6465766963655f74696d6529204f5645522028504152544954494f4e204259207674642e76656869636c655f6964204f52444552204259207674642e6465766963655f74696d652920415320707265765f74696d652c200a202020204c4147287674642e6c6174697475646529204f5645522028504152544954494f4e204259207674642e76656869636c655f6964204f52444552204259207674642e6465766963655f74696d652920415320707265765f6c61742c0a202020204c4147287674642e6c6f6e67697475646529204f5645522028504152544954494f4e204259207674642e76656869636c655f6964204f52444552204259207674642e6465766963655f74696d652920415320707265765f6c6f6e0a202046524f4d2076656869636c655f74656c656d61746963735f6461746120767464200a292c200a747269705f626f756e6461726965732041532028200a202053454c454354200a202020202a2c200a2020202043415345200a2020202020202d2d20466972737420706f696e7420697320616c7761797320612073746172740a2020202020205748454e20707265765f74696d65204953204e554c4c205448454e20310a2020202020202d2d20476170203e2033206d696e75746573206d65616e73206e6577207472697020284750533531204c6f676963290a2020202020205748454e206465766963655f74696d65202d20707265765f74696d65203e20494e54455256414c202733206d696e7574657327205448454e2031200a202020202020454c53452030200a20202020454e4420415320747269705f73746172745f666c61672c0a202020202d2d2043616c63756c6174652064697374616e6365207365676d656e7420286966206e6f74206e65772074726970290a20202020434153450a2020202020205748454e20707265765f74696d65204953204e554c4c205448454e20303a3a666c6f61740a2020202020205748454e206465766963655f74696d65202d20707265765f74696d65203e20494e54455256414c202733206d696e7574657327205448454e20303a3a666c6f6174202d2d205374617274206f66206e6577207472697020686173203020646973742066726f6d20707265760a202020202020454c5345200a20202020202020202d2d2055736520506f73744749532053545f44697374616e636520666f722061636375726174652067656f64657469632064697374616e636520696e206d65746572730a2020202020202020657874656e73696f6e732e53545f44697374616e6365280a20202020202020202020657874656e73696f6e732e53545f5365745352494428657874656e73696f6e732e53545f4d616b65506f696e74286c6f6e6769747564652c206c61746974756465292c2034333236293a3a657874656e73696f6e732e67656f6772617068792c0a20202020202020202020657874656e73696f6e732e53545f5365745352494428657874656e73696f6e732e53545f4d616b65506f696e7428707265765f6c6f6e2c20707265765f6c6174292c2034333236293a3a657874656e73696f6e732e67656f6772617068790a202020202020202029202f20313030302e30202d2d20436f6e7665727420746f204b4d0a20202020454e4420415320646973745f7365676d656e740a202046524f4d206f7264657265645f706f696e7473200a292c200a747269705f67726f7570732041532028200a202053454c454354200a202020202a2c200a2020202053554d28747269705f73746172745f666c616729204f5645522028504152544954494f4e2042592076656869636c655f6964204f52444552204259206465766963655f74696d6520524f575320554e424f554e44454420505245434544494e472920415320747269705f67726f7570200a202046524f4d20747269705f626f756e646172696573200a292c200a747269705f6167677265676174696f6e2041532028200a202053454c454354200a2020202076656869636c655f69642c200a20202020747269705f67726f75702c200a202020204d494e286465766963655f74696d652920415320747269705f73746172745f74696d652c200a202020204d4158286465766963655f74696d652920415320747269705f656e645f74696d652c200a2020202053554d28646973745f7365676d656e74292041532064697374616e63655f6b6d2c0a202020202d2d20436f6f7264696e617465730a202020202861727261795f616767286c61746974756465204f52444552204259206465766963655f74696d652041534329295b315d2061732073746172745f6c617469747564652c0a202020202861727261795f616767286c6f6e676974756465204f52444552204259206465766963655f74696d652041534329295b315d2061732073746172745f6c6f6e6769747564652c0a202020202861727261795f616767286c61746974756465204f52444552204259206465766963655f74696d65204445534329295b315d20617320656e645f6c617469747564652c0a202020202861727261795f616767286c6f6e676974756465204f52444552204259206465766963655f74696d65204445534329295b315d20617320656e645f6c6f6e6769747564652c0a202020202d2d2053706565640a202020204d415828737065656429206173206d61785f73706565642c0a2020202041564728737065656429206173206176675f73706565640a202046524f4d20747269705f67726f757073200a202047524f55502042592076656869636c655f69642c20747269705f67726f7570200a29200a53454c454354200a202067656e5f72616e646f6d5f7575696428292041532069642c200a202076656869636c655f6964204153206465766963655f69642c0a2020747269705f73746172745f74696d652041532073746172745f74696d652c200a2020747269705f656e645f74696d6520415320656e645f74696d652c200a202047524541544553542864697374616e63655f6b6d2c2030293a3a6e756d657269632041532064697374616e63655f6b6d2c200a2020455854524143542845504f43482046524f4d2028747269705f656e645f74696d65202d20747269705f73746172745f74696d6529293a3a494e54204153206475726174696f6e5f7365636f6e64732c200a202073746172745f6c617469747564652c0a202073746172745f6c6f6e6769747564652c0a2020656e645f6c617469747564652c0a2020656e645f6c6f6e6769747564652c0a20206d61785f73706565642c0a20206176675f73706565642c0a2020276770733531273a3a7465787420415320736f757263652c200a20206e6f77282920415320637265617465645f6174200a46524f4d20747269705f6167677265676174696f6e200a574845524520747269705f656e645f74696d65203e20747269705f73746172745f74696d650a414e442064697374616e63655f6b6d203e3d20302e3035000002a12d2d20332e2052656372656174652076656869636c655f6461696c795f737461747320564945570a4352454154452056494557207075626c69632e76656869636c655f6461696c795f73746174732057495448202873656375726974795f696e766f6b6572203d2074727565292041530a53454c4543540a202020206465766963655f69642c0a20202020646174655f7472756e632827646179272c2073746172745f74696d652041542054494d45205a4f4e4520274166726963612f4c61676f7327293a3a6461746520617320737461745f646174652c0a20202020636f756e74282a2920617320747269705f636f756e742c0a20202020636f616c657363652873756d2864697374616e63655f6b6d292c20302920617320746f74616c5f64697374616e63655f6b6d2c0a20202020636f616c65736365286176672864697374616e63655f6b6d292c203029206173206176675f64697374616e63655f6b6d2c0a202020206d6178286d61785f737065656429206173207065616b5f73706565642c0a20202020617667286176675f737065656429206173206176675f73706565642c0a20202020636f616c657363652873756d286475726174696f6e5f7365636f6e6473292c20302920617320746f74616c5f6475726174696f6e5f7365636f6e64732c0a202020206d696e2873746172745f74696d65292061732066697273745f747269705f73746172742c0a202020206d617828656e645f74696d6529206173206c6173745f747269705f656e640a46524f4d207075626c69632e76656869636c655f74726970730a47524f5550204259206465766963655f69642c20646174655f7472756e632827646179272c2073746172745f74696d652041542054494d45205a4f4e4520274166726963612f4c61676f7327293a3a646174650000007c2d2d20342e20526563726561746520446570656e64656e742046756e6374696f6e730a0a2d2d20342e31206765745f6461696c795f74726176656c5f73746174730a44524f502046554e4354494f4e20494620455849535453206765745f6461696c795f74726176656c5f737461747328544558542c204441544529000002ca435245415445204f52205245504c4143452046554e4354494f4e206765745f6461696c795f74726176656c5f7374617473280a2020705f6465766963655f696420544558542c0a2020705f6461746520444154450a290a52455455524e53204a534f4e0a4c414e475541474520706c706773716c0a535441424c450a41532024240a4445434c4152450a2020765f7374617473205245434f52443b0a424547494e0a202053454c454354200a20202020747269705f636f756e742c0a20202020746f74616c5f64697374616e63655f6b6d2c0a20202020746f74616c5f6475726174696f6e5f7365636f6e64730a2020494e544f20765f73746174730a202046524f4d2076656869636c655f6461696c795f73746174730a20205748455245206465766963655f6964203d20705f6465766963655f6964200a2020414e4420737461745f64617465203d20705f646174653b0a0a20204946204e4f5420464f554e44205448454e0a2020202052455455524e206a736f6e5f6275696c645f6f626a656374280a20202020202027746f74616c5f7472697073272c20302c0a20202020202027746f74616c5f64697374616e63655f6b6d272c20302c0a20202020202027746f74616c5f6475726174696f6e5f686f757273272c20300a20202020293b0a2020454e442049463b0a0a202052455455524e206a736f6e5f6275696c645f6f626a656374280a2020202027746f74616c5f7472697073272c20765f73746174732e747269705f636f756e742c0a2020202027746f74616c5f64697374616e63655f6b6d272c20765f73746174732e746f74616c5f64697374616e63655f6b6d2c0a2020202027746f74616c5f6475726174696f6e5f686f757273272c20524f554e442828765f73746174732e746f74616c5f6475726174696f6e5f7365636f6e6473202f20333630302e30293a3a6e756d657269632c2032290a2020293b0a454e443b0a2424000000582d2d20342e32206765745f76656869636c655f6d696c656167655f73746174730a44524f502046554e4354494f4e20494620455849535453206765745f76656869636c655f6d696c656167655f737461747328544558542900000523435245415445204f52205245504c4143452046554e4354494f4e206765745f76656869636c655f6d696c656167655f7374617473280a2020705f6465766963655f696420544558540a290a52455455524e53204a534f4e0a4c414e475541474520706c706773716c0a535441424c450a41532024240a4445434c4152450a2020765f746f6461792044415445203a3d20286e6f7728292041542054494d45205a4f4e4520274166726963612f4c61676f7327293a3a646174653b0a2020765f7765656b5f73746172742044415445203a3d20646174655f7472756e6328277765656b272c206e6f7728292041542054494d45205a4f4e4520274166726963612f4c61676f7327293a3a646174653b0a2020765f6d6f6e74685f73746172742044415445203a3d20646174655f7472756e6328276d6f6e7468272c206e6f7728292041542054494d45205a4f4e4520274166726963612f4c61676f7327293a3a646174653b0a20200a2020765f746f6461795f7374617473205245434f52443b0a2020765f7765656b5f7374617473205245434f52443b0a2020765f6d6f6e74685f7374617473205245434f52443b0a424547494e0a20202d2d20546f6461790a202053454c45435420434f414c455343452853554d28746f74616c5f64697374616e63655f6b6d292c20302920617320646973742c20434f414c455343452853554d28747269705f636f756e74292c2030292061732074726970730a2020494e544f20765f746f6461795f73746174730a202046524f4d2076656869636c655f6461696c795f73746174730a20205748455245206465766963655f6964203d20705f6465766963655f696420414e4420737461745f64617465203d20765f746f6461793b0a0a20202d2d205765656b0a202053454c45435420434f414c455343452853554d28746f74616c5f64697374616e63655f6b6d292c20302920617320646973742c20434f414c455343452853554d28747269705f636f756e74292c2030292061732074726970730a2020494e544f20765f7765656b5f73746174730a202046524f4d2076656869636c655f6461696c795f73746174730a20205748455245206465766963655f6964203d20705f6465766963655f696420414e4420737461745f64617465203e3d20765f7765656b5f73746172743b0a0a20202d2d204d6f6e74680a202053454c45435420434f414c455343452853554d28746f74616c5f64697374616e63655f6b6d292c20302920617320646973740a2020494e544f20765f6d6f6e74685f73746174730a202046524f4d2076656869636c655f6461696c795f73746174730a20205748455245206465766963655f6964203d20705f6465766963655f696420414e4420737461745f64617465203e3d20765f6d6f6e74685f73746172743b0a0a202052455455524e206a736f6e5f6275696c645f6f626a656374280a2020202027746f646179272c20434f414c4553434528765f746f6461795f73746174732e646973742c2030292c0a20202020277765656b272c20434f414c4553434528765f7765656b5f73746174732e646973742c2030292c0a20202020276d6f6e7468272c20434f414c4553434528765f6d6f6e74685f73746174732e646973742c2030292c0a202020202774726970735f746f646179272c20434f414c4553434528765f746f6461795f73746174732e74726970732c2030292c0a202020202774726970735f7765656b272c20434f414c4553434528765f7765656b5f73746174732e74726970732c2030290a2020293b0a454e443b0a2424000000542d2d20342e33206765745f6461696c795f6d696c656167650a44524f502046554e4354494f4e20494620455849535453206765745f6461696c795f6d696c6561676528544558542c20444154452c20444154452900000219435245415445204f52205245504c4143452046554e4354494f4e206765745f6461696c795f6d696c65616765280a2020705f6465766963655f696420544558542c0a2020705f73746172745f6461746520444154452c0a2020705f656e645f6461746520444154450a290a52455455524e53205441424c4520280a202064617920544558542c0a20206461746520544558542c0a202064697374616e6365204e554d455249432c0a2020747269707320494e54454745520a290a4c414e475541474520706c706773716c0a535441424c450a41532024240a424547494e0a202052455455524e2051554552590a202053454c4543540a20202020746f5f6368617228737461745f646174652c20274461792729204153206461792c0a20202020737461745f646174653a3a5445585420415320646174652c0a20202020746f74616c5f64697374616e63655f6b6d3a3a4e554d455249432041532064697374616e63652c0a20202020747269705f636f756e743a3a494e54454745522041532074726970730a202046524f4d2076656869636c655f6461696c795f73746174730a20205748455245206465766963655f6964203d20705f6465766963655f69640a20202020414e4420737461745f64617465204245545745454e20705f73746172745f6461746520414e4420705f656e645f646174650a20204f5244455220425920737461745f6461746520444553433b0a454e443b0a24240000004f2d2d20342e34206765745f726563656e745f74726970730a44524f502046554e4354494f4e20494620455849535453206765745f726563656e745f747269707328544558542c20494e544547455229000003e4435245415445204f52205245504c4143452046554e4354494f4e206765745f726563656e745f7472697073280a2020705f6465766963655f696420544558542c0a2020705f6c696d697420494e54454745522044454641554c542031300a290a52455455524e53205441424c4520280a2020696420555549442c0a20206465766963655f696420544558542c0a202073746172745f74696d652054494d455354414d5020574954482054494d45205a4f4e452c0a2020656e645f74696d652054494d455354414d5020574954482054494d45205a4f4e452c0a202073746172745f6c61746974756465204e554d455249432c0a202073746172745f6c6f6e676974756465204e554d455249432c0a2020656e645f6c61746974756465204e554d455249432c0a2020656e645f6c6f6e676974756465204e554d455249432c0a202064697374616e63655f6b6d204e554d455249432c0a20206176675f73706565645f6b6d68204e554d455249432c0a20206d61785f73706565645f6b6d68204e554d455249432c0a20206475726174696f6e5f6d696e75746573204e554d455249430a290a4c414e475541474520706c706773716c0a535441424c450a41532024240a424547494e0a202052455455524e2051554552590a202053454c4543540a2020202076742e69642c0a2020202076742e6465766963655f69642c0a2020202076742e73746172745f74696d652c0a2020202076742e656e645f74696d652c0a2020202076742e73746172745f6c617469747564653a3a4e554d455249432c0a2020202076742e73746172745f6c6f6e6769747564653a3a4e554d455249432c0a2020202076742e656e645f6c617469747564653a3a4e554d455249432c0a2020202076742e656e645f6c6f6e6769747564653a3a4e554d455249432c0a2020202076742e64697374616e63655f6b6d3a3a4e554d455249432c0a2020202076742e6176675f73706565643a3a4e554d45524943204153206176675f73706565645f6b6d682c0a2020202076742e6d61785f73706565643a3a4e554d45524943204153206d61785f73706565645f6b6d682c0a202020202876742e6475726174696f6e5f7365636f6e6473202f2036302e30293a3a4e554d45524943204153206475726174696f6e5f6d696e757465730a202046524f4d2076656869636c655f74726970732076740a202057484552452076742e6465766963655f6964203d20705f6465766963655f69640a20202020414e442076742e656e645f74696d65204953204e4f54204e554c4c0a20204f524445522042592076742e73746172745f74696d6520444553430a20204c494d495420705f6c696d69743b0a454e443b0a2424000000472d2d20352e205065726d697373696f6e730a4752414e542053454c454354204f4e207075626c69632e76656869636c655f747269707320544f2061757468656e74696361746564000000344752414e542053454c454354204f4e207075626c69632e76656869636c655f747269707320544f20736572766963655f726f6c650000003b4752414e542053454c454354204f4e207075626c69632e76656869636c655f6461696c795f737461747320544f2061757468656e746963617465640000003a4752414e542053454c454354204f4e207075626c69632e76656869636c655f6461696c795f737461747320544f20736572766963655f726f6c65"}],"ResultFormatCodes":[]}
+2026/02/11 09:05:53 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/02/11 09:05:53 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/02/11 09:05:53 PG Send: {"Type":"Sync"}
+2026/02/11 09:05:53 PG Recv: {"Type":"ParseComplete"}
+2026/02/11 09:05:53 PG Recv: {"Type":"BindComplete"}
+2026/02/11 09:05:53 PG Recv: {"Type":"NoData"}
+2026/02/11 09:05:53 PG Recv: {"Type":"CommandComplete","CommandTag":"DROP VIEW"}
+2026/02/11 09:05:53 PG Recv: {"Type":"ParseComplete"}
+2026/02/11 09:05:53 PG Recv: {"Type":"BindComplete"}
+2026/02/11 09:05:53 PG Recv: {"Type":"NoData"}
+2026/02/11 09:05:53 PG Recv: {"Type":"CommandComplete","CommandTag":"DROP VIEW"}
+2026/02/11 09:05:53 PG Recv: {"Type":"ParseComplete"}
+2026/02/11 09:05:53 PG Recv: {"Type":"BindComplete"}
+2026/02/11 09:05:53 PG Recv: {"Type":"NoData"}
+2026/02/11 09:05:53 PG Recv: {"Type":"ErrorResponse","Severity":"ERROR","SeverityUnlocalized":"ERROR","Code":"42704","Message":"type \"extensions.geography\" does not exist","Detail":"","Hint":"","Position":1596,"InternalPosition":0,"InternalQuery":"","Where":"","SchemaName":"","TableName":"","ColumnName":"","DataTypeName":"","ConstraintName":"","File":"parse_type.c","Line":270,"Routine":"typenameType","UnknownFields":null}
+2026/02/11 09:05:53 PG Recv: {"Type":"ReadyForQuery","TxStatus":"I"}
+2026/02/11 09:05:53 PG Send: {"Type":"Terminate"}
+ERROR: type "extensions.geography" does not exist (SQLSTATE 42704)                                               
+At statement: 2                                                                                                  
+-- 2. Recreate vehicle_trips with IMPROVED LOGIC                                                                 
+CREATE VIEW public.vehicle_trips WITH (security_invoker = true) AS                                               
+WITH vehicle_telematics_data AS (                                                                                
+  SELECT                                                                                                         
+    ph.device_id AS vehicle_id,                                                                                  
+    ph.gps_time AS device_time,                                                                                  
+    ph.ignition_on AS ignition,                                                                                  
+    ph.speed,                                                                                                    
+    ph.latitude,                                                                                                 
+    ph.longitude                                                                                                 
+  FROM position_history ph                                                                                       
+  WHERE ph.ignition_on = true -- CRITICAL: Only look at ON points to ignore short OFF periods                    
+),                                                                                                               
+ordered_points AS (                                                                                              
+  SELECT                                                                                                         
+    vtd.vehicle_id,                                                                                              
+    vtd.device_time,                                                                                             
+    vtd.speed,                                                                                                   
+    vtd.latitude,                                                                                                
+    vtd.longitude,                                                                                               
+    LAG(vtd.device_time) OVER (PARTITION BY vtd.vehicle_id ORDER BY vtd.device_time) AS prev_time,               
+    LAG(vtd.latitude) OVER (PARTITION BY vtd.vehicle_id ORDER BY vtd.device_time) AS prev_lat,                   
+    LAG(vtd.longitude) OVER (PARTITION BY vtd.vehicle_id ORDER BY vtd.device_time) AS prev_lon                   
+  FROM vehicle_telematics_data vtd                                                                               
+),                                                                                                               
+trip_boundaries AS (                                                                                             
+  SELECT                                                                                                         
+    *,                                                                                                           
+    CASE                                                                                                         
+      -- First point is always a start                                                                           
+      WHEN prev_time IS NULL THEN 1                                                                              
+      -- Gap > 3 minutes means new trip (GPS51 Logic)                                                            
+      WHEN device_time - prev_time > INTERVAL '3 minutes' THEN 1                                                 
+      ELSE 0                                                                                                     
+    END AS trip_start_flag,                                                                                      
+    -- Calculate distance segment (if not new trip)                                                              
+    CASE                                                                                                         
+      WHEN prev_time IS NULL THEN 0::float                                                                       
+      WHEN device_time - prev_time > INTERVAL '3 minutes' THEN 0::float -- Start of new trip has 0 dist from prev
+      ELSE                                                                                                       
+        -- Use PostGIS ST_Distance for accurate geodetic distance in meters                                      
+        extensions.ST_Distance(                                                                                  
+          extensions.ST_SetSRID(extensions.ST_MakePoint(longitude, latitude), 4326)::extensions.geography,       
+                                                                                     ^                           

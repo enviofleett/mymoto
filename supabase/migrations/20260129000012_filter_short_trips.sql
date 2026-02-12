@@ -4,8 +4,6 @@
 -- This removes "idling" trips where ignition is ON but vehicle is stationary.
 
 -- 1. Update RPC Function
-CREATE EXTENSION IF NOT EXISTS postgis SCHEMA extensions;
-
 CREATE OR REPLACE FUNCTION get_vehicle_trips_optimized(
   p_device_id TEXT,
   p_limit INTEGER DEFAULT 200,
@@ -70,10 +68,11 @@ BEGIN
         WHEN prev_time IS NULL THEN 0::float
         WHEN device_time - prev_time > INTERVAL '3 minutes' THEN 0::float
         ELSE 
-          extensions.ST_Distance(
-            extensions.ST_SetSRID(extensions.ST_MakePoint(longitude, latitude), 4326)::extensions.geography,
-            extensions.ST_SetSRID(extensions.ST_MakePoint(prev_lon, prev_lat), 4326)::extensions.geography
-          ) / 1000.0
+          -- Use PostGIS ST_Distance for accurate geodetic distance in meters
+          ST_Distance(
+            ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)::geography,
+            ST_SetSRID(ST_MakePoint(prev_lon, prev_lat), 4326)::geography
+          ) / 1000.0 -- Convert to KM
       END AS dist_segment
     FROM ordered_points 
   ), 
@@ -161,11 +160,11 @@ trip_boundaries AS (
       WHEN prev_time IS NULL THEN 0::float
       WHEN device_time - prev_time > INTERVAL '3 minutes' THEN 0::float 
       ELSE 
-        extensions.ST_Distance(
-          extensions.ST_SetSRID(extensions.ST_MakePoint(longitude, latitude), 4326)::extensions.geography,
-          extensions.ST_SetSRID(extensions.ST_MakePoint(prev_lon, prev_lat), 4326)::extensions.geography
+        ST_Distance(
+          ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)::geography,
+          ST_SetSRID(ST_MakePoint(prev_lon, prev_lat), 4326)::geography
         ) / 1000.0 
-    END AS dist_segment
+      END AS dist_segment
   FROM ordered_points 
 ), 
 trip_groups AS ( 

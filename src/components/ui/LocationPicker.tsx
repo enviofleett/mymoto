@@ -1,7 +1,8 @@
 
 import { useEffect, useRef, useState } from 'react';
-import mapboxgl from 'mapbox-gl';
-import 'mapbox-gl/dist/mapbox-gl.css';
+import type { Map as MapboxMap, Marker as MapboxMarker } from 'mapbox-gl';
+import { loadMapbox } from "@/utils/loadMapbox";
+import { useFeatureFlag } from "@/hooks/useFeatureFlags";
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -23,56 +24,71 @@ interface LocationPickerProps {
 
 export function LocationPicker({ onLocationSelect, initialLocation }: LocationPickerProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
-  const map = useRef<mapboxgl.Map | null>(null);
-  const marker = useRef<mapboxgl.Marker | null>(null);
+  const map = useRef<MapboxMap | null>(null);
+  const marker = useRef<MapboxMarker | null>(null);
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [selectedAddress, setSelectedAddress] = useState('');
+  const [mapboxLoading, setMapboxLoading] = useState(false);
+  const { data: mapboxFlag } = useFeatureFlag("mapbox_enabled");
+  const mapboxEnabled = mapboxFlag?.enabled ?? true;
 
   // Default to Lagos, Nigeria if no initial location
   const defaultLat = initialLocation?.latitude || 6.5244;
   const defaultLng = initialLocation?.longitude || 3.3792;
 
   useEffect(() => {
+    if (!mapboxEnabled) return;
     if (!mapContainer.current) return;
 
     const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
     if (!token) return;
 
-    mapboxgl.accessToken = token;
+    const initMap = async () => {
+      setMapboxLoading(true);
+      try {
+        const mapboxgl = await loadMapbox();
+        mapboxgl.accessToken = token;
 
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/streets-v12',
-      center: [defaultLng, defaultLat],
-      zoom: 12,
-    });
+        map.current = new mapboxgl.Map({
+          container: mapContainer.current,
+          style: 'mapbox://styles/mapbox/streets-v12',
+          center: [defaultLng, defaultLat],
+          zoom: 12,
+        });
 
-    map.current.addControl(new mapboxgl.NavigationControl());
+        map.current.addControl(new mapboxgl.NavigationControl());
 
-    // Initialize marker
-    marker.current = new mapboxgl.Marker({
-      draggable: true,
-      color: '#EA580C', // Orange-600
-    })
-      .setLngLat([defaultLng, defaultLat])
-      .addTo(map.current);
+        // Initialize marker
+        marker.current = new mapboxgl.Marker({
+          draggable: true,
+          color: '#EA580C', // Orange-600
+        })
+          .setLngLat([defaultLng, defaultLat])
+          .addTo(map.current);
 
-    marker.current.on('dragend', onDragEnd);
+        marker.current.on('dragend', onDragEnd);
 
-    // Map click listener
-    map.current.on('click', (e) => {
-      if (marker.current) {
-        marker.current.setLngLat(e.lngLat);
-        reverseGeocode(e.lngLat.lng, e.lngLat.lat);
+        // Map click listener
+        map.current.on('click', (e) => {
+          if (marker.current) {
+            marker.current.setLngLat(e.lngLat);
+            reverseGeocode(e.lngLat.lng, e.lngLat.lat);
+          }
+        });
+      } finally {
+        setMapboxLoading(false);
       }
-    });
+    };
+
+    void initMap();
 
     return () => {
+      marker.current?.remove();
       map.current?.remove();
     };
-  }, []);
+  }, [mapboxEnabled]);
 
   const onDragEnd = () => {
     if (!marker.current) return;
@@ -196,11 +212,24 @@ export function LocationPicker({ onLocationSelect, initialLocation }: LocationPi
         )}
       </div>
 
-      <div className="h-64 w-full rounded-md border overflow-hidden relative">
-        <div ref={mapContainer} className="h-full w-full" />
-        <div className="absolute bottom-2 right-2 bg-background/90 px-2 py-1 rounded text-xs shadow-sm z-10 pointer-events-none">
-          Click map to set location
-        </div>
+      <div className="h-64 w-full rounded-md border overflow-hidden relative bg-muted/30">
+        {!mapboxEnabled ? (
+          <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
+            Map disabled to save resources
+          </div>
+        ) : (
+          <>
+            <div ref={mapContainer} className="h-full w-full" />
+            {mapboxLoading && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/60 backdrop-blur-sm">
+                <div className="text-sm text-muted-foreground">Loading map...</div>
+              </div>
+            )}
+            <div className="absolute bottom-2 right-2 bg-background/90 px-2 py-1 rounded text-xs shadow-sm z-10 pointer-events-none">
+              Click map to set location
+            </div>
+          </>
+        )}
       </div>
 
       {selectedAddress && (

@@ -8,6 +8,10 @@
 -- A trip starts when ignition turns ON and ends when it turns OFF
 -- Each trip includes start/end times, start/end coordinates, and calculated distance
 
+ALTER TABLE public.position_history
+  ADD COLUMN IF NOT EXISTS speed DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS battery_percent DOUBLE PRECISION;
+
 CREATE OR REPLACE VIEW vehicle_trips AS
 WITH ignition_changes AS (
   -- Detect ignition state changes to identify trip boundaries
@@ -33,6 +37,8 @@ trip_boundaries AS (
     gps_time,
     latitude,
     longitude,
+    speed,
+    battery_percent,
     ignition_on,
     recorded_at,
     CASE
@@ -49,6 +55,8 @@ trip_groups AS (
     gps_time,
     latitude,
     longitude,
+    speed,
+    battery_percent,
     ignition_on,
     recorded_at,
     trip_event,
@@ -56,6 +64,22 @@ trip_groups AS (
       OVER (PARTITION BY device_id ORDER BY gps_time) AS trip_number
   FROM trip_boundaries
   WHERE trip_event IN ('trip_start', 'ongoing', 'trip_end')
+),
+trip_points AS (
+  SELECT
+    device_id,
+    gps_time,
+    latitude,
+    longitude,
+    speed,
+    battery_percent,
+    ignition_on,
+    recorded_at,
+    trip_event,
+    trip_number,
+    LAG(latitude) OVER (PARTITION BY device_id, trip_number ORDER BY gps_time) AS prev_latitude,
+    LAG(longitude) OVER (PARTITION BY device_id, trip_number ORDER BY gps_time) AS prev_longitude
+  FROM trip_groups
 ),
 trip_aggregates AS (
   -- Calculate trip metrics (start time, end time, coordinates, distance)
@@ -74,21 +98,21 @@ trip_aggregates AS (
     -- Calculate approximate trip distance using Haversine formula between consecutive points
     SUM(
       CASE
-        WHEN LAG(latitude) OVER (PARTITION BY device_id, trip_number ORDER BY gps_time) IS NOT NULL
+        WHEN prev_latitude IS NOT NULL
         THEN (
           6371000 * 2 * ASIN(
             SQRT(
-              POWER(SIN((latitude - LAG(latitude) OVER (PARTITION BY device_id, trip_number ORDER BY gps_time)) * PI() / 180 / 2), 2) +
-              COS(LAG(latitude) OVER (PARTITION BY device_id, trip_number ORDER BY gps_time) * PI() / 180) *
+              POWER(SIN((latitude - prev_latitude) * PI() / 180 / 2), 2) +
+              COS(prev_latitude * PI() / 180) *
               COS(latitude * PI() / 180) *
-              POWER(SIN((longitude - LAG(longitude) OVER (PARTITION BY device_id, trip_number ORDER BY gps_time)) * PI() / 180 / 2), 2)
+              POWER(SIN((longitude - prev_longitude) * PI() / 180 / 2), 2)
             )
           )
         )
         ELSE 0
       END
     ) AS distance_meters
-  FROM trip_groups
+  FROM trip_points
   WHERE trip_number > 0
   GROUP BY device_id, trip_number
   HAVING MIN(gps_time) FILTER (WHERE trip_event = 'trip_start') IS NOT NULL

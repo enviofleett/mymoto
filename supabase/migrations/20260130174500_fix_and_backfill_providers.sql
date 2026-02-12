@@ -27,10 +27,10 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Ensure trigger is active
-DROP TRIGGER IF EXISTS on_auth_user_created_provider ON auth.users;
-CREATE TRIGGER on_auth_user_created_provider
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_service_provider();
+-- DROP TRIGGER IF EXISTS on_auth_user_created_provider ON auth.users;
+-- CREATE TRIGGER on_auth_user_created_provider
+--   AFTER INSERT ON auth.users
+--   FOR EACH ROW EXECUTE PROCEDURE public.handle_new_service_provider();
 
 -- Backfill missing providers
 DO $$

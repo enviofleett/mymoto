@@ -80,7 +80,7 @@ const playChime = (baseFreq: number, type: 'info' | 'warning' | 'error' | 'criti
       frequencies = [440, 466.16, 523.25]; // A4, Bb4, C5
       duration = 0.8;
       break;
-    case 'critical':
+    case 'critical': {
       // Siren-like Sweep
       const osc = ctx.createOscillator();
       osc.connect(masterGain);
@@ -95,6 +95,7 @@ const playChime = (baseFreq: number, type: 'info' | 'warning' | 'error' | 'criti
       osc.start(now);
       osc.stop(now + 1.2);
       return; // Special handling for critical
+    }
   }
 
   // Play chord

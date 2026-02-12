@@ -126,7 +126,8 @@ export function useAdminWallets() {
       console.log("[updateNewUserBonus] User authenticated:", user.id, user.email);
 
       // Get and refresh session to ensure we have a valid token
-      let { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
+      let session = initialSession;
       
       // If no session, try refreshing
       if (!session) {

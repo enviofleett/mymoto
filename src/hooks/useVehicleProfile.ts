@@ -169,7 +169,7 @@ async function fetchVehicleTrips(
   }
   
   // Filter and process trips using GPS51-accurate thresholds
-  // CRITICAL: These thresholds MUST match the backend (sync-trips-incremental) for 100% consistency
+  // CRITICAL: These thresholds MUST match the backend (sync-gps51-trips) for 100% consistency
   const GPS51_THRESHOLDS = {
     MIN_DISTANCE_KM: 0.5,      // 500m minimum (GPS51 standard)
     MIN_DURATION_SEC: 180,     // 3 minutes minimum (GPS51 standard)
@@ -300,17 +300,35 @@ async function fetchDailyMileage(deviceId: string): Promise<DailyMileage[]> {
 // CRITICAL FIX: Calculate client-side to avoid slow view timeouts
 async function fetchVehicleDailyStats(
   deviceId: string,
-  days: number = 30
+  daysOrRange: number | TripDateRange = 30
 ): Promise<VehicleDailyStats[]> {
   // Use fetchVehicleTrips to get raw data
   // Limit to 2000 trips which should be plenty for 30 days (avg ~66 trips/day)
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - days);
+  let startDate: Date;
+  let endDate: Date = new Date();
+  
+  if (typeof daysOrRange === 'number') {
+    startDate = new Date();
+    startDate.setDate(startDate.getDate() - daysOrRange);
+  } else {
+    startDate = daysOrRange.from || new Date();
+    // Default to today if 'to' is undefined (e.g. single day selection)
+    const endDateRaw = daysOrRange.to || daysOrRange.from || new Date();
+    endDate = new Date(endDateRaw);
+    // Ensure we include the full end date
+    endDate.setHours(23, 59, 59, 999);
+    
+    // If start date is missing in range, default to 30 days ago
+    if (!daysOrRange.from) {
+      startDate = new Date();
+      startDate.setDate(startDate.getDate() - 30);
+    }
+  }
   
   try {
     const trips = await fetchVehicleTrips(deviceId, 2000, {
       from: startDate,
-      to: new Date()
+      to: endDate
     });
 
     // Aggregate trips by day
@@ -323,17 +341,17 @@ async function fetchVehicleDailyStats(
       if (!statsMap.has(dateStr)) {
         statsMap.set(dateStr, {
           device_id: deviceId,
-          stat_date: dateStr,
-          trip_count: 0,
-          total_distance_km: 0,
-          avg_distance_km: 0,
-          peak_speed: 0,
-          avg_speed: 0,
-          total_duration_seconds: 0,
-          first_trip_start: trip.start_time,
-          last_trip_end: trip.end_time
-        });
-      }
+        stat_date: dateStr,
+        trip_count: 0,
+        total_distance_km: 0,
+        avg_distance_km: 0,
+        peak_speed: 0,
+        avg_speed: 0,
+        total_duration_seconds: 0,
+        first_trip_start: trip.start_time,
+        last_trip_end: trip.end_time || trip.start_time
+      });
+    }
       
       const stat = statsMap.get(dateStr)!;
       stat.trip_count++;
@@ -345,8 +363,9 @@ async function fetchVehicleDailyStats(
       if (new Date(trip.start_time) < new Date(stat.first_trip_start)) {
         stat.first_trip_start = trip.start_time;
       }
-      if (new Date(trip.end_time) > new Date(stat.last_trip_end)) {
-        stat.last_trip_end = trip.end_time;
+      const tripEnd = trip.end_time || trip.start_time;
+      if (new Date(tripEnd) > new Date(stat.last_trip_end)) {
+        stat.last_trip_end = tripEnd;
       }
       
       // Accumulate speed for avg calculation later
@@ -527,12 +546,17 @@ export function useDailyMileage(deviceId: string | null, enabled: boolean = true
 // New: Hook to fetch pre-calculated daily stats from database view
 export function useVehicleDailyStats(
   deviceId: string | null, 
-  days: number = 30, 
+  daysOrRange: number | TripDateRange = 30, 
   enabled: boolean = true
 ) {
+  // Create a stable query key dependency based on input type
+  const rangeKey = typeof daysOrRange === 'number' 
+    ? daysOrRange 
+    : `${daysOrRange.from?.toISOString()}_${daysOrRange.to?.toISOString()}`;
+
   return useQuery({
-    queryKey: ["vehicle-daily-stats", deviceId, days],
-    queryFn: () => fetchVehicleDailyStats(deviceId!, days),
+    queryKey: ["vehicle-daily-stats", deviceId, rangeKey],
+    queryFn: () => fetchVehicleDailyStats(deviceId!, daysOrRange),
     enabled: enabled && !!deviceId,
     staleTime: 24 * 60 * 60 * 1000, // Fresh for 24 hours (last 24h data loads instantly)
     gcTime: 48 * 60 * 60 * 1000, // Keep in cache for 48 hours

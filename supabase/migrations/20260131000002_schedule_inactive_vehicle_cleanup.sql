@@ -2,7 +2,7 @@
 -- Runs at 04:00 UTC daily
 
 -- Ensure pg_cron is enabled (standard in Supabase)
-CREATE EXTENSION IF NOT EXISTS pg_cron;
+-- CREATE EXTENSION IF NOT EXISTS pg_cron;
 
 -- Create the scheduled job
 -- We wrap the SELECT in a PERFORM block logic implicitly by just executing the SELECT.
@@ -14,4 +14,4 @@ SELECT cron.schedule(
 );
 
 -- Documentation
-COMMENT ON EXTENSION pg_cron IS 'Job scheduler for PostgreSQL';
+-- COMMENT ON EXTENSION pg_cron IS 'Job scheduler for PostgreSQL';

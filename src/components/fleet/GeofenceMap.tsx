@@ -1,8 +1,9 @@
 
 import { useTheme } from 'next-themes';
 import { useEffect, useRef, useState } from 'react';
-import mapboxgl from 'mapbox-gl';
-import 'mapbox-gl/dist/mapbox-gl.css';
+import type { Map as MapboxMap, Marker as MapboxMarker, GeoJSONSource } from 'mapbox-gl';
+import { loadMapbox } from "@/utils/loadMapbox";
+import { useFeatureFlag } from "@/hooks/useFeatureFlags";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
@@ -24,8 +25,8 @@ export function GeofenceMap({
   onLocationSelect 
 }: GeofenceMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
-  const map = useRef<mapboxgl.Map | null>(null);
-  const marker = useRef<mapboxgl.Marker | null>(null);
+  const map = useRef<MapboxMap | null>(null);
+  const marker = useRef<MapboxMarker | null>(null);
   const [radius, setRadius] = useState(initialRadius);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -33,9 +34,16 @@ export function GeofenceMap({
   const [currentLng, setCurrentLng] = useState(initialLng);
   const { theme } = useTheme();
   const [mapError, setMapError] = useState<string | null>(null);
+  const [mapboxLoading, setMapboxLoading] = useState(false);
+  const { data: mapboxFlag } = useFeatureFlag("mapbox_enabled");
+  const mapboxEnabled = mapboxFlag?.enabled ?? true;
 
   // Initialize Map
   useEffect(() => {
+    if (!mapboxEnabled) {
+      setMapError("Map loading is disabled to save resources.");
+      return;
+    }
     if (!mapContainer.current) return;
 
     const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
@@ -45,37 +53,47 @@ export function GeofenceMap({
       return;
     }
 
-    mapboxgl.accessToken = token;
+    const initMap = async () => {
+      setMapboxLoading(true);
+      const mapboxgl = await loadMapbox();
+      mapboxgl.accessToken = token;
 
-    try {
-      map.current = new mapboxgl.Map({
-        container: mapContainer.current,
-        style: theme === 'dark' ? 'mapbox://styles/mapbox/dark-v11' : 'mapbox://styles/mapbox/streets-v12',
-        center: [initialLng, initialLat],
-        zoom: 13,
-      });
+      try {
+        map.current = new mapboxgl.Map({
+          container: mapContainer.current,
+          style: theme === 'dark' ? 'mapbox://styles/mapbox/dark-v11' : 'mapbox://styles/mapbox/streets-v12',
+          center: [initialLng, initialLat],
+          zoom: 13,
+        });
 
-      map.current.on('error', (e) => {
-        console.error("Mapbox error:", e);
-        if ((e.error as any)?.message?.includes('Forbidden') || (e.error as any)?.status === 401 || (e.error as any)?.status === 403) {
-           setMapError("Invalid or restricted Mapbox Token. Please check your token settings.");
-        }
-      });
-    } catch (err: any) {
-      console.error("Mapbox init error:", err);
-      setMapError("Failed to initialize map: " + err.message);
-    }
+        map.current.on('error', (e) => {
+          console.error("Mapbox error:", e);
+          if ((e.error as any)?.message?.includes('Forbidden') || (e.error as any)?.status === 401 || (e.error as any)?.status === 403) {
+            setMapError("Invalid or restricted Mapbox Token. Please check your token settings.");
+          }
+        });
+      } catch (err: any) {
+        console.error("Mapbox init error:", err);
+        setMapError("Failed to initialize map: " + err.message);
+      } finally {
+        setMapboxLoading(false);
+      }
 
-    // Add navigation controls
-    map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
+      if (!map.current) return;
 
-    // Initialize marker
-    marker.current = new mapboxgl.Marker({
-      draggable: true,
-      color: '#ef4444'
-    })
-      .setLngLat([initialLng, initialLat])
-      .addTo(map.current);
+      // Add navigation controls
+      map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
+
+      // Initialize marker
+      marker.current = new mapboxgl.Marker({
+        draggable: true,
+        color: '#ef4444'
+      })
+        .setLngLat([initialLng, initialLat])
+        .addTo(map.current);
+    };
+
+    void initMap();
 
     // Handle marker drag
     marker.current.on('dragend', () => {
@@ -160,7 +178,7 @@ export function GeofenceMap({
     };
 
     if (map.current.getSource(sourceId)) {
-      (map.current.getSource(sourceId) as mapboxgl.GeoJSONSource).setData(geoJsonData);
+      (map.current.getSource(sourceId) as GeoJSONSource).setData(geoJsonData);
     } else {
       map.current.addSource(sourceId, {
         type: 'geojson',
@@ -225,6 +243,11 @@ export function GeofenceMap({
 
       {/* Map Container */}
       <div className="relative h-full min-h-[300px] w-full rounded-lg overflow-hidden border border-border bg-muted">
+        {mapboxLoading && !mapError && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/60 backdrop-blur-sm">
+            <div className="text-sm text-muted-foreground">Loading map...</div>
+          </div>
+        )}
         {mapError ? (
           <div className="absolute inset-0 flex items-center justify-center p-4 text-center">
             <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md border border-destructive/20">

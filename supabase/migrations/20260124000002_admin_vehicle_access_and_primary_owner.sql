@@ -50,7 +50,7 @@ BEGIN
   LIMIT 1;
   
   IF admin_user_id IS NULL THEN
-    RAISE EXCEPTION 'toolbuxdev@gmail.com user not found. User must exist in auth.users.';
+    RETURN NULL;
   END IF;
   
   -- Get or create profile
@@ -92,9 +92,10 @@ BEGIN
     -- Get the primary admin profile (toolbuxdev@gmail.com)
     SELECT ensure_primary_admin_profile() INTO primary_admin_profile_id;
     
-    NEW.primary_owner_profile_id := primary_admin_profile_id;
-    
-    RAISE NOTICE 'Assigned primary owner % to vehicle %', primary_admin_profile_id, NEW.device_id;
+    IF primary_admin_profile_id IS NOT NULL THEN
+      NEW.primary_owner_profile_id := primary_admin_profile_id;
+      RAISE NOTICE 'Assigned primary owner % to vehicle %', primary_admin_profile_id, NEW.device_id;
+    END IF;
   END IF;
   
   RETURN NEW;
@@ -125,6 +126,10 @@ BEGIN
   -- Get primary admin profile
   SELECT ensure_primary_admin_profile() INTO primary_admin_profile_id;
   
+  IF primary_admin_profile_id IS NULL THEN
+    RETURN;
+  END IF;
+
   -- Update vehicles without primary owner
   UPDATE public.vehicles
   SET primary_owner_profile_id = primary_admin_profile_id
@@ -152,15 +157,12 @@ BEGIN
   WHERE primary_owner_profile_id IS NULL;
   
   IF null_count > 0 THEN
-    RAISE EXCEPTION 'Cannot add NOT NULL constraint: % vehicles still have NULL primary_owner_profile_id. Run Step 5 to fix.', null_count;
+    RETURN;
   END IF;
   
   RAISE NOTICE 'All vehicles have primary owners. Adding NOT NULL constraint...';
+  EXECUTE 'ALTER TABLE public.vehicles ALTER COLUMN primary_owner_profile_id SET NOT NULL';
 END $$;
-
--- Add NOT NULL constraint (safe now that all vehicles have primary owners)
-ALTER TABLE public.vehicles
-ALTER COLUMN primary_owner_profile_id SET NOT NULL;
 
 -- Step 7: Update RLS policies to allow admins to see all vehicles
 -- Drop existing policies that might restrict admin access

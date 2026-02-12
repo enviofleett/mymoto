@@ -55,17 +55,19 @@ CREATE TABLE public.geofence_monitors (
     )
 );
 
--- Geofence events (logged to proactive_vehicle_events too, but keep detailed log here)
-CREATE TABLE public.geofence_events (
+CREATE TABLE IF NOT EXISTS public.geofence_events (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    monitor_id UUID REFERENCES public.geofence_monitors(id) ON DELETE SET NULL,
+    geofence_id UUID NOT NULL REFERENCES geofence_zones(id) ON DELETE CASCADE,
     device_id TEXT NOT NULL,
-    event_type TEXT NOT NULL CHECK (event_type IN ('enter', 'exit')),
-    location_name TEXT NOT NULL,
-    latitude DOUBLE PRECISION NOT NULL,
-    longitude DOUBLE PRECISION NOT NULL,
-    triggered_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    metadata JSONB DEFAULT '{}'::jsonb
+    event_type TEXT NOT NULL,
+    event_time TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    latitude DECIMAL(10, 8) NOT NULL,
+    longitude DECIMAL(11, 8) NOT NULL,
+    speed DECIMAL,
+    duration_inside_minutes INTEGER,
+    notification_sent BOOLEAN DEFAULT false,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    CONSTRAINT fk_device FOREIGN KEY (device_id) REFERENCES vehicles(device_id) ON DELETE CASCADE
 );
 
 -- Enable RLS
@@ -124,11 +126,11 @@ CREATE POLICY "Service role can manage events"
     WITH CHECK (true);
 
 -- Indexes for performance
-CREATE INDEX idx_geofence_monitors_device ON public.geofence_monitors(device_id);
-CREATE INDEX idx_geofence_monitors_active ON public.geofence_monitors(is_active) WHERE is_active = true;
-CREATE INDEX idx_geofence_events_device ON public.geofence_events(device_id);
-CREATE INDEX idx_geofence_events_triggered ON public.geofence_events(triggered_at DESC);
-CREATE INDEX idx_geofence_locations_name ON public.geofence_locations USING gin(to_tsvector('english', name));
+CREATE INDEX IF NOT EXISTS idx_geofence_monitors_device ON public.geofence_monitors(device_id);
+CREATE INDEX IF NOT EXISTS idx_geofence_monitors_active ON public.geofence_monitors(is_active) WHERE is_active = true;
+CREATE INDEX IF NOT EXISTS idx_geofence_events_device ON public.geofence_events(device_id);
+CREATE INDEX IF NOT EXISTS idx_geofence_events_triggered ON public.geofence_events(event_time DESC);
+CREATE INDEX IF NOT EXISTS idx_geofence_locations_name ON public.geofence_locations USING gin(to_tsvector('english', name));
 
 -- Function to check if a point is inside a geofence (Haversine)
 CREATE OR REPLACE FUNCTION public.is_inside_geofence(

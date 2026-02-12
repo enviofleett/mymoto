@@ -18,6 +18,12 @@ import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
 import { LocationPicker } from "@/components/ui/LocationPicker";
 
+interface DirectoryCategory {
+  id: string;
+  name: string;
+  icon?: string | null;
+}
+
 export default function PartnerSignup() {
   const navigate = useNavigate();
   const [businessName, setBusinessName] = useState("");
@@ -46,7 +52,7 @@ export default function PartnerSignup() {
         .order('display_order', { ascending: true });
       
       if (error) throw error;
-      return data as any[];
+      return (data || []) as DirectoryCategory[];
     },
   });
 
@@ -98,9 +104,10 @@ export default function PartnerSignup() {
       setTimeout(() => {
         navigate('/auth');
       }, 2000);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Signup error:', error);
-      toast.error('Registration failed', { description: error.message || error.toString() });
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error('Registration failed', { description: message });
     } finally {
       setIsSubmitting(false);
     }

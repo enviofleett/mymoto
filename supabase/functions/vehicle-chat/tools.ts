@@ -1,4 +1,4 @@
-import { SupabaseClient } from 'npm:@supabase/supabase-js@2'
+import type { SupabaseClient } from 'npm:@supabase/supabase-js@2'
 import { handleTripSearch } from './trip-search.ts'
 import { validateTrip } from './trip-utils.ts'
 import { reverseGeocode } from '../_shared/geocoding.ts'
@@ -46,6 +46,17 @@ const get_vehicle_status: ToolDefinition = {
     if (!positions) return { status: 'unknown', message: 'No location data found.' }
 
     const timeAgoMinutes = Math.round((Date.now() - new Date(positions.gps_time).getTime()) / 60000)
+    
+    // Determine data quality level
+    let dataQuality = 'fresh';
+    let warningMessage = undefined;
+    
+    if (timeAgoMinutes > 1440) { // > 24 hours
+        dataQuality = 'historical';
+        warningMessage = `CRITICAL: Data is ${Math.round(timeAgoMinutes/60)} hours old. The vehicle is offline or tracking is disabled. Do not report this as current movement.`;
+    } else if (timeAgoMinutes > 15) {
+        dataQuality = 'stale';
+    }
 
     // Reverse geocode to get address and map links
     const geocodeResult = await reverseGeocode(positions.latitude, positions.longitude)
@@ -53,7 +64,8 @@ const get_vehicle_status: ToolDefinition = {
     return {
       status: positions.is_online ? 'online' : 'offline',
       last_updated_minutes_ago: timeAgoMinutes,
-      data_quality: timeAgoMinutes > 15 ? 'stale' : 'fresh',
+      data_quality: dataQuality,
+      warning: warningMessage,
       location: {
         address: geocodeResult.address,
         map_link: geocodeResult.mapUrl,
@@ -730,11 +742,358 @@ const get_favorite_locations: ToolDefinition = {
   }
 }
 
+const get_vehicle_health: ToolDefinition = {
+  name: 'get_vehicle_health',
+  description: 'Get the overall health status of the vehicle, including battery health, driving behavior score, connectivity score, and any active maintenance recommendations.',
+  parameters: {
+    type: 'object',
+    properties: {
+      check_freshness: { type: 'boolean', description: 'Set to true to validate data freshness', default: true }
+    },
+    required: []
+  },
+  execute: async (_args, { supabase, device_id }) => {
+    // 1. Get Health Metrics (RPC)
+    const { data: healthMetrics, error: healthError } = await supabase
+      .rpc('get_vehicle_health', { p_device_id: device_id })
+      .maybeSingle()
+    
+    if (healthError) {
+        console.error('Error fetching health metrics:', healthError);
+        // Continue, as we might still get recommendations
+    }
+
+    // 2. Get Active Recommendations
+    const { data: recommendations, error: recError } = await supabase
+      .from('maintenance_recommendations')
+      .select('title, description, recommendation_type, priority, status')
+      .eq('device_id', device_id)
+      .eq('status', 'active')
+      .limit(5)
+    
+    if (recError) {
+        console.error('Error fetching recommendations:', recError);
+    }
+
+    // 3. Get latest battery from position
+    const { data: position } = await supabase
+      .from('vehicle_positions')
+      .select('battery_percent, ignition_on')
+      .eq('device_id', device_id)
+      .maybeSingle()
+
+    return {
+      health_score: healthMetrics?.overall_health_score || 'N/A',
+      battery: {
+        level_percent: position?.battery_percent || 'Unknown',
+        health_score: healthMetrics?.battery_health_score || 'N/A'
+      },
+      driving_score: healthMetrics?.driving_behavior_score || 'N/A',
+      connectivity_score: healthMetrics?.connectivity_score || 'N/A',
+      active_issues_count: recommendations?.length || 0,
+      active_issues: recommendations?.map((r: any) => ({
+        issue: r.title,
+        detail: r.description,
+        type: r.recommendation_type,
+        priority: r.priority
+      })) || [],
+      summary: recommendations && recommendations.length > 0 
+        ? `Vehicle has ${recommendations.length} active maintenance issue(s).` 
+        : 'Vehicle appears to be in good health.'
+    }
+  }
+}
+
+const get_maintenance_updates: ToolDefinition = {
+  name: 'get_maintenance_updates',
+  description: 'Get a list of maintenance updates, recommendations, and vehicle health alerts.',
+  parameters: {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: ['active', 'resolved', 'all'], default: 'active' },
+      limit: { type: 'number', default: 5 }
+    },
+    required: []
+  },
+  execute: async ({ status = 'active', limit = 5 }, { supabase, device_id }) => {
+    let query = supabase
+      .from('maintenance_recommendations')
+      .select('*')
+      .eq('device_id', device_id)
+      .order('created_at', { ascending: false })
+      .limit(limit)
+
+    if (status !== 'all') {
+      query = query.eq('status', status)
+    }
+
+    const { data: updates, error } = await query
+
+    if (error) throw new Error(`Database error: ${error.message}`)
+
+    if (!updates || updates.length === 0) {
+      return {
+        found: false,
+        message: `No ${status} maintenance updates found.`
+      }
+    }
+
+    return {
+      found: true,
+      count: updates.length,
+      updates: updates.map((u: any) => ({
+        id: u.id,
+        title: u.title,
+        description: u.description,
+        type: u.recommendation_type,
+        priority: u.priority,
+        status: u.status,
+        created_at: u.created_at,
+        predicted_issue: u.predicted_issue
+      }))
+    }
+  }
+}
+
+const get_fuel_stats: ToolDefinition = {
+  name: 'get_fuel_stats',
+  description: 'Get fuel consumption, efficiency, and theft/leak alerts. Use for questions like "What is my fuel efficiency?", "Did I lose any fuel?", "How much fuel did I use?"',
+  parameters: {
+    type: 'object',
+    properties: {
+      start_date: { type: 'string', description: 'ISO date string for start (default: 30 days ago)' },
+      end_date: { type: 'string', description: 'ISO date string for end (default: now)' }
+    },
+    required: []
+  },
+  execute: async ({ start_date, end_date }, { supabase, device_id }) => {
+    const now = new Date()
+    const defaultStart = new Date()
+    defaultStart.setDate(now.getDate() - 30)
+    
+    const start = start_date || defaultStart.toISOString().split('T')[0]
+    const end = end_date || now.toISOString().split('T')[0]
+
+    const { data: fuelData, error } = await supabase
+      .from('vehicle_mileage_details')
+      .select('*')
+      .eq('device_id', device_id)
+      .gte('statisticsday', start)
+      .lte('statisticsday', end)
+      .order('statisticsday', { ascending: false })
+
+    if (error) throw new Error(`Database error: ${error.message}`)
+
+    if (!fuelData || fuelData.length === 0) {
+      return { found: false, message: 'No fuel data found for this period.' }
+    }
+
+    // 1. Fetch Vehicle Profile for Comparison
+    const { data: vehicleProfile } = await supabase
+      .from('vehicles')
+      .select('make, model, year, official_fuel_efficiency_l_100km')
+      .eq('device_id', device_id)
+      .maybeSingle()
+
+    // Aggregate stats
+    const totalDistance = fuelData.reduce((sum: number, d: any) => sum + (d.totaldistance || 0), 0)
+    const avgEfficiency = fuelData.reduce((sum: number, d: any) => sum + (d.oilper100km || 0), 0) / fuelData.length
+    const totalLeaks = fuelData.reduce((sum: number, d: any) => sum + (d.leakoil || 0), 0)
+
+    // Check for theft (leak > 0)
+    const leaks = fuelData.filter((d: any) => d.leakoil > 0).map((d: any) => ({
+      date: d.statisticsday,
+      amount_liters: d.leakoil / 100 // Convert 1/100L to L
+    }))
+
+    // Calculate Comparison
+    let comparison = null;
+    let missingProfileData = false;
+    // New top-level message field to guide the LLM
+    let llmMessage = null;
+
+    if (vehicleProfile?.official_fuel_efficiency_l_100km) {
+        const rated = vehicleProfile.official_fuel_efficiency_l_100km;
+        
+        // Handle 0 efficiency case (no data yet)
+        if (avgEfficiency <= 0) {
+             comparison = {
+                rated_l_100km: rated,
+                status: 'no_data',
+                message: `I have your rated efficiency (${rated} L/100km), but I haven't received enough driving data from the sensor yet to compare.`
+             };
+             llmMessage = "Fuel consumption data is not yet available from the sensor. Please tell the user that you have their rated efficiency but are waiting for real-world data.";
+        } else {
+            const diff = avgEfficiency - rated;
+            const percentDiff = (diff / rated) * 100;
+            
+            comparison = {
+                rated_l_100km: rated,
+                difference_l_100km: Math.round(diff * 100) / 100,
+                percent_difference: Math.round(percentDiff),
+                status: diff > 0 ? 'inefficient' : 'efficient',
+                message: diff > 0 
+                    ? `You are consuming ${Math.round(percentDiff)}% more fuel than the manufacturer rating (${rated} L/100km).`
+                    : `You are running efficiently! ${Math.abs(Math.round(percentDiff))}% better than rated.`
+            };
+        }
+    } else {
+        missingProfileData = true;
+        if (avgEfficiency <= 0) {
+            llmMessage = "No fuel consumption data is available yet, and the vehicle profile is missing efficiency ratings. Please ask the user for their vehicle Make, Model, and Year to establish a baseline.";
+        }
+    }
+
+    return {
+      found: true,
+      period: { start, end },
+      message: llmMessage, // Explicit instruction for LLM
+      vehicle_info: vehicleProfile ? {
+          make: vehicleProfile.make,
+          model: vehicleProfile.model,
+          year: vehicleProfile.year
+      } : null,
+      missing_rated_data: missingProfileData,
+      comparison: comparison,
+      summary: {
+        avg_consumption_l_100km: avgEfficiency > 0 ? Math.round(avgEfficiency * 100) / 100 : null, // Return null if 0 to avoid "0 L/100km" text
+        total_distance_meters: totalDistance,
+        potential_theft_detected: totalLeaks > 0,
+        total_leak_amount_liters: totalLeaks / 100
+      },
+      theft_alerts: leaks,
+      daily_logs: fuelData.slice(0, 5).map((d: any) => ({
+        date: d.statisticsday,
+        efficiency: d.oilper100km,
+        consumption_l_per_hour: d.oilperhour
+      }))
+    }
+  }
+}
+
+const update_vehicle_profile: ToolDefinition = {
+  name: 'update_vehicle_profile',
+  description: 'Update vehicle profile details such as Make, Model, Year, Fuel Type, and Official Fuel Efficiency rating. IMPORTANT: If the user provides the vehicle Make/Model but NOT the efficiency, YOU MUST ESTIMATE the "official_fuel_efficiency" based on your general knowledge (e.g., ~8.0 for a sedan, ~12.0 for a truck) and include it in the call. Do not ask the user for it if you can estimate it.',
+  parameters: {
+    type: 'object',
+    properties: {
+      make: { type: 'string', description: 'Vehicle make (e.g., Toyota, Ford)' },
+      model: { type: 'string', description: 'Vehicle model (e.g., Camry, Ranger)' },
+      year: { type: 'number', description: 'Year of manufacture' },
+      fuel_type: { type: 'string', description: 'Fuel type (e.g., petrol, diesel, hybrid)' },
+      engine_displacement: { type: 'string', description: 'Engine size (e.g., 2.0L)' },
+      official_fuel_efficiency: { type: 'number', description: 'Official rated fuel consumption in L/100km (Estimate this if not provided!)' }
+    },
+    required: []
+  },
+  execute: async (args, { supabase, device_id }) => {
+    // Construct update object with only provided fields
+    const updates: any = {};
+    if (args.make) updates.make = args.make;
+    if (args.model) updates.model = args.model;
+    if (args.year) updates.year = args.year;
+    if (args.fuel_type) updates.fuel_type = args.fuel_type;
+    if (args.engine_displacement) updates.engine_displacement = args.engine_displacement;
+    if (args.official_fuel_efficiency) updates.official_fuel_efficiency_l_100km = args.official_fuel_efficiency;
+
+    if (Object.keys(updates).length === 0) {
+      return { status: 'error', message: 'No valid fields provided to update.' };
+    }
+
+    const { error } = await supabase
+      .from('vehicles')
+      .update(updates)
+      .eq('device_id', device_id);
+
+    if (error) throw new Error(`Database error: ${error.message}`);
+
+    return {
+      status: 'success',
+      message: 'Vehicle profile updated successfully.',
+      updated_fields: Object.keys(updates)
+    };
+  }
+}
+
+const get_recent_alerts: ToolDefinition = {
+  name: 'get_recent_alerts',
+  description: 'Get recent vehicle alerts, warnings, and diagnostic trouble codes (DTCs).',
+  parameters: {
+    type: 'object',
+    properties: {
+      limit: { type: 'number', default: 5 }
+    },
+    required: []
+  },
+  execute: async ({ limit = 5 }, { supabase, device_id }) => {
+    const { data: events, error } = await supabase
+      .from('proactive_vehicle_events')
+      .select('*')
+      .eq('device_id', device_id)
+      .in('severity', ['warning', 'error', 'critical'])
+      .order('created_at', { ascending: false })
+      .limit(limit)
+
+    if (error) throw new Error(`Database error: ${error.message}`)
+
+    if (!events || events.length === 0) {
+      return { found: false, message: 'No critical alerts or warnings found recently.' }
+    }
+
+    return {
+      found: true,
+      count: events.length,
+      alerts: events.map((e: any) => ({
+        time: e.created_at,
+        severity: e.severity,
+        title: e.title,
+        description: e.description,
+        type: e.event_type
+      }))
+    }
+  }
+}
+
+const force_sync_gps51: ToolDefinition = {
+  name: 'force_sync_gps51',
+  description: 'Force a real-time sync with the GPS51 platform. Call this BEFORE checking location or trips if the user asks for "right now", "live", or "current" status, to ensure data is up-to-the-second.',
+  parameters: {
+    type: 'object',
+    properties: {
+      reason: { type: 'string', description: 'Why the sync is needed' }
+    },
+    required: []
+  },
+  execute: async (_, { supabase, device_id }) => {
+    // Invoke the get-vehicle-live-status function
+    const { data, error } = await supabase.functions.invoke('get-vehicle-live-status', {
+      body: { device_id }
+    })
+
+    if (error) {
+      console.error('Sync failed:', error)
+      return { status: 'error', message: 'Failed to contact GPS satellites.' }
+    }
+
+    return {
+      status: 'success',
+      message: 'Successfully synchronized with live GPS data.',
+      live_position: data
+    }
+  }
+}
+
 export const TOOLS: ToolDefinition[] = [
+  force_sync_gps51, // NEW: Priority sync tool
   get_vehicle_status,
   get_trip_history,
   get_trip_analytics,      // NEW: Comprehensive trip analytics
   get_favorite_locations,  // NEW: Frequently visited spots
+  get_vehicle_health,      // NEW: Health overview
+  get_maintenance_updates, // NEW: Maintenance list
+  get_fuel_stats,          // NEW: Fuel & Theft
+  update_vehicle_profile,  // NEW: Update profile (Make/Model/Efficiency)
+  get_recent_alerts,       // NEW: DTCs & Warnings
   get_position_history,
   search_trip_locations,
   request_vehicle_command,

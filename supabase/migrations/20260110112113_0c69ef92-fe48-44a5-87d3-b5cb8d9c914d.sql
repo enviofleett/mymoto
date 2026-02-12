@@ -226,6 +226,7 @@ END;
 $$;
 
 -- get_vehicle_health - Returns health metrics for a vehicle
+DROP FUNCTION IF EXISTS public.get_vehicle_health(TEXT);
 CREATE OR REPLACE FUNCTION public.get_vehicle_health(
     p_device_id TEXT
 )
@@ -234,77 +235,39 @@ RETURNS TABLE (
     battery_health_score INTEGER,
     driving_behavior_score INTEGER,
     connectivity_score INTEGER,
-    trend TEXT
+    trend TEXT,
+    score_change INTEGER,
+    measured_at TIMESTAMP WITH TIME ZONE,
+    active_recommendations INTEGER
 )
 LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-DECLARE
-    v_battery_percent INTEGER;
-    v_is_online BOOLEAN;
-    v_battery_score INTEGER;
-    v_connectivity_score INTEGER;
-    v_driving_score INTEGER := 80; -- Default good score
-    v_overall INTEGER;
-    v_avg_speed DOUBLE PRECISION;
-    v_overspeed_count INTEGER;
 BEGIN
-    -- Get current position data
-    SELECT battery_percent, is_online
-    INTO v_battery_percent, v_is_online
-    FROM vehicle_positions
-    WHERE device_id = p_device_id
+    RETURN QUERY
+    SELECT
+        vhm.overall_health_score,
+        vhm.battery_health_score,
+        vhm.driving_behavior_score,
+        vhm.connectivity_score,
+        vhm.trend,
+        vhm.score_change,
+        vhm.measured_at,
+        (SELECT COUNT(*)::INTEGER
+         FROM maintenance_recommendations mr
+         WHERE mr.device_id = p_device_id
+           AND mr.status = 'active') AS active_recommendations
+    FROM vehicle_health_metrics vhm
+    WHERE vhm.device_id = p_device_id
+    ORDER BY vhm.measured_at DESC
     LIMIT 1;
-
-    -- Calculate battery health score
-    v_battery_score := CASE
-        WHEN v_battery_percent IS NULL OR v_battery_percent <= 0 THEN 50
-        WHEN v_battery_percent >= 80 THEN 100
-        WHEN v_battery_percent >= 50 THEN 80
-        WHEN v_battery_percent >= 20 THEN 60
-        ELSE 40
-    END;
-
-    -- Calculate connectivity score
-    v_connectivity_score := CASE
-        WHEN v_is_online = true THEN 100
-        ELSE 30
-    END;
-
-    -- Calculate driving behavior score based on recent history
-    SELECT AVG(speed), COUNT(*) FILTER (WHERE speed > 100)
-    INTO v_avg_speed, v_overspeed_count
-    FROM position_history
-    WHERE device_id = p_device_id
-      AND gps_time > NOW() - INTERVAL '24 hours';
-
-    IF v_overspeed_count > 5 THEN
-        v_driving_score := 50;
-    ELSIF v_overspeed_count > 2 THEN
-        v_driving_score := 70;
-    ELSE
-        v_driving_score := 90;
-    END IF;
-
-    -- Calculate overall score (weighted average)
-    v_overall := (v_battery_score * 30 + v_connectivity_score * 30 + v_driving_score * 40) / 100;
-
-    RETURN QUERY SELECT
-        v_overall AS overall_health_score,
-        v_battery_score AS battery_health_score,
-        v_driving_score AS driving_behavior_score,
-        v_connectivity_score AS connectivity_score,
-        CASE
-            WHEN v_overall >= 80 THEN 'stable'
-            WHEN v_overall >= 60 THEN 'declining'
-            ELSE 'critical'
-        END AS trend;
 END;
 $$;
 
 -- get_maintenance_recommendations - Returns active maintenance recommendations
+DROP FUNCTION IF EXISTS public.get_maintenance_recommendations(TEXT, TEXT);
 CREATE OR REPLACE FUNCTION public.get_maintenance_recommendations(
     p_device_id TEXT,
     p_status TEXT DEFAULT 'active'
@@ -313,66 +276,59 @@ RETURNS TABLE (
     id UUID,
     title TEXT,
     description TEXT,
-    priority TEXT,
+    recommendation_type TEXT,
+    priority maintenance_priority,
     predicted_issue TEXT,
-    status TEXT,
-    created_at TIMESTAMPTZ
+    confidence_score DECIMAL,
+    estimated_days_until_failure INTEGER,
+    created_at TIMESTAMP WITH TIME ZONE,
+    days_since_created INTEGER
 )
 LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-DECLARE
-    v_battery_percent INTEGER;
-    v_is_online BOOLEAN;
-    v_last_update TIMESTAMPTZ;
 BEGIN
-    -- Get current vehicle status
-    SELECT battery_percent, is_online, gps_time
-    INTO v_battery_percent, v_is_online, v_last_update
-    FROM vehicle_positions
-    WHERE device_id = p_device_id
-    LIMIT 1;
-
-    -- Generate dynamic recommendations based on current state
-    -- Low battery recommendation
-    IF v_battery_percent IS NOT NULL AND v_battery_percent > 0 AND v_battery_percent < 30 THEN
-        RETURN QUERY SELECT
-            gen_random_uuid() AS id,
-            'Charge Vehicle Battery'::TEXT AS title,
-            ('Battery is at ' || v_battery_percent || '%. Recommend charging soon.')::TEXT AS description,
-            CASE WHEN v_battery_percent < 15 THEN 'high' ELSE 'medium' END::TEXT AS priority,
-            'Battery depletion'::TEXT AS predicted_issue,
-            'active'::TEXT AS status,
-            NOW() AS created_at;
-    END IF;
-
-    -- Offline recommendation
-    IF v_is_online = false AND v_last_update IS NOT NULL AND v_last_update < NOW() - INTERVAL '1 hour' THEN
-        RETURN QUERY SELECT
-            gen_random_uuid() AS id,
-            'Check GPS Device Connection'::TEXT AS title,
-            'Vehicle has been offline for extended period. Check device connectivity.'::TEXT AS description,
-            'medium'::TEXT AS priority,
-            'GPS connectivity issue'::TEXT AS predicted_issue,
-            'active'::TEXT AS status,
-            NOW() AS created_at;
-    END IF;
-
-    -- Return empty if no issues
-    RETURN;
+    RETURN QUERY
+    SELECT
+        mr.id,
+        mr.title,
+        mr.description,
+        mr.recommendation_type,
+        mr.priority,
+        mr.predicted_issue,
+        mr.confidence_score,
+        mr.estimated_days_until_failure,
+        mr.created_at,
+        EXTRACT(DAYS FROM (now() - mr.created_at))::INTEGER AS days_since_created
+    FROM maintenance_recommendations mr
+    WHERE mr.device_id = p_device_id
+      AND mr.status = p_status
+    ORDER BY
+        CASE mr.priority
+            WHEN 'urgent' THEN 1
+            WHEN 'high' THEN 2
+            WHEN 'medium' THEN 3
+            WHEN 'low' THEN 4
+        END,
+        mr.created_at DESC;
 END;
 $$;
 
+GRANT EXECUTE ON FUNCTION public.get_maintenance_recommendations TO authenticated;
+
 -- get_vehicle_geofence_context - Already may exist, create if not
+DROP FUNCTION IF EXISTS public.get_vehicle_geofence_context(TEXT);
 CREATE OR REPLACE FUNCTION public.get_vehicle_geofence_context(
     p_device_id TEXT
 )
 RETURNS TABLE (
     is_inside_geofence BOOLEAN,
+    geofence_id UUID,
     geofence_name TEXT,
     zone_type TEXT,
+    entered_at TIMESTAMP WITH TIME ZONE,
     duration_minutes INTEGER,
     recent_events_count INTEGER
 )
@@ -382,14 +338,28 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
-    -- Placeholder - returns no geofence context for now
-    -- Can be enhanced when geofence tables are created
-    RETURN QUERY SELECT
-        false::boolean AS is_inside_geofence,
-        NULL::text AS geofence_name,
-        NULL::text AS zone_type,
-        0::integer AS duration_minutes,
-        0::integer AS recent_events_count
-    WHERE false; -- Returns empty set
+    RETURN QUERY
+    SELECT
+        COALESCE(vgs.is_inside, false) AS is_inside_geofence,
+        vgs.geofence_id,
+        gz.name AS geofence_name,
+        gz.zone_type,
+        vgs.entered_at,
+        CASE
+            WHEN vgs.entered_at IS NOT NULL THEN
+                EXTRACT(EPOCH FROM (now() - vgs.entered_at))::INTEGER / 60
+            ELSE NULL
+        END AS duration_minutes,
+        (
+            SELECT COUNT(*)::INTEGER
+            FROM geofence_events ge
+            WHERE ge.device_id = p_device_id
+              AND ge.event_time >= now() - INTERVAL '24 hours'
+        ) AS recent_events_count
+    FROM vehicle_geofence_status vgs
+    LEFT JOIN geofence_zones gz ON vgs.geofence_id = gz.id
+    WHERE vgs.device_id = p_device_id;
 END;
 $$;
+
+GRANT EXECUTE ON FUNCTION public.get_vehicle_geofence_context TO authenticated;

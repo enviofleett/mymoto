@@ -7,6 +7,7 @@ import {
   logTimezoneConversion,
   TIMEZONES,
 } from "../_shared/timezone-utils.ts";
+import { normalizeSpeed } from "../_shared/telemetry-normalizer.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -62,9 +63,9 @@ function convertGps51TripToDb(trip: any, deviceId: string) {
   const distanceMeters = trip.distance || trip.totaldistance || null;
 
   // GPS51 speed fields (already in correct units)
-  // maxspeed and avgspeed are in m/h, convert to km/h
-  const maxSpeedKmh = trip.maxspeed ? trip.maxspeed / 1000 : null;
-  const avgSpeedKmh = trip.avgspeed ? trip.avgspeed / 1000 : null;
+  // maxspeed and avgspeed are in m/h, convert to km/h using standard normalizer
+  const maxSpeedKmh = normalizeSpeed(trip.maxspeed || trip.totalmaxspeed);
+  const avgSpeedKmh = normalizeSpeed(trip.avgspeed || trip.totalaveragespeed);
 
   return {
     device_id: deviceId,
@@ -139,11 +140,15 @@ serve(async (req) => {
     );
 
     if (result.status !== 0) {
-      throw new Error(`GPS51 querytrips error: ${result.cause || 'Unknown error'} (status: ${result.status})`);
-    }
+              throw new Error(`GPS51 querytrips error: ${result.cause || 'Unknown error'} (status: ${result.status})`);
+            }
 
-    const records = result.records || [];
-    console.log(`[sync-gps51-trips] Received ${records.length} trip records from GPS51`);
+            // DEBUG LOGGING: Log full raw response to diagnose "0 records" issue
+            console.log(`[sync-gps51-trips] RAW GPS51 RESPONSE for ${deviceid}:`, JSON.stringify(result));
+
+    // CRITICAL FIX: GPS51 querytrips returns trips in 'totaltrips' (or sometimes 'records')
+    const records = result.totaltrips || result.records || [];
+    console.log(`[sync-gps51-trips] Received ${records.length} trip records from GPS51 (checked totaltrips + records)`);
 
     // Convert GPS51 data to database format
     const tripsToInsert = records
