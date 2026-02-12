@@ -1,6 +1,9 @@
 -- Migration: Add Analytics Functions for Vehicle Chat
 -- Description: Adds RPC functions to support "Favorite Parking Spots", "Drive Time", and "Usage Stats" for the AI agent.
 
+-- Ensure PostGIS is enabled
+CREATE EXTENSION IF NOT EXISTS "postgis";
+
 -- 1. Get Frequent Locations (Parking Spots)
 -- Uses ST_ClusterDBSCAN to group trip end locations within ~50m
 CREATE OR REPLACE FUNCTION get_frequent_locations(
@@ -13,9 +16,12 @@ RETURNS TABLE (
   visit_count BIGINT,
   last_visit TIMESTAMP WITH TIME ZONE
 )
-LANGUAGE sql
+LANGUAGE plpgsql
 STABLE
+SET search_path = public, extensions
 AS $$
+BEGIN
+  RETURN QUERY
   WITH clusters AS (
     SELECT 
       end_latitude, 
@@ -50,6 +56,7 @@ AS $$
   FROM grouped_clusters
   ORDER BY visit_count DESC
   LIMIT p_limit;
+END;
 $$;
 
 -- 2. Get Vehicle Usage Stats (Drive Time, Parked Time, Distance)
