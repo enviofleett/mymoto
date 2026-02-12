@@ -5,6 +5,10 @@
 ALTER TABLE public.wallets 
 RENAME COLUMN user_id TO profile_id;
 
+-- CLEANUP: Remove orphaned wallets that reference non-existent profiles
+DELETE FROM public.wallets 
+WHERE profile_id NOT IN (SELECT id FROM public.profiles);
+
 ALTER TABLE public.wallets 
 ADD CONSTRAINT wallets_profile_id_fkey 
 FOREIGN KEY (profile_id) REFERENCES public.profiles(id);
