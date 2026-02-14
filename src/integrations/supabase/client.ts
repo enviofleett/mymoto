@@ -1,6 +1,7 @@
 // src/integrations/supabase/client.ts
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
+import { isIssuerMismatch, parseJwtPayload } from './jwt';
 
 // Hardcoded fallbacks ensure connection persistence even if .env isn't loaded correctly in some environments
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://cmvpnsqiefbsqkwnraka.supabase.co";
@@ -13,6 +14,22 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 }
 
 const AUTH_STORAGE_KEY = 'mymoto-auth-v1';
+const AUTH_NOTICE_KEY = 'mymoto-auth-notice';
+
+function writeAuthNotice(reason: 'issuer_mismatch' | 'malformed' | 'invalid_jwt') {
+  try {
+    localStorage.setItem(
+      AUTH_NOTICE_KEY,
+      JSON.stringify({
+        type: 'session_invalid',
+        reason,
+        ts: Date.now(),
+      })
+    );
+  } catch {
+    // ignore
+  }
+}
 
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
@@ -31,8 +48,27 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, 
 void (async () => {
   const { data } = await supabase.auth.getSession();
   const session = data.session;
+  if (session?.access_token) {
+    const payload = parseJwtPayload(session.access_token);
+    if (!payload) {
+      writeAuthNotice('malformed');
+      await supabase.auth.signOut();
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+      return;
+    }
+    if (isIssuerMismatch(payload.iss as any, SUPABASE_URL)) {
+      writeAuthNotice('issuer_mismatch');
+      await supabase.auth.signOut();
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+      return;
+    }
+  }
+
   if (session && !session.refresh_token) {
+    writeAuthNotice('invalid_jwt');
     await supabase.auth.signOut();
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+    return;
   }
   supabase.auth.onAuthStateChange((event) => {
     if (event === 'SIGNED_OUT') {

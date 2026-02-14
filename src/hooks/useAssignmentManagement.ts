@@ -1,6 +1,23 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { invokeEdgeFunction } from "@/integrations/supabase/edge";
+
+type AdminVehicleAssignmentsResult =
+  | {
+      success: true;
+      message?: string;
+      assigned_count?: number;
+      unassigned_count?: number | null;
+      errors?: any[];
+    }
+  | {
+      success: false;
+      message?: string;
+      assigned_count?: number;
+      unassigned_count?: number | null;
+      errors?: Array<{ device_id?: string; message: string; code?: string; details?: string }>;
+    };
 
 export interface ProfileWithAssignments {
   id: string;
@@ -100,6 +117,29 @@ export function useProfiles() {
   });
 }
 
+export function useLinkProfileUser() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (profileId: string) => {
+      const data = await invokeEdgeFunction<{ success: boolean; user_id?: string; message?: string }>(
+        "admin-link-profile-user",
+        { profile_id: profileId }
+      );
+      if (!data?.success) throw new Error(data?.message || "Failed to link profile");
+      return data as { success: true; user_id: string; message?: string };
+    },
+    onSuccess: (data) => {
+      toast.success("Profile linked", { description: data?.message });
+      queryClient.invalidateQueries({ queryKey: ["profiles-with-assignments"] });
+      queryClient.invalidateQueries({ queryKey: ["assignment-stats"] });
+    },
+    onError: (error) => {
+      toast.error(`Link failed: ${error.message}`);
+    },
+  });
+}
+
 export function useVehiclesWithAssignments(search: string = "", filter: "all" | "assigned" | "unassigned" = "all") {
   return useQuery({
     queryKey: ["vehicles-with-assignments", search, filter],
@@ -190,16 +230,19 @@ export function useUnassignAllVehicles() {
 
   return useMutation({
     mutationFn: async () => {
-      const { error, count } = await (supabase as any)
-        .from("vehicle_assignments")
-        .delete()
-        .neq("device_id", ""); // Delete all rows
+      const result = await invokeEdgeFunction<AdminVehicleAssignmentsResult>(
+        "admin-vehicle-assignments",
+        { action: "unassign_all" }
+      );
+      if (!result?.success) {
+        throw new Error(result?.message || "Failed to unassign all vehicles");
+      }
 
-      if (error) throw error;
-      return { unassigned: count || 0 };
+      return { unassigned: 0 };
     },
     onSuccess: (data) => {
-      toast.success(`Successfully unassigned all ${data.unassigned} vehicle(s)`);
+      // Count isn't guaranteed from PostgREST. Treat as success and refresh UI.
+      toast.success("Successfully unassigned all vehicles");
       queryClient.invalidateQueries({ queryKey: ["vehicles-with-assignments"] });
       queryClient.invalidateQueries({ queryKey: ["profiles-with-assignments"] });
       queryClient.invalidateQueries({ queryKey: ["assignment-stats"] });
@@ -230,60 +273,19 @@ export function useAssignVehicles() {
         isNewUser?: boolean;
       };
     }) => {
-      // Upsert assignments one by one with composite primary key (device_id, profile_id)
-      // Workaround: Use insert with ON CONFLICT handling since Supabase client may have issues with composite keys
-      const results = await Promise.all(
-        deviceIds.map(async (deviceId) => {
-          const payload = {
-            device_id: deviceId,
-            profile_id: profileId,
-            vehicle_alias: vehicleAliases?.[deviceId] || null,
-            updated_at: new Date().toISOString()
-          };
-          
-          // Use check-then-update-or-insert pattern to avoid Supabase composite key upsert issues
-          // Check if assignment already exists
-          const { data: existing, error: checkError } = await (supabase as any)
-            .from("vehicle_assignments")
-            .select("device_id, profile_id")
-            .eq("device_id", deviceId)
-            .eq("profile_id", profileId)
-            .maybeSingle();
-          
-          if (checkError && checkError.code !== 'PGRST116') { // PGRST116 = no rows returned, which is fine
-            return { deviceId, error: checkError };
-          }
-          
-          let error: any = null;
-          
-          if (existing) {
-            // Update existing assignment
-            const { error: updateError } = await (supabase as any)
-              .from("vehicle_assignments")
-              .update({
-                vehicle_alias: payload.vehicle_alias,
-                updated_at: payload.updated_at,
-              })
-              .eq("device_id", deviceId)
-              .eq("profile_id", profileId);
-            
-            error = updateError;
-          } else {
-            // Insert new assignment
-            const { error: insertError } = await (supabase as any)
-              .from("vehicle_assignments")
-              .insert(payload);
-            
-            error = insertError;
-          }
-          
-          return { deviceId, error };
-        })
+      const result = await invokeEdgeFunction<AdminVehicleAssignmentsResult>(
+        "admin-vehicle-assignments",
+        {
+          action: "assign",
+          profile_id: profileId,
+          device_ids: deviceIds,
+          vehicle_aliases: vehicleAliases,
+        }
       );
-
-      const errors = results.filter(r => r.error);
-      if (errors.length > 0) {
-        throw new Error(`Failed to assign ${errors.length} vehicles`);
+      if (!result?.success) {
+        const first = result?.errors?.[0];
+        const suffix = first?.device_id ? ` (${first.device_id}: ${first.message})` : "";
+        throw new Error((result?.message || "Assignment failed") + suffix);
       }
 
       // Send email notification if requested
@@ -304,7 +306,7 @@ export function useAssignVehicles() {
         }
       }
 
-      return { assigned: deviceIds.length };
+      return { assigned: result.assigned_count ?? deviceIds.length };
     },
     onSuccess: (data) => {
       toast.success(`Successfully assigned ${data.assigned} vehicle(s)`);
@@ -323,51 +325,34 @@ export function useBulkAutoAssign() {
 
   return useMutation({
     mutationFn: async (assignments: { deviceId: string; profileId: string }[]) => {
+      const byProfile = new Map<string, string[]>();
+      for (const a of assignments) {
+        const list = byProfile.get(a.profileId) || [];
+        list.push(a.deviceId);
+        byProfile.set(a.profileId, list);
+      }
+
       const results = await Promise.all(
-        assignments.map(async ({ deviceId, profileId }) => {
-          // Use check-then-update-or-insert pattern to avoid Supabase composite key upsert issues
-          const { data: existing, error: checkError } = await (supabase as any)
-            .from("vehicle_assignments")
-            .select("device_id, profile_id")
-            .eq("device_id", deviceId)
-            .eq("profile_id", profileId)
-            .maybeSingle();
-          
-          if (checkError && checkError.code !== 'PGRST116') {
-            return { deviceId, error: checkError };
+        Array.from(byProfile.entries()).map(async ([profileId, deviceIds]) => {
+          try {
+            const result = await invokeEdgeFunction<AdminVehicleAssignmentsResult>(
+              "admin-vehicle-assignments",
+              { action: "assign", profile_id: profileId, device_ids: deviceIds }
+            );
+            if (!result?.success) {
+              return { profileId, error: new Error(result?.message || "Auto-assign failed") };
+            }
+            return { profileId, error: null };
+          } catch (error: any) {
+            return { profileId, error };
           }
-          
-          const payload = {
-            device_id: deviceId,
-            profile_id: profileId,
-            updated_at: new Date().toISOString(),
-          };
-          
-          let error: any = null;
-          
-          if (existing) {
-            // Update existing assignment
-            const { error: updateError } = await (supabase as any)
-              .from("vehicle_assignments")
-              .update({ updated_at: payload.updated_at })
-              .eq("device_id", deviceId)
-              .eq("profile_id", profileId);
-            error = updateError;
-          } else {
-            // Insert new assignment
-            const { error: insertError } = await (supabase as any)
-              .from("vehicle_assignments")
-              .insert(payload);
-            error = insertError;
-          }
-          
-          return { deviceId, error };
         })
       );
 
-      const errors = results.filter(r => r.error);
+      const errors = results.filter((r) => r.error);
       if (errors.length > 0) {
-        throw new Error(`Failed to assign ${errors.length} vehicles`);
+        const first = errors[0];
+        throw new Error(`Auto-assignment failed for ${errors.length} profile(s): ${first.profileId}`);
       }
 
       return { assigned: assignments.length };
@@ -388,14 +373,28 @@ export function useUnassignVehicles() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (deviceIds: string[]) => {
-      const { error } = await (supabase as any)
-        .from("vehicle_assignments")
-        .delete()
-        .in("device_id", deviceIds);
+    mutationFn: async ({
+      deviceIds,
+      profileId,
+    }: {
+      deviceIds: string[];
+      profileId?: string;
+    }) => {
+      const result = await invokeEdgeFunction<AdminVehicleAssignmentsResult>(
+        "admin-vehicle-assignments",
+        {
+          action: "unassign",
+          profile_id: profileId || null,
+          device_ids: deviceIds,
+        }
+      );
+      if (!result?.success) {
+        const first = result?.errors?.[0];
+        const suffix = first?.device_id ? ` (${first.device_id}: ${first.message})` : "";
+        throw new Error((result?.message || "Unassignment failed") + suffix);
+      }
 
-      if (error) throw error;
-      return { unassigned: deviceIds.length };
+      return { unassigned: result.unassigned_count ?? deviceIds.length };
     },
     onSuccess: (data) => {
       toast.success(`Successfully unassigned ${data.unassigned} vehicle(s)`);

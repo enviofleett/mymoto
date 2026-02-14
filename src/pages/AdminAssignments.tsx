@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
-import { useProfiles, useVehiclesWithAssignments } from "@/hooks/useAssignmentManagement";
+import { useLinkProfileUser, useProfiles, useVehiclesWithAssignments } from "@/hooks/useAssignmentManagement";
 import { AssignmentManagerDialog } from "@/components/admin/AssignmentManagerDialog";
 import { CreateTestUserDialog } from "@/components/admin/CreateTestUserDialog";
 import { Input } from "@/components/ui/input";
@@ -36,14 +36,36 @@ export default function AdminAssignments() {
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
   const [usersSearch, setUsersSearch] = useState("");
   const [createUserOpen, setCreateUserOpen] = useState(false);
+  const linkProfileMutation = useLinkProfileUser();
   const { data: wallets = [], isLoading: walletsLoading } = useQuery({
     queryKey: ["admin-wallets-basic"],
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
+      // Wallet schema differs across environments: some have wallets.user_id, some wallets.profile_id.
+      // Try user_id first, then fall back to profile_id on "column does not exist" errors.
+      const tryUserId = await (supabase as any)
         .from("wallets")
         .select("user_id,balance");
-      if (error) throw error;
-      return data as Array<{ user_id: string; balance: number }>;
+      if (!tryUserId.error) {
+        return (tryUserId.data || []) as Array<{ user_id: string; balance: number }>;
+      }
+
+      if (tryUserId.error?.code === "42703") {
+        const tryProfileId = await (supabase as any)
+          .from("wallets")
+          .select("profile_id,balance");
+        if (tryProfileId.error) {
+          console.warn("[AdminAssignments] wallets query failed:", tryProfileId.error);
+          return [] as Array<{ user_id: string; balance: number }>;
+        }
+        // Normalize shape to { user_id, balance } for the existing walletMap logic.
+        return (tryProfileId.data || []).map((r: any) => ({
+          user_id: r.profile_id,
+          balance: r.balance,
+        })) as Array<{ user_id: string; balance: number }>;
+      }
+
+      console.warn("[AdminAssignments] wallets query failed:", tryUserId.error);
+      return [] as Array<{ user_id: string; balance: number }>;
     },
   });
 
@@ -215,8 +237,37 @@ export default function AdminAssignments() {
                       return (
                         <TableRow key={p.id}>
                           <TableCell>
-                            <div className="font-medium">{p.name}</div>
+                            <div className="flex items-center gap-2">
+                              <div className="font-medium">{p.name}</div>
+                              <Badge variant={p.user_id ? "default" : "secondary"} className="text-[10px] px-2 py-0">
+                                {p.user_id ? "Linked" : "Unlinked"}
+                              </Badge>
+                            </div>
                             <div className="text-xs text-muted-foreground">{p.email || "No email"}</div>
+                            {!p.user_id ? (
+                              <div className="mt-1 flex items-center gap-2">
+                                <Badge variant="outline" className="text-[10px]">
+                                  User cannot see vehicles in PWA until linked
+                                </Badge>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 px-2 text-xs"
+                                  disabled={!p.email || linkProfileMutation.isPending}
+                                  onClick={async () => {
+                                    await linkProfileMutation.mutateAsync(p.id);
+                                  }}
+                                  title={
+                                    p.email
+                                      ? "Link profile to an existing auth user with this email"
+                                      : "Add an email to this profile first (Edit User), then link"
+                                  }
+                                >
+                                  <Link2 className="h-3 w-3 mr-1" />
+                                  Link
+                                </Button>
+                              </div>
+                            ) : null}
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">

@@ -126,7 +126,10 @@ export function UserVehicleGrid() {
 
   const handleUnassign = async () => {
     const deviceIds = Array.from(selectedVehicles);
-    await unassignMutation.mutateAsync(deviceIds);
+    await unassignMutation.mutateAsync({
+      deviceIds,
+      profileId: selectedUserId || undefined,
+    });
     setSelectedVehicles(new Set());
   };
 

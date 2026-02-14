@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 interface AuthContextType {
   user: User | null;
@@ -35,6 +36,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isRoleLoaded, setIsRoleLoaded] = useState(false);
+
+  useEffect(() => {
+    // One-shot notice set by auth guards (issuer mismatch / malformed / invalid JWT)
+    const key = 'mymoto-auth-notice';
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return;
+      const notice = JSON.parse(raw) as { type?: string; reason?: string; ts?: number };
+      localStorage.removeItem(key);
+
+      const ts = typeof notice.ts === 'number' ? notice.ts : 0;
+      if (Date.now() - ts > 2 * 60_000) return;
+
+      if (notice.type === 'session_invalid') {
+        const reason = notice.reason || 'unknown';
+        const detail =
+          reason === 'issuer_mismatch'
+            ? 'Looks like you were logged into a different environment/project.'
+            : reason === 'malformed'
+              ? 'Stored auth data was corrupted.'
+              : 'Your session is no longer valid.';
+        toast.error('Your session is invalid for this environment. Please sign in again.', {
+          description: detail,
+        });
+      }
+    } catch {
+      // ignore
+      try {
+        localStorage.removeItem(key);
+      } catch {
+        // ignore
+      }
+    }
+  }, []);
 
   type RefreshRolesOptions = {
     blocking?: boolean;

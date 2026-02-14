@@ -14,8 +14,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Car, User, Plus, X, Mail } from "lucide-react";
-import { ProfileWithAssignments, VehicleWithAssignment, useAssignVehicles, useVehiclesWithAssignments } from "@/hooks/useAssignmentManagement";
-import { supabase } from "@/integrations/supabase/client";
+import {
+  ProfileWithAssignments,
+  VehicleWithAssignment,
+  useAssignVehicles,
+  useUnassignVehicles,
+  useVehiclesWithAssignments,
+} from "@/hooks/useAssignmentManagement";
 import { toast } from "sonner";
 
 interface UserVehicleAssignmentDialogProps {
@@ -36,6 +41,7 @@ export function UserVehicleAssignmentDialog({
 
   const { data: allVehicles } = useVehiclesWithAssignments("", "all");
   const assignMutation = useAssignVehicles();
+  const unassignMutation = useUnassignVehicles();
 
   // Get user's currently assigned vehicles
   const assignedVehicles = allVehicles?.filter(
@@ -104,23 +110,20 @@ export function UserVehicleAssignmentDialog({
         return;
       }
 
+      // Enforce "linked profile" for any new assignments so PWA visibility works immediately.
+      if (!profile.user_id && addVehicles.length > 0) {
+        toast.error(
+          "This profile isn’t linked to a login account yet. Create/link the user account first so they can see vehicles in the PWA."
+        );
+        return;
+      }
+
       // Remove vehicles first - need to delete by both device_id and profile_id (composite key)
       if (removeVehicles.length > 0) {
-        try {
-          // Delete assignments for this specific user-vehicle combination
-          const { error: deleteError } = await (supabase as any)
-            .from("vehicle_assignments")
-            .delete()
-            .in("device_id", removeVehicles)
-            .eq("profile_id", profile.id);
-
-          if (deleteError) {
-            throw deleteError;
-          }
-        } catch (error: any) {
-          toast.error(`Failed to remove vehicles: ${error.message}`);
-          throw error;
-        }
+        await unassignMutation.mutateAsync({
+          profileId: profile.id,
+          deviceIds: removeVehicles,
+        });
       }
 
       // Add new vehicles
@@ -313,7 +316,12 @@ export function UserVehicleAssignmentDialog({
           </Button>
           <Button
             onClick={handleSave}
-            disabled={!hasChanges || assignMutation.isPending}
+            disabled={
+              !hasChanges ||
+              assignMutation.isPending ||
+              unassignMutation.isPending ||
+              (!profile.user_id && selectedVehiclesToAdd.size > 0)
+            }
           >
             {assignMutation.isPending && (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />

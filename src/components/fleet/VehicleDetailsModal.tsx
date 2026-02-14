@@ -10,6 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { FleetVehicle } from "@/hooks/useFleetData";
 import { usePositionHistory, useAvailableDrivers } from "@/hooks/useVehicleDetails";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeEdgeFunction } from "@/integrations/supabase/edge";
 import { useToast } from "@/hooks/use-toast";
 import { VehicleChat } from "./VehicleChat";
 import { VehiclePersonaSettings } from "./VehiclePersonaSettings";
@@ -137,15 +138,15 @@ export function VehicleDetailsModal({
 
     setLoading(true);
     try {
-      const { error } = await (supabase as any)
-        .from("vehicle_assignments")
-        .upsert({
-          device_id: vehicle.id,
+      const data = await invokeEdgeFunction<{ success: boolean; message?: string }>(
+        "admin-vehicle-assignments",
+        {
+          action: "assign",
           profile_id: selectedDriverId,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'device_id,profile_id' });
-
-      if (error) throw error;
+          device_ids: [vehicle.id],
+        }
+      );
+      if (!data?.success) throw new Error(data?.message || "Assignment failed");
 
       toast({ title: "Success", description: "Driver assigned successfully" });
       setShowAssignForm(false);
@@ -155,7 +156,7 @@ export function VehicleDetailsModal({
       console.error("Error assigning driver:", err);
       toast({
         title: "Error",
-        description: "Failed to assign driver",
+        description: err instanceof Error ? err.message : "Failed to assign driver",
         variant: "destructive",
       });
     } finally {
@@ -168,12 +169,14 @@ export function VehicleDetailsModal({
 
     setLoading(true);
     try {
-      const { error } = await (supabase as any)
-        .from("vehicle_assignments")
-        .update({ profile_id: null })
-        .eq("device_id", vehicle.id);
-
-      if (error) throw error;
+      const data = await invokeEdgeFunction<{ success: boolean; message?: string }>(
+        "admin-vehicle-assignments",
+        {
+          action: "unassign",
+          device_ids: [vehicle.id],
+        }
+      );
+      if (!data?.success) throw new Error(data?.message || "Unassignment failed");
 
       toast({ title: "Success", description: "Driver unassigned successfully" });
       onAssignmentChange();
@@ -181,7 +184,7 @@ export function VehicleDetailsModal({
       console.error("Error unassigning driver:", err);
       toast({
         title: "Error",
-        description: "Failed to unassign driver",
+        description: err instanceof Error ? err.message : "Failed to unassign driver",
         variant: "destructive",
       });
     } finally {

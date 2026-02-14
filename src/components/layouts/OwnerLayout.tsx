@@ -7,8 +7,6 @@ import { StickyAlertBanner } from "@/components/notifications/StickyAlertBanner"
 import { useOwnerFooterPadding } from "@/hooks/useFooterPadding";
 import { useAuth } from "@/contexts/AuthContext";
 
-import { useOwnerVehicles } from "@/hooks/useOwnerVehicles";
-
 interface OwnerLayoutProps {
   children: ReactNode;
 }
@@ -45,17 +43,10 @@ export function OwnerLayout({
   const navigate = useNavigate();
   const footerPadding = useOwnerFooterPadding();
   const { isProvider } = useAuth();
-  const { data: vehicles } = useOwnerVehicles();
   
   // Use different nav items based on role
-  // For owners with single vehicle, redirect "Fleet" tab directly to that vehicle
   const baseNavItems = isProvider ? partnerNavItems : ownerNavItems;
-  const navItems = baseNavItems.map(item => {
-    if (!isProvider && item.path === "/owner/vehicles" && vehicles?.length === 1) {
-      return { ...item, path: `/owner/vehicle/${vehicles[0].deviceId}` };
-    }
-    return item;
-  });
+  const navItems = baseNavItems;
   
   const isActive = (path: string) => {
     if (isProvider) {

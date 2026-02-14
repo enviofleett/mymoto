@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeEdgeFunction } from "@/integrations/supabase/edge";
 import { useToast } from "@/hooks/use-toast";
 import { FleetVehicle } from "@/hooks/useFleetData";
 
@@ -11,6 +12,7 @@ interface Driver {
   id: string;
   name: string;
   phone: string | null;
+  user_id: string | null;
 }
 
 interface AssignDriverDialogProps {
@@ -36,7 +38,7 @@ export function AssignDriverDialog({ open, onOpenChange, vehicle, onSuccess }: A
     try {
       const { data, error } = await (supabase as any)
         .from("profiles")
-        .select("id, name, phone")
+        .select("id, name, phone, user_id")
         .eq("status", "active")
         .order("name");
 
@@ -52,15 +54,20 @@ export function AssignDriverDialog({ open, onOpenChange, vehicle, onSuccess }: A
 
     setLoading(true);
     try {
-      const { error } = await (supabase as any)
-        .from("vehicle_assignments")
-        .upsert({
-          device_id: vehicle.id,
-          profile_id: selectedDriverId,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'device_id,profile_id' });
+      const driver = drivers.find((d) => d.id === selectedDriverId) || null;
+      if (driver && !driver.user_id) {
+        throw new Error("This profile is unlinked. Link the user account before assigning vehicles.");
+      }
 
-      if (error) throw error;
+      const data = await invokeEdgeFunction<{ success: boolean; message?: string }>(
+        "admin-vehicle-assignments",
+        {
+          action: "assign",
+          profile_id: selectedDriverId,
+          device_ids: [vehicle.id],
+        }
+      );
+      if (!data?.success) throw new Error(data?.message || "Assignment failed");
 
       toast({ title: "Success", description: "Driver assigned successfully" });
       setSelectedDriverId("");
@@ -69,7 +76,7 @@ export function AssignDriverDialog({ open, onOpenChange, vehicle, onSuccess }: A
       console.error("Error assigning driver:", err);
       toast({
         title: "Error",
-        description: "Failed to assign driver",
+        description: err instanceof Error ? err.message : "Failed to assign driver",
         variant: "destructive",
       });
     } finally {
@@ -96,7 +103,7 @@ export function AssignDriverDialog({ open, onOpenChange, vehicle, onSuccess }: A
               <SelectContent>
                 {drivers.map((driver) => (
                   <SelectItem key={driver.id} value={driver.id}>
-                    {driver.name} {driver.phone ? `(${driver.phone})` : ""}
+                    {driver.name} {driver.phone ? `(${driver.phone})` : ""} {!driver.user_id ? "(Unlinked)" : ""}
                   </SelectItem>
                 ))}
               </SelectContent>

@@ -49,7 +49,6 @@ import {
   AlertCircle,
   Link2,
 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -129,6 +128,7 @@ export function AssignmentManagerDialog({
   const createUserMutation = useCreateUserWithVehicles();
   const editProfileMutation = useEditProfile();
   const assignMutation = useAssignVehicles();
+  const unassignMutation = useUnassignVehicles();
   const autoAssignMutation = useBulkAutoAssign();
   const bulkCreateProfilesMutation = useBulkCreateProfiles();
 
@@ -362,18 +362,20 @@ export function AssignmentManagerDialog({
       return;
     }
 
-    // Remove vehicles first
-    if (removeVehicles.length > 0) {
-      const { error: deleteError } = await (supabase as any)
-        .from("vehicle_assignments")
-        .delete()
-        .in("device_id", removeVehicles)
-        .eq("profile_id", selectedProfile.id);
+    // Enforce "linked profile" for any new assignments so PWA visibility works immediately.
+    if (!selectedProfile.user_id && addVehicles.length > 0) {
+      toast.error(
+        "This profile isn’t linked to a login account yet. Create/link the user account first so they can see vehicles in the PWA."
+      );
+      return;
+    }
 
-      if (deleteError) {
-        toast.error(`Failed to remove vehicles: ${deleteError.message}`);
-        throw deleteError;
-      }
+    // Remove vehicles first (allowed even if profile is unlinked).
+    if (removeVehicles.length > 0) {
+      await unassignMutation.mutateAsync({
+        profileId: selectedProfile.id,
+        deviceIds: removeVehicles,
+      });
     }
 
     // Add new vehicles
@@ -444,11 +446,20 @@ export function AssignmentManagerDialog({
       .map(m => ({
         deviceId: m.vehicle.device_id,
         profileId: m.matchedProfile.id,
+        profileLinked: !!m.matchedProfile.user_id,
       }));
 
     if (selectedMatchData.length === 0) return;
 
-    await autoAssignMutation.mutateAsync(selectedMatchData);
+    const unlinkedCount = selectedMatchData.filter(m => !m.profileLinked).length;
+    if (unlinkedCount > 0) {
+      toast.error(
+        `${unlinkedCount} match(es) target unlinked profiles. Link those users (profiles.user_id) before auto-assigning so they can see vehicles in the PWA.`
+      );
+      return;
+    }
+
+    await autoAssignMutation.mutateAsync(selectedMatchData.map(({ deviceId, profileId }) => ({ deviceId, profileId })));
     setSelectedAutoMatches(new Set());
     // Invalidate queries to refresh data
     queryClient.invalidateQueries({ queryKey: ["vehicles-with-assignments"] });
@@ -743,6 +754,9 @@ export function AssignmentManagerDialog({
                         <div className="flex items-center gap-2">
                           <User className="h-4 w-4" />
                           <span>{profile.name}</span>
+                          <Badge variant={profile.user_id ? "default" : "secondary"} className="text-[10px] px-2 py-0">
+                            {profile.user_id ? "Linked" : "Unlinked"}
+                          </Badge>
                           <span className="text-muted-foreground text-xs">
                             ({profile.assignmentCount} vehicles)
                           </span>
@@ -764,6 +778,14 @@ export function AssignmentManagerDialog({
                       )}
                       {selectedProfile.phone && (
                         <p className="text-sm text-muted-foreground">{selectedProfile.phone}</p>
+                      )}
+                      {!selectedProfile.user_id && (
+                        <div className="mt-2 flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400">
+                          <AlertCircle className="h-4 w-4" />
+                          <span>
+                            Unlinked profile: they cannot see assigned vehicles in the PWA until linked to an auth user.
+                          </span>
+                        </div>
                       )}
                     </div>
                     <Badge variant="secondary">
@@ -909,9 +931,17 @@ export function AssignmentManagerDialog({
                 </Button>
                 <Button
                   onClick={handleExistingUserSave}
-                  disabled={!selectedProfile || !hasChangesExistingUser || assignMutation.isPending}
+                  disabled={
+                    !selectedProfile ||
+                    !hasChangesExistingUser ||
+                    assignMutation.isPending ||
+                    unassignMutation.isPending ||
+                    (!selectedProfile.user_id && selectedVehicleIds.size > 0)
+                  }
                 >
-                  {assignMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {(assignMutation.isPending || unassignMutation.isPending) && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  )}
                   Save Changes
                   {hasChangesExistingUser && (
                     <Badge variant="secondary" className="ml-2">

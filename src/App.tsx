@@ -39,6 +39,7 @@ import PartnerDashboard from "./pages/partner/PartnerDashboard";
 import OwnerChat from "./pages/owner/OwnerChat";
 import OwnerChatDetail from "./pages/owner/OwnerChatDetail";
 import OwnerVehicles from "./pages/owner/OwnerVehicles";
+import OwnerVehiclesDashboard from "./pages/owner/OwnerVehiclesDashboard";
 import OwnerVehicleProfile from "./pages/owner/OwnerVehicleProfile";
 import OwnerWallet from "./pages/owner/OwnerWallet";
 import OwnerProfile from "./pages/owner/OwnerProfile";
@@ -152,7 +153,8 @@ const App = () => {
               {/* Owner PWA Routes */}
               <Route path="/owner" element={<ProtectedRoute><OwnerChat /></ProtectedRoute>} />
               <Route path="/owner/chat/:deviceId" element={<ProtectedRoute><OwnerChatDetail /></ProtectedRoute>} />
-              <Route path="/owner/vehicles" element={<ProtectedRoute><OwnerVehicles /></ProtectedRoute>} />
+              <Route path="/owner/vehicles" element={<ProtectedRoute><OwnerVehiclesDashboard /></ProtectedRoute>} />
+              <Route path="/owner/vehicles/list" element={<ProtectedRoute><OwnerVehicles /></ProtectedRoute>} />
               <Route path="/owner/vehicle/:deviceId" element={<ProtectedRoute><OwnerVehicleProfile /></ProtectedRoute>} />
               <Route path="/owner/wallet" element={<ProtectedRoute><OwnerWallet /></ProtectedRoute>} />
               <Route path="/owner/profile" element={<ProtectedRoute><OwnerProfile /></ProtectedRoute>} />
