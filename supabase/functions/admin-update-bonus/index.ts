@@ -172,6 +172,17 @@ Deno.serve(async (req) => {
 
     console.log("[admin-update-bonus] Successfully updated:", configData);
 
+    // Insert audit log
+    await supabase
+      .from("billing_config_audit")
+      .insert({
+        key: "new_user_bonus",
+        old_value: existingConfig?.value ?? null,
+        new_value: bonusAmount,
+        updated_by: adminUser.id,
+        reason: "Admin updated default new user wallet bonus"
+      });
+
     return new Response(
       JSON.stringify({
         success: true,

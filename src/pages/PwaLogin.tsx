@@ -68,9 +68,19 @@ export default function PwaLogin() {
           return;
         }
 
-        // Navigate to owner dashboard (vehicles list)
-        setTimeout(() => {
-          navigate('/owner/vehicles');
+        // Navigate based on role
+        setTimeout(async () => {
+          const { data: roles } = await supabase
+            .from('user_roles')
+            .select('role')
+            .eq('user_id', (await supabase.auth.getUser()).data.user?.id);
+            
+          const isProvider = roles?.some(r => r.role === 'service_provider');
+          const isAdmin = roles?.some(r => r.role === 'admin');
+
+          if (isAdmin) navigate('/admin/dashboard');
+          else if (isProvider) navigate('/partner/dashboard');
+          else navigate('/owner/vehicles');
         }, 1000);
       } else {
         setError('Unexpected response. Please try again.');

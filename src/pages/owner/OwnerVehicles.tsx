@@ -13,6 +13,9 @@ import { usePrefetchVehicleProfile } from "@/hooks/useVehicleProfile";
 import { Search, Plus, Car, Wifi, WifiOff, Battery, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import myMotoLogo from "@/assets/mymoto-logo-new.png";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useAuth } from "@/contexts/AuthContext";
 
 // Health indicator dot based on battery level
 function HealthDot({ battery }: { battery: number | null }) {
@@ -160,7 +163,15 @@ import { VehicleRequestDialog } from "@/components/owner/VehicleRequestDialog";
 
 export default function OwnerVehicles() {
   const navigate = useNavigate();
-  const { data: vehicles, isLoading } = useOwnerVehicles();
+  const { isLoading: authLoading, isRoleLoaded } = useAuth();
+  const [statusFilter, setStatusFilter] = useState<Set<OwnerVehicle['status']>>(new Set());
+  const [overspeedingOnly, setOverspeedingOnly] = useState(false);
+  const [deviceType, setDeviceType] = useState<string>("all");
+  const { data: vehicles, isLoading } = useOwnerVehicles({
+    status: Array.from(statusFilter),
+    overspeedingOnly,
+    deviceTypes: deviceType === "all" ? undefined : [deviceType],
+  });
   const { prefetchAll } = usePrefetchVehicleProfile();
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -181,6 +192,10 @@ export default function OwnerVehicles() {
   const onlineCount = vehicles?.filter(v => v.status === "online").length || 0;
   const offlineCount = vehicles?.filter(v => v.status === "offline").length || 0;
   const chargingCount = vehicles?.filter(v => v.status === "charging").length || 0;
+
+  // React Query can be "not loading" while data is still undefined if a query is disabled/idle.
+  // Avoid misleading users with a "No vehicles" empty state in that scenario.
+  const showLoadingVehicles = authLoading || !isRoleLoaded || isLoading || vehicles === undefined;
 
   const handleRefresh = async () => {
     // We can't directly refetch from useOwnerVehicles here without exposing refetch from the hook
@@ -224,6 +239,67 @@ export default function OwnerVehicles() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-11 bg-card border-0 shadow-neumorphic-inset h-12 rounded-xl focus-visible:ring-accent/30 text-foreground placeholder:text-muted-foreground"
               />
+            </div>
+
+            {/* Filters */}
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant={statusFilter.has("online") ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    const next = new Set(statusFilter);
+                    if (next.has("online")) next.delete("online"); else next.add("online");
+                    setStatusFilter(next);
+                  }}
+                >
+                  Online
+                </Button>
+                <Button
+                  variant={statusFilter.has("offline") ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    const next = new Set(statusFilter);
+                    if (next.has("offline")) next.delete("offline"); else next.add("offline");
+                    setStatusFilter(next);
+                  }}
+                >
+                  Offline
+                </Button>
+                <Button
+                  variant={statusFilter.has("charging") ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    const next = new Set(statusFilter);
+                    if (next.has("charging")) next.delete("charging"); else next.add("charging");
+                    setStatusFilter(next);
+                  }}
+                >
+                  Charging
+                </Button>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant={overspeedingOnly ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setOverspeedingOnly(prev => !prev)}
+                >
+                  Overspeeding
+                </Button>
+              </div>
+              <div className="flex items-center gap-2">
+                <Select value={deviceType} onValueChange={setDeviceType}>
+                  <SelectTrigger className="w-full h-9">
+                    <SelectValue placeholder="Device type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All types</SelectItem>
+                    {Array.from(new Set((vehicles || []).map(v => (v.deviceType || "unknown").toLowerCase()))).map((t) => (
+                      <SelectItem key={t} value={t}>{t}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
         </div>
@@ -270,7 +346,7 @@ export default function OwnerVehicles() {
           </Card>
 
           {/* Vehicle List */}
-          {isLoading ? (
+          {showLoadingVehicles ? (
             <div className="space-y-3">
               {[1, 2, 3].map(i => (
                 <Skeleton key={i} className="h-20 rounded-xl" />

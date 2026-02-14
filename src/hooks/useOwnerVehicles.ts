@@ -26,19 +26,16 @@ export interface OwnerVehicle {
   personality: string | null;
 }
 
-async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
+export interface OwnerVehicleMatchOptions {
+  status?: Array<OwnerVehicle['status']>;
+  deviceTypes?: string[];
+  overspeedingOnly?: boolean;
+  ignitionOn?: boolean | null;
+  minBatteryPercent?: number;
+}
+
+async function fetchOwnerVehicles(userId: string, isAdmin: boolean): Promise<OwnerVehicle[]> {
   // console.log("[useOwnerVehicles] Starting fetch for userId:", userId);
-  
-  // Check if user is admin
-  const { data: adminRole } = await supabase
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", userId)
-    .eq("role", "admin")
-    .maybeSingle();
-  
-  const isAdmin = !!adminRole;
-  // console.log("[useOwnerVehicles] User is admin:", isAdmin);
   
   let deviceIds: string[] = [];
   let assignments: any[] = [];
@@ -87,58 +84,14 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
     // console.log("[useOwnerVehicles] Admin - found", deviceIds.length, "vehicles");
   } else {
     // Regular users - fetch only assigned vehicles
-    // First get the profile for this user
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("id, name, email")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    // console.log("[useOwnerVehicles] Profile lookup result:", { profile, profileError });
-
-    let profileId = profile?.id;
-
-    if (profileError || !profile) {
-      // Try by email
-      // console.log("[useOwnerVehicles] No profile by user_id, trying email lookup...");
-      const { data: { user } } = await supabase.auth.getUser();
-      // console.log("[useOwnerVehicles] Auth user:", user?.email);
-      
-      if (user?.email) {
-        const { data: emailProfile, error: emailError } = await supabase
-          .from("profiles")
-          .select("id, name, email")
-          .eq("email", user.email)
-          .maybeSingle();
-        
-        // console.log("[useOwnerVehicles] Email profile lookup:", { emailProfile, emailError });
-        
-        if (!emailProfile) {
-          console.warn("[useOwnerVehicles] No profile found for user");
-          return [];
-        }
-        profileId = emailProfile.id;
-      } else {
-        console.warn("[useOwnerVehicles] No email available for fallback lookup");
-        return [];
-      }
-    }
-
-    if (!profileId) {
-      console.warn("[useOwnerVehicles] No profileId available");
-      return [];
-    }
-    
-    // console.log("[useOwnerVehicles] Using profileId:", profileId);
-
-    // Fetch assignments for this profile
-    const { data: userAssignments, error } = await (supabase as any)
+    // IMPORTANT: Do not assume a single "current profile_id".
+    // We've had migrations/triggers that create profiles with id=user_id (auth.users.id),
+    // while legacy flows (e.g. GPS51 sync) may create profiles with random UUIDs but same user_id.
+    // Fetch assignments by joining profiles on user_id instead.
+    const { data: joinedAssignments, error } = await (supabase as any)
       .from("vehicle_assignments")
-      .select(`
-        device_id,
-        vehicle_alias
-      `)
-      .eq("profile_id", profileId);
+      .select("device_id, vehicle_alias, profiles!inner(user_id)")
+      .eq("profiles.user_id", userId);
 
     // console.log("[useOwnerVehicles] Assignments query:", { assignments: userAssignments, error, count: userAssignments?.length });
 
@@ -146,13 +99,13 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
       console.error("[useOwnerVehicles] Assignments error:", error);
       throw error;
     }
-    if (!userAssignments || userAssignments.length === 0) {
-      console.warn("[useOwnerVehicles] No vehicle assignments found for profile:", profileId);
+    if (!joinedAssignments || joinedAssignments.length === 0) {
+      console.warn("[useOwnerVehicles] No vehicle assignments found for user:", userId);
       return [];
     }
 
-    assignments = userAssignments;
-    deviceIds = [...new Set((userAssignments as any[]).map((a: any) => a.device_id))];
+    assignments = joinedAssignments;
+    deviceIds = [...new Set((joinedAssignments as any[]).map((a: any) => a.device_id))];
     // console.log("[useOwnerVehicles] Regular user - found", deviceIds.length, "assigned vehicles");
   }
   
@@ -260,51 +213,29 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
     // Do not use Promise.all for these large datasets
     
     // 1. Vehicles (with device_type)
-    const vehicles = await fetchAllTable("vehicles", "device_id, device_name, device_type");
+    vehicles = await fetchAllTable("vehicles", "device_id, device_name, device_type");
     
     // 2. Positions
-    const positions = await fetchAllTable(
+    positions = await fetchAllTable(
       "vehicle_positions", 
       "device_id, latitude, longitude, speed, heading, battery_percent, ignition_on, is_online, is_overspeeding, gps_time, total_mileage"
     );
 
     // 3. LLM Settings
-    const llmSettings = await fetchAllTable(
+    llmSettings = await fetchAllTable(
       "vehicle_llm_settings",
       "device_id, personality_mode, nickname, avatar_url"
     );
 
     // 4. Chat history
     // Still fetched in chunks because "latest per device" is hard to do efficiently in one query without a view
-    const chatHistory = await fetchInChunks(
+    chatHistory = await fetchInChunks(
       "vehicle_chat_history",
       "device_id, content, created_at, role",
       deviceIds,
       { column: "created_at", ascending: false },
       200 
     );
-
-    // Assign to variables (no need for destructuring since we fetched directly)
-    // vehicles, positions, etc. are already assigned above but they are const in this block
-    // We need to assign them to the outer let variables
-    
-    // To do this cleanly, I'll update the outer variables directly or use temporary variables
-    // The outer variables are let vehicles, let positions...
-    // But I declared const vehicles, const positions inside this block which shadows them.
-    // Let's fix the variable names.
-
-    const vehData = vehicles;
-    const posData = positions;
-    const settingsData = llmSettings;
-    const chatData = chatHistory;
-
-    // Now assign to outer scope
-    // (Note: The outer scope variables are shadowed, so I need to be careful with the SearchReplace)
-    // Actually, I'll just assign to the outer variables directly if I remove the 'const'
-    
-    // Let's rewrite this block to assign to outer variables directly
-
-
   } else {
     // Regular User: Fetch specific IDs in chunks
     vehicles = await fetchInChunks("vehicles", "device_id, device_name, device_type", deviceIds);
@@ -405,15 +336,46 @@ async function fetchOwnerVehicles(userId: string): Promise<OwnerVehicle[]> {
     };
   });
 
+  if (import.meta.env.DEV) {
+    console.log("[useOwnerVehicles] Final result", {
+      isAdmin,
+      assignmentCount: assignments.length,
+      vehicleRows: vehicles.length,
+      positionRows: positions.length,
+      finalCount: finalVehicles.length,
+    });
+  }
+
   return finalVehicles;
 }
 
-export function useOwnerVehicles() {
+export function useOwnerVehicles(options?: OwnerVehicleMatchOptions) {
   const { user, isAdmin } = useAuth();
 
   return useQuery({
-    queryKey: ["owner-vehicles", user?.id, isAdmin],
-    queryFn: () => fetchOwnerVehicles(user!.id),
+    queryKey: ["owner-vehicles", user?.id, isAdmin, options],
+    queryFn: async () => {
+      const base = await fetchOwnerVehicles(user!.id, isAdmin);
+      if (!options) return base;
+      return base.filter(v => {
+        if (options.status && options.status.length > 0 && !options.status.includes(v.status)) return false;
+        if (options.deviceTypes && options.deviceTypes.length > 0) {
+          const type = (v.deviceType || "").toLowerCase();
+          const matchTypes = options.deviceTypes.map(t => t.toLowerCase());
+          if (!matchTypes.includes(type)) return false;
+        }
+        if (options.overspeedingOnly && !v.isOverspeeding) return false;
+        if (options.ignitionOn !== undefined && options.ignitionOn !== null) {
+          if ((v.ignition ?? null) !== options.ignitionOn) return false;
+        }
+        if (typeof options.minBatteryPercent === 'number') {
+          const bp = v.battery ?? -1;
+          if (bp < options.minBatteryPercent) return false;
+        }
+        return true;
+      });
+    },
+    // Owners should still be able to load assigned vehicles even if role lookup fails.
     enabled: !!user,
     staleTime: 30 * 1000, // 30 seconds
     refetchInterval: 60 * 1000, // 1 minute

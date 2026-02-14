@@ -11,20 +11,29 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Wallet, TrendingUp, ArrowUpDown, Settings, Plus, Minus } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { supabase } from "@/integrations/supabase/client";
 import { Navigate } from "react-router-dom";
 
 export default function AdminWallets() {
   const { isAdmin, isLoading: authLoading } = useAuth();
-  const { wallets, loading, stats, newUserBonus, updateNewUserBonus, adjustWallet } = useAdminWallets();
+  const { wallets, loading, stats, newUserBonus, updateNewUserBonus, adjustWallet, auditLogs, refetch } = useAdminWallets();
   
   const [selectedWallet, setSelectedWallet] = useState<string | null>(null);
   const [adjustAmount, setAdjustAmount] = useState("");
   const [adjustType, setAdjustType] = useState<"credit" | "debit">("credit");
   const [adjustDescription, setAdjustDescription] = useState("");
+  const [captchaToken, setCaptchaToken] = useState("");
   const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
   
   const [bonusAmount, setBonusAmount] = useState("");
   const [bonusDialogOpen, setBonusDialogOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive" | "on_leave">("all");
+  const [sortKey, setSortKey] = useState<"balance" | "created_at" | "last_activity_at">("created_at");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
 
   if (authLoading) {
     return (
@@ -46,11 +55,12 @@ export default function AdminWallets() {
     const amount = parseFloat(adjustAmount);
     if (isNaN(amount) || amount <= 0) return;
 
-    const success = await adjustWallet(selectedWallet, amount, adjustType, adjustDescription);
+    const success = await adjustWallet(selectedWallet, amount, adjustType, adjustDescription, true, captchaToken || undefined);
     if (success) {
       setAdjustDialogOpen(false);
       setAdjustAmount("");
       setAdjustDescription("");
+      setCaptchaToken("");
       setSelectedWallet(null);
     }
   };
@@ -63,6 +73,7 @@ export default function AdminWallets() {
     if (success) {
       setBonusDialogOpen(false);
       setBonusAmount("");
+      refetch();
     }
   };
 
@@ -79,6 +90,26 @@ export default function AdminWallets() {
           <div>
             <h1 className="text-3xl font-bold">Wallet Management</h1>
             <p className="text-muted-foreground">View and manage user wallets</p>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <Input
+              placeholder="Search name or email"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-64"
+            />
+            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All statuses</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+                <SelectItem value="on_leave">On Leave</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           
           <Dialog open={bonusDialogOpen} onOpenChange={setBonusDialogOpen}>
@@ -178,6 +209,31 @@ export default function AdminWallets() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Label>Sort by</Label>
+                <Select value={sortKey} onValueChange={(v) => setSortKey(v as any)}>
+                  <SelectTrigger className="w-40">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="balance">Balance</SelectItem>
+                    <SelectItem value="created_at">Registration</SelectItem>
+                    <SelectItem value="last_activity_at">Last Activity</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={sortDir} onValueChange={(v) => setSortDir(v as any)}>
+                  <SelectTrigger className="w-28">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="asc">Asc</SelectItem>
+                    <SelectItem value="desc">Desc</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <BulkUploadTopUp onComplete={() => refetch()} />
+            </div>
             {loading ? (
               <div className="flex items-center justify-center h-32">
                 <p className="text-muted-foreground">Loading wallets...</p>
@@ -188,21 +244,45 @@ export default function AdminWallets() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>User</TableHead>
+                      <TableHead>Status</TableHead>
                       <TableHead>Balance</TableHead>
-                      <TableHead>Created</TableHead>
+                      <TableHead>Registered</TableHead>
+                      <TableHead>Last Activity</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {wallets.map((wallet) => (
+                    {wallets
+                      .filter(w => {
+                        const matchesSearch = !search || (w.email || "").toLowerCase().includes(search.toLowerCase()) || (w.name || "").toLowerCase().includes(search.toLowerCase());
+                        const matchesStatus = statusFilter === "all" || (w.status || "active") === statusFilter;
+                        return matchesSearch && matchesStatus;
+                      })
+                      .sort((a, b) => {
+                        const av = a[sortKey] || "";
+                        const bv = b[sortKey] || "";
+                        if (sortKey === "balance") {
+                          return sortDir === "asc" ? (a.balance - b.balance) : (b.balance - a.balance);
+                        }
+                        const at = new Date(String(av)).getTime();
+                        const bt = new Date(String(bv)).getTime();
+                        return sortDir === "asc" ? (at - bt) : (bt - at);
+                      })
+                      .slice((page - 1) * pageSize, page * pageSize)
+                      .map((wallet) => (
                       <TableRow key={wallet.id}>
                         <TableCell>
                           <div>
-                            <p className="font-medium">{wallet.email || "No email"}</p>
+                            <p className="font-medium">{wallet.name || wallet.email || "No name"}</p>
                             <p className="text-xs text-muted-foreground truncate max-w-[200px]">
                               {wallet.user_id}
                             </p>
                           </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={wallet.status === "inactive" ? "destructive" : "default"}>
+                            {wallet.status || "active"}
+                          </Badge>
                         </TableCell>
                         <TableCell>
                           <span className={wallet.balance < 0 ? "text-destructive" : "text-foreground"}>
@@ -211,6 +291,9 @@ export default function AdminWallets() {
                         </TableCell>
                         <TableCell>
                           {new Date(wallet.created_at).toLocaleDateString()}
+                        </TableCell>
+                        <TableCell>
+                          {wallet.last_activity_at ? new Date(wallet.last_activity_at).toLocaleString() : "—"}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
@@ -248,6 +331,66 @@ export default function AdminWallets() {
                 <ScrollBar orientation="horizontal" />
               </ScrollArea>
             )}
+            <div className="flex justify-end items-center gap-2 mt-3">
+              <Button variant="outline" disabled={page === 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Prev</Button>
+              <span className="text-sm text-muted-foreground">Page {page}</span>
+              <Button variant="outline" onClick={() => setPage((p) => p + 1)}>Next</Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Settings className="h-5 w-5" />
+              Billing Config Audit
+            </CardTitle>
+            <CardDescription>
+              Recent changes to billing settings
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ScrollArea className="w-full whitespace-nowrap rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Key</TableHead>
+                    <TableHead>Old</TableHead>
+                    <TableHead>New</TableHead>
+                    <TableHead>Updated By</TableHead>
+                    <TableHead>Reason</TableHead>
+                    <TableHead>Date</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {auditLogs.map((log) => (
+                    <TableRow key={log.id}>
+                      <TableCell>{log.key}</TableCell>
+                      <TableCell>{log.old_value !== null ? `₦${log.old_value.toLocaleString()}` : "—"}</TableCell>
+                      <TableCell>{log.new_value !== null ? `₦${log.new_value.toLocaleString()}` : "—"}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span className="text-sm">{log.updated_by_email || "—"}</span>
+                          <span className="text-xs text-muted-foreground">{log.updated_by || "—"}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="max-w-[260px]">
+                        <span className="line-clamp-2">{log.reason || "—"}</span>
+                      </TableCell>
+                      <TableCell>{new Date(log.created_at).toLocaleString()}</TableCell>
+                    </TableRow>
+                  ))}
+                  {auditLogs.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-muted-foreground">
+                        No audit entries
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+              <ScrollBar orientation="horizontal" />
+            </ScrollArea>
           </CardContent>
         </Card>
 
@@ -289,6 +432,16 @@ export default function AdminWallets() {
                   </p>
                 </div>
               )}
+              {adjustType === "credit" && (
+                <div className="space-y-2">
+                  <Label>CAPTCHA token (only for high-value credits)</Label>
+                  <Input
+                    placeholder="Paste CAPTCHA token if required"
+                    value={captchaToken}
+                    onChange={(e) => setCaptchaToken(e.target.value)}
+                  />
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setAdjustDialogOpen(false)}>
@@ -305,5 +458,52 @@ export default function AdminWallets() {
         </Dialog>
       </div>
     </DashboardLayout>
+  );
+}
+
+function BulkUploadTopUp({ onComplete }: { onComplete: () => void }) {
+  const [loading, setLoading] = useState(false);
+  const [fileName, setFileName] = useState<string>("");
+  const { adjustWallet } = useAdminWallets();
+  const handleFile = async (file: File) => {
+    setLoading(true);
+    setFileName(file.name);
+    const text = await file.text();
+    const rows = text.split(/\r?\n/).map(r => r.trim()).filter(Boolean);
+    for (const row of rows) {
+      const [email, amountStr, reason] = row.split(",").map(s => s?.trim());
+      const amount = parseFloat(amountStr || "0");
+      if (!email || !amount || amount <= 0) continue;
+      const { data: profile } = await (supabase as any)
+        .from("profiles")
+        .select("user_id")
+        .eq("email", email)
+        .maybeSingle();
+      if (!profile?.user_id) continue;
+      const { data: wallet } = await (supabase as any)
+        .from("wallets")
+        .select("id")
+        .eq("user_id", profile.user_id)
+        .maybeSingle();
+      if (wallet?.id) {
+        await adjustWallet(wallet.id, amount, "credit", reason || "Bulk upload");
+      }
+    }
+    setLoading(false);
+    onComplete();
+  };
+  return (
+    <div className="flex items-center gap-2">
+      <Label className="text-sm">Bulk upload</Label>
+      <input
+        type="file"
+        accept=".csv"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) handleFile(f);
+        }}
+      />
+      {loading && <span className="text-sm text-muted-foreground">Processing {fileName}...</span>}
+    </div>
   );
 }

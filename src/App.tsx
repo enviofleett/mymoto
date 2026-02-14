@@ -31,6 +31,10 @@ import NotFound from "./pages/NotFound";
 import InstallApp from "./pages/InstallApp";
 import PwaLogin from "./pages/PwaLogin";
 
+// Partner pages
+import PartnerSignup from "./pages/partner/PartnerSignup";
+import PartnerDashboard from "./pages/partner/PartnerDashboard";
+
 // Owner PWA pages
 import OwnerChat from "./pages/owner/OwnerChat";
 import OwnerChatDetail from "./pages/owner/OwnerChatDetail";
@@ -70,9 +74,11 @@ const RoleBasedRedirect = () => {
   useEffect(() => {
     if (!isLoading && isRoleLoaded && user) {
       if (isAdmin) {
-        navigate('/fleet', { replace: true });
+        navigate('/admin/dashboard', { replace: true });
+      } else if (isProvider) {
+        navigate('/partner/dashboard', { replace: true });
       } else {
-        navigate('/owner', { replace: true });
+        navigate('/owner/vehicles', { replace: true });
       }
     }
   }, [user, isAdmin, isProvider, isLoading, isRoleLoaded, navigate]);
@@ -117,26 +123,31 @@ const App = () => {
               <Route path="/redirect" element={<RoleBasedRedirect />} />
               
               {/* Admin Dashboard Routes */}
-              <Route path="/" element={<ProtectedRoute requireAdmin><Index /></ProtectedRoute>} />
-              <Route path="/fleet" element={<ProtectedRoute requireAdmin><Fleet /></ProtectedRoute>} />
+              <Route path="/admin/dashboard" element={<ProtectedRoute requireAdmin><Index /></ProtectedRoute>} />
+              <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+              <Route path="/fleet" element={<ProtectedRoute><Fleet /></ProtectedRoute>} />
               <Route path="/map" element={<Navigate to="/fleet" replace />} />
-              <Route path="/insights" element={<ProtectedRoute requireAdmin><Insights /></ProtectedRoute>} />
-              <Route path="/settings" element={<ProtectedRoute requireAdmin><Profile /></ProtectedRoute>} />
+              <Route path="/insights" element={<ProtectedRoute><Insights /></ProtectedRoute>} />
+              <Route path="/settings" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
               <Route path="/profile" element={<Navigate to="/settings" replace />} />
-              <Route path="/notifications" element={<ProtectedRoute requireAdmin><NotificationSettings /></ProtectedRoute>} />
+              <Route path="/notifications" element={<ProtectedRoute><NotificationSettings /></ProtectedRoute>} />
               
               {/* Admin Routes */}
-              <Route path="/admin/wallets" element={<ProtectedRoute requireAdmin><AdminWallets /></ProtectedRoute>} />
-              <Route path="/admin/storage" element={<ProtectedRoute requireAdmin><AdminStorage /></ProtectedRoute>} />
-              <Route path="/admin/alerts" element={<ProtectedRoute requireAdmin><AdminAlerts /></ProtectedRoute>} />
-              <Route path="/admin/ai-settings" element={<ProtectedRoute requireAdmin><AdminAiSettings /></ProtectedRoute>} />
-              <Route path="/admin/assignments" element={<ProtectedRoute requireAdmin><AdminAssignments /></ProtectedRoute>} />
-              <Route path="/admin/privacy-settings" element={<ProtectedRoute requireAdmin><AdminPrivacySettings /></ProtectedRoute>} />
-              <Route path="/admin/email-templates" element={<ProtectedRoute requireAdmin><AdminEmailTemplates /></ProtectedRoute>} />
-              <Route path="/admin/report-templates" element={<ProtectedRoute requireAdmin><AdminReportTemplates /></ProtectedRoute>} />
-              <Route path="/admin/resources" element={<ProtectedRoute requireAdmin><AdminResources /></ProtectedRoute>} />
+              <Route path="/admin/wallets" element={<ProtectedRoute><AdminWallets /></ProtectedRoute>} />
+              <Route path="/admin/storage" element={<ProtectedRoute><AdminStorage /></ProtectedRoute>} />
+              <Route path="/admin/alerts" element={<ProtectedRoute><AdminAlerts /></ProtectedRoute>} />
+              <Route path="/admin/ai-settings" element={<ProtectedRoute><AdminAiSettings /></ProtectedRoute>} />
+              <Route path="/admin/assignments" element={<ProtectedRoute><AdminAssignments /></ProtectedRoute>} />
+              <Route path="/admin/privacy-settings" element={<ProtectedRoute><AdminPrivacySettings /></ProtectedRoute>} />
+              <Route path="/admin/email-templates" element={<ProtectedRoute><AdminEmailTemplates /></ProtectedRoute>} />
+              <Route path="/admin/report-templates" element={<ProtectedRoute><AdminReportTemplates /></ProtectedRoute>} />
+              <Route path="/admin/resources" element={<ProtectedRoute><AdminResources /></ProtectedRoute>} />
               <Route path="/admin/directory" element={<ProtectedRoute requireAdmin><AdminDirectory /></ProtectedRoute>} />
               <Route path="/admin/vehicle-requests" element={<ProtectedRoute requireAdmin><AdminVehicleRequests /></ProtectedRoute>} />
+              
+              {/* Partner Routes */}
+              <Route path="/partner/signup" element={<PartnerSignup />} />
+              <Route path="/partner/dashboard" element={<ProtectedRoute requireProvider><PartnerDashboard /></ProtectedRoute>} />
               
               {/* Owner PWA Routes */}
               <Route path="/owner" element={<ProtectedRoute><OwnerChat /></ProtectedRoute>} />

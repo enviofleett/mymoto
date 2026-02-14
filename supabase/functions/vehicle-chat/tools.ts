@@ -118,6 +118,11 @@ const get_trip_history: ToolDefinition = {
       total_duration_hours: validatedTrips.reduce((sum: number, t: any) => sum + (t.duration_seconds || 0), 0) / 3600
     }
 
+    const formatCoords = (lat?: number | null, lon?: number | null) => {
+      if (lat == null || lon == null) return null
+      return `${lat.toFixed(5)}, ${lon.toFixed(5)}`
+    }
+
     // Reverse geocode trips that have coordinates but no addresses
     // Limit to first 10 trips to avoid excessive API calls
     const tripsWithAddresses = await Promise.all(
@@ -146,13 +151,14 @@ const get_trip_history: ToolDefinition = {
         return {
           start: t.start_time,
           end: t.end_time,
-          from: fromAddr || 'Unknown location',
-          to: toAddr || 'Unknown location',
+          from: fromAddr || formatCoords(t.start_latitude, t.start_longitude) || 'Unknown location',
+          to: toAddr || formatCoords(t.end_latitude, t.end_longitude) || 'Unknown location',
           distance_km: t.distance_km,
           duration_min: Math.round((t.duration_seconds || 0) / 60),
           max_speed_kmh: t.max_speed ? Math.round(t.max_speed) : null,
           avg_speed_kmh: t.avg_speed ? Math.round(t.avg_speed) : null,
-          quality: t.dataQuality
+          quality: t.dataQuality,
+          warnings: t.validationIssues
         }
       })
     )
@@ -161,13 +167,14 @@ const get_trip_history: ToolDefinition = {
     const remainingTrips = validatedTrips.slice(10).map((t: any) => ({
       start: t.start_time,
       end: t.end_time,
-      from: t.start_address || t.start_location_name || 'Unknown location',
-      to: t.end_address || t.end_location_name || 'Unknown location',
+      from: t.start_address || t.start_location_name || formatCoords(t.start_latitude, t.start_longitude) || 'Unknown location',
+      to: t.end_address || t.end_location_name || formatCoords(t.end_latitude, t.end_longitude) || 'Unknown location',
       distance_km: t.distance_km,
       duration_min: Math.round((t.duration_seconds || 0) / 60),
       max_speed_kmh: t.max_speed ? Math.round(t.max_speed) : null,
       avg_speed_kmh: t.avg_speed ? Math.round(t.avg_speed) : null,
-      quality: t.dataQuality
+      quality: t.dataQuality,
+      warnings: t.validationIssues
     }))
 
     return {

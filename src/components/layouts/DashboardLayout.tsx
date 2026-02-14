@@ -106,7 +106,9 @@ export function DashboardLayout({ children, connectionStatus }: DashboardLayoutP
 
       {/* Bottom Navigation - Shows on all screen sizes */}
       {shouldShowAdminNav ? (
-        <AdminBottomNav />
+        <>
+          <AdminBottomNav />
+        </>
       ) : (
         <BottomNavigation />
       )}

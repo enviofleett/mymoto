@@ -29,13 +29,19 @@ export function validateTripContinuity(trips: VehicleTrip[]): ContinuityIssue[] 
 
     // Only validate if we have coordinates for both ends of the gap
     // Use loose check for 0/null as coordinates could be 0 (rare but possible, mostly 0 means invalid in this system)
-    const hasPrevEnd = prevTrip.end_latitude && prevTrip.end_longitude && prevTrip.end_latitude !== 0;
-    const hasCurrStart = currentTrip.start_latitude && currentTrip.start_longitude && currentTrip.start_latitude !== 0;
+    const hasPrevEnd =
+      prevTrip.end_latitude != null &&
+      prevTrip.end_longitude != null &&
+      prevTrip.end_latitude !== 0;
+    const hasCurrStart =
+      currentTrip.start_latitude != null &&
+      currentTrip.start_longitude != null &&
+      currentTrip.start_latitude !== 0;
 
     if (hasPrevEnd && hasCurrStart) {
         const dist = calculateDistance(
-            prevTrip.end_latitude, prevTrip.end_longitude,
-            currentTrip.start_latitude, currentTrip.start_longitude
+            prevTrip.end_latitude as number, prevTrip.end_longitude as number,
+            currentTrip.start_latitude as number, currentTrip.start_longitude as number
         );
 
         // Gap Thresholds

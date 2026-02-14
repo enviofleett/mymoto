@@ -29,32 +29,10 @@ serve(async (req) => {
   const supabase = createClient(supabaseUrl, supabaseKey);
 
   try {
-    // Parse request body to check for specific device and time range
-    let specificDeviceId: string | null = null;
-    let specificBegintime: string | null = null;
-    let specificEndtime: string | null = null;
-
-    try {
-      const body = await req.json();
-      specificDeviceId = body.deviceid || body.device_id;
-      specificBegintime = body.begintime;
-      specificEndtime = body.endtime;
-    } catch {
-      // Body might be empty if triggered by cron
-    }
-
-    // 1. Get vehicles (all or specific)
-    let query = supabase.from('vehicles').select('device_id');
-    
-    if (specificDeviceId) {
-      console.log(`[sync-trips-incremental] Syncing specific device: ${specificDeviceId}`);
-      query = query.eq('device_id', specificDeviceId);
-    } else {
-      console.log(`[sync-trips-incremental] Running incremental sync for batch`);
-    }
-
-    // Execute query
-    const { data: vehicles, error: vError } = await query;
+    // 1. Get all vehicles
+    const { data: vehicles, error: vError } = await supabase
+      .from('vehicles')
+      .select('device_id');
 
     if (vError) throw new Error(`Error fetching vehicles: ${vError.message}`);
     if (!vehicles || vehicles.length === 0) {
@@ -107,8 +85,7 @@ serve(async (req) => {
           },
           body: JSON.stringify({
             deviceid: item.device_id,
-            begintime: specificBegintime,
-            endtime: specificEndtime,
+            // Default time range is handled by the function (last 7 days)
           }),
         });
 

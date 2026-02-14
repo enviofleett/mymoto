@@ -12,13 +12,13 @@ interface Trip {
   id: string;
   start_time: string;
   end_time: string | null;
-  start_latitude: number;
-  start_longitude: number;
+  start_latitude: number | null;
+  start_longitude: number | null;
   end_latitude: number | null;
   end_longitude: number | null;
-  distance_km: number;
-  avg_speed_kmh: number;
-  max_speed_kmh: number;
+  distance_km: number | null;
+  avg_speed_kmh: number | null;
+  max_speed_kmh: number | null;
   duration_minutes: number | null;
 }
 
@@ -52,9 +52,9 @@ export function VehicleTrips({ deviceId }: VehicleTripsProps) {
       start_longitude: trip.start_longitude,
       end_latitude: trip.end_latitude,
       end_longitude: trip.end_longitude,
-      distance_km: trip.distance_km,
-      avg_speed_kmh: Math.round(trip.avg_speed || 0),
-      max_speed_kmh: Math.round(trip.max_speed || 0),
+      distance_km: trip.distance_km ?? null,
+      avg_speed_kmh: trip.avg_speed == null ? null : Math.round(trip.avg_speed),
+      max_speed_kmh: trip.max_speed == null ? null : Math.round(trip.max_speed),
       duration_minutes: trip.duration_seconds ? Math.round(trip.duration_seconds / 60) : null
     }));
   }, [rawTrips]);
@@ -196,7 +196,7 @@ export function VehicleTrips({ deviceId }: VehicleTripsProps) {
                     <div className="space-y-1">
                       <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Distance</p>
                       <p className="text-sm font-semibold text-primary">
-                        {trip.distance_km > 0 ? trip.distance_km.toFixed(1) : '0.0'} km
+                        {trip.distance_km == null ? "--" : (trip.distance_km > 0 ? trip.distance_km.toFixed(1) : "0.0")} km
                       </p>
                     </div>
                     <div className="space-y-1">
@@ -208,16 +208,16 @@ export function VehicleTrips({ deviceId }: VehicleTripsProps) {
                     <div className="space-y-1">
                       <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Avg Speed</p>
                       <p className="text-sm font-semibold">
-                        {trip.avg_speed_kmh} km/h
+                        {trip.avg_speed_kmh == null ? "--" : trip.avg_speed_kmh} km/h
                       </p>
                     </div>
                     <div className="space-y-1">
                       <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Max Speed</p>
                       <p className={`text-sm font-semibold ${
-                        trip.max_speed_kmh > 120 ? 'text-destructive' : 
-                        trip.max_speed_kmh >= 80 ? 'text-orange-500' : 'text-green-500'
+                        (trip.max_speed_kmh ?? 0) > 120 ? 'text-destructive' : 
+                        (trip.max_speed_kmh ?? 0) >= 80 ? 'text-orange-500' : 'text-green-500'
                       }`}>
-                        {trip.max_speed_kmh} km/h
+                        {trip.max_speed_kmh == null ? "--" : trip.max_speed_kmh} km/h
                       </p>
                     </div>
                   </div>
@@ -246,13 +246,16 @@ function TripAddresses({
   endLat, 
   endLon 
 }: { 
-  startLat: number; 
-  startLon: number; 
+  startLat: number | null; 
+  startLon: number | null; 
   endLat: number | null; 
   endLon: number | null; 
 }) {
-  const { address: startAddress, isLoading: startLoading } = useAddress(startLat, startLon);
-  const { address: endAddress, isLoading: endLoading } = useAddress(endLat, endLon);
+  const hasStart = startLat != null && startLon != null && startLat !== 0 && startLon !== 0;
+  const hasEnd = endLat != null && endLon != null && endLat !== 0 && endLon !== 0;
+
+  const { address: startAddress, isLoading: startLoading } = useAddress(hasStart ? startLat : null, hasStart ? startLon : null);
+  const { address: endAddress, isLoading: endLoading } = useAddress(hasEnd ? endLat : null, hasEnd ? endLon : null);
 
   return (
     <div className="mt-3 pt-3 border-t border-border space-y-2">
@@ -264,12 +267,12 @@ function TripAddresses({
             <Skeleton className="h-3 w-full" />
           ) : (
             <p className="text-xs text-foreground line-clamp-2">
-              {startAddress || `${startLat.toFixed(5)}, ${startLon.toFixed(5)}`}
+              {hasStart ? (startAddress || `${startLat!.toFixed(5)}, ${startLon!.toFixed(5)}`) : "Location unavailable"}
             </p>
           )}
         </div>
       </div>
-      {endLat && endLon && (
+      {hasEnd && (
         <div className="flex items-start gap-2">
           <MapPin className="h-3 w-3 text-red-500 mt-0.5 shrink-0" />
           <div className="flex-1 min-w-0">
@@ -278,7 +281,7 @@ function TripAddresses({
               <Skeleton className="h-3 w-full" />
             ) : (
               <p className="text-xs text-foreground line-clamp-2">
-                {endAddress || `${endLat.toFixed(5)}, ${endLon.toFixed(5)}`}
+                {endAddress || `${endLat!.toFixed(5)}, ${endLon!.toFixed(5)}`}
               </p>
             )}
           </div>

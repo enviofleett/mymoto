@@ -259,6 +259,15 @@ export function useRealtimeFleetUpdates(deviceIds: string[]) {
   useEffect(() => {
     if (!deviceIds.length) return;
 
+    let invalidateTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleInvalidate = () => {
+      if (invalidateTimer) return;
+      invalidateTimer = setTimeout(() => {
+        invalidateTimer = null;
+        queryClient.invalidateQueries({ queryKey: ['fleet-data'] });
+      }, 1000);
+    };
+
     const channel = supabase
       .channel('fleet-realtime-updates')
       // Position updates for all fleet vehicles
@@ -272,7 +281,7 @@ export function useRealtimeFleetUpdates(deviceIds: string[]) {
         (payload) => {
           const newData = payload.new as { device_id: string };
           if (deviceIds.includes(newData.device_id)) {
-            queryClient.invalidateQueries({ queryKey: ['fleet-data'] });
+            scheduleInvalidate();
           }
         }
       )
@@ -293,13 +302,12 @@ export function useRealtimeFleetUpdates(deviceIds: string[]) {
           };
           
           if (deviceIds.includes(event.device_id)) {
-            // Show toast for fleet vehicle alerts
             if (event.severity === 'critical') {
               toast.error(event.title, { description: event.message });
             } else if (event.severity === 'warning') {
               toast.warning(event.title, { description: event.message });
             }
-            
+            scheduleInvalidate();
             queryClient.invalidateQueries({ queryKey: ['vehicle-events'] });
           }
         }
@@ -308,6 +316,10 @@ export function useRealtimeFleetUpdates(deviceIds: string[]) {
 
     return () => {
       supabase.removeChannel(channel);
+      if (invalidateTimer) {
+        clearTimeout(invalidateTimer);
+        invalidateTimer = null;
+      }
     };
   }, [deviceIds, queryClient]);
 }

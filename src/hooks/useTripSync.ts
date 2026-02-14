@@ -70,7 +70,7 @@ async function triggerTripSync(deviceId: string, forceFullSync: boolean = false,
     begin = new Date(now.getTime() - DEFAULT_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
   }
 
-  const { data, error } = await supabase.functions.invoke("sync-trips-incremental", {
+  const { data, error } = await supabase.functions.invoke("sync-gps51-trips", {
     body: {
       deviceid: deviceId,
       begintime: begin.toISOString(),
@@ -149,19 +149,9 @@ export function useTriggerTripSync() {
     onSuccess: (data, variables) => {
       const { deviceId } = variables;
 
-      // Handle both direct sync and incremental sync response formats
-      let resultData = data;
-      if (data?.results && Array.isArray(data.results)) {
-        // Find the result for this device in batch response
-        const deviceResult = data.results.find((r: any) => r.device_id === deviceId);
-        if (deviceResult?.result) {
-          resultData = deviceResult.result;
-        }
-      }
-
-      const inserted = resultData?.trips_inserted || 0;
-      const updated = resultData?.trips_updated || 0;
-      const received = resultData?.records_received || 0;
+      const inserted = data?.trips_inserted || 0;
+      const updated = data?.trips_updated || 0;
+      const received = data?.records_received || 0;
       const total = inserted + updated;
 
       toast.success(`Synced ${total} trip${total === 1 ? "" : "s"}`, {

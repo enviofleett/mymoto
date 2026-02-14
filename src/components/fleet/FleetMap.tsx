@@ -54,6 +54,21 @@ export function FleetMap({ vehicles, loading }: FleetMapProps) {
     (v) => v.lat !== null && v.lon !== null && v.lat !== 0 && v.lon !== 0
   );
 
+  if (vehiclesWithLocation.length === 0) {
+    return (
+      <div className="rounded-lg border border-border bg-card overflow-hidden h-[400px] flex items-center justify-center">
+        <div className="text-center p-4">
+          <h3 className="font-semibold mb-1">No Active Vehicles</h3>
+          <p className="text-sm text-gray-500">
+            {vehicles.length > 0 
+              ? `${vehicles.length} vehicles found, but none have valid GPS coordinates.` 
+              : "No vehicles assigned to your account."}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   // Calculate center: use first vehicle with location, or default to [0, 0]
   const center: [number, number] =
     vehiclesWithLocation.length > 0

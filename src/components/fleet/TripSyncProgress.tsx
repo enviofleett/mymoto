@@ -6,9 +6,10 @@ import { useMemo } from "react";
 interface TripSyncProgressProps {
   deviceId: string;
   isSyncing?: boolean; // Pass isSyncing state from parent
+  onRetry?: () => void;
 }
 
-export function TripSyncProgress({ deviceId, isSyncing = false }: TripSyncProgressProps) {
+export function TripSyncProgress({ deviceId, isSyncing = false, onRetry }: TripSyncProgressProps) {
   const { data: syncStatus, isLoading } = useTripSyncStatus(deviceId, true);
 
   // Debug logging (development only) - removed object logging to avoid SQL parsing issues
@@ -20,6 +21,7 @@ export function TripSyncProgress({ deviceId, isSyncing = false }: TripSyncProgre
   const tripsSynced = syncStatus?.trips_synced_count ?? 0;
   const lastTripSynced = syncStatus?.last_trip_synced ?? null;
   const syncError = syncStatus?.trip_sync_error ?? null;
+  const lastSyncAt = syncStatus?.last_trip_sync_at ?? null;
 
   const lastTripLabel = useMemo(() => {
     if (!lastTripSynced) return null;
@@ -27,16 +29,58 @@ export function TripSyncProgress({ deviceId, isSyncing = false }: TripSyncProgre
     return isNaN(date.getTime()) ? null : date.toLocaleString();
   }, [lastTripSynced]);
 
+  const lastSyncAtLabel = useMemo(() => {
+    if (!lastSyncAt) return null;
+    const date = new Date(lastSyncAt);
+    return isNaN(date.getTime()) ? null : date.toLocaleString();
+  }, [lastSyncAt]);
+
   // Show progress if:
   // 1. Status is "processing" OR
   // 2. isSyncing is true (optimistic state) OR
   // 3. We're loading and isSyncing is true (initial sync start)
   const isProcessing = syncStatus?.sync_status === 'syncing' || isSyncing;
   
-  // Don't show anything if not processing
-  if (!isProcessing && !isSyncing) {
-    return null;
+  // If the last sync failed, show a persistent error card so users aren't left guessing.
+  if (!isProcessing && syncStatus?.sync_status === 'error') {
+    return (
+      <Card className="border-destructive/20 bg-destructive/5 mb-4">
+        <CardContent className="p-4">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="h-5 w-5 text-destructive mt-0.5 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <div className="flex items-center gap-2">
+                  <Route className="h-4 w-4 text-destructive" />
+                  <span className="text-sm font-medium text-foreground">Trip Sync Failed</span>
+                </div>
+                {onRetry && (
+                  <button
+                    type="button"
+                    onClick={onRetry}
+                    className="text-xs font-medium text-destructive underline underline-offset-4"
+                  >
+                    Retry
+                  </button>
+                )}
+              </div>
+              {syncError ? (
+                <p className="text-xs text-destructive">{syncError}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">Trip sync failed. Please retry.</p>
+              )}
+              {lastSyncAtLabel && (
+                <p className="mt-1 text-[11px] text-muted-foreground">Last attempt: {lastSyncAtLabel}</p>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
   }
+
+  // Don't show anything if not processing and not in an error state.
+  if (!isProcessing && !isSyncing) return null;
 
   // If we're syncing but don't have status yet, show initial state
   if (isSyncing && (!syncStatus || syncStatus.sync_status !== 'syncing')) {

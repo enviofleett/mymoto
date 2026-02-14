@@ -7,7 +7,13 @@ export async function loadMapbox() {
   }
   if (!cssLoaded) {
     cssLoaded = true;
-    await import("mapbox-gl/dist/mapbox-gl.css");
+    // Don't block map initialization on CSS; start loading it in parallel.
+    void import("mapbox-gl/dist/mapbox-gl.css");
   }
   return mapboxPromise;
+}
+
+// Optional: warm the chunk early (e.g., on route mount) to reduce perceived delay.
+export function preloadMapbox() {
+  void loadMapbox();
 }

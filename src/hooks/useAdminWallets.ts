@@ -8,7 +8,10 @@ interface UserWallet {
   balance: number;
   currency: string;
   email: string | null;
+  name: string | null;
+  status: string | null;
   created_at: string;
+  last_activity_at: string | null;
 }
 
 interface RevenueStats {
@@ -16,6 +19,17 @@ interface RevenueStats {
   totalCredits: number;
   totalDebits: number;
   transactionCount: number;
+}
+
+interface AuditEntry {
+  id: string;
+  key: string;
+  old_value: number | null;
+  new_value: number | null;
+  updated_by: string | null;
+  reason: string | null;
+  created_at: string;
+  updated_by_email?: string | null;
 }
 
 export function useAdminWallets() {
@@ -29,11 +43,13 @@ export function useAdminWallets() {
     transactionCount: 0,
   });
   const [newUserBonus, setNewUserBonus] = useState(0);
+  const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([]);
 
   useEffect(() => {
     fetchWallets();
     fetchStats();
     fetchNewUserBonus();
+    fetchAuditLogs();
   }, []);
 
   const fetchWallets = async () => {
@@ -56,18 +72,35 @@ export function useAdminWallets() {
     
     const { data: profilesData } = await (supabase as any)
       .from("profiles")
-      .select("user_id, email")
+      .select("user_id, email, name, status, created_at")
       .in("user_id", userIds);
 
-    const profileMap = new Map((profilesData as any[])?.map((p: any) => [p.user_id, p.email]) || []);
+    const profileMap = new Map((profilesData as any[])?.map((p: any) => [p.user_id, p]) || []);
+
+    // Fetch last activity timestamps from wallet transactions
+    const { data: txAgg } = await (supabase as any)
+      .from("wallet_transactions")
+      .select("wallet_id, created_at")
+      .in("wallet_id", ((walletsData as any[]) || []).map((w: any) => w.id))
+      .order("created_at", { ascending: false });
+    const lastActivityMap = new Map<string, string>();
+    ((txAgg as any[]) || []).forEach((t: any) => {
+      const wid = t.wallet_id as string;
+      if (!lastActivityMap.has(wid)) {
+        lastActivityMap.set(wid, t.created_at as string);
+      }
+    });
 
     const enrichedWallets: UserWallet[] = ((walletsData as any[]) || []).map((w: any) => ({
       id: w.id,
       user_id: w.user_id,
       balance: parseFloat(String(w.balance)) || 0,
       currency: w.currency || "NGN",
-      email: profileMap.get(w.user_id) || null,
-      created_at: w.created_at,
+      email: (profileMap.get(w.user_id)?.email as string) || null,
+      name: (profileMap.get(w.user_id)?.name as string) || null,
+      status: (profileMap.get(w.user_id)?.status as string) || null,
+      created_at: (profileMap.get(w.user_id)?.created_at as string) || w.created_at,
+      last_activity_at: lastActivityMap.get(w.id) || null,
     }));
 
     setWallets(enrichedWallets);
@@ -106,6 +139,38 @@ export function useAdminWallets() {
     if (data) {
       setNewUserBonus(parseFloat(String((data as any).value)) || 0);
     }
+  };
+
+  const fetchAuditLogs = async () => {
+    const { data, error } = await (supabase as any)
+      .from("billing_config_audit")
+      .select("id, key, old_value, new_value, updated_by, reason, created_at")
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) {
+      console.error("Error fetching audit logs:", error);
+      return;
+    }
+    const adminIds = ((data as any[]) || []).map((r: any) => r.updated_by).filter(Boolean);
+    let adminEmailMap = new Map<string, string>();
+    if (adminIds.length > 0) {
+      const { data: profiles } = await (supabase as any)
+        .from("profiles")
+        .select("user_id, email")
+        .in("user_id", adminIds);
+      adminEmailMap = new Map(((profiles as any[]) || []).map((p: any) => [p.user_id, p.email]));
+    }
+    const logs: AuditEntry[] = ((data as any[]) || []).map((r: any) => ({
+      id: r.id,
+      key: r.key,
+      old_value: r.old_value !== null ? parseFloat(String(r.old_value)) : null,
+      new_value: r.new_value !== null ? parseFloat(String(r.new_value)) : null,
+      updated_by: r.updated_by || null,
+      reason: r.reason || null,
+      created_at: r.created_at,
+      updated_by_email: r.updated_by ? adminEmailMap.get(r.updated_by) || null : null,
+    }));
+    setAuditLogs(logs);
   };
 
   const updateNewUserBonus = async (amount: number) => {
@@ -199,7 +264,7 @@ export function useAdminWallets() {
     }
   };
 
-  const adjustWallet = async (walletId: string, amount: number, type: "credit" | "debit", description: string, sendEmail: boolean = true) => {
+  const adjustWallet = async (walletId: string, amount: number, type: "credit" | "debit", description: string, sendEmail: boolean = true, captchaToken?: string) => {
     // For credits, use the Edge Function to send email notifications
     if (type === "credit") {
       try {
@@ -219,6 +284,7 @@ export function useAdminWallets() {
             amount,
             description: description || "Admin top-up",
             send_email: sendEmail,
+            captcha_token: captchaToken,
           },
           headers: {
             Authorization: `Bearer ${session.access_token}`,
@@ -326,9 +392,11 @@ export function useAdminWallets() {
     newUserBonus,
     updateNewUserBonus,
     adjustWallet,
+    auditLogs,
     refetch: () => {
       fetchWallets();
       fetchStats();
+      fetchAuditLogs();
     },
   };
 }

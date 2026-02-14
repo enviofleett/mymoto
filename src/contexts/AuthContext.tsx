@@ -36,6 +36,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isRoleLoaded, setIsRoleLoaded] = useState(false);
 
+  type RefreshRolesOptions = {
+    blocking?: boolean;
+  };
+
   const checkAdminRole = async (userId: string) => {
     const { data, error } = await supabase
       .from('user_roles')
@@ -71,15 +75,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return roles.some((r) => r.role === 'service_provider' || r.role === 'provider');
   };
 
-  const refreshRoles = async (userId: string) => {
-    setIsRoleLoaded(false);
-    const [isAdminResult, isProviderResult] = await Promise.all([
-      checkAdminRole(userId),
-      checkProviderRole(userId),
-    ]);
-    setIsAdmin(isAdminResult);
-    setIsProvider(isProviderResult);
-    setIsRoleLoaded(true);
+  const refreshRoles = async (userId: string, options?: RefreshRolesOptions) => {
+    const blocking = options?.blocking !== false;
+
+    // Only initial/foreground role loads should be blocking. Background refreshes
+    // should never flip isRoleLoaded=false, because it can disable queries/UI.
+    if (blocking) setIsRoleLoaded(false);
+
+    try {
+      const [isAdminResult, isProviderResult] = await Promise.all([
+        checkAdminRole(userId),
+        checkProviderRole(userId),
+      ]);
+      setIsAdmin(isAdminResult);
+      setIsProvider(isProviderResult);
+      if (import.meta.env.DEV) {
+        console.log('[Auth] Roles refreshed', { userId, isAdmin: isAdminResult, isProvider: isProviderResult });
+      }
+    } catch (e) {
+      // Fail closed on roles (never grant privileges on error), but don't brick the app.
+      setIsAdmin(false);
+      setIsProvider(false);
+      if (import.meta.env.DEV) {
+        console.warn('[Auth] Failed to refresh roles; defaulting roles to false', { userId, error: e });
+      }
+    } finally {
+      setIsRoleLoaded(true);
+    }
   };
 
 
@@ -87,13 +109,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
+        if (import.meta.env.DEV) {
+          console.log('[Auth] onAuthStateChange', { event, userId: session?.user?.id ?? null });
+        }
         setSession(session);
         setUser(session?.user ?? null);
         
         // Defer role checks with setTimeout to prevent deadlock
         if (session?.user) {
           setTimeout(() => {
-            refreshRoles(session.user.id);
+            void refreshRoles(session.user.id, { blocking: true }).catch((e) => {
+              // refreshRoles is exception-safe; this is just to avoid unhandled rejections.
+              if (import.meta.env.DEV) console.warn('[Auth] refreshRoles rejected', e);
+            });
           }, 0);
         } else {
           setIsAdmin(false);
@@ -106,13 +134,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // THEN check for existing session
     supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (import.meta.env.DEV) {
+        console.log('[Auth] Initial session check', {
+          hasSession: !!session,
+          userId: session?.user?.id ?? null,
+          error: error?.message ?? null,
+        });
+      }
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        refreshRoles(session.user.id);
+        void refreshRoles(session.user.id, { blocking: true }).catch((e) => {
+          if (import.meta.env.DEV) console.warn('[Auth] refreshRoles rejected', e);
+        });
       } else {
         setIsRoleLoaded(true);
       }
+      setIsLoading(false);
+    }).catch((e) => {
+      // If session check fails, don't keep the app in an "auth loading" state forever.
+      if (import.meta.env.DEV) console.warn('[Auth] Initial session check failed', e);
+      setSession(null);
+      setUser(null);
+      setIsAdmin(false);
+      setIsProvider(false);
+      setIsRoleLoaded(true);
       setIsLoading(false);
     });
 
@@ -122,7 +168,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     if (!session?.user) return;
     const intervalId = setInterval(() => {
-      refreshRoles(session.user.id);
+      void refreshRoles(session.user.id, { blocking: false }).catch((e) => {
+        if (import.meta.env.DEV) console.warn('[Auth] refreshRoles rejected', e);
+      });
     }, 60_000);
     return () => clearInterval(intervalId);
   }, [session?.user?.id]);
@@ -135,6 +183,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
       
       if (error) {
+        if (import.meta.env.DEV) {
+          console.error('[Auth] signInWithPassword failed', { email, message: error.message, name: error.name });
+        }
         // Handle specific error types
         if (error.message.includes('Failed to fetch') || error.message.includes('ERR_CONNECTION_CLOSED')) {
           return { 
@@ -144,6 +195,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { error: error as Error };
       }
       
+      if (import.meta.env.DEV) {
+        console.log('[Auth] signInWithPassword success', { email });
+      }
       return { error: null };
     } catch (err) {
       // Handle network errors and other exceptions

@@ -12,6 +12,7 @@ import {
   ExternalLink,
   MapPin,
   AlertTriangle,
+  AlertCircle,
   Battery,
   Zap,
   Power,
@@ -28,7 +29,7 @@ import { formatLagos, formatRelativeTime } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
 import type { DateRange } from "react-day-picker";
 import type { VehicleTrip, VehicleEvent, VehicleDailyStats } from "@/hooks/useVehicleProfile";
-import type { TripSyncStatus } from "@/hooks/useTripSync";
+import type { Gps51TripSyncStatus } from "@/hooks/useTripSync";
 import { useAddress } from "@/hooks/useAddress";
 import { useAuth } from "@/contexts/AuthContext";
 import { VehicleNotificationSettings } from "@/components/fleet/VehicleNotificationSettings";
@@ -50,7 +51,7 @@ interface ReportsSectionProps {
   onDateRangeChange: (range: DateRange | undefined) => void;
   onRequestTrips: () => void;
   onPlayTrip: (trip: VehicleTrip) => void;
-  syncStatus?: TripSyncStatus | null;
+  syncStatus?: Gps51TripSyncStatus | null;
   isSyncing?: boolean;
   onForceSync?: () => void;
   isRealtimeActive?: boolean;
@@ -77,6 +78,9 @@ export function ReportsSection({
 }: ReportsSectionProps) {
   const isFilterActive = !!dateRange?.from;
   const { user } = useAuth();
+  const lastSyncAt = syncStatus?.last_trip_sync_at ?? null;
+  const syncError = syncStatus?.trip_sync_error ?? null;
+  const tripsSynced = syncStatus?.trips_synced_count ?? 0;
   
   // Calculate continuity issues for the current set of trips
   const continuityIssues = useMemo(() => {
@@ -113,12 +117,13 @@ export function ReportsSection({
   const groupedTrips = useMemo(() => {
     if (!trips || trips.length === 0) return [];
     
-    // Filter valid trips
-    const validTrips = trips.filter(trip => trip.start_time && trip.end_time);
-    
     const groups: { date: Date; label: string; trips: VehicleTrip[] }[] = [];
     
-    validTrips.forEach(trip => {
+    // No filtering: show exactly what GPS51 returned and we stored.
+    // `end_time` may be null for some rows; the UI should still display them.
+    const tripsWithStart = trips.filter(trip => Boolean(trip.start_time));
+
+    tripsWithStart.forEach(trip => {
       const tripDate = new Date(trip.start_time);
       const tripDateStr = formatLagos(tripDate, 'yyyy-MM-dd');
       
@@ -226,7 +231,11 @@ export function ReportsSection({
     <Card className="border-border bg-card/50">
       <CardContent className="p-4">
         {/* Trip Sync Progress */}
-        <TripSyncProgress deviceId={deviceId} isSyncing={isSyncing || isAutoSyncing} />
+        <TripSyncProgress
+          deviceId={deviceId}
+          isSyncing={isSyncing || isAutoSyncing}
+          onRetry={onForceSync}
+        />
 
         {/* Interactive Filter Bar */}
         <div className="mb-6 space-y-4">
@@ -239,6 +248,8 @@ export function ReportsSection({
                           <RefreshCw className="h-3 w-3 text-blue-500 animate-spin" />
                         ) : syncStatus?.sync_status === "completed" ? (
                           <CheckCircle2 className="h-3 w-3 text-green-500" />
+                        ) : syncStatus?.sync_status === "error" ? (
+                          <AlertCircle className="h-3 w-3 text-red-500" />
                         ) : null}
                         {isRealtimeActive && (
                           <Radio className="h-3 w-3 text-green-500 animate-pulse ml-1" />
@@ -255,7 +266,7 @@ export function ReportsSection({
                         className="h-7 text-xs"
                     >
                         <RefreshCw className={cn("h-3 w-3 mr-1", isSyncing && "animate-spin")} />
-                        Sync Live Data
+                        Sync Trips
                     </Button>
                  )}
             </div>
@@ -269,21 +280,21 @@ export function ReportsSection({
         </div>
 
         {/* Sync Status Details */}
-        {syncStatus && syncStatus.last_sync_at && syncStatus.sync_status !== 'processing' && (
+        {syncStatus && (lastSyncAt || syncStatus.sync_status === "error") && (
           <div className="mb-3 p-2 rounded-md bg-muted/30 text-xs text-muted-foreground">
             <div className="flex items-center justify-between">
               <span>
-                Last synced: {formatRelativeTime(syncStatus.last_sync_at)}
+                {lastSyncAt ? `Last synced: ${formatRelativeTime(lastSyncAt)}` : "No successful sync yet"}
               </span>
-              {syncStatus.trips_processed > 0 && (
+              {tripsSynced > 0 && (
                 <span className="text-green-600 font-medium">
-                  +{syncStatus.trips_processed} trip{syncStatus.trips_processed !== 1 ? 's' : ''}
+                  +{tripsSynced} trip{tripsSynced !== 1 ? 's' : ''}
                 </span>
               )}
             </div>
-            {syncStatus.sync_status === "error" && syncStatus.error_message && (
+            {syncStatus.sync_status === "error" && syncError && (
               <div className="mt-1 text-red-500 text-xs">
-                Error: {syncStatus.error_message}
+                Error: {syncError}
               </div>
             )}
           </div>
@@ -387,9 +398,18 @@ export function ReportsSection({
                 <div className="text-center py-6 text-muted-foreground">
                   <Route className="h-8 w-8 mx-auto mb-2 opacity-50" />
                   <p className="text-sm">No trips recorded for this period</p>
-                  <Button variant="link" onClick={() => onDateRangeChange(undefined)} className="mt-2">
-                    Reset Filter
-                  </Button>
+                  <p className="mt-1 text-xs opacity-80">Source: GPS51</p>
+                  <div className="mt-2 flex items-center justify-center gap-2">
+                    {onForceSync && (
+                      <Button variant="outline" size="sm" onClick={onForceSync}>
+                        <RefreshCw className="h-3 w-3 mr-1" />
+                        Sync Trips
+                      </Button>
+                    )}
+                    <Button variant="link" onClick={() => onDateRangeChange(undefined)}>
+                      Reset Filter
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>
@@ -547,10 +567,16 @@ function TripCard({
 }) {
   const observerOptions = useMemo(() => ({ rootMargin: "200px" }), []);
   const { ref, isInView } = useInView<HTMLDivElement>(observerOptions);
-  const hasValidStartCoords = trip.start_latitude && trip.start_longitude && 
-                             trip.start_latitude !== 0 && trip.start_longitude !== 0;
-  const hasValidEndCoords = trip.end_latitude && trip.end_longitude && 
-                           trip.end_latitude !== 0 && trip.end_longitude !== 0;
+  const hasValidStartCoords =
+    trip.start_latitude != null &&
+    trip.start_longitude != null &&
+    trip.start_latitude !== 0 &&
+    trip.start_longitude !== 0;
+  const hasValidEndCoords =
+    trip.end_latitude != null &&
+    trip.end_longitude != null &&
+    trip.end_latitude !== 0 &&
+    trip.end_longitude !== 0;
   
   const canPlayback = hasValidStartCoords && hasValidEndCoords;
   
@@ -567,11 +593,24 @@ function TripCard({
     return `https://www.google.com/maps?q=${lat},${lon}`;
   };
 
-  const durationMinutes = trip.duration_seconds
-    ? Math.round(trip.duration_seconds / 60)
-    : Math.round((new Date(trip.end_time).getTime() - new Date(trip.start_time).getTime()) / 60000);
+  const durationMinutes = useMemo(() => {
+    if (typeof trip.duration_seconds === "number" && Number.isFinite(trip.duration_seconds)) {
+      return Math.round(trip.duration_seconds / 60);
+    }
+    if (trip.end_time) {
+      const start = new Date(trip.start_time).getTime();
+      const end = new Date(trip.end_time).getTime();
+      if (Number.isFinite(start) && Number.isFinite(end)) {
+        return Math.round((end - start) / 60000);
+      }
+    }
+    return null;
+  }, [trip.duration_seconds, trip.start_time, trip.end_time]);
 
   const isIdling = trip.distance_km === 0;
+  const distanceLabel = trip.distance_km == null ? "--" : trip.distance_km.toFixed(1);
+  const avgSpeedLabel = trip.avg_speed == null ? "--" : String(Math.round(trip.avg_speed));
+  const maxSpeedLabel = trip.max_speed == null ? "--" : String(Math.round(trip.max_speed));
 
   return (
     <div ref={ref} className="p-4 rounded-lg bg-muted/40 border border-border/80 hover:bg-muted/80 transition-colors">
@@ -580,14 +619,14 @@ function TripCard({
         <div>
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-semibold text-foreground">Trip {index + 1}</h3>
-            {isIdling && (
+            {isIdling && trip.distance_km != null && (
               <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-normal bg-blue-500/10 text-blue-600 border-blue-200">
                 Idling
               </Badge>
             )}
           </div>
           <p className="text-xs text-muted-foreground">
-            {formatLagos(trip.start_time, 'h:mm a')} - {formatLagos(trip.end_time, 'h:mm a')}
+            {formatLagos(trip.start_time, 'h:mm a')} - {trip.end_time ? formatLagos(trip.end_time, 'h:mm a') : '--'}
           </p>
         </div>
         {canPlayback && (
@@ -607,13 +646,13 @@ function TripCard({
       <div className="grid grid-cols-4 gap-3 mb-4 text-center">
         <div className="flex flex-col items-center justify-center">
           <Milestone className="h-4 w-4 text-primary mb-1" />
-          <span className="text-sm font-bold">{trip.distance_km.toFixed(1)}</span>
+          <span className="text-sm font-bold">{distanceLabel}</span>
           <span className="text-[10px] text-muted-foreground">km</span>
         </div>
         <div className="flex flex-col items-center justify-center">
           <Clock className="h-4 w-4 text-primary mb-1" />
           <span className="text-sm font-bold">
-            {durationMinutes >= 60
+            {durationMinutes === null ? "--" : durationMinutes >= 60
               ? `${Math.floor(durationMinutes / 60)}h ${durationMinutes % 60}m`
               : `${durationMinutes}m`
             }
@@ -622,20 +661,20 @@ function TripCard({
         </div>
         <div className="flex flex-col items-center justify-center">
           <Gauge className="h-4 w-4 text-blue-500 mb-1" />
-          <span className="text-sm font-bold">{Math.round(trip.avg_speed || 0)}</span>
+          <span className="text-sm font-bold">{avgSpeedLabel}</span>
           <span className="text-[10px] text-muted-foreground">avg km/h</span>
         </div>
         <div className="flex flex-col items-center justify-center">
           <Gauge className={cn(
             "h-4 w-4 mb-1",
-            (trip.max_speed || 0) > 120 ? "text-red-500" :
-            (trip.max_speed || 0) > 80 ? "text-orange-500" : "text-green-500"
+            (trip.max_speed ?? 0) > 120 ? "text-red-500" :
+            (trip.max_speed ?? 0) > 80 ? "text-orange-500" : "text-green-500"
           )} />
           <span className={cn(
             "text-sm font-bold",
-            (trip.max_speed || 0) > 120 ? "text-red-600" : ""
+            (trip.max_speed ?? 0) > 120 ? "text-red-600" : ""
           )}>
-            {Math.round(trip.max_speed || 0)}
+            {maxSpeedLabel}
           </span>
           <span className="text-[10px] text-muted-foreground">max km/h</span>
         </div>
@@ -651,16 +690,16 @@ function TripCard({
               <Skeleton className="h-4 w-3/4" />
             ) : (
               <p className="text-xs text-foreground line-clamp-2">
-                {hasValidStartCoords 
-                  ? (startAddress || "Address not found") 
-                  : (isIdling ? "Vehicle Stationary" : "Location unavailable")
+                {hasValidStartCoords
+                  ? (startAddress || "Address not found")
+                  : "Location unavailable (GPS51 missing coordinates)"
                 }
               </p>
             )}
           </div>
           {hasValidStartCoords && (
              <a
-              href={getGoogleMapsLink(trip.start_latitude, trip.start_longitude)}
+              href={getGoogleMapsLink(trip.start_latitude as number, trip.start_longitude as number)}
               target="_blank"
               rel="noopener noreferrer"
               className="text-blue-500 hover:text-blue-600 shrink-0"
@@ -684,16 +723,16 @@ function TripCard({
               <Skeleton className="h-4 w-3/4" />
             ) : (
               <p className="text-xs text-foreground line-clamp-2">
-                {hasValidEndCoords 
-                  ? (endAddress || "Address not found") 
-                  : (isIdling ? "Vehicle Stationary" : "Location unavailable")
+                {hasValidEndCoords
+                  ? (endAddress || "Address not found")
+                  : "Location unavailable (GPS51 missing coordinates)"
                 }
               </p>
             )}
           </div>
           {hasValidEndCoords && (
-            <a
-              href={getGoogleMapsLink(trip.end_latitude, trip.end_longitude)}
+             <a
+              href={getGoogleMapsLink(trip.end_latitude as number, trip.end_longitude as number)}
               target="_blank"
               rel="noopener noreferrer"
               className="text-blue-500 hover:text-blue-600 shrink-0"

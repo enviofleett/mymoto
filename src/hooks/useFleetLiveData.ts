@@ -177,43 +177,56 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
   let posHasMore = true;
 
   while (posHasMore) {
-    const { data: positions, error: posError } = await (supabase as any)
-      .from('vehicle_positions')
-      .select(`
-        device_id,
-        latitude,
-        longitude,
-        speed,
-        heading,
-        battery_percent,
-        ignition_on,
-        is_online,
-        is_overspeeding,
-        total_mileage,
-        status_text,
-        gps_time,
-        cached_at
-      `)
-      .not('latitude', 'is', null)
-      .not('longitude', 'is', null)
-      .gte('latitude', -90)
-      .lte('latitude', 90)
-      .gte('longitude', -180)
-      .lte('longitude', 180)
-      .or('latitude.neq.0,longitude.neq.0') // Not (0,0)
-      .range(posFrom, posFrom + BATCH_SIZE - 1);
+    try {
+      const { data: positions, error: posError } = await (supabase as any)
+        .from('vehicle_positions')
+        .select(`
+          device_id,
+          latitude,
+          longitude,
+          speed,
+          heading,
+          battery_percent,
+          ignition_on,
+          is_online,
+          is_overspeeding,
+          total_mileage,
+          status_text,
+          gps_time,
+          cached_at
+        `)
+        .not('latitude', 'is', null)
+        .not('longitude', 'is', null)
+        .gte('latitude', -90)
+        .lte('latitude', 90)
+        .gte('longitude', -180)
+        .lte('longitude', 180)
+        .or('latitude.neq.0,longitude.neq.0') // Not (0,0)
+        .range(posFrom, posFrom + BATCH_SIZE - 1);
 
-    if (posError) throw new Error(`Fleet data fetch error: ${posError.message}`);
-
-    if (positions && positions.length > 0) {
-      allPositions = [...allPositions, ...positions];
-      if (positions.length < BATCH_SIZE) {
-        posHasMore = false;
-      } else {
-        posFrom += BATCH_SIZE;
+      if (posError) {
+        if (posError.message?.includes('AbortError') || posError.message?.includes('Failed to fetch')) {
+          console.warn('[useFleetLiveData] Network fetch aborted or failed:', posError.message);
+          posHasMore = false;
+          break;
+        }
+        throw new Error(`Fleet data fetch error: ${posError.message}`);
       }
-    } else {
+
+      if (positions && positions.length > 0) {
+        allPositions = [...allPositions, ...positions];
+        if (positions.length < BATCH_SIZE) {
+          posHasMore = false;
+        } else {
+          posFrom += BATCH_SIZE;
+        }
+      } else {
+        posHasMore = false;
+      }
+    } catch (err: any) {
+      console.warn('[useFleetLiveData] Error fetching positions:', err.message);
       posHasMore = false;
+      if (allPositions.length === 0) throw err;
     }
   }
 
@@ -223,22 +236,27 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
   let vehHasMore = true;
 
   while (vehHasMore) {
-    const { data: vehiclesList, error: vehiclesError } = await (supabase as any)
-      .from('vehicles')
-      .select('device_id, device_name, gps_owner')
-      .range(vehFrom, vehFrom + BATCH_SIZE - 1);
+    try {
+      const { data: vehiclesList, error: vehiclesError } = await (supabase as any)
+        .from('vehicles')
+        .select('device_id, device_name, gps_owner')
+        .range(vehFrom, vehFrom + BATCH_SIZE - 1);
 
-    if (vehiclesError) {
-      console.warn('[useFleetLiveData] Could not fetch vehicles:', vehiclesError.message);
-      vehHasMore = false;
-    } else if (vehiclesList && vehiclesList.length > 0) {
-      allVehicles = [...allVehicles, ...vehiclesList];
-      if (vehiclesList.length < BATCH_SIZE) {
+      if (vehiclesError) {
+        console.warn('[useFleetLiveData] Could not fetch vehicles:', vehiclesError.message);
         vehHasMore = false;
+      } else if (vehiclesList && vehiclesList.length > 0) {
+        allVehicles = [...allVehicles, ...vehiclesList];
+        if (vehiclesList.length < BATCH_SIZE) {
+          vehHasMore = false;
+        } else {
+          vehFrom += BATCH_SIZE;
+        }
       } else {
-        vehFrom += BATCH_SIZE;
+        vehHasMore = false;
       }
-    } else {
+    } catch (err) {
+      console.warn('[useFleetLiveData] Error in vehicle fetch loop:', err);
       vehHasMore = false;
     }
   }
@@ -249,31 +267,36 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
   let assignHasMore = true;
 
   while (assignHasMore) {
-    const { data: assignments, error: assignError } = await (supabase as any)
-      .from('vehicle_assignments')
-      .select(`
-        device_id,
-        vehicle_alias,
-        profiles (
-          id,
-          name,
-          phone,
-          license_number
-        )
-      `)
-      .range(assignFrom, assignFrom + BATCH_SIZE - 1);
+    try {
+      const { data: assignments, error: assignError } = await (supabase as any)
+        .from('vehicle_assignments')
+        .select(`
+          device_id,
+          vehicle_alias,
+          profiles (
+            id,
+            name,
+            phone,
+            license_number
+          )
+        `)
+        .range(assignFrom, assignFrom + BATCH_SIZE - 1);
 
-    if (assignError) {
-      console.warn('[useFleetLiveData] Could not fetch assignments:', assignError.message);
-      assignHasMore = false;
-    } else if (assignments && assignments.length > 0) {
-      allAssignments = [...allAssignments, ...assignments];
-      if (assignments.length < BATCH_SIZE) {
+      if (assignError) {
+        console.warn('[useFleetLiveData] Could not fetch assignments:', assignError.message);
         assignHasMore = false;
+      } else if (assignments && assignments.length > 0) {
+        allAssignments = [...allAssignments, ...assignments];
+        if (assignments.length < BATCH_SIZE) {
+          assignHasMore = false;
+        } else {
+          assignFrom += BATCH_SIZE;
+        }
       } else {
-        assignFrom += BATCH_SIZE;
+        assignHasMore = false;
       }
-    } else {
+    } catch (err) {
+      console.warn('[useFleetLiveData] Error in assignment fetch loop:', err);
       assignHasMore = false;
     }
   }

@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
-import { Send, Bot, User, Loader2, Car, MapPin, ExternalLink, Battery, Gauge, Power, Navigation, AlertTriangle } from "lucide-react";
+import { Send, Bot, User, Loader2, Car, MapPin, ExternalLink, Battery, Gauge, Power, Navigation, AlertTriangle, Mic, Square } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
@@ -14,6 +14,7 @@ interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   created_at: string;
+  user_id?: string;
 }
 
 interface LocationData {
@@ -250,6 +251,12 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
   const { user } = useAuth();
   const { toast } = useToast();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
+  const [isRecording, setIsRecording] = useState(false);
+  const [voicePreviewUrl, setVoicePreviewUrl] = useState<string | null>(null);
+  const recognitionRef = useRef<any>(null);
+  const [isSpeechAvailable, setIsSpeechAvailable] = useState<boolean>(false);
 
   const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vehicle-chat`;
 
@@ -374,6 +381,11 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingContent]);
+
+  useEffect(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    setIsSpeechAvailable(!!SpeechRecognition);
+  }, []);
 
   // ✅ FIX #5: Retry logic with exponential backoff
   const sendWithRetry = async (
@@ -574,6 +586,87 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
     await sendWithRetry(userMessage, tempUserMsg, 0);
   };
 
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      recordedChunksRef.current = [];
+      recorder.ondataavailable = (e: BlobEvent) => {
+        if (e.data.size > 0) recordedChunksRef.current.push(e.data);
+      };
+      recorder.onstop = () => {
+        const blob = new Blob(recordedChunksRef.current, { type: "audio/webm" });
+        const url = URL.createObjectURL(blob);
+        setVoicePreviewUrl(url);
+      };
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setIsRecording(true);
+
+      if (isSpeechAvailable) {
+        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        const recognition = new SpeechRecognition();
+        recognition.lang = "en-US";
+        recognition.interimResults = true;
+        let finalText = "";
+        recognition.onresult = (event: any) => {
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+              finalText += transcript + " ";
+            }
+          }
+        };
+        recognition.onend = async () => {
+          recognitionRef.current = null;
+          if (finalText.trim()) {
+            setInput(finalText.trim());
+            await handleSend();
+          } else {
+            toast({
+              title: "No transcript",
+              description: "Voice captured. Type a message or retry with speech.",
+            });
+          }
+        };
+        recognitionRef.current = recognition;
+        recognition.start();
+      }
+    } catch (err: any) {
+      toast({
+        title: "Microphone error",
+        description: err?.message || "Unable to access microphone",
+        variant: "destructive",
+      });
+      setIsRecording(false);
+    }
+  };
+
+  const stopRecording = () => {
+    try {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop();
+      }
+      setIsRecording(false);
+      const tracks = (mediaRecorderRef.current as any)?.stream?.getTracks?.() || [];
+      tracks.forEach((t: MediaStreamTrack) => t.stop());
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {}
+        recognitionRef.current = null;
+      }
+    } catch {}
+  };
+
+  const clearVoicePreview = () => {
+    if (voicePreviewUrl) {
+      URL.revokeObjectURL(voicePreviewUrl);
+    }
+    setVoicePreviewUrl(null);
+    recordedChunksRef.current = [];
+  };
+
   return (
     <ErrorBoundary
       fallback={
@@ -716,6 +809,15 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
         </div>
       </ScrollArea>
 
+      {voicePreviewUrl && (
+        <div className="mt-3 p-2 rounded-lg bg-muted/50 border border-border flex items-center gap-3">
+          <audio src={voicePreviewUrl} controls className="flex-1" />
+          <Button variant="outline" size="sm" onClick={clearVoicePreview}>
+            Clear
+          </Button>
+        </div>
+      )}
+
       <div className="flex gap-2 pt-4 border-t">
         <Input
           value={input}
@@ -725,6 +827,15 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
           disabled={loading}
           className="flex-1"
         />
+        <Button
+          onClick={() => (isRecording ? stopRecording() : startRecording())}
+          variant={isRecording ? "destructive" : "secondary"}
+          size="icon"
+          disabled={loading}
+          title={isRecording ? "Stop recording" : "Record voice"}
+        >
+          {isRecording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+        </Button>
         <Button onClick={handleSend} disabled={loading || !input.trim()} size="icon">
           <Send className="h-4 w-4" />
         </Button>

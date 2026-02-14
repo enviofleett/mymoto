@@ -16,21 +16,50 @@ serve(async (req) => {
   )
 
   try {
-    // Verify admin user
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader) throw new Error('Missing Authorization header')
-    
-    const { data: { user }, error: userError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''))
-    if (userError || !user || user.email !== 'toolbuxdev@gmail.com') {
-      return new Response(JSON.stringify({ error: 'Unauthorized - Admin only' }), { 
-        status: 403, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+    // Verify admin user (or allow internal service-role calls).
+    // Note: This function uses service role to write app_settings, so we must strictly gate access.
+    const authHeader = req.headers.get('authorization') || req.headers.get('Authorization')
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Missing Authorization header' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    console.log('Starting GPS51 token refresh triggered by admin:', user.email)
+    const token = authHeader.replace(/^Bearer\s+/i, '').trim()
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 
-    const result = await refreshGps51Token(supabase, user.email);
+    // Internal calls can use the service role key directly.
+    let triggeredBy = 'internal_service_role'
+    if (!serviceRoleKey || token !== serviceRoleKey) {
+      const { data: { user }, error: userError } = await supabase.auth.getUser(token)
+      if (userError || !user) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      const { data: adminRole, error: roleError } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', user.id)
+        .eq('role', 'admin')
+        .maybeSingle()
+
+      if (roleError || !adminRole) {
+        return new Response(JSON.stringify({ error: 'Forbidden - Admin only' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      triggeredBy = user.email ?? user.id
+    }
+
+    console.log('Starting GPS51 token refresh triggered by:', triggeredBy)
+
+    const result = await refreshGps51Token(supabase, triggeredBy);
 
     // Calculate expiry (24 hours from now, minus 1 hour buffer) - matching shared logic
     const expiresAt = new Date()

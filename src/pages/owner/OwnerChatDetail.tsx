@@ -339,9 +339,6 @@ export default function OwnerChatDetail() {
           device_id: deviceId,
           message: userMessage,
           user_id: user.id,
-          conversation_id: deviceId,
-          client_timestamp: new Date().toISOString(),
-          user_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         }),
         signal: controller.signal, // ✅ FIX #1: Add abort signal
       });

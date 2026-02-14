@@ -10,6 +10,8 @@ import { Loader2, AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { z } from 'zod';
 import myMotoLogo from '@/assets/mymoto-logo-new.png';
 
+import { TestUserCreator } from '@/components/auth/TestUserCreator';
+
 const authSchema = z.object({
   email: z.string().trim().email({ message: 'Invalid email address' }),
   password: z.string().min(6, { message: 'Password must be at least 6 characters' }),
@@ -30,10 +32,10 @@ const Auth = () => {
 
   useEffect(() => {
     if (user && !isLoading && isRoleLoaded) {
-      // Role-based redirect: admins go to dashboard, providers go to partner dashboard, owners go to vehicles
+      // Role-based redirect: admins go to dashboard; non-admins land in owner app.
       let targetPath = '/owner/vehicles';
       if (isAdmin) {
-        targetPath = '/';
+        targetPath = '/admin/dashboard';
       } else if (isProvider) {
         targetPath = '/partner/dashboard';
       }
@@ -59,7 +61,6 @@ const Auth = () => {
     
     setIsSubmitting(true);
     const { error } = await signIn(email, password);
-    setIsSubmitting(false);
     
     if (error) {
       if (error.message.includes('Invalid login credentials')) {
@@ -68,6 +69,7 @@ const Auth = () => {
         setError(error.message);
       }
     }
+    setIsSubmitting(false);
   };
 
   const handleSignUp = async (e: React.FormEvent) => {
@@ -242,6 +244,9 @@ const Auth = () => {
 
       {/* Footer branding */}
       <p className="text-xs text-muted-foreground/60 mt-8 animate-fade-in [animation-delay:600ms]">Powered by mymoto</p>
+      
+      {/* Dev Tool: Test User Creator */}
+      <TestUserCreator />
     </div>
   );
 };

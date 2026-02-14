@@ -2,6 +2,7 @@ import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { formatLagos } from "@/lib/timezone";
+import { fetchVehicleLiveData } from "@/hooks/useVehicleLiveData";
 
 // ============ Types ============
 
@@ -10,11 +11,11 @@ export interface VehicleTrip {
   device_id: string;
   start_time: string;
   end_time: string | null; // CRITICAL: Allow null for ongoing trips
-  start_latitude: number;
-  start_longitude: number;
-  end_latitude: number;
-  end_longitude: number;
-  distance_km: number;
+  start_latitude: number | null;
+  start_longitude: number | null;
+  end_latitude: number | null;
+  end_longitude: number | null;
+  distance_km: number | null;
   max_speed: number | null;
   avg_speed: number | null;
   duration_seconds: number | null;
@@ -94,6 +95,97 @@ export interface TripDateRange {
   to?: Date;
 }
 
+type Gps51TripRow = {
+  id: string;
+  device_id: string;
+  start_time: string;
+  end_time: string | null;
+  start_latitude: number | string | null;
+  start_longitude: number | string | null;
+  end_latitude: number | string | null;
+  end_longitude: number | string | null;
+  distance_meters: number | string | null;
+  avg_speed_kmh: number | string | null;
+  max_speed_kmh: number | string | null;
+  duration_seconds: number | string | null;
+};
+
+function toNumberOrNull(v: unknown): number | null {
+  if (v === null || v === undefined) return null;
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v === "string") {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+export function mapGps51TripRowToVehicleTrip(row: Gps51TripRow): VehicleTrip {
+  const distanceMeters = toNumberOrNull(row.distance_meters);
+  const avgSpeed = toNumberOrNull(row.avg_speed_kmh);
+  const maxSpeed = toNumberOrNull(row.max_speed_kmh);
+  const durationSeconds = toNumberOrNull(row.duration_seconds);
+
+  return {
+    id: row.id,
+    device_id: row.device_id,
+    start_time: row.start_time,
+    end_time: row.end_time ?? null,
+    start_latitude: toNumberOrNull(row.start_latitude),
+    start_longitude: toNumberOrNull(row.start_longitude),
+    end_latitude: toNumberOrNull(row.end_latitude),
+    end_longitude: toNumberOrNull(row.end_longitude),
+    distance_km: distanceMeters === null ? null : distanceMeters / 1000,
+    avg_speed: avgSpeed,
+    max_speed: maxSpeed,
+    duration_seconds: durationSeconds,
+    source: "gps51",
+  };
+}
+
+async function fetchGps51Trips(
+  deviceId: string,
+  limit: number = 200,
+  dateRange?: TripDateRange
+): Promise<VehicleTrip[]> {
+  if (import.meta.env.DEV) {
+    console.log("[fetchGps51Trips] Fetching trips for device:", deviceId, "limit:", limit, "dateRange:", dateRange);
+  }
+
+  let query = (supabase as any)
+    .from("gps51_trips")
+    .select(
+      "id, device_id, start_time, end_time, start_latitude, start_longitude, end_latitude, end_longitude, distance_meters, avg_speed_kmh, max_speed_kmh, duration_seconds"
+    )
+    .eq("device_id", deviceId)
+    .order("start_time", { ascending: false })
+    .limit(limit);
+
+  if (dateRange?.from) {
+    query = query.gte("start_time", dateRange.from.toISOString());
+  }
+
+  if (dateRange?.to) {
+    const d = new Date(dateRange.to);
+    d.setHours(23, 59, 59, 999);
+    query = query.lte("start_time", d.toISOString());
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    if (import.meta.env.DEV) console.error("[fetchGps51Trips] Query error:", error);
+    throw error;
+  }
+
+  const rows = (data || []) as Gps51TripRow[];
+  if (import.meta.env.DEV) {
+    console.log("[fetchGps51Trips] Received", rows.length, "trips from gps51_trips");
+  }
+
+  // No filtering: show exactly what GPS51 querytrips returned and we stored.
+  return rows.map(mapGps51TripRowToVehicleTrip);
+}
+
 
 
 async function fetchVehicleTrips(
@@ -101,161 +193,7 @@ async function fetchVehicleTrips(
   limit: number = 200,
   dateRange?: TripDateRange
 ): Promise<VehicleTrip[]> {
-  if (import.meta.env.DEV) {
-    console.log('[fetchVehicleTrips] Fetching trips for device:', deviceId, 'limit:', limit, 'dateRange:', dateRange);
-  }
-  
-  // Use direct table query for GPS51 parity and to avoid RPC type errors
-  let query = (supabase as any)
-    .from('vehicle_trips')
-    .select('*')
-    .eq('device_id', deviceId)
-    // CRITICAL FIX: Allow ALL valid sources including 'position_history' and legacy (null)
-    // .in('source', ['gps51', 'fallback_calculation']) 
-    .order('start_time', { ascending: false })
-    .limit(limit);
-
-  if (dateRange?.from) {
-    query = query.gte('start_time', dateRange.from.toISOString());
-  }
-  
-  if (dateRange?.to) {
-    const d = new Date(dateRange.to);
-    d.setHours(23, 59, 59, 999); // Include the entire end day
-    query = query.lte('start_time', d.toISOString());
-  }
-
-  const { data, error } = await query;
-
-  if (error) {
-    if (import.meta.env.DEV) {
-      console.error('[fetchVehicleTrips] Query error:', error);
-    }
-    throw error;
-  }
-  
-  console.log('[fetchVehicleTrips] Received', data?.length || 0, 'trips from database');
-  
-  if (data && data.length > 0) {
-    const dates = data.map((t: any) => new Date(t.start_time).toISOString().split('T')[0]);
-    const uniqueDates = [...new Set(dates)];
-    if (import.meta.env.DEV) {
-      console.log('[fetchVehicleTrips] Trip date range:', dates[dates.length - 1], 'to', dates[0]);
-      console.log('[fetchVehicleTrips] Unique dates found:', uniqueDates.sort().reverse());
-      console.log('[fetchVehicleTrips] First trip:', data[0]?.start_time, 'Last trip:', data[data.length - 1]?.start_time);
-    }
-    
-    // CRITICAL DEBUG: Check if we're missing recent trips
-    const today = new Date().toISOString().split('T')[0];
-    const tripsToday = dates.filter(d => d === today).length;
-    const tripsYesterday = dates.filter(d => {
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      return d === yesterday.toISOString().split('T')[0];
-    }).length;
-    if (import.meta.env.DEV) {
-      console.log('[fetchVehicleTrips] Trips today:', tripsToday, 'Trips yesterday:', tripsYesterday);
-    }
-    
-    if (tripsToday === 0 && tripsYesterday === 0 && dates.length > 0) {
-      if (import.meta.env.DEV) {
-        console.warn('[fetchVehicleTrips] WARNING: No trips from today or yesterday, but have trips from:', uniqueDates[0]);
-      }
-    }
-  } else {
-    if (import.meta.env.DEV) {
-      console.warn('[fetchVehicleTrips] No trips returned from query!');
-    }
-  }
-  
-  // Filter and process trips using GPS51-accurate thresholds
-  // CRITICAL: These thresholds MUST match the backend (sync-gps51-trips) for 100% consistency
-  const GPS51_THRESHOLDS = {
-    MIN_DISTANCE_KM: 0.5,      // 500m minimum (GPS51 standard)
-    MIN_DURATION_SEC: 180,     // 3 minutes minimum (GPS51 standard)
-    MAX_SPEED_KMH: 200,        // Maximum realistic speed
-  };
-
-  const normalizedTrips = ((data as any[]) || []).map((trip: any) => {
-    if (!trip.start_time) {
-      return trip;
-    }
-
-    const startTime = new Date(trip.start_time);
-    const endTime = trip.end_time ? new Date(trip.end_time) : null;
-    const durationSeconds = trip.duration_seconds ?? (endTime ? Math.max(0, Math.round((endTime.getTime() - startTime.getTime()) / 1000)) : 0);
-
-    if (!trip.end_time) {
-      const calculatedEnd = new Date(startTime.getTime() + durationSeconds * 1000);
-      return { ...trip, end_time: calculatedEnd.toISOString(), duration_seconds: durationSeconds };
-    }
-
-    return { ...trip, duration_seconds: durationSeconds };
-  });
-
-  const filteredTrips = normalizedTrips
-    .filter((trip: any) => {
-      // 1. Basic Validity: Must have start time (end time optional for ongoing trips)
-      if (!trip.start_time) return false;
-
-      const distance = trip.distance_km || 0;
-      const duration = trip.duration_seconds || 0;
-      const maxSpeed = trip.max_speed || 0;
-
-      // 2. GPS51 Ghost Trip Filter: Tiny trips (< 500m AND < 3 min)
-      // Allow either condition to pass - a long idling session (3+ min, 0 km) is valid
-      // A short drive that covers distance (500m+) is also valid
-      if (distance < GPS51_THRESHOLDS.MIN_DISTANCE_KM &&
-          duration < GPS51_THRESHOLDS.MIN_DURATION_SEC) {
-        return false;
-      }
-
-      // 3. GPS51 Speed Spike Filter: Unrealistic max speed
-      // Use actual max_speed from trip data (more accurate than calculated)
-      if (maxSpeed > GPS51_THRESHOLDS.MAX_SPEED_KMH) {
-        return false;
-      }
-
-      // 4. Fallback: Filter calculated speed spikes (for trips without max_speed data)
-      if (!maxSpeed && duration > 0) {
-        const hours = duration / 3600;
-        const avgSpeed = distance / hours;
-        if (avgSpeed > GPS51_THRESHOLDS.MAX_SPEED_KMH) return false;
-      }
-
-      return true;
-    });
-  
-  if (import.meta.env.DEV) {
-    console.log('[fetchVehicleTrips] After filtering:', {
-      before: data?.length || 0,
-      after: filteredTrips.length,
-      filteredOut: (data?.length || 0) - filteredTrips.length
-    });
-  }
-  
-  return filteredTrips
-    .map((trip: any): VehicleTrip => {
-      // CRITICAL: Use database distance (GPS51 source of truth) ONLY
-      // Do NOT estimate distance from duration/speed or coordinates
-      const distanceKm = trip.distance_km || 0;
-
-      return {
-        id: trip.id,
-        device_id: trip.device_id,
-        start_time: trip.start_time,
-        end_time: trip.end_time,
-        start_latitude: trip.start_latitude,
-        start_longitude: trip.start_longitude,
-        end_latitude: trip.end_latitude,
-        end_longitude: trip.end_longitude,
-        distance_km: Math.round(distanceKm * 100) / 100, // Round to 2 decimal places
-        max_speed: trip.max_speed,
-        avg_speed: trip.avg_speed,
-        duration_seconds: trip.duration_seconds,
-        source: trip.source,
-      };
-    });
+  return fetchGps51Trips(deviceId, limit, dateRange);
 }
 
 
@@ -355,7 +293,7 @@ async function fetchVehicleDailyStats(
       
       const stat = statsMap.get(dateStr)!;
       stat.trip_count++;
-      stat.total_distance_km += trip.distance_km;
+      stat.total_distance_km += trip.distance_km ?? 0;
       stat.total_duration_seconds += (trip.duration_seconds || 0);
       stat.peak_speed = Math.max(stat.peak_speed || 0, trip.max_speed || 0);
       
@@ -703,14 +641,10 @@ export function usePrefetchVehicleProfile() {
       staleTime: 24 * 60 * 60 * 1000, // 24 hours
     });
 
-    // Prefetch live data (async import to avoid circular dependency)
-    Promise.resolve().then(async () => {
-      const { fetchVehicleLiveData } = await import("@/hooks/useVehicleLiveData");
-      queryClient.prefetchQuery({
-        queryKey: ["vehicle-live-data", deviceId],
-        queryFn: () => fetchVehicleLiveData(deviceId),
-        staleTime: 24 * 60 * 60 * 1000,
-      });
+    queryClient.prefetchQuery({
+      queryKey: ["vehicle-live-data", deviceId],
+      queryFn: () => fetchVehicleLiveData(deviceId),
+      staleTime: 24 * 60 * 60 * 1000,
     });
 
     queryClient.prefetchQuery({

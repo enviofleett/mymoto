@@ -7,6 +7,11 @@ interface Props {
   children: ReactNode;
   fallback?: ReactNode;
   onError?: (error: Error, errorInfo: ErrorInfo) => void;
+  /**
+   * If true, suppresses the default error UI for specific error types (e.g. style injection)
+   * and renders nothing or children instead.
+   */
+  ignoreStyleErrors?: boolean;
 }
 
 interface State {
@@ -39,6 +44,16 @@ export class ErrorBoundary extends Component<Props, State> {
       console.error('ErrorBoundary caught an error:', error, errorInfo);
     }
 
+    // Check if this is a style injection error (e.g. from browser extensions)
+    const isStyleError = error.message.includes("Couldn't find a style target");
+    
+    if (isStyleError && this.props.ignoreStyleErrors) {
+      // If we're configured to ignore style errors, we can potentially recover
+      // by just logging it and not showing the crash UI, although React might
+      // still unmount the tree. Ideally, we just render the error UI less intrusively.
+      console.warn("Caught style injection error (likely from extension):", error);
+    }
+
     // Call optional error handler
     if (this.props.onError) {
       this.props.onError(error, errorInfo);
@@ -61,6 +76,33 @@ export class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
+      // Special handling for style injection errors
+      const isStyleError = this.state.error?.message.includes("Couldn't find a style target");
+      
+      if (isStyleError) {
+        // Render a minimal warning instead of full crash screen for style errors
+        return (
+          <div className="p-4 border border-yellow-500 bg-yellow-50 text-yellow-800 rounded-md text-sm">
+            <div className="flex items-center gap-2 font-medium mb-1">
+              <AlertTriangle className="h-4 w-4" />
+              <span>Style Injection Warning</span>
+            </div>
+            <p>
+              A browser extension might be conflicting with the page styles. 
+              Try refreshing or disabling extensions if layout looks wrong.
+            </p>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={this.handleReset}
+              className="mt-2 h-7 bg-white"
+            >
+              Retry
+            </Button>
+          </div>
+        );
+      }
+
       // Use custom fallback if provided
       if (this.props.fallback) {
         return this.props.fallback;

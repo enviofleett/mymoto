@@ -77,13 +77,97 @@ Deno.serve(async (req) => {
 
     console.log("[admin-wallet-topup] Admin role verified for user:", adminUser.id);
 
-    const { wallet_id, amount, description, send_email } = await req.json();
+    const { wallet_id, amount, description, send_email, captcha_token } = await req.json();
 
     if (!wallet_id || !amount || amount <= 0) {
       return new Response(
         JSON.stringify({ success: false, error: "Missing required fields: wallet_id and amount" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // Load validation config
+    let minTopup = 1;
+    let maxTopup = 1000000;
+    let captchaThreshold = 200000;
+    {
+      const { data: minRow } = await supabase.from("billing_config").select("value").eq("key", "wallet_topup_min").maybeSingle();
+      const { data: maxRow } = await supabase.from("billing_config").select("value").eq("key", "wallet_topup_max").maybeSingle();
+      const { data: capRow } = await supabase.from("billing_config").select("value").eq("key", "wallet_topup_captcha_threshold").maybeSingle();
+      if (minRow?.value) minTopup = Number(minRow.value);
+      if (maxRow?.value) maxTopup = Number(maxRow.value);
+      if (capRow?.value) captchaThreshold = Number(capRow.value);
+    }
+    if (Number(amount) < minTopup) {
+      return new Response(
+        JSON.stringify({ success: false, error: `Amount below minimum (min=${minTopup})` }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    if (Number(amount) > maxTopup) {
+      return new Response(
+        JSON.stringify({ success: false, error: `Amount exceeds maximum (max=${maxTopup})` }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Simple rate limiting: max 20 credits in last 10 minutes per admin
+    {
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      const { data: recentCredits } = await supabase
+        .from("wallet_transactions")
+        .select("id, metadata, created_at")
+        .gte("created_at", tenMinutesAgo)
+        .eq("type", "credit");
+      const countForAdmin = ((recentCredits as any[]) || []).filter(r => {
+        const meta = r.metadata || {};
+        return meta.admin_id === adminUser.id;
+      }).length;
+      if (countForAdmin >= 20) {
+        return new Response(
+          JSON.stringify({ success: false, error: "Rate limit exceeded: Too many top-ups in last 10 minutes" }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
+    // CAPTCHA verification for high-value top-ups
+    if (Number(amount) >= captchaThreshold) {
+      const hcaptchaSecret = Deno.env.get("HCAPTCHA_SECRET") || (await supabase
+        .from("app_settings")
+        .select("value")
+        .eq("key", "hcaptcha_secret")
+        .maybeSingle()).data?.value;
+      if (hcaptchaSecret) {
+        if (!captcha_token) {
+          return new Response(
+            JSON.stringify({ success: false, error: "CAPTCHA required for high-value top-ups" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        try {
+          const verifyRes = await fetch("https://hcaptcha.com/siteverify", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+              secret: hcaptchaSecret as string,
+              response: String(captcha_token),
+            }),
+          });
+          const verifyJson = await verifyRes.json();
+          if (!verifyJson.success) {
+            return new Response(
+              JSON.stringify({ success: false, error: "CAPTCHA verification failed" }),
+              { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+        } catch {
+          return new Response(
+            JSON.stringify({ success: false, error: "CAPTCHA verification error" }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      }
     }
 
     // Get wallet and user info

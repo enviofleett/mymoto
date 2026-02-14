@@ -10,7 +10,7 @@ interface ProtectedRouteProps {
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requireAdmin = false, requireProvider = false }) => {
-  const { user, isAdmin, isProvider, isLoading, isLoggingOut } = useAuth();
+  const { user, isAdmin, isProvider, isLoading, isLoggingOut, isRoleLoaded } = useAuth();
 
   // Show loader while initial auth is loading OR while actively logging out
   // This prevents race conditions where redirect happens before logout completes
@@ -24,6 +24,15 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requireAdmin 
 
   if (!user) {
     return <Navigate to="/auth" replace />;
+  }
+
+  // Role-gated routes must wait until role lookup finishes.
+  if ((requireAdmin || requireProvider) && !isRoleLoaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
   }
 
   if (requireAdmin && !isAdmin) {

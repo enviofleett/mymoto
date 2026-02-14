@@ -91,33 +91,6 @@ async function handler(req: Request) {
     return new Response(JSON.stringify({ error: 'Unauthorized: User ID required' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   }
 
-  // Wallet Balance Check
-  // Users without wallet credit wont be able to use the LLM services
-  if (user_id) {
-    const { data: wallet, error: walletError } = await supabase
-      .from('wallets')
-      .select('balance')
-      .eq('profile_id', user_id)
-      .maybeSingle()
-    
-    if (walletError) {
-      console.error('[Vehicle Chat] Error checking wallet:', walletError)
-    }
-
-    const balance = wallet?.balance || 0
-    // Allow small negative balance (grace) or strictly > 0? Requirement says "credit", implying > 0.
-    if (balance <= 0) {
-      console.warn(`[Vehicle Chat] User ${user_id} has insufficient balance (${balance}). Denying chat.`)
-      return new Response(JSON.stringify({ 
-        error: 'Insufficient funds', 
-        message: 'Please top up your wallet to continue chatting with your vehicle.' 
-      }), { 
-        status: 402, // Payment Required
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      })
-    }
-  }
-
   try {
     // 1. Gather Context in Parallel
     const [
@@ -155,9 +128,8 @@ async function handler(req: Request) {
     )
 
     const dateSystemInfo = `
-Current Date/Time: ${dateContext.humanReadable}
-Date Range Context: ${dateContext.startDate} to ${dateContext.endDate || dateContext.startDate}
-User Timezone: ${user_timezone || 'Africa/Lagos'}
+Current Date/Time: ${dateContext.humanReadable} (${dateContext.startDate})
+User Timezone: ${user_timezone || 'UTC'}
 
 CRITICAL INSTRUCTIONS:
 1. You have NO internal knowledge of the vehicle's current state.
@@ -192,32 +164,11 @@ WHEN TO USE EACH TOOL:
 - "Track my route from A to B" → get_position_history (detailed path)
 `
 
-    const finalSystemPrompt = `${systemPersona}\n${dateSystemInfo}
-    
-    PREVIOUS CONVERSATION SUMMARY:
-    ${conversationContext.conversation_summary || 'None'}
-    
-    KNOWN FACTS ABOUT USER:
-    ${conversationContext.important_facts?.join('\n') || 'None'}
-    `
+    const finalSystemPrompt = `${systemPersona}\n${dateSystemInfo}`
 
     // 4. Construct Message History
-    // Inject conversation summary and important facts so the agent retains context
-    // beyond the sliding window of recent messages
-    let contextPreamble = ''
-    if (conversationContext.conversation_summary) {
-      contextPreamble += `\nCONVERSATION HISTORY SUMMARY (older messages):\n${conversationContext.conversation_summary}\n`
-    }
-    if (conversationContext.important_facts.length > 0) {
-      contextPreamble += `\nKEY FACTS FROM PAST CONVERSATIONS:\n${conversationContext.important_facts.map(f => `- ${f}`).join('\n')}\n`
-    }
-
-    const systemContent = contextPreamble
-      ? `${finalSystemPrompt}\n${contextPreamble}`
-      : finalSystemPrompt
-
     const messages: any[] = [
-      { role: 'system', content: systemContent },
+      { role: 'system', content: finalSystemPrompt },
       ...conversationContext.recent_messages,
       { role: 'user', content: message }
     ]

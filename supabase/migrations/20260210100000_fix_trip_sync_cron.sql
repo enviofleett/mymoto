@@ -97,4 +97,4 @@ EXCEPTION
 END;
 $$;
 
--- COMMENT ON FUNCTION trigger_trip_sync IS 'Manually trigger trip sync for a specific device or all devices (Fixed dependencies)';
+COMMENT ON FUNCTION trigger_trip_sync IS 'Manually trigger trip sync for a specific device or all devices (Fixed dependencies)';

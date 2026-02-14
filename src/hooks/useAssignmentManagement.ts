@@ -17,6 +17,9 @@ export interface VehicleWithAssignment {
   device_type: string | null;
   gps_owner: string | null;
   group_name: string | null;
+  sim_number: string | null;
+  group_id: string | null;
+  last_synced_at: string | null;
   assignedTo: {
     profile_id: string;
     profile_name: string;
@@ -104,7 +107,7 @@ export function useVehiclesWithAssignments(search: string = "", filter: "all" | 
       // Get ALL vehicles - no limit for admin panel
       let query = (supabase as any)
         .from("vehicles")
-        .select("device_id, device_name, device_type, gps_owner, group_name")
+        .select("device_id, device_name, device_type, gps_owner, group_name, sim_number, group_id, last_synced_at")
         .order("device_name");
 
       if (search) {

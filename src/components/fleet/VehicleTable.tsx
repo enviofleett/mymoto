@@ -1,10 +1,10 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger, DropdownMenuRadioGroup, DropdownMenuRadioItem } from "@/components/ui/dropdown-menu";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FleetVehicle } from "@/hooks/useFleetData";
@@ -23,7 +23,15 @@ interface VehicleTableProps {
   showDetailsModal?: boolean;
 }
 
-type StatusFilter = "all" | "online" | "offline";
+type StatusFilter =
+  | "online"
+  | "offline"
+  | "moving"
+  | "stopped"
+  | "overspeeding"
+  | "ignition_on"
+  | "ignition_off"
+  | "low_battery";
 
 export function VehicleTable({
   vehicles,
@@ -37,7 +45,19 @@ export function VehicleTable({
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState<FleetVehicle | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [selectedFilters, setSelectedFilters] = useState<StatusFilter[]>([]);
+  const [filterMode, setFilterMode] = useState<"or" | "and">("or");
+
+  useEffect(() => {
+    const saved = localStorage.getItem("fleetFilterMode");
+    if (saved === "or" || saved === "and") {
+      setFilterMode(saved as "or" | "and");
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("fleetFilterMode", filterMode);
+  }, [filterMode]);
 
   const { prefetchPositionHistory, prefetchDrivers } = usePrefetchVehicleDetails();
 
@@ -64,6 +84,30 @@ export function VehicleTable({
     onVehicleSelect?.(vehicle);
   };
 
+  // Event delegation for mobile cards: single click handler on container
+  const handleCardsClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const raw = e.target as Node;
+    const baseEl = raw.nodeType === 1 ? (raw as Element) : (raw.parentElement as Element | null);
+    const cardEl = baseEl ? (baseEl.closest("[data-vehicle-id]") as HTMLElement | null) : null;
+    if (!cardEl) return;
+    const vid = cardEl.getAttribute("data-vehicle-id");
+    if (!vid) return;
+    const v = filteredVehicles.find((veh) => veh.id === vid);
+    if (v) handleRowClick(v);
+  };
+
+  // Event delegation for desktop table rows
+  const handleTableClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const raw = e.target as Node;
+    const baseEl = raw.nodeType === 1 ? (raw as Element) : (raw.parentElement as Element | null);
+    const rowEl = baseEl ? (baseEl.closest("[data-vehicle-id]") as HTMLElement | null) : null;
+    if (!rowEl) return;
+    const vid = rowEl.getAttribute("data-vehicle-id");
+    if (!vid) return;
+    const v = filteredVehicles.find((veh) => veh.id === vid);
+    if (v) handleRowClick(v);
+  };
+
   const handleAssignmentComplete = () => {
     setAssignDialogOpen(false);
     setDetailsModalOpen(false);
@@ -81,17 +125,28 @@ export function VehicleTable({
         vehicle.plate.toLowerCase().includes(searchLower) ||
         (vehicle.driver?.name.toLowerCase().includes(searchLower) ?? false);
 
-      // Status filter
-      let matchesStatus = true;
-      if (statusFilter === "online") {
-        matchesStatus = vehicle.status !== "offline";
-      } else if (statusFilter === "offline") {
-        matchesStatus = vehicle.status === "offline";
-      }
+      // Multi-select status filters (OR-combined). Empty = all.
+      const predicateFor = (f: StatusFilter) => {
+        if (f === "online") return vehicle.status !== "offline";
+        if (f === "offline") return vehicle.status === "offline";
+        if (f === "moving") return vehicle.status === "moving";
+        if (f === "stopped") return vehicle.status === "stopped";
+        if (f === "overspeeding") return vehicle.isOverspeeding;
+        if (f === "ignition_on") return vehicle.ignition === true;
+        if (f === "ignition_off") return vehicle.ignition === false;
+        if (f === "low_battery") return vehicle.battery !== null && vehicle.battery > 0 && vehicle.battery < 20;
+        return true;
+      };
+
+      const matchesStatus =
+        selectedFilters.length === 0 ||
+        (filterMode === "or"
+          ? selectedFilters.some(predicateFor)
+          : selectedFilters.every(predicateFor));
 
       return matchesSearch && matchesStatus;
     });
-  }, [vehicles, searchQuery, statusFilter]);
+  }, [vehicles, searchQuery, selectedFilters, filterMode]);
 
   // Skeleton Loading State
   if (loading) {
@@ -218,6 +273,18 @@ export function VehicleTable({
 
   const onlineCount = vehicles.filter(v => v.status !== 'offline').length;
   const offlineCount = vehicles.filter(v => v.status === 'offline').length;
+  const movingCount = vehicles.filter(v => v.status === 'moving').length;
+  const stoppedCount = vehicles.filter(v => v.status === 'stopped').length;
+  const overspeedCount = vehicles.filter(v => v.isOverspeeding).length;
+  const ignitionOnCount = vehicles.filter(v => v.ignition === true).length;
+  const ignitionOffCount = vehicles.filter(v => v.ignition === false).length;
+  const lowBatteryCount = vehicles.filter(v => v.battery !== null && v.battery > 0 && v.battery < 20).length;
+
+  const toggleFilter = (filter: StatusFilter) => {
+    setSelectedFilters((prev) =>
+      prev.includes(filter) ? prev.filter((f) => f !== filter) : [...prev, filter]
+    );
+  };
 
   return (
     <>
@@ -233,22 +300,84 @@ export function VehicleTable({
           />
         </div>
         <div className="flex items-center gap-2">
-          <Filter className="h-4 w-4 text-muted-foreground" />
-          <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
-            <SelectTrigger className="w-[160px]">
-              <SelectValue placeholder="Filter by status" />
-            </SelectTrigger>
-            <SelectContent className="bg-popover border border-border z-50">
-              <SelectItem value="all">All ({vehicles.length})</SelectItem>
-              <SelectItem value="online">Online ({onlineCount})</SelectItem>
-              <SelectItem value="offline">Offline ({offlineCount})</SelectItem>
-            </SelectContent>
-          </Select>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="gap-2">
+                <Filter className="h-4 w-4" />
+                Status Filters
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-56 bg-popover border border-border z-50">
+              <DropdownMenuLabel>Combine filters</DropdownMenuLabel>
+              <DropdownMenuRadioGroup value={filterMode} onValueChange={(v) => setFilterMode(v as "or" | "and")}>
+                <DropdownMenuRadioItem value="or">OR (match any)</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="and">AND (match all)</DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuCheckboxItem
+                checked={selectedFilters.length === 0}
+                onCheckedChange={(checked) => {
+                  if (checked) setSelectedFilters([]);
+                }}
+              >
+                All ({vehicles.length})
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuCheckboxItem
+                checked={selectedFilters.includes("online")}
+                onCheckedChange={() => toggleFilter("online")}
+              >
+                Online ({onlineCount})
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={selectedFilters.includes("offline")}
+                onCheckedChange={() => toggleFilter("offline")}
+              >
+                Offline ({offlineCount})
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={selectedFilters.includes("moving")}
+                onCheckedChange={() => toggleFilter("moving")}
+              >
+                Moving ({movingCount})
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={selectedFilters.includes("stopped")}
+                onCheckedChange={() => toggleFilter("stopped")}
+              >
+                Stopped ({stoppedCount})
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={selectedFilters.includes("overspeeding")}
+                onCheckedChange={() => toggleFilter("overspeeding")}
+              >
+                Overspeed ({overspeedCount})
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={selectedFilters.includes("ignition_on")}
+                onCheckedChange={() => toggleFilter("ignition_on")}
+              >
+                Ignition ON ({ignitionOnCount})
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={selectedFilters.includes("ignition_off")}
+                onCheckedChange={() => toggleFilter("ignition_off")}
+              >
+                Ignition OFF ({ignitionOffCount})
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={selectedFilters.includes("low_battery")}
+                onCheckedChange={() => toggleFilter("low_battery")}
+              >
+                Low Battery ({lowBatteryCount})
+              </DropdownMenuCheckboxItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
       {/* Results count */}
-      {(searchQuery || statusFilter !== "all") && (
+      {(searchQuery || selectedFilters.length > 0) && (
         <p className="text-sm text-muted-foreground mb-2">
           Showing {filteredVehicles.length} of {vehicles.length} vehicles
         </p>
@@ -273,8 +402,8 @@ export function VehicleTable({
         </div>
       ) : (
         <>
-          {/* Mobile Card View */}
-          <div className="md:hidden space-y-3">
+          {/* Mobile Card View (delegated click handler) */}
+          <div className="md:hidden space-y-3" onClick={handleCardsClick}>
             {filteredVehicles.map((v) => (
               <Card 
                 key={v.id} 
@@ -282,6 +411,7 @@ export function VehicleTable({
                   "bg-card border-border cursor-pointer hover:bg-muted/50 transition-colors",
                   selectedVehicleId === v.id && "bg-primary/5 border-primary ring-2 ring-primary/30"
                 )}
+                data-vehicle-id={v.id}
                 onClick={() => handleRowClick(v)}
                 onMouseEnter={() => handleRowHover(v)}
               >
@@ -320,7 +450,7 @@ export function VehicleTable({
           </div>
 
           {/* Desktop Table View */}
-          <div className="hidden md:block rounded-lg border border-border bg-card overflow-hidden">
+          <div className="hidden md:block rounded-lg border border-border bg-card overflow-hidden" onClick={handleTableClick}>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -335,7 +465,7 @@ export function VehicleTable({
                   {showDetailsModal && <TableHead className="w-[60px]"></TableHead>}
                 </TableRow>
               </TableHeader>
-              <TableBody>
+              <TableBody onClick={handleTableClick}>
                 {filteredVehicles.map((v) => (
                   <TableRow 
                     key={v.id} 
@@ -343,6 +473,7 @@ export function VehicleTable({
                       "cursor-pointer hover:bg-muted/50",
                       selectedVehicleId === v.id && "bg-primary/5 ring-2 ring-primary/30"
                     )}
+                    data-vehicle-id={v.id}
                     onClick={() => handleRowClick(v)}
                     onMouseEnter={() => handleRowHover(v)}
                   >

@@ -18,6 +18,9 @@ interface VehicleLocationMapProps {
   className?: string;
   showAddressCard?: boolean;
   mapHeight?: string;
+  routeCoords?: Array<{ lat: number; lon: number }>;
+  routeStartEnd?: { start: { lat: number; lon: number }, end: { lat: number; lon: number } } | undefined;
+  geofences?: Array<{ latitude: number; longitude: number; radius: number; name?: string }>;
 }
 
 // Constants
@@ -68,11 +71,16 @@ export function VehicleLocationMap({
   className,
   showAddressCard = true,
   mapHeight = 'h-64',
+  routeCoords,
+  routeStartEnd,
+  geofences,
 }: VehicleLocationMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<MapboxMap | null>(null);
   const marker = useRef<MapboxMarker | null>(null);
   const markerElement = useRef<HTMLDivElement | null>(null);
+  const mapboxRef = useRef<any>(null);
+  const lastCameraMoveAtRef = useRef<number>(0);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
   const [mapboxLoading, setMapboxLoading] = useState(false);
@@ -105,6 +113,19 @@ export function VehicleLocationMap({
       : '#';
   }, [hasValidCoordinates, latitude, longitude]);
 
+  // Warm the mapbox chunk early so the UI doesn't feel "stuck" waiting on it.
+  useEffect(() => {
+    if (!mapboxEnabled) return;
+    if (mapboxRef.current) return;
+    void loadMapbox()
+      .then((m) => {
+        mapboxRef.current = m;
+      })
+      .catch(() => {
+        // ignore; init effect will surface a user-facing error if needed
+      });
+  }, [mapboxEnabled]);
+
   // Initialize map once
   useEffect(() => {
     if (!mapboxEnabled) return;
@@ -119,7 +140,8 @@ export function VehicleLocationMap({
 
       try {
         setMapboxLoading(true);
-        const mapboxgl = await loadMapbox();
+        const mapboxgl = mapboxRef.current ?? (await loadMapbox());
+        mapboxRef.current = mapboxgl;
         mapboxgl.accessToken = token;
 
         const mapInstance = new mapboxgl.Map({
@@ -180,7 +202,8 @@ export function VehicleLocationMap({
       const currentSpeed = speed || 0;
 
       try {
-        const mapboxgl = await loadMapbox();
+        const mapboxgl = mapboxRef.current ?? (await loadMapbox());
+        mapboxRef.current = mapboxgl;
         
         // OPTIMIZED: Update existing marker instead of recreating
         if (marker.current && markerElement.current) {
@@ -206,12 +229,16 @@ export function VehicleLocationMap({
             .addTo(map.current!);
         }
 
-        // Smooth camera follow
-        map.current!.flyTo({
-          center: [lng, lat],
-          duration: MAP_ANIMATION_DURATION,
-          essential: true,
-        });
+        // Smooth camera follow, but throttle to avoid jank during rapid updates.
+        const now = Date.now();
+        if (now - lastCameraMoveAtRef.current > 900) {
+          lastCameraMoveAtRef.current = now;
+          map.current!.easeTo({
+            center: [lng, lat],
+            duration: MAP_ANIMATION_DURATION,
+            essential: true,
+          });
+        }
 
       } catch (error) {
         console.error('[Marker Update Error]', error);
@@ -220,6 +247,186 @@ export function VehicleLocationMap({
 
     updateMarker();
   }, [latitude, longitude, heading, speed, vehicleStatus, mapLoaded, hasValidCoordinates]);
+
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+    const coords = (routeCoords || []).map(p => [p.lon, p.lat]);
+    const hasRoute = coords.length > 1;
+    const updateRoute = async () => {
+      try {
+        const mapboxgl = mapboxRef.current ?? (await loadMapbox());
+        mapboxRef.current = mapboxgl;
+        const sourceId = 'vehicle-route';
+        const layerId = 'vehicle-route-layer';
+        if (hasRoute) {
+          const data = {
+            type: 'Feature',
+            geometry: {
+              type: 'LineString',
+              coordinates: coords,
+            }
+          } as any;
+          if (map.current!.getSource(sourceId)) {
+            const src = map.current!.getSource(sourceId) as any;
+            src.setData(data);
+          } else {
+            map.current!.addSource(sourceId, {
+              type: 'geojson',
+              data
+            } as any);
+            map.current!.addLayer({
+              id: layerId,
+              type: 'line',
+              source: sourceId,
+              layout: {
+                'line-join': 'round',
+                'line-cap': 'round'
+              },
+              paint: {
+                'line-color': '#3b82f6',
+                'line-width': 4,
+                'line-opacity': 0.7
+              }
+            } as any);
+          }
+        } else {
+          if (map.current!.getLayer('vehicle-route-layer')) {
+            map.current!.removeLayer('vehicle-route-layer');
+          }
+          if (map.current!.getSource('vehicle-route')) {
+            map.current!.removeSource('vehicle-route');
+          }
+        }
+      } catch {}
+    };
+    updateRoute();
+    return () => {
+      if (map.current?.getLayer('vehicle-route-layer')) {
+        map.current.removeLayer('vehicle-route-layer');
+      }
+      if (map.current?.getSource('vehicle-route')) {
+        map.current.removeSource('vehicle-route');
+      }
+    };
+  }, [routeCoords, mapLoaded]);
+
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+    if (!routeStartEnd) {
+      if (map.current.getLayer('route-points-layer')) {
+        map.current.removeLayer('route-points-layer');
+      }
+      if (map.current.getSource('route-points')) {
+        map.current.removeSource('route-points');
+      }
+      return;
+    }
+    const points = {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          properties: { kind: 'start' },
+          geometry: {
+            type: 'Point',
+            coordinates: [routeStartEnd.start.lon, routeStartEnd.start.lat]
+          }
+        },
+        {
+          type: 'Feature',
+          properties: { kind: 'end' },
+          geometry: {
+            type: 'Point',
+            coordinates: [routeStartEnd.end.lon, routeStartEnd.end.lat]
+          }
+        }
+      ]
+    } as any;
+    if (map.current.getSource('route-points')) {
+      const src = map.current.getSource('route-points') as any;
+      src.setData(points);
+    } else {
+      map.current.addSource('route-points', { type: 'geojson', data: points } as any);
+      map.current.addLayer({
+        id: 'route-points-layer',
+        type: 'circle',
+        source: 'route-points',
+        paint: {
+          'circle-radius': 6,
+          'circle-color': [
+            'match',
+            ['get', 'kind'],
+            'start', '#22c55e',
+            'end', '#ef4444',
+            '#3b82f6'
+          ],
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#ffffff'
+        }
+      } as any);
+    }
+  }, [routeStartEnd, mapLoaded]);
+
+  function buildCirclePolygon(lat: number, lon: number, radiusMeters: number, steps = 64): number[][] {
+    const coords: number[][] = [];
+    const dLat = (radiusMeters / 111320);
+    for (let i = 0; i <= steps; i++) {
+      const theta = (i / steps) * 2 * Math.PI;
+      const dLon = (radiusMeters / (111320 * Math.cos(lat * Math.PI / 180)));
+      const latOffset = dLat * Math.sin(theta);
+      const lonOffset = dLon * Math.cos(theta);
+      coords.push([lon + lonOffset, lat + latOffset]);
+    }
+    return coords;
+  }
+
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+    const zones = (geofences || []).filter(z => z.latitude && z.longitude && z.radius && z.radius > 0);
+    const sourceId = 'geofences-source';
+    const layerIdFill = 'geofences-fill-layer';
+    const layerIdOutline = 'geofences-outline-layer';
+    if (zones.length === 0) {
+      if (map.current.getLayer(layerIdFill)) map.current.removeLayer(layerIdFill);
+      if (map.current.getLayer(layerIdOutline)) map.current.removeLayer(layerIdOutline);
+      if (map.current.getSource(sourceId)) map.current.removeSource(sourceId);
+      return;
+    }
+    const features = zones.map(z => ({
+      type: 'Feature',
+      properties: { name: z.name || 'Zone' },
+      geometry: {
+        type: 'Polygon',
+        coordinates: [buildCirclePolygon(z.latitude, z.longitude, z.radius)]
+      }
+    }));
+    const data = { type: 'FeatureCollection', features } as any;
+    if (map.current.getSource(sourceId)) {
+      const src = map.current.getSource(sourceId) as any;
+      src.setData(data);
+    } else {
+      map.current.addSource(sourceId, { type: 'geojson', data } as any);
+      map.current.addLayer({
+        id: layerIdFill,
+        type: 'fill',
+        source: sourceId,
+        paint: {
+          'fill-color': '#10b981',
+          'fill-opacity': 0.15
+        }
+      } as any);
+      map.current.addLayer({
+        id: layerIdOutline,
+        type: 'line',
+        source: sourceId,
+        paint: {
+          'line-color': '#10b981',
+          'line-width': 2,
+          'line-opacity': 0.8
+        }
+      } as any);
+    }
+  }, [geofences, mapLoaded]);
 
   if (!mapboxEnabled) {
     return (

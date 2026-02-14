@@ -144,23 +144,31 @@ export function mapDirectResponseToVehicleLiveData(record: any): VehicleLiveData
  * Fetches live vehicle data DIRECTLY from the GPS 51 API via Edge Function.
  * Bypasses the database read lag for 100% real-time accuracy.
  */
-export async function fetchVehicleLiveDataDirect(deviceId: string): Promise<VehicleLiveData> {
+export async function fetchVehicleLiveDataDirect(
+  deviceId: string,
+  opts?: { timeoutMs?: number }
+): Promise<VehicleLiveData> {
   const fetchStart = Date.now();
   if (import.meta.env.DEV) {
     console.log(`[fetchVehicleLiveDataDirect] 🚀 Fetching DIRECTLY from GPS 51 for: ${deviceId}`);
   }
 
   try {
-    const { data, error } = await supabase.functions.invoke("gps-data", {
-      body: { 
-        action: 'lastposition',
-        body_payload: {
-          deviceids: [deviceId],
-          lastquerypositiontime: 0
-        },
-        use_cache: false
+    const invokePromise = supabase.functions.invoke("get-vehicle-live-status", {
+      body: {
+        device_id: deviceId,
       },
     });
+
+    // If the edge function hangs (cold start/network), fall back quickly so the UI stays responsive.
+    // Note: this is a UI timeout; we still fall back to the DB for continuity.
+    const TIMEOUT_MS = opts?.timeoutMs ?? 8000;
+    const { data, error } = await Promise.race([
+      invokePromise,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`GPS51 proxy timeout after ${TIMEOUT_MS}ms`)), TIMEOUT_MS)
+      ),
+    ]);
 
     const fetchDuration = Date.now() - fetchStart;
 
@@ -177,16 +185,7 @@ export async function fetchVehicleLiveDataDirect(deviceId: string): Promise<Vehi
        throw new Error(`Proxy returned error: ${data.error}`);
     }
 
-    // gps-data returns { data: { records: [...] } } or { data: { ...apiResponse, records: [...] } }
-    // The structure is usually nested in 'data' property of the response JSON
-    const responseData = data.data || data;
-    const records = responseData.records || [];
-    
-    if (records.length === 0) {
-      throw new Error("No records returned from GPS 51");
-    }
-
-    const record = records[0];
+    const record = data; // The function returns the normalized object directly
 
     if (import.meta.env.DEV) {
       console.log(`[fetchVehicleLiveDataDirect] ✅ Received direct data in ${fetchDuration}ms`);
@@ -194,7 +193,13 @@ export async function fetchVehicleLiveDataDirect(deviceId: string): Promise<Vehi
 
     return mapDirectResponseToVehicleLiveData(record);
   } catch (err) {
-    console.error(`[fetchVehicleLiveDataDirect] ❌ Failed:`, err);
+    // Timeout/cold-start is a normal scenario. Don't spam prod consoles.
+    const msg = err instanceof Error ? err.message : String(err);
+    const isTimeout = msg.includes("GPS51 proxy timeout");
+    if (import.meta.env.DEV) {
+      const log = isTimeout ? console.warn : console.error;
+      log(`[fetchVehicleLiveDataDirect] ${isTimeout ? "⏳" : "❌"} Failed:`, err);
+    }
     
     // Fallback to Database if Edge Function fails (e.g. AdBlocker, Network, Timeout)
     if (import.meta.env.DEV) {

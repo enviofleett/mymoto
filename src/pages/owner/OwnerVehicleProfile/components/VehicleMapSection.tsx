@@ -15,6 +15,9 @@ interface VehicleMapSectionProps {
   isRefreshing: boolean;
   onRefresh: () => void;
   isLoading?: boolean;
+  routeCoords?: Array<{ lat: number; lon: number }>;
+  routeStartEnd?: { start: { lat: number; lon: number }, end: { lat: number; lon: number } } | undefined;
+  geofences?: Array<{ latitude: number; longitude: number; radius: number; name?: string }>;
 }
 
 export function VehicleMapSection({
@@ -28,6 +31,9 @@ export function VehicleMapSection({
   isRefreshing,
   onRefresh,
   isLoading = false,
+  routeCoords,
+  routeStartEnd,
+  geofences,
 }: VehicleMapSectionProps) {
   // Show loading skeleton while data is being fetched
   if (isLoading) {
@@ -92,6 +98,9 @@ export function VehicleMapSection({
           showAddressCard={true}
           mapHeight="h-80"
           className="rounded-2xl"
+          routeCoords={routeCoords}
+          routeStartEnd={routeStartEnd}
+          geofences={geofences}
         />
       </div>
       {/* Neumorphic refresh button */}

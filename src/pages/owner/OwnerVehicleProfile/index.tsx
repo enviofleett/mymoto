@@ -1,6 +1,5 @@
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { OwnerLayout } from "@/components/layouts/OwnerLayout";
@@ -10,12 +9,14 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { VehiclePersonaSettings } from "@/components/fleet/VehiclePersonaSettings";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
-import { fetchVehicleLiveDataDirect, VehicleLiveData } from "@/hooks/useVehicleLiveData";
+import { fetchVehicleLiveDataDirect, type VehicleLiveData, useVehicleLiveData } from "@/hooks/useVehicleLiveData";
 import { useAddress } from "@/hooks/useAddress";
 import { useVehicleLLMSettings, useVehicleTrips, useVehicleEvents, useVehicleDailyStats, type VehicleTrip } from "@/hooks/useVehicleProfile";
 import { useOwnerVehicles } from "@/hooks/useOwnerVehicles";
-import { useTripSyncStatus, useTriggerTripSync, useRealtimeTripUpdates } from "@/hooks/useTripSync";
+import { supabase } from "@/integrations/supabase/client";
 import { type DateRange } from "react-day-picker";
+import { preloadMapbox } from "@/utils/loadMapbox";
+import { useTripSyncStatus, useTriggerTripSync } from "@/hooks/useTripSync";
 
 // Import sub-components
 import { ProfileHeader } from "./components/ProfileHeader";
@@ -34,31 +35,35 @@ export default function OwnerVehicleProfile() {
   // State
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [routeCoords, setRouteCoords] = useState<Array<{ lat: number; lon: number }> | undefined>(undefined);
+  const [geofenceOverlays, setGeofenceOverlays] = useState<Array<{ latitude: number; longitude: number; radius: number; name?: string }>>([]);
+  const [directLiveOverride, setDirectLiveOverride] = useState<{ data: VehicleLiveData; fetchedAt: number } | null>(null);
 
   // ============================================================================
-  // DIRECT DATA FETCHING: 100% Accuracy from GPS 51
+  // LIVE DATA FETCHING
+  // Default: DB (fleet-scale safe, no timeouts)
+  // Manual Refresh: one-shot direct GPS51 fetch for "right now" accuracy
   // ============================================================================
 
   const {
-    data: liveData,
+    data: dbLiveData,
     isLoading: liveLoading,
     error: liveError,
     refetch: refetchLive,
-  } = useQuery({
-    queryKey: ["vehicle-live-data-direct", resolvedDeviceId],
-    queryFn: async () => {
-      try {
-        return await fetchVehicleLiveDataDirect(resolvedDeviceId);
-      } catch (err) {
-        console.error("Direct fetch failed:", err);
-        throw err;
-      }
-    },
-    enabled: hasDeviceId,
-    refetchInterval: 15000, // Poll GPS 51 every 15 seconds
-    refetchOnWindowFocus: true,
-    retry: 2,
-  });
+  } = useVehicleLiveData(hasDeviceId ? resolvedDeviceId : null);
+
+  // Clear one-shot override when switching vehicles
+  useEffect(() => {
+    setDirectLiveOverride(null);
+  }, [resolvedDeviceId]);
+
+  // Auto-expire the one-shot override so DB polling keeps the UI moving.
+  useEffect(() => {
+    if (!directLiveOverride) return;
+    const ttlMs = 20_000;
+    const t = setTimeout(() => setDirectLiveOverride(null), ttlMs);
+    return () => clearTimeout(t);
+  }, [directLiveOverride]);
 
   // Keep track of last valid data to prevent UI flashing
   // FALLBACK STRATEGY: Use Live Data -> OwnerVehicle (DB) -> null
@@ -66,8 +71,12 @@ export default function OwnerVehicleProfile() {
   const vehicle = ownerVehicles?.find((v) => v.deviceId === resolvedDeviceId);
 
   const displayData = useMemo(() => {
+    const now = Date.now();
+    const overrideFresh = directLiveOverride && now - directLiveOverride.fetchedAt < 20_000;
+
     // 1. Prefer Live Data if available and valid
-    if (liveData) {
+    if (overrideFresh) {
+      const liveData = directLiveOverride.data;
       // If live data has null coordinates (e.g. offline), try to fill from DB
       return {
         ...liveData,
@@ -80,6 +89,21 @@ export default function OwnerVehicleProfile() {
         ignitionOn: liveData.ignitionOn ?? vehicle?.ignition ?? null,
         // Keep live status if available, otherwise fallback
         isOnline: liveData.isOnline, 
+      };
+    }
+
+    if (dbLiveData) {
+      const liveData = dbLiveData;
+      return {
+        ...liveData,
+        latitude: liveData.latitude ?? vehicle?.latitude ?? null,
+        longitude: liveData.longitude ?? vehicle?.longitude ?? null,
+        batteryPercent: liveData.batteryPercent ?? vehicle?.battery ?? null,
+        totalMileageKm: liveData.totalMileageKm ?? vehicle?.totalMileage ?? null,
+        heading: liveData.heading ?? vehicle?.heading ?? null,
+        speed: liveData.speed ?? vehicle?.speed ?? 0,
+        ignitionOn: liveData.ignitionOn ?? vehicle?.ignition ?? null,
+        isOnline: liveData.isOnline,
       };
     }
 
@@ -105,16 +129,7 @@ export default function OwnerVehicleProfile() {
     }
 
     return null;
-  }, [liveData, vehicle]);
-
-  // Notify user if falling back to cached data due to error
-  useEffect(() => {
-    if (liveError && vehicle && !isRefreshing) {
-      toast.error("Live update failed", {
-        description: "Showing last known location and status",
-      });
-    }
-  }, [liveError, vehicle, isRefreshing]);
+  }, [directLiveOverride, dbLiveData, vehicle]);
 
   // Vehicle LLM settings (Avatar, Nickname)
   const { 
@@ -160,7 +175,9 @@ export default function OwnerVehicleProfile() {
     refetch: refetchTrips
   } = useVehicleTrips(resolvedDeviceId, { 
     dateRange, 
-    live: true, // Enable live updates for trip status
+    live: false, // On-demand reports don't need live polling
+    // To match GPS51 1:1 for the selected date range, fetch enough rows to avoid truncation.
+    limit: 2000
   }, hasDeviceId && shouldFetchTrips);
 
   const { 
@@ -179,8 +196,18 @@ export default function OwnerVehicleProfile() {
   } = useVehicleDailyStats(
     resolvedDeviceId, 
     dateRange || 30, // Pass 30 (number) or DateRange object
-    hasDeviceId
+    hasDeviceId && shouldFetchTrips
   );
+
+  const { data: syncStatus } = useTripSyncStatus(resolvedDeviceId, hasDeviceId);
+  const triggerSync = useTriggerTripSync();
+  const isSyncing = triggerSync.isPending;
+
+  const handleForceSync = useCallback(() => {
+    if (!hasDeviceId) return;
+    // Default to 30d so the "Reports last 30 days" UI gets data on first use.
+    triggerSync.mutate({ deviceId: resolvedDeviceId, forceFullSync: true });
+  }, [hasDeviceId, resolvedDeviceId, triggerSync]);
 
   const handleRequestTrips = useCallback(() => {
     setShouldFetchTrips(true);
@@ -191,19 +218,45 @@ export default function OwnerVehicleProfile() {
 
   useEffect(() => {
     if (hasDeviceId) {
-      setShouldFetchTrips(true);
+      // Defer heavier reports fetching until after first paint so the map/header feel instant.
+      // (Still loads automatically, just not in the critical render path.)
+      if ("requestIdleCallback" in window) {
+        (window as any).requestIdleCallback(() => setShouldFetchTrips(true), { timeout: 1500 });
+      } else {
+        setTimeout(() => setShouldFetchTrips(true), 350);
+      }
     }
   }, [hasDeviceId]);
 
-  // Trip sync: status, manual trigger, and realtime updates
-  const { data: syncStatus } = useTripSyncStatus(deviceId);
-  const triggerSync = useTriggerTripSync();
-  const { isSubscribed: isRealtimeSubscribed } = useRealtimeTripUpdates(deviceId);
+  // Warm mapbox chunk early for smoother map load.
+  useEffect(() => {
+    if (!hasDeviceId) return;
+    preloadMapbox();
+  }, [hasDeviceId]);
 
-  const handleForceSync = useCallback(() => {
-    if (!deviceId) return;
-    triggerSync.mutate({ deviceId, forceRecent: true });
-  }, [deviceId, triggerSync]);
+  useEffect(() => {
+    const loadGeofences = async () => {
+      try {
+        const { data, error } = await (supabase as any)
+          .from('geofence_zones')
+          .select('center_latitude, center_longitude, radius_meters, name, is_active')
+          .or(`device_id.eq.${resolvedDeviceId},device_id.is.null`)
+          .eq('is_active', true)
+          .order('created_at', { ascending: false });
+        if (error) throw error;
+        const zones = (data as any[]).map(z => ({
+          latitude: Number(z.center_latitude),
+          longitude: Number(z.center_longitude),
+          radius: Number(z.radius_meters),
+          name: z.name as string | undefined
+        })).filter(z => z.latitude && z.longitude && z.radius && z.radius > 0);
+        setGeofenceOverlays(zones);
+      } catch {
+        setGeofenceOverlays([]);
+      }
+    };
+    loadGeofences();
+  }, [resolvedDeviceId]);
 
   // Pull-to-refresh handler
   const handleRefresh = useCallback(async () => {
@@ -212,19 +265,32 @@ export default function OwnerVehicleProfile() {
     setIsRefreshing(true);
     
     try {
-      const results = await Promise.allSettled([
-        refetchLive(),
-        refetchProfile(),
-      ]);
+      // DB refresh is the baseline and should succeed even if the proxy times out.
+      const dbResult = refetchLive();
+      const profileResult = refetchProfile();
 
-      const failed = results.some(r => r.status === 'rejected');
-      if (failed) {
-        throw new Error("Some data failed to refresh");
+      // Only call the GPS51 proxy on explicit user refresh.
+      const directResult = fetchVehicleLiveDataDirect(resolvedDeviceId, { timeoutMs: 12_000 })
+        .then((data) => {
+          setDirectLiveOverride({ data, fetchedAt: Date.now() });
+          return { ok: true as const };
+        })
+        .catch((err) => {
+          return { ok: false as const, err };
+        });
+
+      const [db, profile, direct] = await Promise.all([dbResult, profileResult, directResult]);
+
+      if (!direct.ok) {
+        const msg = direct.err instanceof Error ? direct.err.message : String(direct.err);
+        toast.warning("Live GPS51 timed out", {
+          description: msg.includes("timeout") ? "Showing DB live data (last known)" : "Showing DB live data",
+        });
+      } else {
+        toast.success("Updated", {
+          description: "Latest live data retrieved",
+        });
       }
-
-      toast.success("Updated", { 
-        description: "Latest data retrieved from GPS 51" 
-      });
     } catch (error) {
       toast.error("Refresh failed", { 
         description: "Could not retrieve latest data" 
@@ -232,7 +298,7 @@ export default function OwnerVehicleProfile() {
     } finally {
       setIsRefreshing(false);
     }
-  }, [hasDeviceId, refetchLive, refetchProfile]);
+  }, [hasDeviceId, refetchLive, refetchProfile, resolvedDeviceId]);
 
   const { pullDistance, handlers: pullHandlers } = usePullToRefresh({
     onRefresh: handleRefresh,
@@ -275,7 +341,7 @@ export default function OwnerVehicleProfile() {
               {liveError instanceof Error ? liveError.message : "An unexpected error occurred"}
             </p>
             <div className="flex gap-2 justify-center">
-              <Button onClick={() => refetchLive()}>Retry</Button>
+              <Button onClick={handleRefresh}>Retry</Button>
               <Button variant="outline" onClick={() => navigate("/owner/vehicles")}>
                 Back to Vehicles
               </Button>
@@ -292,7 +358,7 @@ export default function OwnerVehicleProfile() {
         <div className="flex items-center justify-center h-full">
           <div className="text-center max-w-md px-4">
             <p className="text-foreground font-medium mb-2">No vehicle data available</p>
-            <Button onClick={() => refetchLive()}>Refresh</Button>
+            <Button onClick={handleRefresh}>Refresh</Button>
           </div>
         </div>
       </OwnerLayout>
@@ -345,9 +411,16 @@ export default function OwnerVehicleProfile() {
               address={address}
               vehicleName={displayName}
               isOnline={status === "online" || status === "charging"}
-              isLoading={liveLoading}
+              // Don't block map rendering if we already have fallback coordinates (ownerVehicles/DB).
+              isLoading={isInitialLoading}
               isRefreshing={isRefreshing}
               onRefresh={handleRefresh}
+              routeCoords={routeCoords}
+              routeStartEnd={routeCoords && routeCoords.length > 1 ? {
+                start: routeCoords[0],
+                end: routeCoords[routeCoords.length - 1]
+              } : undefined}
+              geofences={geofenceOverlays}
             />
 
             {/* Current Status */}
@@ -384,16 +457,56 @@ export default function OwnerVehicleProfile() {
               dateRange={dateRange}
               onDateRangeChange={setDateRange}
               onRequestTrips={handleRequestTrips}
-              onPlayTrip={(trip) => {
-                console.log("Play trip:", trip.id);
-                toast.info("Trip playback", { description: "Opening trip details..." });
-                // navigate(`/owner/trips/${trip.id}`);
-              }}
               syncStatus={syncStatus}
-              isSyncing={triggerSync.isPending}
+              isSyncing={isSyncing}
               onForceSync={handleForceSync}
-              isRealtimeActive={isRealtimeSubscribed}
-              isAutoSyncing={syncStatus?.sync_status === 'processing' && !triggerSync.isPending}
+              onPlayTrip={(trip) => {
+                const startValid =
+                  !!trip.start_time &&
+                  trip.start_latitude != null &&
+                  trip.start_longitude != null &&
+                  trip.start_latitude !== 0 &&
+                  trip.start_longitude !== 0;
+                const endValid =
+                  !!trip.end_time &&
+                  trip.end_latitude != null &&
+                  trip.end_longitude != null &&
+                  trip.end_latitude !== 0 &&
+                  trip.end_longitude !== 0;
+                if (!startValid || !endValid) {
+                  toast.warning("Playback unavailable", { description: "Trip has incomplete GPS data" });
+                  return;
+                }
+                (async () => {
+                  try {
+                    const { data, error } = await (supabase as any)
+                      .from('position_history')
+                      .select('latitude, longitude, gps_time')
+                      .eq('device_id', resolvedDeviceId)
+                      .gte('gps_time', trip.start_time)
+                      .lte('gps_time', trip.end_time)
+                      .order('gps_time', { ascending: true })
+                      .limit(5000);
+                    if (error) throw error;
+                    const coords = (data as any[])
+                      .filter(p => p.latitude && p.longitude && p.latitude !== 0 && p.longitude !== 0)
+                      .map(p => ({ lat: Number(p.latitude), lon: Number(p.longitude) }));
+                    if (coords.length >= 2) {
+                      setRouteCoords(coords);
+                      toast.info("Trip playback", { description: `Showing path with ${coords.length} points` });
+                    } else {
+                      setRouteCoords([
+                        { lat: trip.start_latitude as number, lon: trip.start_longitude as number },
+                        { lat: trip.end_latitude as number, lon: trip.end_longitude as number }
+                      ]);
+                      toast.info("Trip playback", { description: "Showing start–end route" });
+                    }
+                  } catch (e: any) {
+                    toast.error("Failed to load path", { description: e?.message || "Error fetching trip points" });
+                  }
+                })();
+              }}
+              isRealtimeActive={status === 'online'}
             />
         </div>
       </div>

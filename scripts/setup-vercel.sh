@@ -30,20 +30,12 @@ fi
 
 # Deploy to Vercel
 echo "☁️  Initializing Vercel deployment..."
-
-# Check Vercel Login Status
-if ! npx vercel whoami &> /dev/null; then
-    echo "⚠️  You are not logged in to Vercel."
-    echo "   Running login sequence..."
-    npx vercel login
-fi
-
-echo "   You will be prompted to link your project if not already linked."
+echo "   You will be prompted to log in and link your project."
 echo "   If asked 'Set up and deploy?', answer 'Y'."
 echo "   IMPORTANT: Remember to set your Environment Variables in Vercel dashboard!"
 echo "   (VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY, etc.)"
 
 # Use npx vercel to avoid global installation requirement
-npx vercel --prod
+npx vercel
 
 echo "✨ Deployment process finished."

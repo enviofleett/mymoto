@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -41,6 +41,11 @@ export function VehicleDetailsModal({
   vehicle, 
   onAssignmentChange 
 }: VehicleDetailsModalProps) {
+  const contentTouchStartY = useRef<number | null>(null);
+  const contentTouchStartX = useRef<number | null>(null);
+  const swipeThreshold = useRef<number>(100);
+  const horizontalTolerance = useRef<number>(60);
+  const [activeTab, setActiveTab] = useState<string>("overview");
   const [selectedDriverId, setSelectedDriverId] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [showAssignForm, setShowAssignForm] = useState(false);
@@ -78,6 +83,54 @@ export function VehicleDetailsModal({
     setShowAssignForm(false);
     setSelectedDriverId("");
   }, [open, vehicle]);
+
+  // Prevent background scroll when dialog is open
+  useEffect(() => {
+    if (open) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [open]);
+
+  useEffect(() => {
+    const stored = localStorage.getItem("vehicleSwipeCloseThreshold");
+    const n = stored ? parseInt(stored, 10) : NaN;
+    if (!isNaN(n) && n > 20 && n < 300) {
+      swipeThreshold.current = n;
+    }
+    const horiz = localStorage.getItem("vehicleSwipeHorizontalTolerance");
+    const h = horiz ? parseInt(horiz, 10) : NaN;
+    if (!isNaN(h) && h >= 20 && h <= 120) {
+      horizontalTolerance.current = h;
+    }
+  }, []);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const t = e.touches[0];
+    contentTouchStartY.current = t.clientY;
+    contentTouchStartX.current = t.clientX;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (contentTouchStartY.current === null || contentTouchStartX.current === null) return;
+    const t = e.touches[0];
+    const dy = t.clientY - contentTouchStartY.current;
+    const dx = Math.abs(t.clientX - contentTouchStartX.current);
+    if (dy > swipeThreshold.current && dx < horizontalTolerance.current) {
+      onOpenChange(false);
+      contentTouchStartY.current = null;
+      contentTouchStartX.current = null;
+    }
+  };
+
+  const handleTouchEnd = () => {
+    contentTouchStartY.current = null;
+    contentTouchStartX.current = null;
+  };
 
   const handleAssign = async () => {
     if (!vehicle || !selectedDriverId) return;
@@ -166,8 +219,14 @@ export function VehicleDetailsModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col p-0">
-        <DialogHeader className="px-6 py-4 border-b">
+      <DialogContent
+        className="w-full sm:max-w-sm md:max-w-2xl lg:max-w-4xl max-h-[90vh] overflow-hidden flex flex-col p-0"
+        aria-label="Vehicle details dialog"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
+        <DialogHeader className="px-6 py-4 border-b relative">
           <DialogTitle className="flex items-center gap-2">
             <Car className="h-5 w-5" />
             {vehicle.name}
@@ -181,9 +240,56 @@ export function VehicleDetailsModal({
               <span>Owner: {vehicle.gpsOwner}</span>
             </div>
           )}
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Close dialog"
+            className="absolute right-3 top-3 h-9 w-9"
+            onClick={() => onOpenChange(false)}
+          >
+            <Car className="sr-only" />
+            {/* Using built-in close from ui/dialog as fallback */}
+          </Button>
         </DialogHeader>
 
-        <Tabs defaultValue="overview" className="flex-1 flex flex-col overflow-hidden">
+        {/* Hero section with image and quick actions */}
+        <div className="px-6 py-4 flex items-center gap-4 border-b">
+          <div className="h-16 w-16 rounded-md overflow-hidden bg-muted shrink-0" aria-label="Vehicle image">
+            {llmSettings?.avatar_url ? (
+              <img
+                src={llmSettings.avatar_url}
+                alt={`${vehicle.name} image`}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <div className="h-full w-full flex items-center justify-center text-muted-foreground text-xs">No Image</div>
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <div className="text-muted-foreground">Plate</div>
+              <div className="font-medium truncate">{vehicle.plate}</div>
+              <div className="text-muted-foreground">Price</div>
+              <div className="font-medium">N/A</div>
+              <div className="text-muted-foreground">Specifications</div>
+              <div className="font-medium truncate">
+                Speed {vehicle.speed} km/h · Battery {vehicle.battery ?? "N/A"}% · Ignition {vehicle.ignition === null ? "N/A" : vehicle.ignition ? "ON" : "OFF"}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" aria-label="Open chat" onClick={() => setActiveTab("chat")}>
+              <MessageSquare className="h-4 w-4 mr-1" />
+              Chat
+            </Button>
+            <Button size="sm" aria-label="View trips" onClick={() => setActiveTab("trips")}>
+              <History className="h-4 w-4 mr-1" />
+              Trips
+            </Button>
+          </div>
+        </div>
+
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
           <div className="px-6 pt-2 bg-muted/20 border-b">
             <TabsList className="w-full flex h-auto p-0 bg-transparent gap-6 overflow-x-auto no-scrollbar justify-start">
               <TabsTrigger 
