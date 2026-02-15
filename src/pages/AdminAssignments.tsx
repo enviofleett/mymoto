@@ -41,32 +41,23 @@ export default function AdminAssignments() {
   const { data: wallets = [], isLoading: walletsLoading } = useQuery({
     queryKey: ["admin-wallets-basic"],
     queryFn: async () => {
-      // Wallet schema differs across environments: some have wallets.user_id, some wallets.profile_id.
-      // Try user_id first, then fall back to profile_id on "column does not exist" errors.
-      const tryUserId = await (supabase as any)
+      // Avoid "probing" missing columns (which shows up as 400 in DevTools). Instead, fetch rows and normalize.
+      const { data, error } = await (supabase as any)
         .from("wallets")
-        .select("user_id,balance");
-      if (!tryUserId.error) {
-        return (tryUserId.data || []) as Array<{ user_id: string; balance: number }>;
+        .select("*");
+      if (error) {
+        console.warn("[AdminAssignments] wallets query failed:", error);
+        return [] as Array<{ user_id: string; balance: number }>;
       }
-
-      if (tryUserId.error?.code === "42703") {
-        const tryProfileId = await (supabase as any)
-          .from("wallets")
-          .select("profile_id,balance");
-        if (tryProfileId.error) {
-          console.warn("[AdminAssignments] wallets query failed:", tryProfileId.error);
-          return [] as Array<{ user_id: string; balance: number }>;
-        }
-        // Normalize shape to { user_id, balance } for the existing walletMap logic.
-        return (tryProfileId.data || []).map((r: any) => ({
-          user_id: r.profile_id,
-          balance: r.balance,
-        })) as Array<{ user_id: string; balance: number }>;
-      }
-
-      console.warn("[AdminAssignments] wallets query failed:", tryUserId.error);
-      return [] as Array<{ user_id: string; balance: number }>;
+      return ((data as any[]) || [])
+        .map((w: any) => ({
+          user_id: w.user_id ?? w.profile_id ?? null,
+          balance: w.balance,
+        }))
+        .filter((w: any) => typeof w.user_id === "string" && w.user_id.length > 0) as Array<{
+        user_id: string;
+        balance: number;
+      }>;
     },
   });
 

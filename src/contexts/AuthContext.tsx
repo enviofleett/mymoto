@@ -39,12 +39,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     // One-shot notice set by auth guards (issuer mismatch / malformed / invalid JWT)
-    const key = 'mymoto-auth-notice';
+    const fallbackKey = 'mymoto-auth-notice';
+    const url = import.meta.env.VITE_SUPABASE_URL || "https://cmvpnsqiefbsqkwnraka.supabase.co";
+    const ref = (() => {
+      try {
+        return new URL(url).hostname.split(".")[0] || "unknown";
+      } catch {
+        return "unknown";
+      }
+    })();
+    const key = `mymoto-auth-notice:${ref}`;
     try {
-      const raw = localStorage.getItem(key);
+      const raw = localStorage.getItem(key) ?? localStorage.getItem(fallbackKey);
       if (!raw) return;
       const notice = JSON.parse(raw) as { type?: string; reason?: string; ts?: number };
       localStorage.removeItem(key);
+      localStorage.removeItem(fallbackKey);
 
       const ts = typeof notice.ts === 'number' ? notice.ts : 0;
       if (Date.now() - ts > 2 * 60_000) return;

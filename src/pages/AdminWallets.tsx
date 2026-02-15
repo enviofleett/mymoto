@@ -553,17 +553,28 @@ function BulkUploadTopUp({ onComplete }: { onComplete: () => void }) {
       if (!email || !amount || amount <= 0) continue;
       const { data: profile } = await (supabase as any)
         .from("profiles")
-        .select("user_id")
+        .select("id, user_id")
         .eq("email", email)
         .maybeSingle();
-      if (!profile?.user_id) continue;
+      const ownerId = (profile as any)?.id ?? (profile as any)?.user_id ?? null;
+      if (!ownerId) continue;
       const { data: wallet } = await (supabase as any)
         .from("wallets")
         .select("id")
-        .eq("user_id", profile.user_id)
+        .eq("user_id", ownerId)
         .maybeSingle();
-      if (wallet?.id) {
-        await adjustWallet(wallet.id, amount, "credit", reason || "Bulk upload");
+      let walletId = (wallet as any)?.id ?? null;
+      // Fallback for environments where wallets.profile_id is used instead of wallets.user_id.
+      if (!walletId) {
+        const tryProfileId = await (supabase as any)
+          .from("wallets")
+          .select("id")
+          .eq("profile_id", ownerId)
+          .maybeSingle();
+        walletId = (tryProfileId as any)?.data?.id ?? null;
+      }
+      if (walletId) {
+        await adjustWallet(walletId, amount, "credit", reason || "Bulk upload");
       }
     }
     setLoading(false);

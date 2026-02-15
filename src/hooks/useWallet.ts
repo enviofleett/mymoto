@@ -36,23 +36,48 @@ export function useWallet() {
   const fetchWallet = async () => {
     if (!user) return;
 
-    const { data, error } = await (supabase as any)
+    // Wallet schema differs across environments: some have wallets.user_id, some wallets.profile_id.
+    const tryUserId = await (supabase as any)
       .from("wallets")
       .select("id, balance, currency")
       .eq("user_id", user.id)
       .single();
 
+    let data = (tryUserId as any).data;
+    let error = (tryUserId as any).error;
+    if (error?.code === "42703") {
+      const tryProfileId = await (supabase as any)
+        .from("wallets")
+        .select("id, balance, currency")
+        .eq("profile_id", user.id)
+        .single();
+      data = (tryProfileId as any).data;
+      error = (tryProfileId as any).error;
+    }
+
     if (error) {
       console.error("Error fetching wallet:", error);
       // Wallet might not exist yet, create one
       if (error.code === "PGRST116") {
-        const { data: newWallet, error: createError } = await (supabase as any)
+        // Try creating by user_id, then fall back to profile_id if needed.
+        const tryCreateUserId = await (supabase as any)
           .from("wallets")
           .insert({ user_id: user.id })
           .select()
           .single();
+        let newWallet = (tryCreateUserId as any).data;
+        let createError = (tryCreateUserId as any).error;
+        if (createError?.code === "42703") {
+          const tryCreateProfileId = await (supabase as any)
+            .from("wallets")
+            .insert({ profile_id: user.id })
+            .select()
+            .single();
+          newWallet = (tryCreateProfileId as any).data;
+          createError = (tryCreateProfileId as any).error;
+        }
 
-          if (!createError && newWallet) {
+        if (!createError && newWallet) {
           setWallet({
             id: (newWallet as any).id,
             balance: parseFloat(String((newWallet as any).balance)) || 0,
@@ -73,11 +98,22 @@ export function useWallet() {
   const fetchTransactions = async () => {
     if (!user) return;
 
-    const { data: walletData } = await (supabase as any)
+    const tryUserId = await (supabase as any)
       .from("wallets")
       .select("id")
       .eq("user_id", user.id)
       .single();
+    let walletData = (tryUserId as any).data;
+    let walletErr = (tryUserId as any).error;
+    if (walletErr?.code === "42703") {
+      const tryProfileId = await (supabase as any)
+        .from("wallets")
+        .select("id")
+        .eq("profile_id", user.id)
+        .single();
+      walletData = (tryProfileId as any).data;
+      walletErr = (tryProfileId as any).error;
+    }
 
     if (!walletData) return;
 

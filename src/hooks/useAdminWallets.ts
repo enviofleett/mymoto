@@ -55,10 +55,10 @@ export function useAdminWallets() {
   const fetchWallets = async () => {
     setLoading(true);
     
-    // Fetch wallets with user emails from profiles
+    // Avoid "probing" missing columns (which shows up as 400 in DevTools). Fetch rows and normalize owner id.
     const { data: walletsData, error: walletsError } = await (supabase as any)
       .from("wallets")
-      .select("id, user_id, balance, currency, created_at");
+      .select("*");
 
     if (walletsError) {
       console.error("Error fetching wallets:", walletsError);
@@ -66,22 +66,50 @@ export function useAdminWallets() {
       return;
     }
 
+    const walletsRows = ((walletsData as any[]) || [])
+      .map((w: any) => ({
+        ...w,
+        user_id: w.user_id ?? w.profile_id ?? null,
+      }))
+      .filter((w: any) => typeof w.user_id === "string" && w.user_id.length > 0);
+
     // Get user emails from user_roles (we can't access auth.users directly)
     // For now, we'll show user_id and try to get emails from profiles if available
-    const userIds = (walletsData as any[])?.map((w: any) => w.user_id) || [];
+    const ownerIds = walletsRows.map((w: any) => w.user_id).filter(Boolean);
     
-    const { data: profilesData } = await (supabase as any)
-      .from("profiles")
-      .select("user_id, email, name, status, created_at")
-      .in("user_id", userIds);
+    // Prefer canonical profiles.id lookup (works when wallets.profile_id is used).
+    // Fall back to profiles.user_id for older/alternate deployments.
+    let profilesData: any[] = [];
+    if (ownerIds.length > 0) {
+      const byId = await (supabase as any)
+        .from("profiles")
+        .select("id, user_id, email, name, status, created_at")
+        .in("id", ownerIds);
+      if (!(byId as any).error) {
+        profilesData = (byId as any).data || [];
+      } else {
+        const byUserId = await (supabase as any)
+          .from("profiles")
+          .select("id, user_id, email, name, status, created_at")
+          .in("user_id", ownerIds);
+        profilesData = (byUserId as any).data || [];
+      }
+    }
 
-    const profileMap = new Map((profilesData as any[])?.map((p: any) => [p.user_id, p]) || []);
+    const profileMap = new Map(
+      (profilesData || []).flatMap((p: any) => {
+        const entries: Array<[string, any]> = [];
+        if (p?.id) entries.push([p.id, p]);
+        if (p?.user_id) entries.push([p.user_id, p]);
+        return entries;
+      })
+    );
 
     // Fetch last activity timestamps from wallet transactions
     const { data: txAgg } = await (supabase as any)
       .from("wallet_transactions")
       .select("wallet_id, created_at")
-      .in("wallet_id", ((walletsData as any[]) || []).map((w: any) => w.id))
+      .in("wallet_id", walletsRows.map((w: any) => w.id))
       .order("created_at", { ascending: false });
     const lastActivityMap = new Map<string, string>();
     ((txAgg as any[]) || []).forEach((t: any) => {
@@ -91,7 +119,7 @@ export function useAdminWallets() {
       }
     });
 
-    const enrichedWallets: UserWallet[] = ((walletsData as any[]) || []).map((w: any) => ({
+    const enrichedWallets: UserWallet[] = walletsRows.map((w: any) => ({
       id: w.id,
       user_id: w.user_id,
       balance: parseFloat(String(w.balance)) || 0,

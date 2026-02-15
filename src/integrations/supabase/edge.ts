@@ -8,21 +8,17 @@ const SUPABASE_ANON_KEY =
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNtdnBuc3FpZWZic3Frd25yYWthIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc3MjIwMDEsImV4cCI6MjA4MzI5ODAwMX0.nJLb5znjUiGsCk_S2QubhBtqIl3DB3I8LbZihIMJdwo";
 
-const AUTH_NOTICE_KEY = "mymoto-auth-notice";
-const SESSION_NOT_READY_MSG = "Session not ready. Please wait 2 seconds and retry.";
-
-// Helper to safely sign out without throwing errors (e.g. ERR_ABORTED if navigating)
-async function safeSignOut() {
+function getSupabaseRef(url: string) {
   try {
-    const { error } = await supabase.auth.signOut();
-    if (error && !error.message.includes("session_not_found")) {
-      console.warn("Auto-signout warning:", error);
-    }
-  } catch (err) {
-    // Ignore errors like ERR_ABORTED or network failures during sign out
-    console.warn("Auto-signout failed:", err);
+    const host = new URL(url).hostname;
+    return host.split(".")[0] || "unknown";
+  } catch {
+    return "unknown";
   }
 }
+
+const AUTH_NOTICE_KEY = `mymoto-auth-notice:${getSupabaseRef(SUPABASE_URL)}`;
+const SESSION_NOT_READY_MSG = "Session not ready. Please wait 2 seconds and retry.";
 
 function writeAuthNotice(reason: "issuer_mismatch" | "malformed" | "invalid_jwt") {
   try {
@@ -68,27 +64,15 @@ async function getValidatedAccessToken() {
   const payload = parseJwtPayload(token);
   if (!payload) {
     writeAuthNotice("malformed");
-    await safeSignOut();
-    throw new Error("Session invalid for this environment. Please sign in again.");
+    throw new Error(
+      "Session appears corrupted or invalid. Please sign out and sign in again."
+    );
   }
   if (isIssuerMismatch(payload.iss as any, SUPABASE_URL)) {
     writeAuthNotice("issuer_mismatch");
-    await safeSignOut();
-    throw new Error("Session invalid for this environment. Please sign in again.");
-  }
-
-  // If token is expired (or about to), attempt a refresh before calling Edge.
-  const exp = typeof (payload as any).exp === "number" ? (payload as any).exp : null;
-  if (exp) {
-    const nowSec = Math.floor(Date.now() / 1000);
-    // Refresh if expiring within the next 60 seconds to avoid gateway rejections.
-    if (exp <= nowSec + 60) {
-      const { data, error } = await supabase.auth.refreshSession();
-      if (!error && data.session?.access_token) {
-        return data.session.access_token;
-      }
-      // If refresh failed, continue with current token; the gateway handler below may sign out.
-    }
+    throw new Error(
+      "Session appears to be for a different environment. Please sign out and sign in again."
+    );
   }
   return token;
 }
@@ -122,63 +106,73 @@ export async function invokeEdgeFunction<TResponse>(
 ): Promise<TResponse> {
   const token = opts?.accessToken ?? (await getValidatedAccessToken());
 
-  const doFetch = async (t: string) =>
-    fetch(`${SUPABASE_URL}/functions/v1/${functionName}`, {
-      method: "POST",
+  const doInvoke = async (t: string) => {
+    return await supabase.functions.invoke(functionName, {
+      body: body ?? {},
       headers: {
+        // Important: passing custom headers can override Supabase defaults.
+        // Always include apikey explicitly to satisfy the Functions gateway.
         apikey: SUPABASE_ANON_KEY,
         Authorization: `Bearer ${t}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(body ?? {}),
     });
+  };
 
-  const readPayload = async (res: Response) => {
-    const contentType = res.headers.get("content-type") || "";
-    const isJson = contentType.includes("application/json");
-    return isJson ? await res.json().catch(() => null) : await res.text().catch(() => "");
+  const getInvokeStatus = (err: any): number | null => {
+    if (!err) return null;
+    if (typeof err.status === "number") return err.status;
+    const ctxStatus = err.context?.status;
+    return typeof ctxStatus === "number" ? ctxStatus : null;
   };
 
   // First attempt
-  let res = await doFetch(token);
-  let payload = await readPayload(res);
+  let { data, error } = await doInvoke(token);
 
   // One retry on expired token
-  if (res.status === 401) {
-    const msg = extractErrorMessage(payload);
-    if (isExpiredJwtMessage(msg)) {
-      const { data, error } = await supabase.auth.refreshSession();
-      if (!error && data.session?.access_token) {
-        res = await doFetch(data.session.access_token);
-        payload = await readPayload(res);
+  if (error) {
+    const status = getInvokeStatus(error);
+    const msg = extractErrorMessage(error);
+    if (status === 401 && isExpiredJwtMessage(msg)) {
+      const refreshed = await supabase.auth.refreshSession();
+      const newToken = refreshed.data.session?.access_token;
+      if (!refreshed.error && newToken) {
+        const retry = await doInvoke(newToken);
+        data = retry.data;
+        error = retry.error;
       }
     }
   }
 
-  if (!res.ok) {
-    const msg = extractErrorMessage(payload);
-    // If the session wasn't ready during the call, don't sign the user out.
+  if (error) {
+    const status = getInvokeStatus(error);
+    const msg = extractErrorMessage(error);
+
+    if (import.meta.env.DEV) {
+      console.log("[edge] invoke error", {
+        functionName,
+        status,
+        message: msg,
+        error_status: (error as any)?.status ?? null,
+        context_status: (error as any)?.context?.status ?? null,
+        context_body: (error as any)?.context?.body ?? null,
+        raw: error,
+      });
+    }
+
     if (msg === SESSION_NOT_READY_MSG) {
       throw new Error(SESSION_NOT_READY_MSG);
     }
-    if (res.status === 401 && isInvalidJwtMessage(msg)) {
-      // Try one refresh+retry. This covers cases where the JWT secret rotated or the access token
-      // got corrupted while the refresh token remains valid.
-      const { data, error } = await supabase.auth.refreshSession();
-      if (!error && data.session?.access_token) {
-        const retryRes = await doFetch(data.session.access_token);
-        const retryPayload = await readPayload(retryRes);
-        if (retryRes.ok) {
-          return retryPayload as TResponse;
-        }
-      }
 
+    if (status === 401 && isInvalidJwtMessage(msg)) {
       writeAuthNotice("invalid_jwt");
-      await safeSignOut();
-      throw new Error("Session invalid; please sign in again.");
+      throw new Error(
+        `Unauthorized: ${msg}. If you recently switched environments, sign out and sign in again.`
+      );
     }
-    throw new Error(`Edge function ${functionName} failed (${res.status}): ${msg}`);
+
+    throw new Error(`Edge function ${functionName} failed (${status ?? "unknown"}): ${msg}`);
   }
 
-  return payload as TResponse;
+  return data as TResponse;
 }

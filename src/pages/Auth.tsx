@@ -10,7 +10,7 @@ import { Loader2, AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { z } from 'zod';
 import myMotoLogo from '@/assets/mymoto-logo-new.png';
 
-import { TestUserCreator } from '@/components/auth/TestUserCreator';
+ 
 
 const authSchema = z.object({
   email: z.string().trim().email({ message: 'Invalid email address' }),
@@ -245,8 +245,7 @@ const Auth = () => {
       {/* Footer branding */}
       <p className="text-xs text-muted-foreground/60 mt-8 animate-fade-in [animation-delay:600ms]">Powered by mymoto</p>
       
-      {/* Dev Tool: Test User Creator */}
-      <TestUserCreator />
+      
     </div>
   );
 };

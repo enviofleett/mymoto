@@ -22,7 +22,7 @@ const rootDir = join(__dirname, '..');
 const publicDir = join(rootDir, 'public');
 
 // Source logo path - update this to your logo file
-const SOURCE_PATH = join(publicDir, 'lovable-uploads', '40afa3f6-9ae5-4c53-b498-54541c3d9537.png');
+const SOURCE_PATH = join(publicDir, 'mymoto-logo-new.png');
 
 // Output paths
 const OUTPUTS = {
@@ -48,9 +48,9 @@ async function generateIcons() {
       
       console.log(`📦 Generating ${filename} (${config.size}x${config.size})...`);
       
-      // Calculate padding to ensure logo is well-fitted (approx 65% of icon size)
-      // This ensures safe area for maskable icons and better visibility
-      const innerSize = Math.floor(config.size * 0.65);
+      // Calculate padding to ensure logo is well-fitted (approx 75% of icon size)
+      // Slightly larger inner logo with fully transparent background to blend in dark/light modes
+      const innerSize = Math.floor(config.size * 0.75);
       const padding = Math.floor((config.size - innerSize) / 2);
       // Handle odd pixel differences
       const paddingBottom = config.size - innerSize - padding;
@@ -66,7 +66,7 @@ async function generateIcons() {
           bottom: paddingBottom,
           left: padding,
           right: paddingRight,
-          background: { r: 19, g: 22, b: 24, alpha: 1 } // Dark charcoal gray background for container
+          background: { r: 0, g: 0, b: 0, alpha: 0 } // Fully transparent container to blend on dark/light
         })
         .png()
         .toFile(outputPath);
@@ -83,7 +83,7 @@ async function generateIcons() {
     const faviconBuffers = await Promise.all(
       faviconSizes.map(size => {
         // For favicons, we use less padding as they are small
-        const innerSize = Math.floor(size * 0.8); 
+        const innerSize = Math.floor(size * 0.85); 
         const padding = Math.floor((size - innerSize) / 2);
         const paddingBottom = size - innerSize - padding;
         const paddingRight = size - innerSize - padding;
@@ -98,7 +98,7 @@ async function generateIcons() {
             bottom: paddingBottom,
             left: padding,
             right: paddingRight,
-            background: { r: 19, g: 22, b: 24, alpha: 1 }
+            background: { r: 0, g: 0, b: 0, alpha: 0 }
           })
           .png()
           .toBuffer();

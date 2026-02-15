@@ -28,6 +28,7 @@ import {
   History, Clock, Building2, MessageSquare, Settings2
 } from "lucide-react";
 import { formatLagosDate } from "@/lib/timezone";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface VehicleDetailsModalProps {
   open: boolean;
@@ -52,6 +53,7 @@ export function VehicleDetailsModal({
   const [showAssignForm, setShowAssignForm] = useState(false);
   const [llmSettings, setLlmSettings] = useState<{ nickname: string | null; avatar_url: string | null } | null>(null);
   const { toast } = useToast();
+  const { session } = useAuth();
 
   // Use cached queries - data is often already prefetched from hover
   // Conditional polling: only poll when modal is open and vehicle is online (not offline)
@@ -138,13 +140,18 @@ export function VehicleDetailsModal({
 
     setLoading(true);
     try {
+      const token = session?.access_token;
+      if (!token) {
+        throw new Error("Session not ready. Please wait 2 seconds and retry.");
+      }
       const data = await invokeEdgeFunction<{ success: boolean; message?: string }>(
         "admin-vehicle-assignments",
         {
           action: "assign",
           profile_id: selectedDriverId,
           device_ids: [vehicle.id],
-        }
+        },
+        { accessToken: token }
       );
       if (!data?.success) throw new Error(data?.message || "Assignment failed");
 
@@ -169,12 +176,17 @@ export function VehicleDetailsModal({
 
     setLoading(true);
     try {
+      const token = session?.access_token;
+      if (!token) {
+        throw new Error("Session not ready. Please wait 2 seconds and retry.");
+      }
       const data = await invokeEdgeFunction<{ success: boolean; message?: string }>(
         "admin-vehicle-assignments",
         {
           action: "unassign",
           device_ids: [vehicle.id],
-        }
+        },
+        { accessToken: token }
       );
       if (!data?.success) throw new Error(data?.message || "Unassignment failed");
 

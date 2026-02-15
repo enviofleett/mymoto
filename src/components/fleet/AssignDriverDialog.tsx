@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { invokeEdgeFunction } from "@/integrations/supabase/edge";
 import { useToast } from "@/hooks/use-toast";
 import { FleetVehicle } from "@/hooks/useFleetData";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface Driver {
   id: string;
@@ -27,6 +28,7 @@ export function AssignDriverDialog({ open, onOpenChange, vehicle, onSuccess }: A
   const [selectedDriverId, setSelectedDriverId] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
+  const { session } = useAuth();
 
   useEffect(() => {
     if (open) {
@@ -54,6 +56,10 @@ export function AssignDriverDialog({ open, onOpenChange, vehicle, onSuccess }: A
 
     setLoading(true);
     try {
+      const token = session?.access_token;
+      if (!token) {
+        throw new Error("Session not ready. Please wait 2 seconds and retry.");
+      }
       const driver = drivers.find((d) => d.id === selectedDriverId) || null;
       if (driver && !driver.user_id) {
         throw new Error("This profile is unlinked. Link the user account before assigning vehicles.");
@@ -65,7 +71,8 @@ export function AssignDriverDialog({ open, onOpenChange, vehicle, onSuccess }: A
           action: "assign",
           profile_id: selectedDriverId,
           device_ids: [vehicle.id],
-        }
+        },
+        { accessToken: token }
       );
       if (!data?.success) throw new Error(data?.message || "Assignment failed");
 

@@ -4,7 +4,7 @@ import "./index.css";
 import { registerSW } from 'virtual:pwa-register';
 
 // App version for cache busting
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.3.1';
 
 // Force update check for existing PWA users
 const checkAndForceUpdate = async () => {
