@@ -338,7 +338,7 @@ export function ReportsSection({
                   <div className="bg-primary/10 p-4 rounded-full">
                     <Route className="h-8 w-8 text-primary" />
                   </div>
-                  <div className="max-w-xs space-y-2">
+                  <div className="max-w-full sm:max-w-xs space-y-2">
                     <h3 className="font-semibold text-lg">Trip Reports</h3>
                     <p className="text-sm text-muted-foreground">
                       Use the filters above to select a date range and generate a report.

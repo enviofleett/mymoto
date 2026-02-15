@@ -63,7 +63,7 @@ Deno.serve(async (req) => {
 
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
-      .select("id, user_id, email, name")
+      .select("id, user_id, email, name, phone")
       .eq("id", profile_id)
       .maybeSingle();
 
@@ -99,32 +99,124 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { error: updateError } = await supabase
-      .from("profiles")
-      .update({ user_id: match.id })
-      .eq("id", profile_id);
+    const canonicalProfileId = match.id;
 
-    if (updateError) {
-      return jsonResponse(200, { success: false, message: `Failed to link profile: ${updateError.message}` });
+    // Ensure canonical profile exists (triggers normally create it, but keep this idempotent).
+    const { data: canonical, error: canonicalError } = await supabase
+      .from("profiles")
+      .select("id, user_id, email, name, phone")
+      .eq("id", canonicalProfileId)
+      .maybeSingle();
+
+    if (canonicalError) {
+      return jsonResponse(200, { success: false, message: `Failed to load canonical profile: ${canonicalError.message}` });
     }
 
-    // Ensure role exists for typical owner flows.
-    const { error: roleInsertError } = await supabase
-      .from("user_roles")
-      .insert({ user_id: match.id, role: "owner" });
-    if (roleInsertError && roleInsertError.code !== "23505") {
-      // Non-fatal; linking is still useful for assignment visibility.
-      console.warn("[admin-link-profile-user] Failed to insert owner role:", roleInsertError);
+    if (!canonical) {
+      const { error: insertCanonicalError } = await supabase
+        .from("profiles")
+        .insert({
+          id: canonicalProfileId,
+          user_id: canonicalProfileId,
+          email: match.email || profile.email,
+          name: profile.name || match.email || "User",
+        });
+
+      if (insertCanonicalError) {
+        return jsonResponse(200, { success: false, message: `Failed to create canonical profile: ${insertCanonicalError.message}` });
+      }
+    }
+
+    if (profile.id === canonicalProfileId) {
+      // Simple case: the selected profile is already canonical, just link it.
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({
+          user_id: canonicalProfileId,
+          // Keep user-facing fields in sync.
+          email: profile.email || match.email,
+          name: profile.name || match.email || "User",
+        })
+        .eq("id", canonicalProfileId);
+
+      if (updateError) {
+        return jsonResponse(200, { success: false, message: `Failed to link profile: ${updateError.message}` });
+      }
+
+      return jsonResponse(200, {
+        success: true,
+        message: "Profile linked successfully",
+        user_id: canonicalProfileId,
+        profile_id: canonicalProfileId,
+      });
+    }
+
+    // Merge unlinked profile into canonical to avoid duplicate profiles.user_id entries.
+    // 1) Update canonical fields with any data present on the unlinked profile.
+    const { error: mergeProfileError } = await supabase
+      .from("profiles")
+      .update({
+        user_id: canonicalProfileId,
+        name: profile.name || (canonical as any)?.name || match.email || "User",
+        email: profile.email || (canonical as any)?.email || match.email,
+        phone: (profile as any)?.phone || (canonical as any)?.phone || null,
+      })
+      .eq("id", canonicalProfileId);
+    if (mergeProfileError) {
+      return jsonResponse(200, { success: false, message: `Failed to merge profile data: ${mergeProfileError.message}` });
+    }
+
+    // 2) Move vehicle assignments to canonical (idempotent)
+    const { data: existingAssignments, error: assignLoadError } = await supabase
+      .from("vehicle_assignments")
+      .select("device_id, vehicle_alias, created_at, updated_at")
+      .eq("profile_id", profile.id);
+    if (assignLoadError) {
+      return jsonResponse(200, { success: false, message: `Failed to load assignments: ${assignLoadError.message}` });
+    }
+
+    if (existingAssignments && existingAssignments.length > 0) {
+      const rows = existingAssignments.map((a: any) => ({
+        device_id: a.device_id,
+        profile_id: canonicalProfileId,
+        vehicle_alias: a.vehicle_alias,
+        created_at: a.created_at,
+        updated_at: a.updated_at,
+      }));
+
+      const { error: upsertError } = await supabase
+        .from("vehicle_assignments")
+        .upsert(rows, { onConflict: "device_id,profile_id" });
+      if (upsertError) {
+        return jsonResponse(200, { success: false, message: `Failed to migrate assignments: ${upsertError.message}` });
+      }
+
+      const { error: deleteOldError } = await supabase
+        .from("vehicle_assignments")
+        .delete()
+        .eq("profile_id", profile.id);
+      if (deleteOldError) {
+        return jsonResponse(200, { success: false, message: `Failed to cleanup old assignments: ${deleteOldError.message}` });
+      }
+    }
+
+    // 3) Delete old unlinked profile (safe because it had user_id null).
+    const { error: deleteProfileError } = await supabase
+      .from("profiles")
+      .delete()
+      .eq("id", profile.id);
+    if (deleteProfileError) {
+      return jsonResponse(200, { success: false, message: `Failed to cleanup old profile: ${deleteProfileError.message}` });
     }
 
     return jsonResponse(200, {
       success: true,
-      message: "Profile linked successfully",
-      user_id: match.id,
+      message: "Profile linked successfully (merged into canonical profile)",
+      user_id: canonicalProfileId,
+      profile_id: canonicalProfileId,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return jsonResponse(200, { success: false, message });
   }
 });
-

@@ -98,7 +98,7 @@ export function ReportFilterBar({
                 variant="outline"
                 size="sm"
                 className={cn(
-                  "h-8 justify-start text-left font-normal w-[240px]",
+                  "h-8 justify-start text-left font-normal w-full sm:w-[240px]",
                   !dateRange && "text-muted-foreground"
                 )}
               >

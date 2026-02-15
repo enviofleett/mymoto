@@ -15,12 +15,6 @@ interface CreateUserWithVehiclesParams {
     deviceId: string;
     alias?: string;
   }>;
-  sendEmail?: {
-    to: string;
-    userName: string;
-    vehicleCount: number;
-    isNewUser: boolean;
-  };
 }
 
 interface CreateUserWithVehiclesResult {
@@ -57,24 +51,6 @@ export function useCreateUserWithVehicles() {
       const userId = data?.userId || data?.user?.id || null;
       const profileId = data?.profileId || data?.profile?.id;
       const assignedVehicles = data?.assignedVehicles || [];
-
-      // Step 4: Send email notification if requested
-      if (params.sendEmail) {
-        try {
-          const { sendVehicleAssignmentEmail } = await import("@/utils/email-helpers");
-          await sendVehicleAssignmentEmail(
-            params.sendEmail.to,
-            {
-              userName: params.sendEmail.userName,
-              vehicleCount: params.sendEmail.vehicleCount,
-              isNewUser: params.sendEmail.isNewUser,
-            }
-          );
-        } catch (emailError: any) {
-          console.error("[useCreateUserWithVehicles] Email notification error:", emailError);
-          // Don't fail the operation if email fails
-        }
-      }
 
       if (!profileId) {
         throw new Error('Failed to create profile: No profile ID returned');

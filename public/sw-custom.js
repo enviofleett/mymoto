@@ -22,6 +22,7 @@ self.addEventListener('notificationclick', (event) => {
   const data = event.notification.data || {};
   const deviceId = data.deviceId;
   const eventType = data.eventType;
+  const eventId = data.eventId;
   
   // Decrement badge when notification is clicked
   if (badgeCount > 0) {
@@ -30,9 +31,12 @@ self.addEventListener('notificationclick', (event) => {
   }
   
   // Determine navigation URL
-  let url = '/';
-  if (deviceId) {
-    url = `/owner/chat/${deviceId}`;
+  let url = '/notifications';
+  if (eventId || deviceId) {
+    const qs = new URLSearchParams();
+    if (eventId) qs.set('eventId', eventId);
+    if (deviceId) qs.set('deviceId', deviceId);
+    url = `/notifications?${qs.toString()}`;
   } else if (eventType) {
     url = '/notifications';
   }
@@ -151,4 +155,3 @@ self.addEventListener('activate', (event) => {
     })
   );
 });
-

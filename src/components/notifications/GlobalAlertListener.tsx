@@ -40,9 +40,13 @@ export function GlobalAlertListener() {
   const { user, isAdmin } = useAuth();
   const { data: ownerVehicles } = useOwnerVehicles();
   const authRedirectedRef = useRef(false);
+  const seenEventIdsRef = useRef<Set<string>>(new Set());
+  const ignoredDeviceLogRef = useRef<Set<string>>(new Set());
+  const MAX_DEVICE_CHANNELS = 25;
   
   // Get list of device IDs for user's assigned vehicles
   const userDeviceIds = ownerVehicles?.map(v => v.deviceId) || [];
+  const userDeviceIdsKey = userDeviceIds.join(",");
 
   // ✅ FIX: Vibration patterns by severity (for Android locked screens)
   const getVibrationPattern = useCallback((severity: SeverityLevel): number[] => {
@@ -113,8 +117,22 @@ export function GlobalAlertListener() {
     // CRITICAL: Filter by user's vehicle assignments
     // Admins see all events, regular users only see events for their vehicles
     if (!isAdmin && !userDeviceIds.includes(event.device_id)) {
-      console.log('[GlobalAlertListener] Ignoring alert for unassigned vehicle:', event.device_id);
+      if (import.meta.env.DEV && !ignoredDeviceLogRef.current.has(event.device_id)) {
+        ignoredDeviceLogRef.current.add(event.device_id);
+        console.log('[GlobalAlertListener] Ignoring alert for unassigned vehicle:', event.device_id);
+      }
       return;
+    }
+
+    // Dedupe popups by event id (reconnect/resubscribe can re-deliver).
+    if (seenEventIdsRef.current.has(event.id)) {
+      return;
+    }
+    seenEventIdsRef.current.add(event.id);
+    if (seenEventIdsRef.current.size > 1000) {
+      // Avoid unbounded growth: best-effort, we only need short-term dedupe.
+      seenEventIdsRef.current.clear();
+      seenEventIdsRef.current.add(event.id);
     }
 
     console.log('[GlobalAlertListener] New alert for user vehicle:', event.event_type, event.severity, event.device_id);
@@ -130,18 +148,24 @@ export function GlobalAlertListener() {
 
     // Show custom toast for all relevant alerts
     if (['critical', 'error', 'warning'].includes(severity) || shouldShowPush(alertType, severity)) {
-      toast({
+      let dismissToast = () => {};
+      const t = toast({
         // @ts-ignore - Custom component support in sonner
         action: (
           <NotificationToast
             title={event.title}
             message={event.message}
             type={severity === 'info' ? 'success' : severity as any} // Map info to success style if desired, or keep info
+            onClick={() => {
+              navigate(`/notifications?eventId=${encodeURIComponent(event.id)}&deviceId=${encodeURIComponent(event.device_id)}`);
+              dismissToast();
+            }}
           />
         ),
         duration: severity === 'critical' ? 10000 : 5000,
         className: "p-0 bg-transparent border-none shadow-none", // Remove default toast styling
       });
+      dismissToast = t.dismiss;
     }
 
     // Trigger email for critical/error
@@ -185,8 +209,15 @@ export function GlobalAlertListener() {
       return;
     }
 
+    if (!isAdmin && userDeviceIds.length === 0) {
+      if (import.meta.env.DEV) {
+        console.log('[GlobalAlertListener] No assigned vehicles, skipping realtime subscription');
+      }
+      return;
+    }
+
     authRedirectedRef.current = false;
-    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let channels: Array<ReturnType<typeof supabase.channel>> = [];
     let retryTimeout: NodeJS.Timeout | undefined;
     let retryCount = 0;
 
@@ -195,19 +226,62 @@ export function GlobalAlertListener() {
         console.log(`[GlobalAlertListener] Setting up realtime subscription (Attempt ${retryCount + 1})`);
       }
 
-      // Clean up previous channel if exists
-      if (channel) {
-        supabase.removeChannel(channel);
+      // Clean up previous channels if exist
+      channels.forEach((ch) => {
+        try {
+          supabase.removeChannel(ch);
+        } catch {
+          /* ignore */
+        }
+      });
+      channels = [];
+
+      // Strategy:
+      // - Admins: single unfiltered subscription
+      // - Non-admins with few vehicles: filtered subscription per device_id
+      // - Non-admins with many vehicles: single unfiltered subscription (avoid too many channels)
+      const shouldFilterPerDevice = !isAdmin && userDeviceIds.length > 0 && userDeviceIds.length <= MAX_DEVICE_CHANNELS;
+
+      if (shouldFilterPerDevice) {
+        if (import.meta.env.DEV) {
+          console.log(`[GlobalAlertListener] Subscribing with ${userDeviceIds.length} filtered channels`);
+        }
+        userDeviceIds.forEach((deviceId) => {
+          const ch = supabase
+            .channel(`global_proactive_alerts_${deviceId}`)
+            .on(
+              'postgres_changes',
+              {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'proactive_vehicle_events',
+                filter: `device_id=eq.${deviceId}`,
+              },
+              (payload) => {
+                const newEvent = payload.new as ProactiveEvent;
+                handleNewEventRef.current(newEvent);
+              }
+            )
+            .subscribe((status) => {
+              if (import.meta.env.DEV) {
+                console.log(`[GlobalAlertListener] Channel(${deviceId}) status: ${status}`);
+              }
+            });
+          channels.push(ch);
+        });
+        retryCount = 0;
+        return;
       }
 
-      channel = supabase
+      // Single channel with retry logic (admin or many devices)
+      const ch = supabase
         .channel('global_proactive_alerts')
         .on(
           'postgres_changes',
           {
             event: 'INSERT',
             schema: 'public',
-            table: 'proactive_vehicle_events'
+            table: 'proactive_vehicle_events',
           },
           (payload) => {
             const newEvent = payload.new as ProactiveEvent;
@@ -227,13 +301,14 @@ export function GlobalAlertListener() {
           } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
             const delay = Math.min(1000 * Math.pow(2, retryCount), 30000); // Exponential backoff: 1s, 2s, 4s... max 30s
             console.warn(`[GlobalAlertListener] ⚠️ Subscription ${status}. Retrying in ${delay}ms...`);
-            
+
             retryCount++;
             retryTimeout = setTimeout(() => {
               setupSubscription();
             }, delay);
           }
         });
+      channels.push(ch);
     };
 
     // Initial subscription
@@ -244,15 +319,15 @@ export function GlobalAlertListener() {
         console.log('[GlobalAlertListener] Cleaning up subscription');
       }
       if (retryTimeout) clearTimeout(retryTimeout);
-      if (channel) {
+      channels.forEach((ch) => {
         try {
-          supabase.removeChannel(channel);
+          supabase.removeChannel(ch);
         } catch {
           /* ignore */
         }
-      }
+      });
     };
-  }, [user, navigate]);
+  }, [user?.id, isAdmin, userDeviceIdsKey]);
 
   // This component renders nothing - it's just a listener
   return null;

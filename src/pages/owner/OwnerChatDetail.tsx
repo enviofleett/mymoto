@@ -683,7 +683,7 @@ export default function OwnerChatDetail() {
 
       {/* Messages */}
       <ScrollArea className="flex-1 px-4">
-        <div className="py-4 space-y-4">
+        <div className="py-4 space-y-4 pb-24">
           {historyLoading ? (
             <div className="space-y-4">
               {[1, 2, 3].map((i) => (
@@ -843,7 +843,7 @@ export default function OwnerChatDetail() {
       </ScrollArea>
 
       {/* Input - Neumorphic styling */}
-      <div className="sticky bottom-0 bg-background/95 backdrop-blur-sm px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+      <div className="sticky bottom-0 bg-background/95 backdrop-blur-sm px-4 max-[360px]:px-3 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
         <div className="flex items-center gap-3">
           <Input
             value={input}
@@ -851,14 +851,14 @@ export default function OwnerChatDetail() {
             onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
             placeholder={llmSettings && !llmSettings.llm_enabled ? "AI Companion is paused. Enable it in settings to chat." : "Type a message..."}
             disabled={loading || (llmSettings && !llmSettings.llm_enabled)}
-            className="flex-1 bg-card border-0 shadow-neumorphic-inset rounded-full h-12 text-sm px-5 focus-visible:ring-accent/30"
+            className="flex-1 bg-card border-0 shadow-neumorphic-inset rounded-full h-12 max-[360px]:h-11 text-sm px-5 focus-visible:ring-accent/30"
           />
           {/* Neumorphic send button */}
           <button
             onClick={handleSend}
             disabled={loading || !input.trim() || (llmSettings && !llmSettings.llm_enabled)}
             className={cn(
-              "w-12 h-12 rounded-full bg-card shadow-neumorphic-sm flex items-center justify-center transition-all duration-200 shrink-0",
+              "w-12 h-12 max-[360px]:w-11 max-[360px]:h-11 rounded-full bg-card shadow-neumorphic-sm flex items-center justify-center transition-all duration-200 shrink-0",
               "hover:shadow-neumorphic active:shadow-neumorphic-inset",
               "disabled:opacity-50 disabled:cursor-not-allowed",
               input.trim() && "ring-2 ring-accent/50"

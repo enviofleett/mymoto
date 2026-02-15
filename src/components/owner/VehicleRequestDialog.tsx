@@ -29,6 +29,7 @@ import { useAuth } from "@/contexts/AuthContext";
 
 const formSchema = z.object({
   plate_number: z.string().min(2, "Plate number is required"),
+  requested_device_id: z.string().optional(),
   vin: z.string().optional(),
   make: z.string().min(1, "Make is required"),
   model: z.string().min(1, "Model is required"),
@@ -46,6 +47,7 @@ export function VehicleRequestDialog({ trigger }: { trigger?: React.ReactNode })
     resolver: zodResolver(formSchema),
     defaultValues: {
       plate_number: "",
+      requested_device_id: "",
       vin: "",
       make: "",
       model: "",
@@ -63,6 +65,7 @@ export function VehicleRequestDialog({ trigger }: { trigger?: React.ReactNode })
         .insert({
           user_id: user.id,
           plate_number: values.plate_number.toUpperCase(),
+          requested_device_id: values.requested_device_id?.trim() ? values.requested_device_id.trim() : null,
           vin: values.vin ? values.vin.toUpperCase() : null,
           make: values.make,
           model: values.model,
@@ -139,6 +142,23 @@ export function VehicleRequestDialog({ trigger }: { trigger?: React.ReactNode })
                   <FormControl>
                     <Input placeholder="ABC-123" {...field} />
                   </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="requested_device_id"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Device ID / IMEI (Optional)</FormLabel>
+                  <FormControl>
+                    <Input placeholder="15-digit IMEI (optional)" {...field} />
+                  </FormControl>
+                  <FormDescription>
+                    If you have the GPS device ID (IMEI), enter it to speed up approval.
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { X, AlertTriangle, AlertCircle, Info, MapPin, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -55,9 +55,12 @@ export function StickyAlertBanner() {
   const navigate = useNavigate();
   const { isAdmin } = useAuth();
   const { data: ownerVehicles } = useOwnerVehicles();
+  const seenEventIdsRef = useRef<Set<string>>(new Set());
+  const MAX_DEVICE_CHANNELS = 25;
   
   // Get list of device IDs for user's assigned vehicles
   const userDeviceIds = ownerVehicles?.map(v => v.deviceId) || [];
+  const userDeviceIdsKey = userDeviceIds.join(",");
 
   const dismissAlert = useCallback(async (alertId: string) => {
     // Mark as acknowledged in database
@@ -70,45 +73,88 @@ export function StickyAlertBanner() {
   }, []);
 
   const handleAlertClick = useCallback((alert: ProactiveEvent) => {
-    navigate(`/owner/chat/${alert.device_id}`);
+    navigate(`/notifications?eventId=${encodeURIComponent(alert.id)}&deviceId=${encodeURIComponent(alert.device_id)}`);
   }, [navigate]);
 
   useEffect(() => {
-    const channel = supabase
-      .channel('sticky_alert_banner')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'proactive_vehicle_events'
-        },
-        (payload) => {
-          const newEvent = payload.new as ProactiveEvent;
-          
-          // CRITICAL: Filter by user's vehicle assignments
-          // Admins see all events, regular users only see events for their vehicles
-          if (!isAdmin && !userDeviceIds.includes(newEvent.device_id)) {
-            return; // Ignore alerts for unassigned vehicles
-          }
-          
-          // Only show warning, error, critical alerts in the sticky banner
-          if (['warning', 'error', 'critical'].includes(newEvent.severity)) {
-            setAlerts((prev) => {
-              // Prevent duplicates
-              if (prev.some(a => a.id === newEvent.id)) return prev;
-              // Keep max 5 alerts
-              return [newEvent, ...prev].slice(0, 5);
-            });
-          }
-        }
-      )
-      .subscribe();
+    if (!isAdmin && userDeviceIds.length === 0) {
+      return;
+    }
+
+    const channels: Array<ReturnType<typeof supabase.channel>> = [];
+
+    const onInsert = (payload: any) => {
+      const newEvent = payload.new as ProactiveEvent;
+
+      // CRITICAL: Filter by user's vehicle assignments
+      // Admins see all events, regular users only see events for their vehicles
+      if (!isAdmin && !userDeviceIds.includes(newEvent.device_id)) {
+        return; // Ignore alerts for unassigned vehicles
+      }
+
+      // Dedupe by event id (reconnect/resubscribe can re-deliver).
+      if (seenEventIdsRef.current.has(newEvent.id)) return;
+      seenEventIdsRef.current.add(newEvent.id);
+      if (seenEventIdsRef.current.size > 1000) {
+        seenEventIdsRef.current.clear();
+        seenEventIdsRef.current.add(newEvent.id);
+      }
+
+      // Only show warning, error, critical alerts in the sticky banner
+      if (['warning', 'error', 'critical'].includes(newEvent.severity)) {
+        setAlerts((prev) => {
+          // Prevent duplicates
+          if (prev.some(a => a.id === newEvent.id)) return prev;
+          // Keep max 5 alerts
+          return [newEvent, ...prev].slice(0, 5);
+        });
+      }
+    };
+
+    const shouldFilterPerDevice = !isAdmin && userDeviceIds.length > 0 && userDeviceIds.length <= MAX_DEVICE_CHANNELS;
+    if (shouldFilterPerDevice) {
+      userDeviceIds.forEach((deviceId) => {
+        const ch = supabase
+          .channel(`sticky_alert_banner_${deviceId}`)
+          .on(
+            'postgres_changes',
+            {
+              event: 'INSERT',
+              schema: 'public',
+              table: 'proactive_vehicle_events',
+              filter: `device_id=eq.${deviceId}`,
+            },
+            onInsert
+          )
+          .subscribe();
+        channels.push(ch);
+      });
+    } else {
+      const ch = supabase
+        .channel('sticky_alert_banner')
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'proactive_vehicle_events',
+          },
+          onInsert
+        )
+        .subscribe();
+      channels.push(ch);
+    }
 
     return () => {
-      supabase.removeChannel(channel);
+      channels.forEach((ch) => {
+        try {
+          supabase.removeChannel(ch);
+        } catch {
+          /* ignore */
+        }
+      });
     };
-  }, [isAdmin, userDeviceIds]);
+  }, [isAdmin, userDeviceIdsKey]);
 
   if (alerts.length === 0) return null;
 
@@ -118,7 +164,7 @@ export function StickyAlertBanner() {
   const hasLocation = latestAlert.metadata?.latitude && latestAlert.metadata?.longitude;
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-[100] pt-[env(safe-area-inset-top)]">
+    <div className="sticky top-0 z-[100] pt-[env(safe-area-inset-top)]">
       {/* Main Banner - Neumorphic PWA Design */}
       <div
         className={cn(

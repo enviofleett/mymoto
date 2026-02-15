@@ -55,13 +55,13 @@ export function BottomNavigation() {
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 pb-[env(safe-area-inset-bottom)]">
-      <div className="flex items-center justify-around h-16">
+      <div className="flex items-center justify-around h-16 max-[360px]:h-14">
         {mainNavItems.map((item) => (
           <NavLink
             key={item.url}
             to={item.url}
             end={item.url === "/"}
-            className="flex flex-col items-center justify-center gap-1 px-3 py-2 text-muted-foreground transition-colors min-w-[64px]"
+            className="flex flex-col items-center justify-center gap-1 px-3 py-2 text-muted-foreground transition-colors min-w-[64px] max-[360px]:min-w-[52px] max-[360px]:px-2"
             activeClassName="text-primary"
           >
             <item.icon className="h-5 w-5" />
@@ -73,7 +73,7 @@ export function BottomNavigation() {
         {/* Menu Button */}
         <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
           <SheetTrigger asChild>
-            <button className="flex flex-col items-center justify-center gap-1 px-3 py-2 text-muted-foreground transition-colors min-w-[64px]">
+            <button className="flex flex-col items-center justify-center gap-1 px-3 py-2 text-muted-foreground transition-colors min-w-[64px] max-[360px]:min-w-[52px] max-[360px]:px-2">
               <Menu className="h-5 w-5" />
               <span className="text-[10px] font-medium">Menu</span>
             </button>

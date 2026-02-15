@@ -19,6 +19,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatLagos } from "@/lib/timezone";
+import { ResponsiveDataList } from "@/components/ui/responsive-data-list";
 
 interface InactiveVehicle {
   device_id: string;
@@ -182,7 +183,7 @@ export function InactiveVehiclesCleanup() {
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Configuration */}
-        <div className="flex items-center gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
           <label htmlFor="days-inactive" className="text-sm font-medium">
             Days Inactive:
           </label>
@@ -193,7 +194,7 @@ export function InactiveVehiclesCleanup() {
             max="365"
             value={daysInactive}
             onChange={(e) => setDaysInactive(parseInt(e.target.value) || 30)}
-            className="w-20 px-3 py-1 border rounded-md"
+            className="w-full sm:w-20 px-3 py-2 sm:py-1 border rounded-md"
             disabled={loading || previewLoading || isDeleting}
           />
           <Button
@@ -257,52 +258,89 @@ export function InactiveVehiclesCleanup() {
             </div>
 
             <div className="border rounded-lg overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Device ID</TableHead>
-                    <TableHead>Device Name</TableHead>
-                    <TableHead>Last GPS Time</TableHead>
-                    <TableHead>Days Inactive</TableHead>
-                    <TableHead>Has Data</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {inactiveVehicles.map((vehicle) => (
-                    <TableRow key={vehicle.device_id}>
-                      <TableCell className="font-mono text-sm">
-                        {vehicle.device_id}
-                      </TableCell>
-                      <TableCell>{vehicle.device_name}</TableCell>
-                      <TableCell>
-                        {vehicle.last_gps_time && vehicle.last_gps_time !== "1970-01-01T00:00:00Z" ? (
-                          formatLagos(new Date(vehicle.last_gps_time), "MMM dd, yyyy HH:mm")
-                        ) : (
-                          <Badge variant="secondary">Never</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="destructive">
-                          {vehicle.days_inactive_count} days
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          {vehicle.has_position_record && (
-                            <Badge variant="outline" className="text-xs">Position</Badge>
-                          )}
-                          {vehicle.has_history_record && (
-                            <Badge variant="outline" className="text-xs">History</Badge>
-                          )}
-                          {!vehicle.has_position_record && !vehicle.has_history_record && (
-                            <Badge variant="secondary" className="text-xs">None</Badge>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <ResponsiveDataList
+                items={inactiveVehicles}
+                desktop={
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Device ID</TableHead>
+                        <TableHead>Device Name</TableHead>
+                        <TableHead>Last GPS Time</TableHead>
+                        <TableHead>Days Inactive</TableHead>
+                        <TableHead>Has Data</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {inactiveVehicles.map((vehicle) => (
+                        <TableRow key={vehicle.device_id}>
+                          <TableCell className="font-mono text-sm">
+                            {vehicle.device_id}
+                          </TableCell>
+                          <TableCell>{vehicle.device_name}</TableCell>
+                          <TableCell>
+                            {vehicle.last_gps_time && vehicle.last_gps_time !== "1970-01-01T00:00:00Z" ? (
+                              formatLagos(new Date(vehicle.last_gps_time), "MMM dd, yyyy HH:mm")
+                            ) : (
+                              <Badge variant="secondary">Never</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="destructive">
+                              {vehicle.days_inactive_count} days
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex gap-2">
+                              {vehicle.has_position_record && (
+                                <Badge variant="outline" className="text-xs">Position</Badge>
+                              )}
+                              {vehicle.has_history_record && (
+                                <Badge variant="outline" className="text-xs">History</Badge>
+                              )}
+                              {!vehicle.has_position_record && !vehicle.has_history_record && (
+                                <Badge variant="secondary" className="text-xs">None</Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                }
+                renderCard={(vehicle) => (
+                  <div key={vehicle.device_id} className="p-4 border-b border-border last:border-b-0 md:hidden">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-medium truncate">{vehicle.device_name}</div>
+                        <div className="text-xs text-muted-foreground font-mono truncate">{vehicle.device_id}</div>
+                      </div>
+                      <Badge variant="destructive" className="shrink-0">
+                        {vehicle.days_inactive_count} days
+                      </Badge>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between text-xs">
+                      <div className="text-muted-foreground">Last GPS</div>
+                      <div className="text-right">
+                        {vehicle.last_gps_time && vehicle.last_gps_time !== "1970-01-01T00:00:00Z"
+                          ? formatLagos(new Date(vehicle.last_gps_time), "MMM dd, yyyy HH:mm")
+                          : "Never"}
+                      </div>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {vehicle.has_position_record && (
+                        <Badge variant="outline" className="text-xs">Position</Badge>
+                      )}
+                      {vehicle.has_history_record && (
+                        <Badge variant="outline" className="text-xs">History</Badge>
+                      )}
+                      {!vehicle.has_position_record && !vehicle.has_history_record && (
+                        <Badge variant="secondary" className="text-xs">None</Badge>
+                      )}
+                    </div>
+                  </div>
+                )}
+              />
             </div>
           </div>
         )}

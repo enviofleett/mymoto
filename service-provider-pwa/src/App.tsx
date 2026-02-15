@@ -8,7 +8,7 @@ import ProviderProfile from './pages/ProviderProfile';
 import ProviderServices from './pages/ProviderServices';
 import ProviderBookings from './pages/ProviderBookings';
 import ProtectedRoute from './components/ProtectedRoute';
-import './App.css';
+// Styles are loaded from ./index.css in main.tsx
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -24,7 +24,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <Router basename="/partner">
-          <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+          <div className="min-h-[100dvh] pb-[env(safe-area-inset-bottom)] bg-gradient-to-br from-blue-50 to-indigo-100">
             <Routes>
               {/* Public routes */}
               <Route path="/auth" element={<ProviderAuth />} />

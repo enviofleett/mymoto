@@ -55,20 +55,28 @@ export function validateTrip(trip: any): TripData {
     }
   }
 
-  const hasStartCoords = trip.start_latitude && trip.start_longitude
-  const hasEndCoords = trip.end_latitude && trip.end_longitude
+  const hasStartCoords =
+    trip.start_latitude != null &&
+    trip.start_longitude != null &&
+    trip.start_latitude !== 0 &&
+    trip.start_longitude !== 0
+  const hasEndCoords =
+    trip.end_latitude != null &&
+    trip.end_longitude != null &&
+    trip.end_latitude !== 0 &&
+    trip.end_longitude !== 0
   
   if (!hasStartCoords || !hasEndCoords) {
     issues.push('Missing start or end coordinates')
     confidence -= 0.2
     if (dataQuality === 'high') dataQuality = 'medium'
   } else {
-    if (Math.abs(trip.start_latitude!) > 90 || Math.abs(trip.start_longitude!) > 180) {
+    if (Math.abs(trip.start_latitude) > 90 || Math.abs(trip.start_longitude) > 180) {
       issues.push('Invalid start coordinates')
       confidence -= 0.3
       dataQuality = 'low'
     }
-    if (Math.abs(trip.end_latitude!) > 90 || Math.abs(trip.end_longitude!) > 180) {
+    if (Math.abs(trip.end_latitude) > 90 || Math.abs(trip.end_longitude) > 180) {
       issues.push('Invalid end coordinates')
       confidence -= 0.3
       dataQuality = 'low'

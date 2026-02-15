@@ -60,6 +60,9 @@ verify_jwt = false
 [functions.create-test-user]
 verify_jwt = false
 
+[functions.admin-process-vehicle-onboarding-request]
+verify_jwt = false
+
 [functions.admin-wallet-topup]
 verify_jwt = false
 
@@ -85,4 +88,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.sync-official-reports]
+verify_jwt = false
+
+[functions.daily-travel-stats]
 verify_jwt = false

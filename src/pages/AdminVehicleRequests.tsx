@@ -28,6 +28,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { formatLagos } from "@/lib/timezone";
 import { useAuth } from "@/contexts/AuthContext";
+import { ResponsiveDataList } from "@/components/ui/responsive-data-list";
 
 export default function AdminVehicleRequests() {
   const { user } = useAuth();
@@ -54,17 +55,15 @@ export default function AdminVehicleRequests() {
   const approveMutation = useMutation({
     mutationFn: async () => {
       if (!selectedRequest || !deviceId) return;
-
-      const { data, error } = await supabase.rpc("approve_vehicle_request" as any, {
-        p_request_id: selectedRequest.id,
-        p_device_id: deviceId,
-        p_admin_id: user?.id,
+      const { data, error } = await supabase.functions.invoke("admin-process-vehicle-onboarding-request", {
+        body: {
+          action: "approve",
+          request_id: selectedRequest.id,
+          device_id: deviceId,
+        },
       });
-
       if (error) throw error;
-      // @ts-ignore
-      if (data && !data.success) throw new Error(data.error);
-      
+      if (data && (data as any).success === false) throw new Error((data as any).error || "Approval failed");
       return data;
     },
     onSuccess: () => {
@@ -82,16 +81,14 @@ export default function AdminVehicleRequests() {
   // Reject mutation
   const rejectMutation = useMutation({
     mutationFn: async (requestId: string) => {
-      const { error } = await supabase
-        .from("vehicle_onboarding_requests" as any)
-        .update({ 
-            status: "rejected", 
-            processed_at: new Date().toISOString(),
-            processed_by: user?.id 
-        })
-        .eq("id", requestId);
-
+      const { data, error } = await supabase.functions.invoke("admin-process-vehicle-onboarding-request", {
+        body: {
+          action: "reject",
+          request_id: requestId,
+        },
+      });
       if (error) throw error;
+      if (data && (data as any).success === false) throw new Error((data as any).error || "Rejection failed");
     },
     onSuccess: () => {
       toast.success("Request rejected");
@@ -135,79 +132,155 @@ export default function AdminVehicleRequests() {
                 No requests found
               </div>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>User</TableHead>
-                    <TableHead>Vehicle Info</TableHead>
-                    <TableHead>Plate</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {requests.map((request: any) => (
-                    <TableRow key={request.id}>
-                      <TableCell>
-                        {formatLagos(new Date(request.created_at), "MMM dd, yyyy")}
-                        <div className="text-xs text-muted-foreground">
-                          {formatLagos(new Date(request.created_at), "HH:mm")}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="font-medium">
-                           {/* @ts-ignore */}
-                          {request.user?.raw_user_meta_data?.full_name || request.user?.raw_user_meta_data?.name || "User"}
-                        </div>
-                         {/* @ts-ignore */}
-                        <div className="text-xs text-muted-foreground">{request.user?.email}</div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="font-medium">{request.year} {request.make} {request.model}</div>
-                        {request.vin && <div className="text-xs text-muted-foreground">VIN: {request.vin}</div>}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{request.plate_number}</Badge>
-                      </TableCell>
-                      <TableCell>{getStatusBadge(request.status)}</TableCell>
-                      <TableCell className="text-right">
-                        {request.status === "pending" && (
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="text-destructive hover:text-destructive"
-                              onClick={() => {
-                                if (confirm("Are you sure you want to reject this request?")) {
-                                  rejectMutation.mutate(request.id);
-                                }
-                              }}
-                            >
-                              <XCircle className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              onClick={() => {
-                                setSelectedRequest(request);
-                                setIsApproveDialogOpen(true);
-                              }}
-                            >
-                              <CheckCircle2 className="h-4 w-4 mr-2" />
-                              Approve
-                            </Button>
-                          </div>
-                        )}
-                        {request.status === "approved" && (
+              <ResponsiveDataList
+                items={requests}
+                desktop={
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>User</TableHead>
+                        <TableHead>Vehicle Info</TableHead>
+                        <TableHead>Plate</TableHead>
+                        <TableHead>Requested IMEI</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {requests.map((request: any) => (
+                        <TableRow key={request.id}>
+                          <TableCell>
+                            {formatLagos(new Date(request.created_at), "MMM dd, yyyy")}
                             <div className="text-xs text-muted-foreground">
-                                Processed by Admin
+                              {formatLagos(new Date(request.created_at), "HH:mm")}
                             </div>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-medium">
+                              {/* @ts-ignore */}
+                              {request.user?.raw_user_meta_data?.full_name || request.user?.raw_user_meta_data?.name || "User"}
+                            </div>
+                            {/* @ts-ignore */}
+                            <div className="text-xs text-muted-foreground">{request.user?.email}</div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-medium">{request.year} {request.make} {request.model}</div>
+                            {request.vin && <div className="text-xs text-muted-foreground">VIN: {request.vin}</div>}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{request.plate_number}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-xs text-muted-foreground">
+                              {request.requested_device_id || "—"}
+                            </span>
+                          </TableCell>
+                          <TableCell>{getStatusBadge(request.status)}</TableCell>
+                          <TableCell className="text-right">
+                            {request.status === "pending" && (
+                              <div className="flex justify-end gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-destructive hover:text-destructive"
+                                  onClick={() => {
+                                    if (confirm("Are you sure you want to reject this request?")) {
+                                      rejectMutation.mutate(request.id);
+                                    }
+                                  }}
+                                >
+                                  <XCircle className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    setSelectedRequest(request);
+                                    setDeviceId(request.requested_device_id || "");
+                                    setIsApproveDialogOpen(true);
+                                  }}
+                                >
+                                  <CheckCircle2 className="h-4 w-4 mr-2" />
+                                  Approve
+                                </Button>
+                              </div>
+                            )}
+                            {request.status === "approved" && (
+                              <div className="text-xs text-muted-foreground">
+                                Processed by Admin
+                              </div>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                }
+                renderCard={(request: any) => (
+                  <Card key={request.id} className="bg-card border-border">
+                    <CardContent className="p-4 space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-xs text-muted-foreground">
+                            {formatLagos(new Date(request.created_at), "MMM dd, yyyy")}{" "}
+                            <span className="opacity-70">{formatLagos(new Date(request.created_at), "HH:mm")}</span>
+                          </div>
+                          <div className="font-medium truncate">
+                            {/* @ts-ignore */}
+                            {request.user?.raw_user_meta_data?.full_name || request.user?.raw_user_meta_data?.name || "User"}
+                          </div>
+                          {/* @ts-ignore */}
+                          <div className="text-xs text-muted-foreground truncate">{request.user?.email}</div>
+                        </div>
+                        <div className="shrink-0">{getStatusBadge(request.status)}</div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div className="text-muted-foreground text-xs">Vehicle</div>
+                        <div className="text-xs truncate">{request.year} {request.make} {request.model}</div>
+                        <div className="text-muted-foreground text-xs">Plate</div>
+                        <div className="text-xs"><Badge variant="outline">{request.plate_number}</Badge></div>
+                        <div className="text-muted-foreground text-xs">Requested IMEI</div>
+                        <div className="text-xs font-mono truncate">{request.requested_device_id || "—"}</div>
+                      </div>
+
+                      {request.status === "pending" ? (
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="flex-1 text-destructive hover:text-destructive"
+                            onClick={() => {
+                              if (confirm("Are you sure you want to reject this request?")) {
+                                rejectMutation.mutate(request.id);
+                              }
+                            }}
+                          >
+                            <XCircle className="h-4 w-4 mr-2" />
+                            Reject
+                          </Button>
+                          <Button
+                            size="sm"
+                            className="flex-1"
+                            onClick={() => {
+                              setSelectedRequest(request);
+                              setDeviceId(request.requested_device_id || "");
+                              setIsApproveDialogOpen(true);
+                            }}
+                          >
+                            <CheckCircle2 className="h-4 w-4 mr-2" />
+                            Approve
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-muted-foreground">
+                          Processed by Admin
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+              />
             )}
           </CardContent>
         </Card>

@@ -3,11 +3,11 @@ import { supabase } from '@/integrations/supabase/client'
 
 export interface DailyTravelStat {
   travel_date: string
-  total_distance_km: number
-  total_travel_time_minutes: number
-  trip_count: number
-  avg_speed_kmh: number
-  max_speed_kmh: number
+  total_distance_km: number | string
+  total_travel_time_minutes: number | string
+  trip_count: number | string
+  avg_speed_kmh: number | string
+  max_speed_kmh: number | string
   first_trip_start: string
   last_trip_end: string
 }
@@ -52,49 +52,41 @@ export function useDailyTravelStats({
         throw new Error('device_id is required')
       }
 
-      // Build query params for edge function
-      const params: Record<string, string> = {
-        device_id: deviceId,
+      let { data: { session } } = await supabase.auth.getSession()
+
+      if (!session) {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) {
+          throw new Error('You must be logged in to view daily travel stats.')
+        }
+        const retry = await supabase.auth.getSession()
+        session = retry.data.session
       }
 
-      if (startDate) {
-        params.start_date = startDate
+      if (!session?.access_token) {
+        throw new Error('Authentication token is missing. Please sign in again.')
       }
 
-      if (endDate) {
-        params.end_date = endDate
-      }
-
-      // Call edge function using query params
       const { data, error } = await supabase.functions.invoke('daily-travel-stats', {
-        body: {},
-        method: 'GET',
+        body: {
+          device_id: deviceId,
+          start_date: startDate,
+          end_date: endDate,
+        },
         headers: {
-          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
         },
       })
 
-      // Edge functions with GET method need params in URL
-      // Use fetch directly with query params
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://cmvpnsqiefbsqkwnraka.supabase.co"
-      const queryString = new URLSearchParams(params).toString()
-      const functionUrl = `${supabaseUrl}/functions/v1/daily-travel-stats?${queryString}`
-      
-      const session = await supabase.auth.getSession()
-      const response = await fetch(functionUrl, {
-        headers: {
-          'Authorization': `Bearer ${session.data.session?.access_token || ''}`,
-          'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '',
-        },
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to fetch daily travel stats')
+      if (error) {
+        throw new Error(error.message || 'Failed to fetch daily travel stats')
       }
 
-      const result = await response.json()
-      return result
+      if (!data) {
+        throw new Error('No data returned from daily travel stats')
+      }
+
+      return data
     },
     enabled: enabled && !!deviceId,
     staleTime: 5 * 60 * 1000, // 5 minutes

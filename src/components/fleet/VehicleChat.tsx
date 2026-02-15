@@ -653,10 +653,14 @@ export function VehicleChat({ deviceId, vehicleName, avatarUrl, nickname }: Vehi
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
-        } catch {}
+        } catch {
+          void 0;
+        }
         recognitionRef.current = null;
       }
-    } catch {}
+    } catch {
+      void 0;
+    }
   };
 
   const clearVoicePreview = () => {

@@ -18,6 +18,7 @@ export const NAV_HEIGHTS = {
  * Increased to 6rem (96px) - 20% more than previous 5rem to ensure no cutoff
  */
 export const MIN_FOOTER_SPACING = 6; // 6rem = 96px (20% increase from 5rem)
+export const MIN_FOOTER_SPACING_TINY = 4; // 4rem = 64px (for <=360px wide screens)
 
 /**
  * Hook to calculate the proper bottom padding for main content
@@ -38,7 +39,8 @@ export function useFooterPadding() {
       location.pathname === '/map' ||
       location.pathname === '/insights' ||
       location.pathname === '/settings' ||
-      location.pathname === '/notifications';
+      location.pathname === '/notifications' ||
+      location.pathname === '/notification-settings';
     
     const shouldShowAdminNav = isAdmin && isAdminRoute;
     
@@ -48,9 +50,10 @@ export function useFooterPadding() {
       : NAV_HEIGHTS.BOTTOM_NAV;
     
     const totalPadding = navHeight + MIN_FOOTER_SPACING;
+    const tinyTotalPadding = navHeight + MIN_FOOTER_SPACING_TINY;
     
     // Return CSS class with calc() for dynamic safe area support
-    return `pb-[calc(${totalPadding}rem+env(safe-area-inset-bottom))]`;
+    return `pb-[calc(${totalPadding}rem+env(safe-area-inset-bottom))] max-[360px]:pb-[calc(${tinyTotalPadding}rem+env(safe-area-inset-bottom))]`;
   }, [location.pathname, isAdmin]);
 
   return paddingClass;
@@ -62,5 +65,7 @@ export function useFooterPadding() {
  */
 export function useOwnerFooterPadding() {
   const totalPadding = NAV_HEIGHTS.OWNER_NAV + MIN_FOOTER_SPACING;
-  return `pb-[calc(${totalPadding}rem+env(safe-area-inset-bottom))]`;
+  const tinyNavHeight = 4; // OwnerLayout nav compresses to h-16 on tiny screens
+  const tinyTotalPadding = tinyNavHeight + MIN_FOOTER_SPACING_TINY;
+  return `pb-[calc(${totalPadding}rem+env(safe-area-inset-bottom))] max-[360px]:pb-[calc(${tinyTotalPadding}rem+env(safe-area-inset-bottom))]`;
 }

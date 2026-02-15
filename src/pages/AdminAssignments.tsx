@@ -14,6 +14,7 @@ import { AssignmentManagerDialog } from "@/components/admin/AssignmentManagerDia
 import { CreateTestUserDialog } from "@/components/admin/CreateTestUserDialog";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { ResponsiveDataList } from "@/components/ui/responsive-data-list";
 
 export default function AdminAssignments() {
   const { data: profiles = [], isLoading: profilesLoading } = useProfiles();
@@ -219,129 +220,217 @@ export default function AdminAssignments() {
                 <p>No users found</p>
               </div>
             ) : (
-              <div className="rounded-md border overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>User</TableHead>
-                      <TableHead>Vehicles</TableHead>
-                      <TableHead>Subscription</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredProfiles.map(p => {
-                      const assignInfo = assignmentsByProfile.get(p.id) || { count: 0, names: [] };
-                      const balance = p.user_id ? walletMap.get(p.user_id) ?? null : null;
-                      const subActive = typeof balance === "number" ? balance > 0 : false;
-                      return (
-                        <TableRow key={p.id}>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <div className="font-medium">{p.name}</div>
-                              <Badge variant={p.user_id ? "default" : "secondary"} className="text-[10px] px-2 py-0">
-                                {p.user_id ? "Linked" : "Unlinked"}
-                              </Badge>
-                            </div>
-                            <div className="text-xs text-muted-foreground">{p.email || "No email"}</div>
-                            {!p.user_id ? (
-                              <div className="mt-1 flex items-center gap-2">
-                                <Badge variant="outline" className="text-[10px]">
-                                  User cannot see vehicles in PWA until linked
-                                </Badge>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-6 px-2 text-xs"
-                                  disabled={!p.email || linkProfileMutation.isPending}
-                                  onClick={async () => {
-                                    await linkProfileMutation.mutateAsync(p.id);
-                                  }}
-                                  title={
-                                    p.email
-                                      ? "Link profile to an existing auth user with this email"
-                                      : "Add an email to this profile first (Edit User), then link"
-                                  }
-                                >
-                                  <Link2 className="h-3 w-3 mr-1" />
-                                  Link
-                                </Button>
-                              </div>
-                            ) : null}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => {
-                                  setSelectedProfileId(p.id);
-                                  setDialogOpen(true);
-                                }}
-                                className="inline-flex items-center"
-                                title="Assign vehicles"
-                              >
-                                <Badge variant={assignInfo.count > 0 ? "default" : "secondary"}>
-                                  {assignInfo.count}
-                                </Badge>
-                              </button>
-                              <div className="flex gap-1 flex-wrap max-w-[260px]">
-                                {vehicles
-                                  .filter(v => v.assignedTo?.profile_id === p.id)
-                                  .slice(0, 3)
-                                  .map(v => (
-                                    <button
-                                      key={v.device_id}
-                                      className="text-xs text-muted-foreground hover:underline"
-                                      title="View vehicle details"
-                                      onClick={() => setSelectedVehicleId(v.device_id)}
-                                    >
-                                      {v.device_name}
-                                    </button>
-                                  ))}
-                                {assignInfo.names.length > 3 ? <span className="text-xs text-muted-foreground">…</span> : null}
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {balance === null ? (
-                              <Badge variant="outline">No Wallet</Badge>
-                            ) : subActive ? (
-                              <Badge className="bg-green-600 text-white">Active</Badge>
-                            ) : (
-                              <Badge className="bg-amber-500 text-white">Inactive</Badge>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  setSelectedProfileId(p.id);
-                                  setDialogOpen(true);
-                                }}
-                              >
-                                <Link2 className="h-4 w-4 mr-1" />
-                                Assign
-                              </Button>
-                              {assignInfo.count > 0 ? (
-                                <Button
-                                  size="sm"
-                                  onClick={() => {
-                                    const first = vehicles.find(v => v.assignedTo?.profile_id === p.id);
-                                    if (first) setSelectedVehicleId(first.device_id);
-                                  }}
-                                >
-                                  View Vehicle
-                                </Button>
-                              ) : null}
-                            </div>
-                          </TableCell>
+              <ResponsiveDataList
+                items={filteredProfiles}
+                desktop={
+                  <div className="rounded-md border overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>User</TableHead>
+                          <TableHead>Vehicles</TableHead>
+                          <TableHead>Subscription</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredProfiles.map(p => {
+                          const assignInfo = assignmentsByProfile.get(p.id) || { count: 0, names: [] };
+                          const balance = p.user_id ? walletMap.get(p.user_id) ?? null : null;
+                          const subActive = typeof balance === "number" ? balance > 0 : false;
+                          return (
+                            <TableRow key={p.id}>
+                              <TableCell>
+                                <div className="flex items-center gap-2">
+                                  <div className="font-medium">{p.name}</div>
+                                  <Badge variant={p.user_id ? "default" : "secondary"} className="text-[10px] px-2 py-0">
+                                    {p.user_id ? "Linked" : "Unlinked"}
+                                  </Badge>
+                                </div>
+                                <div className="text-xs text-muted-foreground">{p.email || "No email"}</div>
+                                {!p.user_id ? (
+                                  <div className="mt-1 flex items-center gap-2">
+                                    <Badge variant="outline" className="text-[10px]">
+                                      User cannot see vehicles in PWA until linked
+                                    </Badge>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-6 px-2 text-xs"
+                                      disabled={!p.email || linkProfileMutation.isPending}
+                                      onClick={async () => {
+                                        await linkProfileMutation.mutateAsync(p.id);
+                                      }}
+                                      title={
+                                        p.email
+                                          ? "Link profile to an existing auth user with this email"
+                                          : "Add an email to this profile first (Edit User), then link"
+                                      }
+                                    >
+                                      <Link2 className="h-3 w-3 mr-1" />
+                                      Link
+                                    </Button>
+                                  </div>
+                                ) : null}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => {
+                                      setSelectedProfileId(p.id);
+                                      setDialogOpen(true);
+                                    }}
+                                    className="inline-flex items-center"
+                                    title="Assign vehicles"
+                                  >
+                                    <Badge variant={assignInfo.count > 0 ? "default" : "secondary"}>
+                                      {assignInfo.count}
+                                    </Badge>
+                                  </button>
+                                  <div className="flex gap-1 flex-wrap max-w-[260px]">
+                                    {vehicles
+                                      .filter(v => v.assignedTo?.profile_id === p.id)
+                                      .slice(0, 3)
+                                      .map(v => (
+                                        <button
+                                          key={v.device_id}
+                                          className="text-xs text-muted-foreground hover:underline"
+                                          title="View vehicle details"
+                                          onClick={() => setSelectedVehicleId(v.device_id)}
+                                        >
+                                          {v.device_name}
+                                        </button>
+                                      ))}
+                                    {assignInfo.names.length > 3 ? <span className="text-xs text-muted-foreground">…</span> : null}
+                                  </div>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                {balance === null ? (
+                                  <Badge variant="outline">No Wallet</Badge>
+                                ) : subActive ? (
+                                  <Badge className="bg-green-600 text-white">Active</Badge>
+                                ) : (
+                                  <Badge className="bg-amber-500 text-white">Inactive</Badge>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex justify-end gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setSelectedProfileId(p.id);
+                                      setDialogOpen(true);
+                                    }}
+                                  >
+                                    <Link2 className="h-4 w-4 mr-1" />
+                                    Assign
+                                  </Button>
+                                  {assignInfo.count > 0 ? (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => {
+                                        const first = vehicles.find(v => v.assignedTo?.profile_id === p.id);
+                                        if (first) setSelectedVehicleId(first.device_id);
+                                      }}
+                                    >
+                                      View Vehicle
+                                    </Button>
+                                  ) : null}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                }
+                renderCard={(p) => {
+                  const assignInfo = assignmentsByProfile.get(p.id) || { count: 0, names: [] };
+                  const balance = p.user_id ? walletMap.get(p.user_id) ?? null : null;
+                  const subActive = typeof balance === "number" ? balance > 0 : false;
+                  return (
+                    <Card key={p.id} className="bg-card border-border">
+                      <CardContent className="p-4 space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="font-medium truncate">{p.name}</div>
+                            <div className="text-xs text-muted-foreground truncate">{p.email || "No email"}</div>
+                          </div>
+                          <Badge variant={p.user_id ? "default" : "secondary"} className="shrink-0 text-[10px] px-2 py-0">
+                            {p.user_id ? "Linked" : "Unlinked"}
+                          </Badge>
+                        </div>
+
+                        {!p.user_id ? (
+                          <div className="flex items-center justify-between gap-2">
+                            <Badge variant="outline" className="text-[10px]">
+                              Link required for PWA visibility
+                            </Badge>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="shrink-0"
+                              disabled={!p.email || linkProfileMutation.isPending}
+                              onClick={async () => {
+                                await linkProfileMutation.mutateAsync(p.id);
+                              }}
+                            >
+                              <Link2 className="h-4 w-4 mr-2" />
+                              Link
+                            </Button>
+                          </div>
+                        ) : null}
+
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs text-muted-foreground">Vehicles</div>
+                          <Badge variant={assignInfo.count > 0 ? "default" : "secondary"}>{assignInfo.count}</Badge>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs text-muted-foreground">Subscription</div>
+                          {balance === null ? (
+                            <Badge variant="outline">No Wallet</Badge>
+                          ) : subActive ? (
+                            <Badge className="bg-green-600 text-white">Active</Badge>
+                          ) : (
+                            <Badge className="bg-amber-500 text-white">Inactive</Badge>
+                          )}
+                        </div>
+
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="flex-1"
+                            onClick={() => {
+                              setSelectedProfileId(p.id);
+                              setDialogOpen(true);
+                            }}
+                          >
+                            <Link2 className="h-4 w-4 mr-2" />
+                            Assign
+                          </Button>
+                          {assignInfo.count > 0 ? (
+                            <Button
+                              size="sm"
+                              className="flex-1"
+                              onClick={() => {
+                                const first = vehicles.find(v => v.assignedTo?.profile_id === p.id);
+                                if (first) setSelectedVehicleId(first.device_id);
+                              }}
+                            >
+                              View
+                            </Button>
+                          ) : null}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                }}
+              />
             )}
           </CardContent>
         </Card>

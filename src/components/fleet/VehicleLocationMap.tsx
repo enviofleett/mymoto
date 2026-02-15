@@ -297,7 +297,9 @@ export function VehicleLocationMap({
             map.current!.removeSource('vehicle-route');
           }
         }
-      } catch {}
+      } catch {
+        void 0;
+      }
     };
     updateRoute();
     return () => {

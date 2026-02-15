@@ -1,6 +1,5 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2'
 import { handleTripSearch } from './trip-search.ts'
-import { validateTrip } from './trip-utils.ts'
 import { reverseGeocode } from '../_shared/geocoding.ts'
 
 // ============================================================================
@@ -85,7 +84,7 @@ const get_vehicle_status: ToolDefinition = {
 
 const get_trip_history: ToolDefinition = {
   name: 'get_trip_history',
-  description: 'Get historical trips for the vehicle. Trips are aggregated from ignition on/off events.',
+  description: 'Get historical trips for the vehicle from GPS51 raw trips (gps51_trips). This matches the Owner PWA reports 1:1 (no filtering).',
   parameters: {
     type: 'object',
     properties: {
@@ -95,53 +94,71 @@ const get_trip_history: ToolDefinition = {
     required: ['start_date', 'end_date']
   },
   execute: async ({ start_date, end_date }, { supabase, device_id }) => {
-    // Correct source: vehicle_trips view - allow all valid sources
+    // Source of truth: gps51_trips (raw querytrips sync table).
+    // Date inclusion uses start_time boundaries (aligned with Owner PWA reports).
     const { data: trips, error } = await supabase
-      .from('vehicle_trips')
-      .select('*')
+      .from('gps51_trips')
+      .select('id, device_id, start_time, end_time, start_latitude, start_longitude, end_latitude, end_longitude, distance_meters, avg_speed_kmh, max_speed_kmh, duration_seconds')
       .eq('device_id', device_id)
-      // .eq('source', 'gps51') // Removed strict source filter to include position_history and legacy trips
       .gte('start_time', start_date)
-      .lte('end_time', end_date)
+      .lte('start_time', end_date)
       .order('start_time', { ascending: true })
       .limit(50)
 
     if (error) throw new Error(`Database error: ${error.message}`)
-    
-    const validatedTrips = trips
-      ?.map((t: any) => validateTrip(t))
-      .filter((t: any) => !t.isGhost) || []
-    
+
+    const mapTrip = (t: any) => {
+      const distanceKm = t.distance_meters == null ? null : Number(t.distance_meters) / 1000
+      const qualityFlags: string[] = []
+      const hasStart = t.start_latitude != null && t.start_longitude != null && t.start_latitude !== 0 && t.start_longitude !== 0
+      const hasEnd = t.end_latitude != null && t.end_longitude != null && t.end_latitude !== 0 && t.end_longitude !== 0
+      if (!t.end_time) qualityFlags.push('missing_end_time')
+      if (!hasStart) qualityFlags.push('missing_start_coordinates')
+      if (!hasEnd) qualityFlags.push('missing_end_coordinates')
+      if (distanceKm == null) qualityFlags.push('missing_distance')
+      return {
+        id: t.id,
+        start_time: t.start_time,
+        end_time: t.end_time,
+        start_latitude: t.start_latitude,
+        start_longitude: t.start_longitude,
+        end_latitude: t.end_latitude,
+        end_longitude: t.end_longitude,
+        distance_km: distanceKm,
+        duration_seconds: t.duration_seconds ?? null,
+        max_speed_kmh: t.max_speed_kmh == null ? null : Math.round(Number(t.max_speed_kmh)),
+        avg_speed_kmh: t.avg_speed_kmh == null ? null : Math.round(Number(t.avg_speed_kmh)),
+        quality_flags: qualityFlags
+      }
+    }
+
+    const mappedTrips = (trips || []).map(mapTrip)
+
     const summary = {
-      count: validatedTrips.length,
-      total_distance_km: validatedTrips.reduce((sum: number, t: any) => sum + (t.distance_km || 0), 0),
-      total_duration_hours: validatedTrips.reduce((sum: number, t: any) => sum + (t.duration_seconds || 0), 0) / 3600
+      count: mappedTrips.length,
+      total_distance_km: mappedTrips.reduce((sum: number, t: any) => sum + (t.distance_km || 0), 0),
+      total_duration_hours: mappedTrips.reduce((sum: number, t: any) => sum + (t.duration_seconds || 0), 0) / 3600
     }
 
     const formatCoords = (lat?: number | null, lon?: number | null) => {
       if (lat == null || lon == null) return null
-      return `${lat.toFixed(5)}, ${lon.toFixed(5)}`
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null
+      return `${Number(lat).toFixed(5)}, ${Number(lon).toFixed(5)}`
     }
 
-    // Reverse geocode trips that have coordinates but no addresses
-    // Limit to first 10 trips to avoid excessive API calls
+    // Reverse geocode first 10 trips where we have coordinates.
     const tripsWithAddresses = await Promise.all(
-      validatedTrips.slice(0, 10).map(async (t: any) => {
-        let fromAddr = t.start_address || t.start_location_name
-        let toAddr = t.end_address || t.end_location_name
+      mappedTrips.slice(0, 10).map(async (t: any) => {
+        let fromAddr: string | null = null
+        let toAddr: string | null = null
 
-        // Geocode start if missing but coordinates exist
-        if (!fromAddr && t.start_latitude && t.start_longitude &&
-            t.start_latitude !== 0 && t.start_longitude !== 0) {
+        if (t.start_latitude != null && t.start_longitude != null && t.start_latitude !== 0 && t.start_longitude !== 0) {
           try {
             const geo = await reverseGeocode(t.start_latitude, t.start_longitude)
             fromAddr = geo.address
           } catch { /* non-blocking */ }
         }
-
-        // Geocode end if missing but coordinates exist
-        if (!toAddr && t.end_latitude && t.end_longitude &&
-            t.end_latitude !== 0 && t.end_longitude !== 0) {
+        if (t.end_latitude != null && t.end_longitude != null && t.end_latitude !== 0 && t.end_longitude !== 0) {
           try {
             const geo = await reverseGeocode(t.end_latitude, t.end_longitude)
             toAddr = geo.address
@@ -154,27 +171,24 @@ const get_trip_history: ToolDefinition = {
           from: fromAddr || formatCoords(t.start_latitude, t.start_longitude) || 'Unknown location',
           to: toAddr || formatCoords(t.end_latitude, t.end_longitude) || 'Unknown location',
           distance_km: t.distance_km,
-          duration_min: Math.round((t.duration_seconds || 0) / 60),
-          max_speed_kmh: t.max_speed ? Math.round(t.max_speed) : null,
-          avg_speed_kmh: t.avg_speed ? Math.round(t.avg_speed) : null,
-          quality: t.dataQuality,
-          warnings: t.validationIssues
+          duration_min: t.duration_seconds == null ? null : Math.round(Number(t.duration_seconds) / 60),
+          max_speed_kmh: t.max_speed_kmh,
+          avg_speed_kmh: t.avg_speed_kmh,
+          quality_flags: t.quality_flags
         }
       })
     )
 
-    // Append remaining trips without geocoding (index 10+)
-    const remainingTrips = validatedTrips.slice(10).map((t: any) => ({
+    const remainingTrips = mappedTrips.slice(10).map((t: any) => ({
       start: t.start_time,
       end: t.end_time,
-      from: t.start_address || t.start_location_name || formatCoords(t.start_latitude, t.start_longitude) || 'Unknown location',
-      to: t.end_address || t.end_location_name || formatCoords(t.end_latitude, t.end_longitude) || 'Unknown location',
+      from: formatCoords(t.start_latitude, t.start_longitude) || 'Unknown location',
+      to: formatCoords(t.end_latitude, t.end_longitude) || 'Unknown location',
       distance_km: t.distance_km,
-      duration_min: Math.round((t.duration_seconds || 0) / 60),
-      max_speed_kmh: t.max_speed ? Math.round(t.max_speed) : null,
-      avg_speed_kmh: t.avg_speed ? Math.round(t.avg_speed) : null,
-      quality: t.dataQuality,
-      warnings: t.validationIssues
+      duration_min: t.duration_seconds == null ? null : Math.round(Number(t.duration_seconds) / 60),
+      max_speed_kmh: t.max_speed_kmh,
+      avg_speed_kmh: t.avg_speed_kmh,
+      quality_flags: t.quality_flags
     }))
 
     return {
@@ -535,34 +549,24 @@ const get_trip_analytics: ToolDefinition = {
         startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0)
     }
 
-    // Query vehicle_daily_stats view for aggregated data
-    const { data: dailyStats, error: statsError } = await supabase
-      .from('vehicle_daily_stats')
-      .select('*')
-      .eq('device_id', device_id)
-      .gte('stat_date', startDate.toISOString().split('T')[0])
-      .lte('stat_date', endDate.toISOString().split('T')[0])
-      .order('stat_date', { ascending: false })
-
-    if (statsError) {
-      console.error('Error fetching daily stats:', statsError)
-    }
-
-    // Query trips for more detailed analysis
+    // Source of truth: gps51_trips (raw GPS51 trips).
+    // Query by start_time bounds so trips with null end_time aren't dropped.
     const { data: trips, error: tripsError } = await supabase
-      .from('vehicle_trips')
-      .select('start_time, end_time, duration_seconds, distance_km, start_address, end_address, start_latitude, start_longitude, end_latitude, end_longitude')
+      .from('gps51_trips')
+      .select('start_time, end_time, duration_seconds, distance_meters, avg_speed_kmh, max_speed_kmh')
       .eq('device_id', device_id)
       .gte('start_time', startDate.toISOString())
-      .lte('end_time', endDate.toISOString())
+      .lte('start_time', endDate.toISOString())
       .order('start_time', { ascending: true })
 
     if (tripsError) throw new Error(`Database error: ${tripsError.message}`)
 
     // Calculate analytics
     const tripCount = trips?.length || 0
-    const totalDriveTimeSeconds = trips?.reduce((sum: number, t: any) => sum + (t.duration_seconds || 0), 0) || 0
-    const totalDistanceKm = trips?.reduce((sum: number, t: any) => sum + (t.distance_km || 0), 0) || 0
+    const totalDriveTimeSeconds =
+      trips?.reduce((sum: number, t: any) => sum + (t.duration_seconds || 0), 0) || 0
+    const totalDistanceKm =
+      trips?.reduce((sum: number, t: any) => sum + ((t.distance_meters || 0) / 1000), 0) || 0
 
     // Calculate time between trips (parking/idle time)
     let totalParkingTimeSeconds = 0
@@ -588,9 +592,35 @@ const get_trip_analytics: ToolDefinition = {
       return `${minutes} minutes`
     }
 
-    // Get first and last trip locations for summary
-    const firstTrip = trips?.[0]
-    const lastTrip = trips?.[trips.length - 1]
+    // Build a simple daily breakdown (UTC day boundaries; caller timezone normalization is handled upstream).
+    const dailyAgg: Record<string, { trip_count: number; total_distance_km: number; total_duration_seconds: number; peak_speed: number | null; avg_speed_sum: number; avg_speed_count: number }> = {}
+    for (const t of trips || []) {
+      const day = String(t.start_time).slice(0, 10)
+      if (!dailyAgg[day]) {
+        dailyAgg[day] = { trip_count: 0, total_distance_km: 0, total_duration_seconds: 0, peak_speed: null, avg_speed_sum: 0, avg_speed_count: 0 }
+      }
+      const d = dailyAgg[day]
+      d.trip_count += 1
+      d.total_distance_km += (t.distance_meters || 0) / 1000
+      d.total_duration_seconds += (t.duration_seconds || 0)
+      const peak = t.max_speed_kmh == null ? null : Number(t.max_speed_kmh)
+      if (peak != null && (d.peak_speed == null || peak > d.peak_speed)) d.peak_speed = peak
+      const avg = t.avg_speed_kmh == null ? null : Number(t.avg_speed_kmh)
+      if (avg != null && Number.isFinite(avg)) {
+        d.avg_speed_sum += avg
+        d.avg_speed_count += 1
+      }
+    }
+    const daily_breakdown = Object.entries(dailyAgg)
+      .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+      .map(([date, d]) => ({
+        date,
+        trips: d.trip_count,
+        distance_km: Math.round(d.total_distance_km * 100) / 100,
+        drive_time: formatDuration(d.total_duration_seconds),
+        peak_speed_kmh: d.peak_speed == null ? null : Math.round(d.peak_speed),
+        avg_speed_kmh: d.avg_speed_count > 0 ? Math.round((d.avg_speed_sum / d.avg_speed_count) * 10) / 10 : null
+      }))
 
     return {
       period: {
@@ -608,22 +638,9 @@ const get_trip_analytics: ToolDefinition = {
         average_trip_distance_km: tripCount > 0 ? Math.round((totalDistanceKm / tripCount) * 100) / 100 : 0,
         average_trip_duration: tripCount > 0 ? formatDuration(totalDriveTimeSeconds / tripCount) : '0 minutes'
       },
-      daily_breakdown: dailyStats?.map((d: any) => ({
-        date: d.stat_date,
-        trips: d.trip_count,
-        distance_km: d.total_distance_km,
-        drive_time: formatDuration(d.total_duration_seconds),
-        peak_speed_kmh: d.peak_speed,
-        avg_speed_kmh: d.avg_speed
-      })) || [],
-      first_trip: firstTrip ? {
-        time: firstTrip.start_time,
-        from: firstTrip.start_address || 'Unknown'
-      } : null,
-      last_trip: lastTrip ? {
-        time: lastTrip.end_time,
-        to: lastTrip.end_address || 'Unknown'
-      } : null
+      daily_breakdown,
+      first_trip: trips && trips.length > 0 ? { time: trips[0].start_time } : null,
+      last_trip: trips && trips.length > 0 ? { time: trips[trips.length - 1].end_time ?? trips[trips.length - 1].start_time } : null
     }
   }
 }
@@ -649,14 +666,16 @@ const get_favorite_locations: ToolDefinition = {
     const startDate = new Date()
     startDate.setDate(startDate.getDate() - maxDays)
 
-    // Get all trip end points (parking locations)
+    // Source of truth: gps51_trips. Addresses are derived via reverse geocoding.
     const { data: trips, error } = await supabase
-      .from('vehicle_trips')
-      .select('end_latitude, end_longitude, end_address, end_time')
+      .from('gps51_trips')
+      .select('end_latitude, end_longitude, end_time')
       .eq('device_id', device_id)
       .gte('start_time', startDate.toISOString())
       .not('end_latitude', 'is', null)
       .not('end_longitude', 'is', null)
+      .neq('end_latitude', 0)
+      .neq('end_longitude', 0)
       .order('end_time', { ascending: false })
 
     if (error) throw new Error(`Database error: ${error.message}`)
@@ -711,7 +730,7 @@ const get_favorite_locations: ToolDefinition = {
           lat,
           lng,
           count: 1,
-          addresses: trip.end_address ? [trip.end_address] : [],
+          addresses: [],
           lastVisit: trip.end_time
         })
       }

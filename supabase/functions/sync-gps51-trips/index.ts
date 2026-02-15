@@ -53,6 +53,154 @@ function toNumberOrNull(raw: unknown): number | null {
   return null;
 }
 
+type LatLon = { lat: number | null; lon: number | null };
+type PickedNumber = { value: number | null; key: string | null };
+
+function parseLatLngPair(raw: unknown): LatLon {
+  if (raw === null || raw === undefined) return { lat: null, lon: null };
+
+  // "6.45,3.39" or "6.45 3.39"
+  if (typeof raw === "string") {
+    const s = raw.trim();
+    if (!s) return { lat: null, lon: null };
+    const parts = s.split(/[,\s]+/).filter(Boolean);
+    if (parts.length < 2) return { lat: null, lon: null };
+    return {
+      lat: toNumberOrNull(parts[0]),
+      lon: toNumberOrNull(parts[1]),
+    };
+  }
+
+  // [lat, lon]
+  if (Array.isArray(raw)) {
+    return {
+      lat: toNumberOrNull(raw[0]),
+      lon: toNumberOrNull(raw[1]),
+    };
+  }
+
+  // {lat,lng} / {latitude,longitude} / {lat,lon}
+  if (typeof raw === "object") {
+    const obj = raw as Record<string, unknown>;
+    const lat = toNumberOrNull(obj.lat ?? obj.latitude);
+    const lon = toNumberOrNull(obj.lon ?? obj.lng ?? obj.longitude);
+    return { lat, lon };
+  }
+
+  return { lat: null, lon: null };
+}
+
+function pickFirstNumber(trip: any, keys: string[]): PickedNumber {
+  for (const key of keys) {
+    if (!trip || typeof trip !== "object") continue;
+    if (!Object.prototype.hasOwnProperty.call(trip, key)) continue;
+    const value = toNumberOrNull(trip[key]);
+    if (value !== null) return { value, key };
+  }
+  return { value: null, key: null };
+}
+
+function extractTripCoords(
+  trip: any,
+  kind: "start" | "end"
+): { lat: number | null; lon: number | null; latKey: string | null; lonKey: string | null; source: string } {
+  const k = kind.toLowerCase();
+
+  const latKeys =
+    kind === "start"
+      ? ["startlat", "startlatitude", "start_latitude", "start_lat", "slat"]
+      : ["endlat", "endlatitude", "end_latitude", "end_lat", "elat"];
+  const lonKeys =
+    kind === "start"
+      ? ["startlon", "startlng", "startlongitude", "start_longitude", "start_lng", "slon"]
+      : ["endlon", "endlng", "endlongitude", "end_longitude", "end_lng", "elon"];
+
+  const pickedLat = pickFirstNumber(trip, latKeys);
+  const pickedLon = pickFirstNumber(trip, lonKeys);
+
+  let lat = pickedLat.value;
+  let lon = pickedLon.value;
+  let latKey = pickedLat.key;
+  let lonKey = pickedLon.key;
+  let source = "direct";
+
+  // Combined "pos"/"location"/"position" style fields.
+  if (lat === null || lon === null) {
+    const combinedKeys = [
+      `${k}pos`,
+      `${k}_pos`,
+      `${k}position`,
+      `${k}_position`,
+      `${k}location`,
+      `${k}_location`,
+    ];
+    for (const key of combinedKeys) {
+      if (!trip || typeof trip !== "object") continue;
+      if (!Object.prototype.hasOwnProperty.call(trip, key)) continue;
+      const pair = parseLatLngPair(trip[key]);
+      if (lat === null && pair.lat !== null) {
+        lat = pair.lat;
+        latKey = key;
+        source = `combined:${key}`;
+      }
+      if (lon === null && pair.lon !== null) {
+        lon = pair.lon;
+        lonKey = key;
+        source = `combined:${key}`;
+      }
+      if (lat !== null && lon !== null) break;
+    }
+  }
+
+  // Heuristic fallback: scan for keys like start*lat, start*lon|lng, end*lat, end*lon|lng.
+  if (lat === null || lon === null) {
+    const walk = (
+      obj: unknown,
+      prefix: string,
+      depth: number
+    ): Array<{ path: string; value: unknown }> => {
+      if (!obj || typeof obj !== "object") return [];
+      if (depth <= 0) return [];
+      if (Array.isArray(obj)) return []; // avoid noisy payload arrays
+      const out: Array<{ path: string; value: unknown }> = [];
+      for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+        const path = prefix ? `${prefix}.${key}` : key;
+        out.push({ path, value });
+        if (value && typeof value === "object" && !Array.isArray(value)) {
+          out.push(...walk(value, path, depth - 1));
+        }
+      }
+      return out;
+    };
+
+    // GPS51 sometimes nests values like { start: { lat: ..., lng: ... } }.
+    // Search up to a few levels deep to capture those without overfitting.
+    for (const { path, value } of walk(trip, "", 3)) {
+      const lk = path.toLowerCase();
+      if (!lk.includes(k)) continue;
+      if (lat === null && lk.includes("lat")) {
+        const v = toNumberOrNull(value);
+        if (v !== null) {
+          lat = v;
+          latKey = path;
+          source = "heuristic";
+        }
+      }
+      if (lon === null && (lk.includes("lon") || lk.includes("lng"))) {
+        const v = toNumberOrNull(value);
+        if (v !== null) {
+          lon = v;
+          lonKey = path;
+          source = "heuristic";
+        }
+      }
+      if (lat !== null && lon !== null) break;
+    }
+  }
+
+  return { lat, lon, latKey, lonKey, source };
+}
+
 function toIntOrNull(raw: unknown): number | null {
   const n = toNumberOrNull(raw);
   if (n === null) return null;
@@ -86,9 +234,10 @@ function convertGps51TripToDb(trip: any, deviceId: string) {
 
   // GPS51 distance field priority:
   // 1. distance (accumulated path distance - most accurate)
+  // 1b. tripdistance (alternate field seen in some querytrips payloads)
   // 2. totaldistance (alternative field name)
   // DB column is integer; GPS51 often returns strings/decimals. Round to nearest meter.
-  const distanceMeters = toIntOrNull(trip.distance ?? trip.totaldistance);
+  const distanceMeters = toIntOrNull(trip.distance ?? trip.tripdistance ?? trip.totaldistance);
 
   // GPS51 speed fields (already in correct units)
   // maxspeed and avgspeed are in m/h, convert to km/h using standard normalizer
@@ -107,15 +256,33 @@ function convertGps51TripToDb(trip: any, deviceId: string) {
       trip.avgspeed_kmh
   );
 
+  const start = extractTripCoords(trip, "start");
+  const end = extractTripCoords(trip, "end");
+
+  // Minimal, actionable mapping log (do not log whole JWT/trip). Helpful when GPS51 changes field names.
+  // Logged only when we have a parsed startTime (otherwise the row will be dropped anyway).
+  if (startTime) {
+    console.log("[sync-gps51-trips] Trip coord mapping", {
+      device_id: deviceId,
+      start_time: startTime,
+      start_source: start.source,
+      start_lat_key: start.latKey,
+      start_lon_key: start.lonKey,
+      end_source: end.source,
+      end_lat_key: end.latKey,
+      end_lon_key: end.lonKey,
+    });
+  }
+
   return {
     device_id: deviceId,
     start_time: startTime,  // UTC timestamp
     end_time: endTime,      // UTC timestamp
     // GPS51 sometimes returns strings; DB columns are numeric.
-    start_latitude: toNumberOrNull(trip.startlat ?? trip.startlatitude),
-    start_longitude: toNumberOrNull(trip.startlon ?? trip.startlongitude),
-    end_latitude: toNumberOrNull(trip.endlat ?? trip.endlatitude),
-    end_longitude: toNumberOrNull(trip.endlon ?? trip.endlongitude),
+    start_latitude: start.lat,
+    start_longitude: start.lon,
+    end_latitude: end.lat,
+    end_longitude: end.lon,
     distance_meters: distanceMeters,
     avg_speed_kmh: avgSpeedKmh,
     max_speed_kmh: maxSpeedKmh,

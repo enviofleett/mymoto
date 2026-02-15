@@ -104,7 +104,7 @@ export function AdminBottomNav() {
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-card/95 backdrop-blur-xl border-t border-border/30 pb-[env(safe-area-inset-bottom)]">
-      <div className="flex items-center justify-around h-20 max-w-lg mx-auto px-4">
+      <div className="flex items-center justify-around h-20 max-w-lg mx-auto px-4 max-[360px]:px-2">
         {ADMIN_NAV_ITEMS.map((item) => {
           const isActive = item.activeMatch.test(location.pathname);
           
@@ -116,7 +116,7 @@ export function AdminBottomNav() {
             >
               {/* Neumorphic icon container */}
               <div className={cn(
-                "flex items-center justify-center w-12 h-12 rounded-full transition-all duration-300",
+                "flex items-center justify-center w-12 h-12 max-[360px]:w-10 max-[360px]:h-10 rounded-full transition-all duration-300",
                 isActive 
                   ? "shadow-neumorphic-inset ring-2 ring-accent/70 bg-card" 
                   : "shadow-neumorphic-sm bg-card hover:shadow-neumorphic"
@@ -133,7 +133,7 @@ export function AdminBottomNav() {
               )} />
               {/* Label */}
               <span className={cn(
-                "text-[10px] font-medium transition-colors duration-200",
+                "text-[10px] font-medium transition-colors duration-200 max-[360px]:hidden",
                 isActive ? "text-accent" : "text-muted-foreground"
               )}>
                 {item.label}
@@ -148,7 +148,7 @@ export function AdminBottomNav() {
             <button className="flex flex-col items-center justify-center gap-1.5 transition-all duration-200 active:scale-95">
               {/* Neumorphic icon container */}
               <div className={cn(
-                "flex items-center justify-center w-12 h-12 rounded-full transition-all duration-300",
+                "flex items-center justify-center w-12 h-12 max-[360px]:w-10 max-[360px]:h-10 rounded-full transition-all duration-300",
                 isMoreMenuActive
                   ? "shadow-neumorphic-inset ring-2 ring-accent/70 bg-card"
                   : "shadow-neumorphic-sm bg-card hover:shadow-neumorphic"
@@ -165,7 +165,7 @@ export function AdminBottomNav() {
               )} />
               {/* Label */}
               <span className={cn(
-                "text-[10px] font-medium transition-colors duration-200",
+                "text-[10px] font-medium transition-colors duration-200 max-[360px]:hidden",
                 isMoreMenuActive ? "text-accent" : "text-muted-foreground"
               )}>
                 More

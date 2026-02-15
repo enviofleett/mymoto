@@ -9,6 +9,7 @@ const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNtdnBuc3FpZWZic3Frd25yYWthIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc3MjIwMDEsImV4cCI6MjA4MzI5ODAwMX0.nJLb5znjUiGsCk_S2QubhBtqIl3DB3I8LbZihIMJdwo";
 
 const AUTH_NOTICE_KEY = "mymoto-auth-notice";
+const SESSION_NOT_READY_MSG = "Session not ready. Please wait 2 seconds and retry.";
 
 // Helper to safely sign out without throwing errors (e.g. ERR_ABORTED if navigating)
 async function safeSignOut() {
@@ -40,12 +41,23 @@ async function getAccessToken() {
   let token = data.session?.access_token;
   
   if (!token) {
-    // Attempt refresh if token is missing but we might have a refresh token
-    const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
-    if (!refreshError && refreshData.session?.access_token) {
-      token = refreshData.session.access_token;
-    } else {
-      throw new Error("Unauthorized: please sign in again and retry.");
+    // Session can be temporarily unavailable while auth rehydrates (PWA restore / cold start).
+    // Do one short retry, but DO NOT refresh here: refresh failures can cascade into SIGNED_OUT.
+    await new Promise((r) => setTimeout(r, 120));
+    const retry = await supabase.auth.getSession();
+    if (retry.error) throw retry.error;
+    token = retry.data.session?.access_token;
+
+    if (import.meta.env.DEV) {
+      console.log("[edge] getAccessToken missing token; retry", {
+        hadSession: !!data.session,
+        retryHasSession: !!retry.data.session,
+        hasToken: !!token,
+      });
+    }
+
+    if (!token) {
+      throw new Error(SESSION_NOT_READY_MSG);
     }
   }
   return token;
@@ -145,6 +157,10 @@ export async function invokeEdgeFunction<TResponse>(
 
   if (!res.ok) {
     const msg = extractErrorMessage(payload);
+    // If the session wasn't ready during the call, don't sign the user out.
+    if (msg === SESSION_NOT_READY_MSG) {
+      throw new Error(SESSION_NOT_READY_MSG);
+    }
     if (res.status === 401 && isInvalidJwtMessage(msg)) {
       // Try one refresh+retry. This covers cases where the JWT secret rotated or the access token
       // got corrupted while the refresh token remains valid.

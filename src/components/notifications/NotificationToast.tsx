@@ -7,13 +7,15 @@ interface NotificationToastProps {
   message: string;
   type: 'info' | 'warning' | 'error' | 'critical' | 'success';
   onDismiss?: () => void;
+  onClick?: () => void;
 }
 
 export const NotificationToast: React.FC<NotificationToastProps> = ({
   title,
   message,
   type,
-  onDismiss
+  onDismiss,
+  onClick
 }) => {
   const getIcon = () => {
     switch (type) {
@@ -36,11 +38,16 @@ export const NotificationToast: React.FC<NotificationToastProps> = ({
   };
 
   return (
-    <div className={cn(
-      "flex w-full items-start gap-3 rounded-lg border p-4 shadow-lg backdrop-blur-md transition-all duration-300",
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+      "relative flex w-full items-start gap-3 rounded-lg border p-4 shadow-lg backdrop-blur-md transition-all duration-300 text-left",
       "bg-card/95 text-card-foreground",
-      getBorderColor()
-    )}>
+      getBorderColor(),
+      onClick ? "cursor-pointer hover:brightness-[1.02] active:brightness-[0.98]" : "cursor-default",
+    )}
+    >
       <div className="mt-0.5 shrink-0">
         {getIcon()}
       </div>
@@ -57,6 +64,6 @@ export const NotificationToast: React.FC<NotificationToastProps> = ({
           <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
         </span>
       )}
-    </div>
+    </button>
   );
 };

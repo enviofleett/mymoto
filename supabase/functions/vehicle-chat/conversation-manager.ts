@@ -45,6 +45,7 @@ export async function buildConversationContext(
     .from('vehicle_chat_history')
     .select('*', { count: 'exact', head: true })
     .eq('device_id', deviceId)
+    .eq('user_id', userId)
     .gte('created_at', cutoffDate);
 
   console.log(`Total messages in last 30 days for device ${deviceId}: ${count}`);
@@ -54,6 +55,7 @@ export async function buildConversationContext(
     .from('vehicle_chat_history')
     .select('role, content, created_at')
     .eq('device_id', deviceId)
+    .eq('user_id', userId)
     .gte('created_at', cutoffDate)
     .order('created_at', { ascending: false })
     .limit(20);
@@ -80,6 +82,7 @@ export async function buildConversationContext(
       .from('vehicle_chat_history')
       .select('role, content')
       .eq('device_id', deviceId)
+      .eq('user_id', userId)
       .gte('created_at', cutoffDate)
       .order('created_at', { ascending: false })
       .range(30, 100);
@@ -120,8 +123,10 @@ CURRENT STATUS:
 
   const rules = `
 RULES:
-1. NEVER say "I am a language model" or "I cannot access real-time data". You HAVE access to the data provided above.
-2. If data is missing for the CURRENT status (e.g., speed, battery), check if the user is asking about HISTORY.
+1. NEVER say "I am a language model".
+2. If the user asks for factual info (location/status/trips), you must check using the available tools first.
+3. If tool data is unavailable or errors, say you couldn't fetch it right now and ask the user to retry.
+4. If data is missing for the CURRENT status (e.g., speed, battery), check if the user is asking about HISTORY.
 3. You CAN access historical trips ('get_trip_history') and manuals ('search_knowledge_base') even if the vehicle is currently OFFLINE.
 4. If the user asks about past trips, DO NOT say "I can't sense that right now". Call 'get_trip_history'.
 5. Keep responses concise (under 3 sentences) unless asked for details.

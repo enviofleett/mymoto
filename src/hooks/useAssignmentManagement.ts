@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { invokeEdgeFunction } from "@/integrations/supabase/edge";
+import { useAuth } from "@/contexts/AuthContext";
 
 type AdminVehicleAssignmentsResult =
   | {
@@ -227,12 +228,16 @@ export function useGpsOwners() {
 // Unassign ALL vehicles (reset all assignments)
 export function useUnassignAllVehicles() {
   const queryClient = useQueryClient();
+  const { session } = useAuth();
 
   return useMutation({
     mutationFn: async () => {
+      const token = session?.access_token;
+      if (!token) throw new Error("Session not ready. Please wait 2 seconds and retry.");
       const result = await invokeEdgeFunction<AdminVehicleAssignmentsResult>(
         "admin-vehicle-assignments",
-        { action: "unassign_all" }
+        { action: "unassign_all" },
+        { accessToken: token }
       );
       if (!result?.success) {
         throw new Error(result?.message || "Failed to unassign all vehicles");
@@ -255,6 +260,7 @@ export function useUnassignAllVehicles() {
 
 export function useAssignVehicles() {
   const queryClient = useQueryClient();
+  const { session } = useAuth();
 
   return useMutation({
     mutationFn: async ({ 
@@ -273,6 +279,8 @@ export function useAssignVehicles() {
         isNewUser?: boolean;
       };
     }) => {
+      const token = session?.access_token;
+      if (!token) throw new Error("Session not ready. Please wait 2 seconds and retry.");
       const result = await invokeEdgeFunction<AdminVehicleAssignmentsResult>(
         "admin-vehicle-assignments",
         {
@@ -280,7 +288,8 @@ export function useAssignVehicles() {
           profile_id: profileId,
           device_ids: deviceIds,
           vehicle_aliases: vehicleAliases,
-        }
+        },
+        { accessToken: token }
       );
       if (!result?.success) {
         const first = result?.errors?.[0];
@@ -315,6 +324,10 @@ export function useAssignVehicles() {
       queryClient.invalidateQueries({ queryKey: ["assignment-stats"] });
     },
     onError: (error) => {
+      if (error.message.includes("Session not ready")) {
+        toast.error("Session still loading", { description: "Wait 2 seconds and retry the assignment." });
+        return;
+      }
       toast.error(`Assignment failed: ${error.message}`);
     },
   });
@@ -322,9 +335,12 @@ export function useAssignVehicles() {
 
 export function useBulkAutoAssign() {
   const queryClient = useQueryClient();
+  const { session } = useAuth();
 
   return useMutation({
     mutationFn: async (assignments: { deviceId: string; profileId: string }[]) => {
+      const token = session?.access_token;
+      if (!token) throw new Error("Session not ready. Please wait 2 seconds and retry.");
       const byProfile = new Map<string, string[]>();
       for (const a of assignments) {
         const list = byProfile.get(a.profileId) || [];
@@ -337,7 +353,8 @@ export function useBulkAutoAssign() {
           try {
             const result = await invokeEdgeFunction<AdminVehicleAssignmentsResult>(
               "admin-vehicle-assignments",
-              { action: "assign", profile_id: profileId, device_ids: deviceIds }
+              { action: "assign", profile_id: profileId, device_ids: deviceIds },
+              { accessToken: token }
             );
             if (!result?.success) {
               return { profileId, error: new Error(result?.message || "Auto-assign failed") };
@@ -364,6 +381,10 @@ export function useBulkAutoAssign() {
       queryClient.invalidateQueries({ queryKey: ["assignment-stats"] });
     },
     onError: (error) => {
+      if (error.message.includes("Session not ready")) {
+        toast.error("Session still loading", { description: "Wait 2 seconds and retry auto-assign." });
+        return;
+      }
       toast.error(`Auto-assignment failed: ${error.message}`);
     },
   });
@@ -371,6 +392,7 @@ export function useBulkAutoAssign() {
 
 export function useUnassignVehicles() {
   const queryClient = useQueryClient();
+  const { session } = useAuth();
 
   return useMutation({
     mutationFn: async ({
@@ -380,13 +402,16 @@ export function useUnassignVehicles() {
       deviceIds: string[];
       profileId?: string;
     }) => {
+      const token = session?.access_token;
+      if (!token) throw new Error("Session not ready. Please wait 2 seconds and retry.");
       const result = await invokeEdgeFunction<AdminVehicleAssignmentsResult>(
         "admin-vehicle-assignments",
         {
           action: "unassign",
           profile_id: profileId || null,
           device_ids: deviceIds,
-        }
+        },
+        { accessToken: token }
       );
       if (!result?.success) {
         const first = result?.errors?.[0];
@@ -403,6 +428,10 @@ export function useUnassignVehicles() {
       queryClient.invalidateQueries({ queryKey: ["assignment-stats"] });
     },
     onError: (error) => {
+      if (error.message.includes("Session not ready")) {
+        toast.error("Session still loading", { description: "Wait 2 seconds and retry unassign." });
+        return;
+      }
       toast.error(`Unassignment failed: ${error.message}`);
     },
   });

@@ -14,6 +14,7 @@ import { Wallet, TrendingUp, ArrowUpDown, Settings, Plus, Minus } from "lucide-r
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { Navigate } from "react-router-dom";
+import { ResponsiveDataList } from "@/components/ui/responsive-data-list";
 
 export default function AdminWallets() {
   const { isAdmin, isLoading: authLoading } = useAuth();
@@ -83,24 +84,46 @@ export default function AdminWallets() {
     setAdjustDialogOpen(true);
   };
 
+  const visibleWallets = wallets
+    .filter(w => {
+      const matchesSearch =
+        !search ||
+        (w.email || "").toLowerCase().includes(search.toLowerCase()) ||
+        (w.name || "").toLowerCase().includes(search.toLowerCase());
+      const matchesStatus = statusFilter === "all" || (w.status || "active") === statusFilter;
+      return matchesSearch && matchesStatus;
+    })
+    .sort((a, b) => {
+      const av = a[sortKey] || "";
+      const bv = b[sortKey] || "";
+      if (sortKey === "balance") {
+        return sortDir === "asc" ? (a.balance - b.balance) : (b.balance - a.balance);
+      }
+      const at = new Date(String(av)).getTime();
+      const bt = new Date(String(bv)).getTime();
+      return sortDir === "asc" ? (at - bt) : (bt - at);
+    });
+
+  const displayedWallets = visibleWallets.slice((page - 1) * pageSize, page * pageSize);
+
   return (
     <DashboardLayout>
       <div className="space-y-6 pb-32">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-3xl font-bold">Wallet Management</h1>
             <p className="text-muted-foreground">View and manage user wallets</p>
           </div>
           
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
             <Input
               placeholder="Search name or email"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-64"
+              className="w-full sm:w-64"
             />
             <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
-              <SelectTrigger className="w-40">
+              <SelectTrigger className="w-full sm:w-40">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
@@ -209,11 +232,11 @@ export default function AdminWallets() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <Label>Sort by</Label>
                 <Select value={sortKey} onValueChange={(v) => setSortKey(v as any)}>
-                  <SelectTrigger className="w-40">
+                  <SelectTrigger className="w-full sm:w-40">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -223,7 +246,7 @@ export default function AdminWallets() {
                   </SelectContent>
                 </Select>
                 <Select value={sortDir} onValueChange={(v) => setSortDir(v as any)}>
-                  <SelectTrigger className="w-28">
+                  <SelectTrigger className="w-full sm:w-28">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -239,97 +262,129 @@ export default function AdminWallets() {
                 <p className="text-muted-foreground">Loading wallets...</p>
               </div>
             ) : (
-              <ScrollArea className="w-full whitespace-nowrap rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>User</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Balance</TableHead>
-                      <TableHead>Registered</TableHead>
-                      <TableHead>Last Activity</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {wallets
-                      .filter(w => {
-                        const matchesSearch = !search || (w.email || "").toLowerCase().includes(search.toLowerCase()) || (w.name || "").toLowerCase().includes(search.toLowerCase());
-                        const matchesStatus = statusFilter === "all" || (w.status || "active") === statusFilter;
-                        return matchesSearch && matchesStatus;
-                      })
-                      .sort((a, b) => {
-                        const av = a[sortKey] || "";
-                        const bv = b[sortKey] || "";
-                        if (sortKey === "balance") {
-                          return sortDir === "asc" ? (a.balance - b.balance) : (b.balance - a.balance);
-                        }
-                        const at = new Date(String(av)).getTime();
-                        const bt = new Date(String(bv)).getTime();
-                        return sortDir === "asc" ? (at - bt) : (bt - at);
-                      })
-                      .slice((page - 1) * pageSize, page * pageSize)
-                      .map((wallet) => (
-                      <TableRow key={wallet.id}>
-                        <TableCell>
-                          <div>
-                            <p className="font-medium">{wallet.name || wallet.email || "No name"}</p>
-                            <p className="text-xs text-muted-foreground truncate max-w-[200px]">
-                              {wallet.user_id}
-                            </p>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={wallet.status === "inactive" ? "destructive" : "default"}>
-                            {wallet.status || "active"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <span className={wallet.balance < 0 ? "text-destructive" : "text-foreground"}>
-                            ₦{wallet.balance.toLocaleString()}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          {new Date(wallet.created_at).toLocaleDateString()}
-                        </TableCell>
-                        <TableCell>
-                          {wallet.last_activity_at ? new Date(wallet.last_activity_at).toLocaleString() : "—"}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="text-green-600 hover:text-green-700"
-                              onClick={() => openAdjustDialog(wallet.id, "credit")}
-                            >
-                              <Plus className="h-4 w-4 mr-1" />
-                              Credit
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="text-red-600 hover:text-red-700"
-                              onClick={() => openAdjustDialog(wallet.id, "debit")}
-                            >
-                              <Minus className="h-4 w-4 mr-1" />
-                              Debit
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                    {wallets.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={4} className="text-center text-muted-foreground">
-                          No wallets found
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-                <ScrollBar orientation="horizontal" />
-              </ScrollArea>
+              <ResponsiveDataList
+                items={displayedWallets}
+                empty={<div className="text-center text-muted-foreground py-6">No wallets found</div>}
+                desktop={
+                  <ScrollArea className="w-full whitespace-nowrap rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>User</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Balance</TableHead>
+                          <TableHead>Registered</TableHead>
+                          <TableHead>Last Activity</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {displayedWallets.map((wallet) => (
+                          <TableRow key={wallet.id}>
+                            <TableCell>
+                              <div>
+                                <p className="font-medium">{wallet.name || wallet.email || "No name"}</p>
+                                <p className="text-xs text-muted-foreground truncate max-w-[200px]">
+                                  {wallet.user_id}
+                                </p>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={wallet.status === "inactive" ? "destructive" : "default"}>
+                                {wallet.status || "active"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <span className={wallet.balance < 0 ? "text-destructive" : "text-foreground"}>
+                                ₦{wallet.balance.toLocaleString()}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              {new Date(wallet.created_at).toLocaleDateString()}
+                            </TableCell>
+                            <TableCell>
+                              {wallet.last_activity_at ? new Date(wallet.last_activity_at).toLocaleString() : "—"}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-green-600 hover:text-green-700"
+                                  onClick={() => openAdjustDialog(wallet.id, "credit")}
+                                >
+                                  <Plus className="h-4 w-4 mr-1" />
+                                  Credit
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-red-600 hover:text-red-700"
+                                  onClick={() => openAdjustDialog(wallet.id, "debit")}
+                                >
+                                  <Minus className="h-4 w-4 mr-1" />
+                                  Debit
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                    <ScrollBar orientation="horizontal" />
+                  </ScrollArea>
+                }
+                renderCard={(wallet) => (
+                  <Card key={wallet.id} className="bg-card border-border">
+                    <CardContent className="p-4 space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="font-medium truncate">{wallet.name || wallet.email || "No name"}</div>
+                          <div className="text-xs text-muted-foreground font-mono truncate">{wallet.user_id}</div>
+                        </div>
+                        <Badge variant={wallet.status === "inactive" ? "destructive" : "default"}>
+                          {wallet.status || "active"}
+                        </Badge>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-xs text-muted-foreground">Balance</div>
+                        <div className={wallet.balance < 0 ? "text-destructive font-semibold" : "text-foreground font-semibold"}>
+                          ₦{wallet.balance.toLocaleString()}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="text-muted-foreground">Registered</div>
+                        <div className="text-right">{new Date(wallet.created_at).toLocaleDateString()}</div>
+                        <div className="text-muted-foreground">Last Activity</div>
+                        <div className="text-right">{wallet.last_activity_at ? new Date(wallet.last_activity_at).toLocaleDateString() : "—"}</div>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1 text-green-600 hover:text-green-700"
+                          onClick={() => openAdjustDialog(wallet.id, "credit")}
+                        >
+                          <Plus className="h-4 w-4 mr-2" />
+                          Credit
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1 text-red-600 hover:text-red-700"
+                          onClick={() => openAdjustDialog(wallet.id, "debit")}
+                        >
+                          <Minus className="h-4 w-4 mr-2" />
+                          Debit
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              />
             )}
             <div className="flex justify-end items-center gap-2 mt-3">
               <Button variant="outline" disabled={page === 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Prev</Button>
@@ -350,47 +405,69 @@ export default function AdminWallets() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <ScrollArea className="w-full whitespace-nowrap rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Key</TableHead>
-                    <TableHead>Old</TableHead>
-                    <TableHead>New</TableHead>
-                    <TableHead>Updated By</TableHead>
-                    <TableHead>Reason</TableHead>
-                    <TableHead>Date</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {auditLogs.map((log) => (
-                    <TableRow key={log.id}>
-                      <TableCell>{log.key}</TableCell>
-                      <TableCell>{log.old_value !== null ? `₦${log.old_value.toLocaleString()}` : "—"}</TableCell>
-                      <TableCell>{log.new_value !== null ? `₦${log.new_value.toLocaleString()}` : "—"}</TableCell>
-                      <TableCell>
-                        <div className="flex flex-col">
-                          <span className="text-sm">{log.updated_by_email || "—"}</span>
-                          <span className="text-xs text-muted-foreground">{log.updated_by || "—"}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="max-w-[260px]">
-                        <span className="line-clamp-2">{log.reason || "—"}</span>
-                      </TableCell>
-                      <TableCell>{new Date(log.created_at).toLocaleString()}</TableCell>
-                    </TableRow>
-                  ))}
-                  {auditLogs.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-center text-muted-foreground">
-                        No audit entries
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-              <ScrollBar orientation="horizontal" />
-            </ScrollArea>
+            <ResponsiveDataList
+              items={auditLogs}
+              empty={<div className="text-center text-muted-foreground py-6">No audit entries</div>}
+              desktop={
+                <ScrollArea className="w-full whitespace-nowrap rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Key</TableHead>
+                        <TableHead>Old</TableHead>
+                        <TableHead>New</TableHead>
+                        <TableHead>Updated By</TableHead>
+                        <TableHead>Reason</TableHead>
+                        <TableHead>Date</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {auditLogs.map((log) => (
+                        <TableRow key={log.id}>
+                          <TableCell>{log.key}</TableCell>
+                          <TableCell>{log.old_value !== null ? `₦${log.old_value.toLocaleString()}` : "—"}</TableCell>
+                          <TableCell>{log.new_value !== null ? `₦${log.new_value.toLocaleString()}` : "—"}</TableCell>
+                          <TableCell>
+                            <div className="flex flex-col">
+                              <span className="text-sm">{log.updated_by_email || "—"}</span>
+                              <span className="text-xs text-muted-foreground">{log.updated_by || "—"}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="max-w-[260px]">
+                            <span className="line-clamp-2">{log.reason || "—"}</span>
+                          </TableCell>
+                          <TableCell>{new Date(log.created_at).toLocaleString()}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  <ScrollBar orientation="horizontal" />
+                </ScrollArea>
+              }
+              renderCard={(log) => (
+                <Card key={log.id} className="bg-card border-border">
+                  <CardContent className="p-4 space-y-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-medium truncate">{log.key}</div>
+                        <div className="text-xs text-muted-foreground truncate">{log.updated_by_email || "—"}</div>
+                      </div>
+                      <div className="text-xs text-muted-foreground shrink-0">
+                        {new Date(log.created_at).toLocaleDateString()}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="text-muted-foreground">Old</div>
+                      <div className="text-right">{log.old_value !== null ? `₦${log.old_value.toLocaleString()}` : "—"}</div>
+                      <div className="text-muted-foreground">New</div>
+                      <div className="text-right">{log.new_value !== null ? `₦${log.new_value.toLocaleString()}` : "—"}</div>
+                      <div className="text-muted-foreground">Reason</div>
+                      <div className="text-right truncate">{log.reason || "—"}</div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            />
           </CardContent>
         </Card>
 

@@ -3,6 +3,8 @@ import { buildConversationContext, callLovableAPI, buildSystemPrompt } from './c
 import { learnAndGetPreferences, buildPreferenceContext, getUserPreferences } from './preference-learner.ts'
 import { extractDateContext } from './date-extractor.ts'
 import { TOOLS, TOOLS_SCHEMA } from './tools.ts'
+import { classifyIntent } from './intent-classifier.ts'
+import { parseCommand } from './command-parser.ts'
 
 // Declare Deno for linter
 declare const Deno: any;
@@ -28,37 +30,21 @@ async function handler(req: Request) {
     conversation_id,
     client_timestamp,
     user_timezone,
-    user_id: req_user_id, // Allow passing user_id for testing/service calls
+    user_id: req_user_id, // Dev-only override (gated by env flag)
   } = await req.json()
 
   // Standardize on device_id (matching frontend)
   let target_device_id = device_id || req_vehicle_id
 
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-  )
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || Deno.env.get('SUPABASE_ANON_KEY_JWT') || ''
 
-  // Device ID Resolution: If input is a name (e.g., "RBC784CX"), resolve to ID
-  // Heuristic: If it contains non-digits or is short, assume it's a name
-  if (target_device_id && !/^\d+$/.test(target_device_id)) {
-    console.log(`[Handler] Resolving device name to device_id: ${target_device_id}`)
-    
-    // Try to find by device_name
-    const { data: vehicles, error } = await supabase
-      .from('vehicles')
-      .select('device_id')
-      .ilike('device_name', target_device_id)
-      .limit(1)
+  const supabase = createClient(supabaseUrl, serviceKey)
+  const supabaseAuth = createClient(supabaseUrl, anonKey)
 
-    if (vehicles && vehicles.length > 0) {
-      console.log(`[Handler] Resolved device_id: ${vehicles[0].device_id}`)
-      target_device_id = vehicles[0].device_id
-    } else {
-      console.warn(`[Handler] Could not resolve device name: ${target_device_id}`)
-      // We continue with the original ID, hoping it works or failing gracefully later
-    }
-  }
+  // NOTE: device name resolution is handled after we authenticate and authorize the caller,
+  // so we can scope lookup to vehicles they can access.
 
   // Get User ID from Auth Header
   const authHeader = req.headers.get('Authorization')
@@ -66,7 +52,8 @@ async function handler(req: Request) {
   
   if (authHeader) {
     const token = authHeader.replace('Bearer ', '')
-    const { data: { user }, error } = await supabase.auth.getUser(token)
+    // Validate caller using anon client so JWT validation is scoped to the project.
+    const { data: { user }, error } = await supabaseAuth.auth.getUser(token)
     if (user) {
       user_id = user.id
     } else {
@@ -75,7 +62,8 @@ async function handler(req: Request) {
   }
 
   // Fallback: Use request body user_id (useful for testing or service-role calls)
-  if (!user_id && req_user_id) {
+  const allowUserIdOverride = (Deno.env.get('ALLOW_USER_ID_OVERRIDE') || '').toLowerCase() === 'true'
+  if (!user_id && req_user_id && allowUserIdOverride) {
     user_id = req_user_id
     console.log('[Auth] Using user_id from request body:', user_id)
   }
@@ -92,6 +80,17 @@ async function handler(req: Request) {
   }
 
   try {
+    // ------------------------------------------------------------------------
+    // Authorization: ensure caller can access this vehicle (admin or assigned)
+    // ------------------------------------------------------------------------
+    const { data: isAdmin, error: isAdminError } = await supabase.rpc('has_role', {
+      _user_id: user_id,
+      _role: 'admin',
+    })
+    if (isAdminError) {
+      console.warn('[AuthZ] has_role RPC failed:', isAdminError)
+    }
+
     // 1. Gather Context in Parallel
     const [
       conversationContext,
@@ -104,6 +103,50 @@ async function handler(req: Request) {
     ])
 
     const preferenceContext = buildPreferenceContext(preferenceContextRaw)
+
+    // Device ID Resolution: If input is a name (e.g., "RBC784CX"), resolve to ID.
+    // IMPORTANT: resolution must be scoped to caller access (admin: any; non-admin: assigned only).
+    if (target_device_id && !/^\d+$/.test(target_device_id)) {
+      console.log(`[Handler] Resolving device name to device_id: ${target_device_id}`)
+
+      if (isAdmin) {
+        const { data: vehicles } = await supabase
+          .from('vehicles')
+          .select('device_id')
+          .ilike('device_name', target_device_id)
+          .limit(1)
+        if (vehicles && vehicles.length > 0) {
+          target_device_id = vehicles[0].device_id
+        }
+      } else {
+        const { data: assignments } = await supabase
+          .from('vehicle_assignments')
+          .select('device_id, vehicles!inner(device_id, device_name)')
+          .eq('vehicles.device_name', target_device_id)
+          .limit(1)
+        if (assignments && assignments.length > 0) {
+          target_device_id = assignments[0].device_id
+        }
+      }
+    }
+
+    // Enforce assignment for non-admins
+    if (!isAdmin) {
+      const { data: ok } = await supabase
+        .from('vehicle_assignments')
+        .select('device_id, profiles!inner(user_id)')
+        .eq('device_id', target_device_id)
+        .eq('profiles.user_id', user_id)
+        .limit(1)
+        .maybeSingle()
+
+      if (!ok) {
+        return new Response(
+          JSON.stringify({ error: 'Forbidden: not assigned to this vehicle' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+    }
 
     // 2. Fetch Basic Vehicle Info for Persona
     const { data: vehicleInfo } = await supabase
@@ -179,6 +222,96 @@ WHEN TO USE EACH TOOL:
     let metadata: any = {}
     const MAX_TURNS = 5
     let turnCount = 0
+
+    // ------------------------------------------------------------------------
+    // Deterministic prefetch: fetch the right data before the LLM answers.
+    // This dramatically reduces hallucinations and ensures consistency with the PWA.
+    // ------------------------------------------------------------------------
+    const intent = classifyIntent(message)
+    metadata.intent = intent
+    metadata.date_context = dateContext
+
+    const prefetched: any[] = []
+    try {
+      // Control commands: short-circuit with a structured confirmation response.
+      if (intent.type === 'control') {
+        const parsed = parseCommand(message)
+        metadata.parsed_command = parsed
+        if (parsed.isCommand) {
+          // Let the UI do confirmations/execution; agent only prepares the command.
+          finalResponseText = JSON.stringify({
+            action: 'confirmation_required',
+            command: parsed.commandType,
+            parameters: parsed.parameters,
+            message: 'Command prepared. Please confirm in the dashboard to execute.'
+          })
+          queryType = 'control_command'
+          // Skip the LLM loop entirely.
+          turnCount = 0
+        }
+      }
+
+      if (turnCount === 0 && queryType === 'control_command') {
+        // no-op, handled above
+      } else {
+        const wantsLive = intent.requires_fresh_data || /\b(right\s+now|live|current)\b/i.test(message)
+        if (wantsLive) {
+          const syncTool = TOOLS.find(t => t.name === 'force_sync_gps51')
+          if (syncTool) {
+            const r = await syncTool.execute({ reason: 'user requested live/current data' }, { supabase, device_id: target_device_id })
+            prefetched.push({ tool: 'force_sync_gps51', result: r })
+          }
+          const statusTool = TOOLS.find(t => t.name === 'get_vehicle_status')
+          if (statusTool) {
+            const r = await statusTool.execute({ check_freshness: true }, { supabase, device_id: target_device_id })
+            prefetched.push({ tool: 'get_vehicle_status', result: r })
+          }
+        }
+
+        if (intent.type === 'trip' || intent.type === 'history') {
+          const tool = TOOLS.find(t => t.name === 'get_trip_history')
+          if (tool) {
+            const r = await tool.execute({ start_date: dateContext.startDate, end_date: dateContext.endDate }, { supabase, device_id: target_device_id })
+            prefetched.push({ tool: 'get_trip_history', result: r })
+            // If no trips, verify with position history before claiming "no movement".
+            if (r?.summary?.count === 0 || r?.trips?.length === 0) {
+              const posTool = TOOLS.find(t => t.name === 'get_position_history')
+              if (posTool) {
+                const pr = await posTool.execute({ start_time: dateContext.startDate, end_time: dateContext.endDate, limit: 200 }, { supabase, device_id: target_device_id })
+                prefetched.push({ tool: 'get_position_history', result: pr })
+              }
+            }
+          }
+        } else if (intent.type === 'stats') {
+          const tool = TOOLS.find(t => t.name === 'get_trip_analytics')
+          if (tool) {
+            const r = await tool.execute({ period: dateContext.period, start_date: dateContext.startDate, end_date: dateContext.endDate }, { supabase, device_id: target_device_id })
+            prefetched.push({ tool: 'get_trip_analytics', result: r })
+          }
+        } else if (intent.type === 'maintenance') {
+          const alertsTool = TOOLS.find(t => t.name === 'get_recent_alerts')
+          if (alertsTool) {
+            const r = await alertsTool.execute({ limit: 5 }, { supabase, device_id: target_device_id })
+            prefetched.push({ tool: 'get_recent_alerts', result: r })
+          }
+          const healthTool = TOOLS.find(t => t.name === 'get_vehicle_health')
+          if (healthTool) {
+            const r = await healthTool.execute({ check_freshness: true }, { supabase, device_id: target_device_id })
+            prefetched.push({ tool: 'get_vehicle_health', result: r })
+          }
+        }
+      }
+    } catch (e: any) {
+      console.warn('[Agent] Prefetch failed:', e?.message || e)
+    }
+
+    if (prefetched.length > 0) {
+      metadata.prefetched = prefetched
+      messages.splice(1, 0, {
+        role: 'assistant',
+        content: `Tool results (prefetched):\n${JSON.stringify(prefetched).slice(0, 12000)}`
+      })
+    }
     
     for (let turn = 0; turn < MAX_TURNS; turn++) {
       turnCount = turn + 1

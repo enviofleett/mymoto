@@ -5,19 +5,31 @@ import { toast } from "sonner";
 import { OwnerLayout } from "@/components/layouts/OwnerLayout";
 import { PullToRefresh } from "@/components/ui/pull-to-refresh";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import * as SelectPrimitive from "@radix-ui/react-select";
 import { cn } from "@/lib/utils";
 import { formatRelativeTime } from "@/lib/timezone";
 
 import { useOwnerVehicles } from "@/hooks/useOwnerVehicles";
 import { fetchVehicleLiveDataDirect, type VehicleLiveData, useVehicleLiveData } from "@/hooks/useVehicleLiveData";
+import { useDailyTravelStats } from "@/hooks/useDailyTravelStats";
 import { useAddress } from "@/hooks/useAddress";
 
-import { Battery, ChevronDown, Gauge, List, MapPin, RefreshCw, ShieldAlert, Zap } from "lucide-react";
+import { Battery, Car, Gauge, MapPin, RefreshCw, ShieldAlert, Zap } from "lucide-react";
+import mymotoLogo from "@/assets/mymoto-logo-new.png";
 import { VehicleRequestDialog } from "@/components/owner/VehicleRequestDialog";
 
 const STORAGE_KEY = "owner-selected-device-id";
 
 type ChipVariant = "success" | "danger" | "muted" | "warning";
+
+function toLagosYmd(d: Date) {
+  return d.toLocaleDateString("en-CA", {
+    timeZone: "Africa/Lagos",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+}
 
 function StatusChip({
   icon: Icon,
@@ -166,6 +178,16 @@ export default function OwnerVehiclesDashboard() {
     return "bg-status-active shadow-[0_0_8px_hsl(142_70%_50%/0.5)]";
   }, [displayData?.ignitionOn, displayData?.isOnline, displayData?.speed]);
 
+  const todayYmd = useMemo(() => toLagosYmd(new Date()), []);
+  const { data: dailyTravel, isLoading: dailyTravelLoading, isError: dailyTravelError } = useDailyTravelStats({
+    deviceId: selectedDeviceId,
+    startDate: todayYmd,
+    endDate: todayYmd,
+    enabled: !!selectedDeviceId,
+  });
+
+  const todayStat = dailyTravel?.daily_stats?.[0] ?? null;
+
   const handleManualRefresh = useCallback(async () => {
     if (!selectedDeviceId) return;
     setIsRefreshing(true);
@@ -190,9 +212,28 @@ export default function OwnerVehiclesDashboard() {
   const showLoading = vehiclesLoading || liveLoading || !selectedDeviceId || !selectedVehicle;
 
   const speedValue = typeof displayData?.speed === "number" ? Math.round(displayData.speed).toString() : "--";
-  const distanceValue = typeof displayData?.totalMileageKm === "number" ? displayData.totalMileageKm.toLocaleString() : "--";
+  const dailyReady = !dailyTravelLoading && !dailyTravelError;
+  const todayDistanceKm =
+    typeof todayStat?.total_distance_km === "number"
+      ? todayStat.total_distance_km
+      : typeof todayStat?.total_distance_km === "string"
+        ? Number(todayStat.total_distance_km)
+        : null;
+  const tripsTodayCount =
+    typeof todayStat?.trip_count === "number"
+      ? todayStat.trip_count
+      : typeof todayStat?.trip_count === "string"
+        ? Number(todayStat.trip_count)
+        : null;
+  const todayDistanceValue =
+    dailyReady
+      ? typeof todayDistanceKm === "number" && Number.isFinite(todayDistanceKm)
+        ? todayDistanceKm.toLocaleString(undefined, { maximumFractionDigits: 1 })
+        : "0"
+      : "--";
   const batteryValue = typeof displayData?.batteryPercent === "number" ? `${displayData.batteryPercent}` : "--";
-  const overspeedValue = displayData?.isOverspeeding ? "Yes" : "No";
+  const tripsTodayValue =
+    dailyReady ? (typeof tripsTodayCount === "number" && Number.isFinite(tripsTodayCount) ? `${tripsTodayCount}` : "0") : "--";
 
   return (
     <OwnerLayout>
@@ -207,7 +248,7 @@ export default function OwnerVehiclesDashboard() {
                   className="w-11 h-11 rounded-full bg-card shadow-neumorphic-sm flex items-center justify-center transition-all duration-200 hover:shadow-neumorphic active:shadow-neumorphic-inset"
                   title="All vehicles"
                 >
-                  <List className="h-5 w-5 text-foreground" />
+                  <img src={mymotoLogo} alt="MyMoto" className="h-6 w-6" />
                 </button>
 
                 {/* Center pill */}
@@ -217,19 +258,22 @@ export default function OwnerVehiclesDashboard() {
                     onValueChange={(v) => setSelectedDeviceId(v)}
                     disabled={!vehicles || vehicles.length === 0}
                   >
-                    <SelectTrigger className={cn(
-                      "w-full max-w-[240px] h-12 rounded-full border-0 bg-card shadow-neumorphic-sm",
-                      "px-4 focus:ring-2 focus:ring-accent/30 focus:ring-offset-0"
-                    )}>
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className={cn("w-2.5 h-2.5 rounded-full shrink-0", statusDotClass)} />
-                        <SelectValue
-                          placeholder="Select vehicle"
-                          className="min-w-0"
-                        />
+                    <SelectPrimitive.Trigger
+                      className={cn(
+                        "flex h-10 w-full items-center justify-center rounded-full border-0 bg-card shadow-neumorphic-sm relative",
+                        "px-4 focus:ring-2 focus:ring-accent/30 focus:ring-offset-0 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-50",
+                        "w-full max-w-full sm:max-w-[240px] h-12"
+                      )}
+                    >
+                      <div className="flex items-center justify-center text-center">
+                        {selectedVehicle ? selectedVehicle.name : "Select vehicle"}
                       </div>
-                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                    </SelectTrigger>
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground opacity-50">
+                          <path d="m6 9 6 6 6-6"/>
+                        </svg>
+                      </div>
+                    </SelectPrimitive.Trigger>
                     <SelectContent>
                       {(vehicles || []).map((v) => (
                         <SelectItem key={v.deviceId} value={v.deviceId}>
@@ -287,29 +331,30 @@ export default function OwnerVehiclesDashboard() {
             </div>
           ) : (
             <div className="mt-3 space-y-4 px-1">
-              {/* Status chips */}
-              <div className="flex flex-wrap gap-2">
-                <StatusChip
-                  icon={Zap}
-                  label={displayData?.isOnline ? "Online" : "Offline"}
-                  variant={displayData?.isOnline ? "success" : "muted"}
-                />
-                <StatusChip
-                  icon={Gauge}
-                  label={displayData?.ignitionOn ? "Ignition ON" : "Ignition OFF"}
-                  variant={displayData?.ignitionOn ? "warning" : "muted"}
-                />
-                <StatusChip
-                  icon={ShieldAlert}
-                  label={displayData?.isOverspeeding ? "Overspeed" : "Normal"}
-                  variant={displayData?.isOverspeeding ? "danger" : "muted"}
-                />
+              {/* Status chips - Centralized */}
+              <div className="flex justify-center">
+                <div className="flex flex-wrap gap-2">
+                  <StatusChip
+                    icon={Zap}
+                    label={displayData?.isOnline ? "Online" : "Offline"}
+                    variant={displayData?.isOnline ? "success" : "muted"}
+                  />
+                  <StatusChip
+                    icon={Gauge}
+                    label={displayData?.ignitionOn ? "Ignition ON" : "Ignition OFF"}
+                    variant={displayData?.ignitionOn ? "warning" : "muted"}
+                  />
+                  <StatusChip
+                    icon={ShieldAlert}
+                    label={displayData?.isOverspeeding ? "Overspeed" : "Normal"}
+                    variant={displayData?.isOverspeeding ? "danger" : "muted"}
+                  />
+                </div>
               </div>
 
-              {/* Last updated row */}
               <div className="flex items-center justify-between rounded-2xl bg-card shadow-neumorphic-inset px-4 py-3">
                 <div className="text-xs text-muted-foreground">
-                  Last updated{" "}
+                  Last sync{" "}
                   <span className="text-foreground font-medium">
                     {displayData?.lastUpdate ? formatRelativeTime(displayData.lastUpdate) : "--"}
                   </span>
@@ -327,8 +372,8 @@ export default function OwnerVehiclesDashboard() {
               {/* Metric cards */}
               <div className="grid grid-cols-2 gap-4">
                 <MetricCard title="Speed" value={speedValue} unit="km/h" icon={Gauge} variant="hero" />
-                <MetricCard title="Overspeed" value={overspeedValue} icon={ShieldAlert} />
-                <MetricCard title="Total Distance" value={distanceValue} unit="km" icon={Gauge} />
+                <MetricCard title="Trips Today" value={tripsTodayValue} icon={Car} />
+                <MetricCard title="Distance Today" value={todayDistanceValue} unit="km" icon={MapPin} />
                 <MetricCard title="Battery" value={batteryValue} unit="%" icon={Battery} />
               </div>
 
@@ -362,4 +407,3 @@ export default function OwnerVehiclesDashboard() {
     </OwnerLayout>
   );
 }
-

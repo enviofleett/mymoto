@@ -20,9 +20,29 @@ serve(async (req) => {
 
     // Parse request
     const url = new URL(req.url)
-    const deviceId = url.searchParams.get('device_id')
-    const startDate = url.searchParams.get('start_date')
-    const endDate = url.searchParams.get('end_date')
+    const urlDeviceId = url.searchParams.get('device_id')
+    const urlStartDate = url.searchParams.get('start_date')
+    const urlEndDate = url.searchParams.get('end_date')
+
+    let bodyDeviceId: string | null = null
+    let bodyStartDate: string | null = null
+    let bodyEndDate: string | null = null
+
+    if (req.method !== 'GET') {
+      const contentType = req.headers.get('content-type') || ''
+      if (contentType.includes('application/json')) {
+        const body = await req.json().catch(() => null)
+        if (body && typeof body === 'object') {
+          bodyDeviceId = typeof body.device_id === 'string' ? body.device_id : null
+          bodyStartDate = typeof body.start_date === 'string' ? body.start_date : null
+          bodyEndDate = typeof body.end_date === 'string' ? body.end_date : null
+        }
+      }
+    }
+
+    const deviceId = urlDeviceId || bodyDeviceId
+    const startDate = urlStartDate || bodyStartDate
+    const endDate = urlEndDate || bodyEndDate
 
     // Validate device_id
     if (!deviceId) {

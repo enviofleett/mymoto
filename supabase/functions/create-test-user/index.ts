@@ -1,206 +1,231 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { sendEmail, EmailTemplates, getEmailConfig } from "../_shared/email-service.ts";
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+  "Access-Control-Max-Age": "86400",
+};
+
+function jsonResponse(status: number, body: unknown) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+function normalizeToken(authHeader: string) {
+  return authHeader.startsWith("Bearer ")
+    ? authHeader.replace("Bearer ", "").trim()
+    : authHeader.trim();
+}
+
+function safeArrayOfStrings(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((v) => typeof v === "string" && v.trim().length > 0)
+    .map((v) => v.trim());
+}
+
+type RequestBody = {
+  email?: string | null;
+  password?: string | null;
+  name?: string | null;
+  phone?: string | null;
+  deviceIds?: string[] | null;
 };
 
 serve(async (req) => {
-  // Handle CORS preflight
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { 
-      status: 200,
-      headers: corsHeaders 
-    });
-  }
+  if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    
-    // Create admin client with service role key
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
-      }
+      auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    const { email, password, name, phone, deviceIds } = await req.json();
+    // Admin auth required (this function can create users and assign vehicles).
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) return jsonResponse(401, { success: false, error: "Unauthorized: No authorization header" });
 
-    console.log('Creating user:', { email, name, phone, deviceIds, hasPassword: !!password });
+    const token = normalizeToken(authHeader);
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+    if (authError || !user) return jsonResponse(401, { success: false, error: "Unauthorized: Invalid token" });
 
-    // Validate required fields
-    if (!name || name.trim().length === 0) {
-      return new Response(
-        JSON.stringify({ error: 'Name is required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    const { data: isAdmin, error: roleError } = await supabaseAdmin.rpc("has_role", {
+      _user_id: user.id,
+      _role: "admin",
+    });
+    if (roleError || !isAdmin) {
+      const { data: adminRole } = await supabaseAdmin
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user.id)
+        .eq("role", "admin")
+        .maybeSingle();
+      if (!adminRole) return jsonResponse(403, { success: false, error: "Forbidden: Admin access required" });
     }
 
-    // If password is provided, email is required
-    if (password && !email) {
-      return new Response(
-        JSON.stringify({ error: 'Email is required when password is provided' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    const body = (await req.json().catch(() => null)) as RequestBody | null;
+    const name = (body?.name || "").trim();
+    const email = (body?.email || "").trim().toLowerCase();
+    const password = (body?.password || "").trim();
+    const phone = (body?.phone || "").trim();
+    const deviceIds = safeArrayOfStrings(body?.deviceIds);
+
+    if (!name) return jsonResponse(400, { success: false, error: "Name is required" });
+    if (password && !email) return jsonResponse(400, { success: false, error: "Email is required when password is provided" });
 
     let userId: string | null = null;
+    let createdNewAuthUser = false;
 
-    // 1. Create auth user using admin API (only if password provided)
-    if (password && email) {
-      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+    // Prefer lookup via profiles table to avoid listUsers where possible.
+    if (email && !password) {
+      const { data: existingProfile } = await supabaseAdmin
+        .from("profiles")
+        .select("user_id")
+        .ilike("email", email)
+        .not("user_id", "is", null)
+        .maybeSingle();
+      if (existingProfile?.user_id) userId = existingProfile.user_id as any;
+    }
+
+    // 1) Create or reuse auth user
+    if (email && password) {
+      const { data: authData, error: authCreateError } = await supabaseAdmin.auth.admin.createUser({
         email,
         password,
-        email_confirm: true, // Auto-confirm email for admin-created users
-        user_metadata: {
-          name,
-          phone
-        }
+        email_confirm: true,
+        // Skip DB trigger welcome email for admin-created users; this function sends the welcome email itself.
+        user_metadata: { full_name: name, name, phone: phone || null, skip_welcome_email: true },
       });
-
-      if (authError) {
-        console.error('Error creating auth user:', authError);
-        return new Response(
-          JSON.stringify({ error: `Failed to create auth user: ${authError.message}` }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
+      if (authCreateError) {
+        return jsonResponse(400, { success: false, error: `Failed to create auth user: ${authCreateError.message}` });
       }
-
       userId = authData.user.id;
-      console.log('Created auth user with ID:', userId);
-    } else if (email && !password) {
-      // Check if user already exists
-      const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers();
-      const existingUser = existingUsers?.users.find(u => u.email === email);
-      if (existingUser) {
-        userId = existingUser.id;
-        console.log('Using existing auth user:', userId);
-      }
+      createdNewAuthUser = true;
+    } else if (email && !userId) {
+      // Fallback: find existing auth user by email (paginated, but acceptable for typical admin usage).
+      const { data: usersData, error: listError } = await supabaseAdmin.auth.admin.listUsers();
+      if (listError) return jsonResponse(400, { success: false, error: `Failed to list auth users: ${listError.message}` });
+      const match = usersData?.users?.find((u) => (u.email || "").trim().toLowerCase() === email) || null;
+      if (match) userId = match.id;
     }
 
-    // 2. Create profile linked to auth user (if exists)
-    const profileDataToInsert = {
-      name: name.trim(),
-      email: email?.trim() || null,
-      phone: phone?.trim() || null,
-      user_id: userId
-    };
-
-    const { data: profileData, error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .insert(profileDataToInsert)
-      .select()
-      .single();
-
-    if (profileError) {
-      console.error('Error creating profile:', profileError);
-      // Cleanup: delete the auth user if profile creation fails and we created one
-      if (userId) {
-        await supabaseAdmin.auth.admin.deleteUser(userId).catch(err => 
-          console.error('Error cleaning up auth user:', err)
-        );
-      }
-      return new Response(
-        JSON.stringify({ error: `Failed to create profile: ${profileError.message}` }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    console.log('Created profile with ID:', profileData.id);
-
-    // 3. Assign user role as 'owner' (only if auth user was created)
+    // 2) Create or update profile
+    // If auth user exists, use canonical profile id=userId to avoid duplicate profile rows.
+    let profileId: string;
     if (userId) {
-      const { error: roleError } = await supabaseAdmin
-        .from('user_roles')
-        .insert({
-          user_id: userId,
-          role: 'owner'
-        });
+      profileId = userId;
 
-      if (roleError) {
-        console.error('Error assigning role:', roleError);
-        // Non-fatal, continue
+      // Ensure canonical profile exists and is updated.
+      // The DB trigger (handle_new_user_profile) normally creates this, but we upsert to keep name/email/phone correct.
+      const { error: upsertError } = await supabaseAdmin
+        .from("profiles")
+        .upsert(
+          { id: profileId, user_id: userId, name, email: email || null, phone: phone || null },
+          { onConflict: "id" }
+        );
+
+      if (upsertError) {
+        // Cleanup: if we created an auth user and profile upsert fails, delete the auth user.
+        if (createdNewAuthUser) {
+          await supabaseAdmin.auth.admin.deleteUser(userId).catch(() => null);
+        }
+        return jsonResponse(400, { success: false, error: `Failed to upsert profile: ${upsertError.message}` });
       }
+    } else {
+      // Profile-only (unlinked) profile creation is allowed for pre-provisioning.
+      const { data: profileData, error: profileError } = await supabaseAdmin
+        .from("profiles")
+        .insert({ name, email: email || null, phone: phone || null, user_id: null })
+        .select("id")
+        .single();
+
+      if (profileError || !profileData?.id) {
+        return jsonResponse(400, { success: false, error: `Failed to create profile: ${profileError?.message || "Unknown error"}` });
+      }
+      profileId = profileData.id as any;
     }
 
-    // 4. Assign vehicles if provided
+    // 3) Assign vehicles (optional)
     let assignedVehicles: string[] = [];
-    if (deviceIds && deviceIds.length > 0) {
-      // Verify vehicles exist before assigning
+    if (deviceIds.length > 0) {
       const { data: vehicleDetails, error: vehicleCheckError } = await supabaseAdmin
-        .from('vehicles')
-        .select('device_id, device_name')
-        .in('device_id', deviceIds);
+        .from("vehicles")
+        .select("device_id, device_name")
+        .in("device_id", deviceIds);
 
       if (vehicleCheckError) {
-        console.error('Error checking vehicles:', vehicleCheckError);
-        // Continue but log warning
+        console.warn("[create-test-user] vehicle lookup failed:", vehicleCheckError);
       }
 
-      // Only assign vehicles that exist in the database
-      const existingDeviceIds = vehicleDetails?.map(v => v.device_id) || [];
-      const missingDevices = deviceIds.filter(id => !existingDeviceIds.includes(id));
-      
-      if (missingDevices.length > 0) {
-        console.warn('Some vehicles do not exist in database:', missingDevices);
-      }
+      const existingDeviceIds = (vehicleDetails || []).map((v: any) => v.device_id);
+      const assignments = existingDeviceIds.map((deviceId: string) => {
+        const v = (vehicleDetails || []).find((row: any) => row.device_id === deviceId);
+        return {
+          device_id: deviceId,
+          profile_id: profileId,
+          vehicle_alias: v?.device_name || null,
+        };
+      });
 
-      if (existingDeviceIds.length > 0) {
-        const assignments = existingDeviceIds.map((deviceId: string) => {
-          const vehicle = vehicleDetails?.find(v => v.device_id === deviceId);
-          return {
-            device_id: deviceId,
-            profile_id: profileData.id,
-            vehicle_alias: vehicle?.device_name || null
-          };
-        });
-
+      if (assignments.length > 0) {
         const { data: assignmentData, error: assignError } = await supabaseAdmin
-          .from('vehicle_assignments')
-          .insert(assignments)
-          .select();
+          .from("vehicle_assignments")
+          .upsert(assignments, { onConflict: "device_id,profile_id" })
+          .select("device_id");
 
         if (assignError) {
-          console.error('Error assigning vehicles:', assignError);
-          // Check if it's a composite key conflict (already assigned)
-          if (assignError.code === '23505') {
-            console.log('Some vehicles already assigned, continuing...');
-          }
+          console.warn("[create-test-user] vehicle assignment failed:", assignError);
         } else {
-          assignedVehicles = assignmentData?.map(a => a.device_id) || [];
-          console.log('Assigned vehicles:', assignedVehicles);
+          assignedVehicles = (assignmentData || []).map((a: any) => a.device_id);
         }
       }
     }
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        userId,
-        profileId: profileData.id,
-        assignedVehicles,
-        user: {
-          id: userId,
-          email,
-          name: profileData.name
-        },
-        profile: {
-          id: profileData.id,
-          name: profileData.name
+    // 4) Emails (always attempt when configured)
+    const emailConfig = getEmailConfig();
+    if (emailConfig && email) {
+      // Welcome email: only for newly created auth users.
+      if (createdNewAuthUser && userId) {
+        try {
+          const t = EmailTemplates.welcome({ userName: name, loginLink: `${supabaseUrl.replace("/rest/v1", "")}/auth` });
+          await sendEmail({ to: email, subject: t.subject, html: t.html, supabase: supabaseAdmin, templateKey: "welcome" });
+        } catch (e) {
+          console.warn("[create-test-user] welcome email failed:", e);
         }
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+      }
 
+      // Assignment email: if vehicles were assigned.
+      if (assignedVehicles.length > 0) {
+        try {
+          const subject = "New Vehicle(s) Assigned to Your Account";
+          const html = `
+            <h2>Vehicles Assigned</h2>
+            <p>Hello ${name},</p>
+            <p>${assignedVehicles.length} vehicle(s) have been assigned to your account.</p>
+            <p><a href="${supabaseUrl.replace("/rest/v1", "")}/">Open MyMoto Fleet</a></p>
+          `;
+          await sendEmail({ to: email, subject, html, supabase: supabaseAdmin, templateKey: "vehicle_assignment" });
+        } catch (e) {
+          console.warn("[create-test-user] assignment email failed:", e);
+        }
+      }
+    }
+
+    return jsonResponse(200, {
+      success: true,
+      userId,
+      profileId,
+      assignedVehicles,
+    });
   } catch (error: unknown) {
-    console.error('Unexpected error:', error);
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    return new Response(
-      JSON.stringify({ error: message }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return jsonResponse(500, { success: false, error: message });
   }
 });

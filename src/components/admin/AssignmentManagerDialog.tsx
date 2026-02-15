@@ -315,12 +315,6 @@ export function AssignmentManagerDialog({
       },
       authUser: values.password?.trim() ? { password: values.password.trim() } : null,
       vehicles: vehicleArray.length > 0 ? vehicleArray : undefined,
-      sendEmail: sendEmail && values.email ? {
-        to: values.email,
-        userName: values.name,
-        vehicleCount: vehicleArray.length,
-        isNewUser: true,
-      } : undefined,
     });
 
     onOpenChange(false);

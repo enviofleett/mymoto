@@ -150,70 +150,18 @@ export function useNotifications(): UseNotificationsReturn {
     }
   }, [isSupported]);
 
-  const showNotification = useCallback((options: PushNotificationOptions) => {
-    if (!isSupported || permission !== 'granted') {
-      console.log('Notifications not available or not permitted');
-      return;
-    }
-
-    try {
-      // ✅ FIX: Check if we have a service worker for PWA (CRITICAL for locked screens)
-      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-        // Use service worker to show notification (works in background and locked screens)
-        navigator.serviceWorker.ready.then((registration) => {
-          registration.showNotification(options.title, {
-            body: options.body,
-            icon: options.icon || '/pwa-192x192.png',
-            badge: options.badge || '/pwa-192x192.png',
-            tag: options.tag,
-            // ✅ FIX: Locked screen support - CRITICAL flags
-            silent: options.silent ?? false, // false = system sound plays on locked screens
-            vibrate: options.vibrate, // Vibration pattern for Android
-            renotify: options.renotify ?? true, // Re-alert even if same tag exists
-            timestamp: options.timestamp || Date.now(), // Proper notification sorting
-            image: options.image, // Rich notification image
-            actions: options.actions, // Interactive buttons
-            requireInteraction: options.requireInteraction ?? true,
-            data: options.data || {}
-          });
-          
-          // Increment badge when notification is shown
-          if (options.tag) {
-            incrementBadge();
-          }
-        });
-      } else {
-        // Fallback to regular notification (limited locked screen support)
-        const notification = new Notification(options.title, {
-          body: options.body,
-          icon: options.icon || '/pwa-192x192.png',
-          badge: options.badge || '/pwa-192x192.png',
-          tag: options.tag,
-          requireInteraction: options.requireInteraction ?? true,
-          data: options.data
-        });
-      }
-    } catch (error) {
-      console.error('Error showing notification:', error);
-    }
-  }, [isSupported, permission]);
-
-  const playAlertSound = useCallback((severity: 'info' | 'warning' | 'error' | 'critical', volumeMultiplier: number = 1) => {
-    playChime(440, severity, 0.5 * volumeMultiplier);
-  }, []);
-
-  // ✅ FIX: Badge management functions
+  // ✅ Badge management functions
   const updateBadge = useCallback((count: number) => {
     if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
       navigator.serviceWorker.ready.then((registration) => {
-        // Send message to service worker to update badge
+        // Send message to service worker to update badge (requires a controller)
         if (navigator.serviceWorker.controller) {
           navigator.serviceWorker.controller.postMessage({
             type: 'UPDATE_BADGE',
             count: Math.max(0, count)
           });
         }
-        
+
         // Also update badge directly if Badge API is supported
         if ('setAppBadge' in registration) {
           if (count > 0) {
@@ -232,8 +180,8 @@ export function useNotifications(): UseNotificationsReturn {
 
   const incrementBadge = useCallback(() => {
     if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
-      navigator.serviceWorker.ready.then((registration) => {
-        // Send message to service worker to increment badge
+      navigator.serviceWorker.ready.then(() => {
+        // Send message to service worker to increment badge (requires a controller)
         if (navigator.serviceWorker.controller) {
           navigator.serviceWorker.controller.postMessage({
             type: 'INCREMENT_BADGE'
@@ -246,13 +194,13 @@ export function useNotifications(): UseNotificationsReturn {
   const clearBadge = useCallback(() => {
     if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
       navigator.serviceWorker.ready.then((registration) => {
-        // Send message to service worker to clear badge
+        // Send message to service worker to clear badge (requires a controller)
         if (navigator.serviceWorker.controller) {
           navigator.serviceWorker.controller.postMessage({
             type: 'CLEAR_BADGE'
           });
         }
-        
+
         // Also clear badge directly if Badge API is supported
         if ('clearAppBadge' in registration) {
           registration.clearAppBadge().catch((err) => {
@@ -261,6 +209,56 @@ export function useNotifications(): UseNotificationsReturn {
         }
       });
     }
+  }, []);
+
+  const showNotification = useCallback((options: PushNotificationOptions) => {
+    if (!isSupported || permission !== 'granted') {
+      console.log('Notifications not available or not permitted');
+      return;
+    }
+
+    try {
+      // Prefer service worker path whenever available (controller can be null on first load).
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.ready.then((registration) => {
+          registration.showNotification(options.title, {
+            body: options.body,
+            icon: options.icon || '/pwa-192x192.png',
+            badge: options.badge || '/pwa-192x192.png',
+            tag: options.tag,
+            silent: options.silent ?? false,
+            vibrate: options.vibrate,
+            renotify: options.renotify ?? true,
+            timestamp: options.timestamp || Date.now(),
+            image: options.image,
+            actions: options.actions,
+            requireInteraction: options.requireInteraction ?? true,
+            data: options.data || {}
+          });
+
+          if (options.tag) {
+            incrementBadge();
+          }
+        });
+        return;
+      }
+
+      // Fallback to regular notification (no SW support).
+      new Notification(options.title, {
+        body: options.body,
+        icon: options.icon || '/pwa-192x192.png',
+        badge: options.badge || '/pwa-192x192.png',
+        tag: options.tag,
+        requireInteraction: options.requireInteraction ?? true,
+        data: options.data
+      });
+    } catch (error) {
+      console.error('Error showing notification:', error);
+    }
+  }, [isSupported, permission, incrementBadge]);
+
+  const playAlertSound = useCallback((severity: 'info' | 'warning' | 'error' | 'critical', volumeMultiplier: number = 1) => {
+    playChime(440, severity, 0.5 * volumeMultiplier);
   }, []);
 
   return {

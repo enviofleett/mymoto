@@ -31,6 +31,7 @@ interface ProactiveNotificationsProps {
   deviceId?: string;
   limit?: number;
   showHistory?: boolean;
+  highlightEventId?: string;
 }
 
 interface ProactiveEvent {
@@ -82,7 +83,8 @@ const SEVERITY_BADGE_COLORS: Record<string, string> = {
 export function ProactiveNotifications({
   deviceId,
   limit = 20,
-  showHistory = true
+  showHistory = true,
+  highlightEventId
 }: ProactiveNotificationsProps) {
   const [events, setEvents] = useState<ProactiveEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -331,7 +333,14 @@ export function ProactiveNotifications({
             return (
               <Card
                 key={event.id}
-                className={`p-4 border-l-4 ${severityColor} ${event.acknowledged ? 'opacity-60' : ''}`}
+                id={`event-${event.id}`}
+                data-event-id={event.id}
+                className={[
+                  "p-4 border-l-4 transition-colors",
+                  severityColor,
+                  event.acknowledged ? "opacity-60" : "",
+                  highlightEventId === event.id ? "ring-2 ring-primary/70" : "",
+                ].join(" ")}
               >
                 <div className="flex items-start gap-3">
                   <div className={`p-2 rounded-full ${badgeColor} bg-opacity-10`}>
