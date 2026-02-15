@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { PullToRefreshIndicator } from "@/components/ui/pull-to-refresh";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { VehiclePersonaSettings } from "@/components/fleet/VehiclePersonaSettings";
+import { VehicleSettingsPanel } from "./components/VehicleSettingsPanel";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { fetchVehicleLiveDataDirect, type VehicleLiveData, useVehicleLiveData } from "@/hooks/useVehicleLiveData";
 import { useAddress } from "@/hooks/useAddress";
@@ -24,7 +24,7 @@ import { VehicleMapSection } from "./components/VehicleMapSection";
 import { CurrentStatusCard } from "./components/CurrentStatusCard";
 import { StatusMetricsRow } from "./components/StatusMetricsRow";
 import { EngineControlCard } from "./components/EngineControlCard";
-import { ReportsSection } from "./components/ReportsSection";
+ 
 
 export default function OwnerVehicleProfile() {
   const { deviceId } = useParams<{ deviceId: string }>();
@@ -282,7 +282,9 @@ export default function OwnerVehicleProfile() {
       const [db, profile, direct] = await Promise.all([dbResult, profileResult, directResult]);
 
       if (!direct.ok) {
-        const msg = direct.err instanceof Error ? direct.err.message : String(direct.err);
+        const msg = 'err' in direct
+          ? (direct.err instanceof Error ? direct.err.message : String(direct.err))
+          : 'Unknown error';
         toast.warning("Live GPS51 timed out", {
           description: msg.includes("timeout") ? "Showing DB live data (last known)" : "Showing DB live data",
         });
@@ -445,69 +447,7 @@ export default function OwnerVehicleProfile() {
               />
             </div>
 
-            {/* Reports & Trips */}
-            <ReportsSection
-              deviceId={resolvedDeviceId}
-              trips={trips}
-              events={events}
-              dailyStats={dailyStats}
-              tripsLoading={tripsLoading}
-              eventsLoading={eventsLoading}
-              statsLoading={statsLoading}
-              dateRange={dateRange}
-              onDateRangeChange={setDateRange}
-              onRequestTrips={handleRequestTrips}
-              syncStatus={syncStatus}
-              isSyncing={isSyncing}
-              onForceSync={handleForceSync}
-              onPlayTrip={(trip) => {
-                const startValid =
-                  !!trip.start_time &&
-                  trip.start_latitude != null &&
-                  trip.start_longitude != null &&
-                  trip.start_latitude !== 0 &&
-                  trip.start_longitude !== 0;
-                const endValid =
-                  !!trip.end_time &&
-                  trip.end_latitude != null &&
-                  trip.end_longitude != null &&
-                  trip.end_latitude !== 0 &&
-                  trip.end_longitude !== 0;
-                if (!startValid || !endValid) {
-                  toast.warning("Playback unavailable", { description: "Trip has incomplete GPS data" });
-                  return;
-                }
-                (async () => {
-                  try {
-                    const { data, error } = await (supabase as any)
-                      .from('position_history')
-                      .select('latitude, longitude, gps_time')
-                      .eq('device_id', resolvedDeviceId)
-                      .gte('gps_time', trip.start_time)
-                      .lte('gps_time', trip.end_time)
-                      .order('gps_time', { ascending: true })
-                      .limit(5000);
-                    if (error) throw error;
-                    const coords = (data as any[])
-                      .filter(p => p.latitude && p.longitude && p.latitude !== 0 && p.longitude !== 0)
-                      .map(p => ({ lat: Number(p.latitude), lon: Number(p.longitude) }));
-                    if (coords.length >= 2) {
-                      setRouteCoords(coords);
-                      toast.info("Trip playback", { description: `Showing path with ${coords.length} points` });
-                    } else {
-                      setRouteCoords([
-                        { lat: trip.start_latitude as number, lon: trip.start_longitude as number },
-                        { lat: trip.end_latitude as number, lon: trip.end_longitude as number }
-                      ]);
-                      toast.info("Trip playback", { description: "Showing start–end route" });
-                    }
-                  } catch (e: any) {
-                    toast.error("Failed to load path", { description: e?.message || "Error fetching trip points" });
-                  }
-                })();
-              }}
-              isRealtimeActive={status === 'online'}
-            />
+            
         </div>
       </div>
 
@@ -523,12 +463,13 @@ export default function OwnerVehicleProfile() {
           <DialogHeader>
             <DialogTitle>Vehicle Settings</DialogTitle>
             <DialogDescription className="sr-only">
-              Configure vehicle persona settings
+              Configure personality, details, documentation, and operations
             </DialogDescription>
           </DialogHeader>
-          <VehiclePersonaSettings 
+          <VehicleSettingsPanel 
             deviceId={resolvedDeviceId} 
             vehicleName={displayName}
+            onClose={() => setSettingsOpen(false)}
           />
         </DialogContent>
       </Dialog>

@@ -49,6 +49,9 @@ export function VehiclePersonaSettings({ deviceId, vehicleName }: VehiclePersona
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+  const [nicknameAvailable, setNicknameAvailable] = useState<boolean | null>(null);
+  const [nicknameChecking, setNicknameChecking] = useState(false);
+  const nicknameCheckTimeout = useRef<number | null>(null);
 
   useEffect(() => {
     fetchSettings();
@@ -118,13 +121,25 @@ export function VehiclePersonaSettings({ deviceId, vehicleName }: VehiclePersona
 
     setUploadingAvatar(true);
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${deviceId}-${Date.now()}.${fileExt}`;
+      // Center-crop to square and resize to 512x512 client-side
+      const imageBitmap = await createImageBitmap(file);
+      const size = Math.min(imageBitmap.width, imageBitmap.height);
+      const sx = Math.floor((imageBitmap.width - size) / 2);
+      const sy = Math.floor((imageBitmap.height - size) / 2);
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 512;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas unavailable');
+      ctx.drawImage(imageBitmap, sx, sy, size, size, 0, 0, 512, 512);
+      const blob = await new Promise<Blob>((resolve) => canvas.toBlob((b) => resolve(b as Blob), 'image/png', 0.92));
+
+      const fileName = `${deviceId}-${Date.now()}.png`;
       const filePath = `vehicle-avatars/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(filePath, file, { upsert: true });
+        .upload(filePath, blob, { upsert: true });
 
       if (uploadError) throw uploadError;
 
@@ -148,6 +163,40 @@ export function VehiclePersonaSettings({ deviceId, vehicleName }: VehiclePersona
       setUploadingAvatar(false);
     }
   };
+
+  // Debounced nickname availability check
+  useEffect(() => {
+    if (!nickname?.trim()) {
+      setNicknameAvailable(null);
+      return;
+    }
+    setNicknameChecking(true);
+    if (nicknameCheckTimeout.current) {
+      window.clearTimeout(nicknameCheckTimeout.current);
+    }
+    nicknameCheckTimeout.current = window.setTimeout(async () => {
+      try {
+        const { data, error } = await (supabase as any)
+          .from('vehicle_llm_settings')
+          .select('device_id')
+          .eq('nickname', nickname.trim())
+          .neq('device_id', deviceId)
+          .limit(1);
+        if (error) throw error;
+        setNicknameAvailable(!data || (data as any[]).length === 0);
+      } catch {
+        setNicknameAvailable(null);
+      } finally {
+        setNicknameChecking(false);
+      }
+    }, 400);
+    return () => {
+      if (nicknameCheckTimeout.current) {
+        window.clearTimeout(nicknameCheckTimeout.current);
+        nicknameCheckTimeout.current = null;
+      }
+    };
+  }, [nickname, deviceId]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -348,10 +397,10 @@ export function VehiclePersonaSettings({ deviceId, vehicleName }: VehiclePersona
         />
       </div>
 
-      {/* Vehicle Identity Section */}
+      {/* Personality Section */}
       <div className="space-y-4">
         <Label className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-          Vehicle Identity
+          Personality
         </Label>
         
         {/* Avatar Picker */}
@@ -401,11 +450,20 @@ export function VehiclePersonaSettings({ deviceId, vehicleName }: VehiclePersona
             placeholder={vehicleName}
             value={nickname}
             onChange={(e) => setNickname(e.target.value)}
+            maxLength={50}
             disabled={!llmEnabled}
           />
-          <p className="text-xs text-muted-foreground">
-            Give the vehicle a personality name (e.g., "Big Daddy", "Speed Queen")
-          </p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">
+              Give the vehicle a personality name (e.g., "Big Daddy", "Speed Queen")
+            </p>
+            <p className="text-[10px] text-muted-foreground">{nickname.length}/50</p>
+          </div>
+          {nickname && (
+            <p className={`text-xs ${nicknameAvailable === false ? 'text-destructive' : 'text-muted-foreground'}`}>
+              {nicknameChecking ? 'Checking availability...' : nicknameAvailable === false ? 'This nickname is already used by another vehicle' : 'Nickname is available'}
+            </p>
+          )}
         </div>
       </div>
 
