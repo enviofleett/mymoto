@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { differenceInCalendarDays, endOfDay, isToday, startOfDay } from "date-fns";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -67,6 +68,8 @@ export function MileageSection({
   
   // Handle case where table doesn't exist yet (migration not applied)
   const hasMileageData = mileageDetails && mileageDetails.length > 0 && !mileageError;
+
+  const dateRangeLabel = getDateRangeLabel(dateRange);
 
   // Derive stats from daily data (Single Source of Truth)
   const derivedStats = useMemo(() => {
@@ -264,16 +267,20 @@ export function MileageSection({
       <Card className="border-border bg-card/50">
         <CardContent className="p-4">
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Car className="h-5 w-5 text-primary" />
-              <span className="font-medium text-foreground">Driving Stats</span>
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-center gap-2">
+                <Car className="h-5 w-5 text-primary" />
+                <span className="font-medium text-foreground">Driving Stats</span>
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                {dateRangeLabel}
+              </div>
             </div>
-            {/* Unified filter controls are shown at page level */}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             {/* Driving Time */}
-            <div className="rounded-lg bg-green-500/10 p-3">
+            <div className="rounded-lg bg-card/70 border border-border/60 p-3">
               <div className="flex items-center gap-2 mb-1">
                 <Clock className="h-4 w-4 text-green-500" />
                 <span className="text-xs text-muted-foreground">Driving</span>
@@ -284,7 +291,7 @@ export function MileageSection({
             </div>
 
             {/* Parking Duration */}
-            <div className="rounded-lg bg-orange-500/10 p-3">
+            <div className="rounded-lg bg-card/70 border border-border/60 p-3">
               <div className="flex items-center gap-2 mb-1">
                 <ParkingCircle className="h-4 w-4 text-orange-500" />
                 <span className="text-xs text-muted-foreground">Parking</span>
@@ -295,7 +302,7 @@ export function MileageSection({
             </div>
 
             {/* Max Speed */}
-            <div className="rounded-lg bg-red-500/10 p-3">
+            <div className="rounded-lg bg-card/70 border border-border/60 p-3">
               <div className="flex items-center gap-2 mb-1">
                 <Zap className="h-4 w-4 text-red-500" />
                 <span className="text-xs text-muted-foreground">Max Speed</span>
@@ -306,7 +313,7 @@ export function MileageSection({
             </div>
 
             {/* Avg Speed */}
-            <div className="rounded-lg bg-blue-500/10 p-3">
+            <div className="rounded-lg bg-card/70 border border-border/60 p-3">
               <div className="flex items-center gap-2 mb-1">
                 <Gauge className="h-4 w-4 text-blue-500" />
                 <span className="text-xs text-muted-foreground">Avg Speed</span>
@@ -320,4 +327,40 @@ export function MileageSection({
       </Card>
     </>
   );
+}
+
+function getDateRangeLabel(dateRange: DateRange | undefined): string {
+  if (!dateRange?.from || !dateRange.to) {
+    return "All time";
+  }
+
+  const from = startOfDay(dateRange.from);
+  const to = endOfDay(dateRange.to);
+  const days = differenceInCalendarDays(to, from) + 1;
+
+  const toIsToday = isToday(to);
+
+  if (days === 1) {
+    return formatLagos(from, "dd MMM yyyy");
+  }
+
+  if (toIsToday && days === 7) {
+    return "Last 7 days";
+  }
+
+  if (toIsToday && days === 30) {
+    return "Last 30 days";
+  }
+
+  const sameYear = from.getFullYear() === to.getFullYear();
+
+  if (sameYear) {
+    const fromLabel = formatLagos(from, "dd MMM");
+    const toLabel = formatLagos(to, "dd MMM yyyy");
+    return `${fromLabel} – ${toLabel}`;
+  }
+
+  const fromLabel = formatLagos(from, "dd MMM yyyy");
+  const toLabel = formatLagos(to, "dd MMM yyyy");
+  return `${fromLabel} – ${toLabel}`;
 }

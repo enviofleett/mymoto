@@ -18,12 +18,16 @@ export function useAddress(
     queryKey: ['address', lat, lon],
     queryFn: () => getAddressFromCoordinates(lat!, lon!),
     enabled: isValidCoords && (enabledOverride ?? true),
-    staleTime: Infinity,
+    staleTime: 10 * 60 * 1000, // Avoid caching a transient failure "forever" in PWA.
     gcTime: 1000 * 60 * 60 * 24,
+    refetchOnReconnect: true,
+    retry: 2,
   });
 
   return {
-    address: isValidCoords ? address : undefined,
+    address: !isValidCoords
+      ? undefined
+      : address ?? (error ? `${lat!.toFixed(4)}, ${lon!.toFixed(4)}` : undefined),
     isLoading: isValidCoords ? isLoading : false,
     error: error as Error | null,
   };

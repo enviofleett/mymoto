@@ -71,6 +71,7 @@ export function ReportsSection({
   const lastSyncAt = syncStatus?.last_trip_sync_at ?? null;
   const syncError = syncStatus?.trip_sync_error ?? null;
   const tripsSynced = syncStatus?.trips_synced_count ?? 0;
+  const dateRangeLabel = getDateRangeLabel(dateRange);
   
   // Calculate continuity issues for the current set of trips
   const continuityIssues = useMemo(() => {
@@ -172,40 +173,45 @@ export function ReportsSection({
         />
 
         {/* Interactive Filter Bar */}
-        <div className="mb-6 space-y-4">
-            <div className="flex items-center justify-between">
-                 <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-                    Reports & Analytics
-                    {(syncStatus || isAutoSyncing) && (
-                      <div className="flex items-center gap-1.5 ml-2">
-                        {isSyncing || isAutoSyncing ? (
-                          <RefreshCw className="h-3 w-3 text-blue-500 animate-spin" />
-                        ) : syncStatus?.sync_status === "completed" ? (
-                          <CheckCircle2 className="h-3 w-3 text-green-500" />
-                        ) : syncStatus?.sync_status === "error" ? (
-                          <AlertCircle className="h-3 w-3 text-red-500" />
-                        ) : null}
-                        {isRealtimeActive && (
-                          <Radio className="h-3 w-3 text-green-500 animate-pulse ml-1" />
-                        )}
-                      </div>
+        <div className="mb-6 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-col gap-0.5">
+              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                Reports & Analytics
+                {(syncStatus || isAutoSyncing) && (
+                  <div className="flex items-center gap-1.5 ml-2">
+                    {isSyncing || isAutoSyncing ? (
+                      <RefreshCw className="h-3 w-3 text-blue-500 animate-spin" />
+                    ) : syncStatus?.sync_status === "completed" ? (
+                      <CheckCircle2 className="h-3 w-3 text-green-500" />
+                    ) : syncStatus?.sync_status === "error" ? (
+                      <AlertCircle className="h-3 w-3 text-red-500" />
+                    ) : null}
+                    {isRealtimeActive && (
+                      <Radio className="h-3 w-3 text-green-500 animate-pulse ml-1" />
                     )}
-                 </div>
-                 {onForceSync && (
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={onForceSync}
-                        disabled={isSyncing}
-                        className="h-7 text-xs"
-                    >
-                        <RefreshCw className={cn("h-3 w-3 mr-1", isSyncing && "animate-spin")} />
-                        Sync Trips
-                    </Button>
-                 )}
+                  </div>
+                )}
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                {dateRangeLabel}
+              </div>
             </div>
-            
-            {/* Unified filter moved to page level */}
+            {onForceSync && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onForceSync}
+                disabled={isSyncing}
+                className="h-7 text-xs"
+              >
+                <RefreshCw className={cn("h-3 w-3 mr-1", isSyncing && "animate-spin")} />
+                Sync Trips
+              </Button>
+            )}
+          </div>
+
+          {/* Unified filter moved to page level */}
         </div>
 
         {/* Sync Status Details */}
@@ -384,6 +390,47 @@ export function ReportsSection({
       </CardContent>
     </Card>
   );
+}
+
+function getDateRangeLabel(dateRange: DateRange | undefined): string {
+  if (!dateRange?.from || !dateRange.to) {
+    return "All time";
+  }
+
+  const from = dateRange.from;
+  const to = dateRange.to;
+
+  const fromStr = formatLagos(from, "yyyy-MM-dd");
+  const toStr = formatLagos(to, "yyyy-MM-dd");
+
+  const todayStr = formatLagos(new Date(), "yyyy-MM-dd");
+
+  if (fromStr === todayStr && toStr === todayStr) {
+    return formatLagos(from, "dd MMM yyyy");
+  }
+
+  const diffMs = new Date(toStr).getTime() - new Date(fromStr).getTime();
+  const days = Math.round(diffMs / (1000 * 60 * 60 * 24)) + 1;
+
+  if (toStr === todayStr && days === 7) {
+    return "Last 7 days";
+  }
+
+  if (toStr === todayStr && days === 30) {
+    return "Last 30 days";
+  }
+
+  const sameYear = from.getFullYear() === to.getFullYear();
+
+  if (sameYear) {
+    const fromLabel = formatLagos(from, "dd MMM");
+    const toLabel = formatLagos(to, "dd MMM yyyy");
+    return `${fromLabel} – ${toLabel}`;
+  }
+
+  const fromLabel = formatLagos(from, "dd MMM yyyy");
+  const toLabel = formatLagos(to, "dd MMM yyyy");
+  return `${fromLabel} – ${toLabel}`;
 }
 
 function TripCard({ 

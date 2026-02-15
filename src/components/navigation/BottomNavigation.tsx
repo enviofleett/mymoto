@@ -54,7 +54,10 @@ export function BottomNavigation() {
   };
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 pb-[env(safe-area-inset-bottom)]">
+    <nav
+      className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 pb-[env(safe-area-inset-bottom)]"
+      style={{ bottom: "var(--keyboard-inset, 0px)" }}
+    >
       <div className="flex items-center justify-around h-16 max-[360px]:h-14">
         {mainNavItems.map((item) => (
           <NavLink

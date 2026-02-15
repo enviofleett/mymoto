@@ -32,7 +32,7 @@ export function DashboardLayout({ children, connectionStatus }: DashboardLayoutP
   const shouldShowAdminNav = isAdmin && isAdminRoute;
 
   return (
-    <div className="flex h-[100dvh] w-full flex-col bg-background overflow-hidden">
+    <div className="flex h-[var(--app-height)] min-h-0 w-full flex-col bg-background overflow-hidden">
       {/* Global Alert Listener - Real-time notifications */}
       <GlobalAlertListener />
       
@@ -98,7 +98,7 @@ export function DashboardLayout({ children, connectionStatus }: DashboardLayoutP
       {/* Main Content - Dynamic padding ensures content is never cut off by footer */}
       {/* CRITICAL FIX: overflow-x-hidden prevents horizontal scroll, pb-32 ensures content clears footer */}
       {/* UPDATE: Increased max-width to 7xl for better admin view utilization */}
-      <main className={`flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 ${footerPadding}`}>
+      <main className={`flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain app-scroll p-4 md:p-6 ${footerPadding}`}>
         <div className="mx-auto max-w-7xl w-full animate-in fade-in slide-in-from-bottom-4 duration-500">
           {children}
         </div>

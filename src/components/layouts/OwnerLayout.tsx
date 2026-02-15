@@ -70,7 +70,7 @@ export function OwnerLayout({
   };
   
   return (
-    <div className="h-[100dvh] bg-background flex flex-col overflow-hidden">
+    <div className="h-[var(--app-height)] min-h-0 bg-background flex flex-col overflow-hidden">
       {/* Global Alert Listener - Real-time notifications */}
       <GlobalAlertListener />
       
@@ -80,14 +80,17 @@ export function OwnerLayout({
       {/* Main Content - Dynamic padding ensures content is never cut off by footer */}
       {/* CRITICAL FIX: overflow-x-hidden prevents horizontal scroll, pb-32 ensures content clears footer */}
       {/* ADDED: pt-[calc(env(safe-area-inset-top)+1rem)] prevents top notch cutoff */}
-      <main className={`flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 pt-[calc(env(safe-area-inset-top)+1rem)] pad-fluid ${footerPadding}`}>
+      <main className={`flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain app-scroll p-4 md:p-6 pt-[calc(env(safe-area-inset-top)+1rem)] pad-fluid ${footerPadding}`}>
         <div className="mx-auto max-w-7xl w-full animate-in fade-in slide-in-from-bottom-4 duration-500">
           {children}
         </div>
       </main>
 
       {/* Bottom Navigation - Premium Neumorphic Icon-Only Design */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-card/95 backdrop-blur-xl border-t border-border/30 pb-[env(safe-area-inset-bottom)]">
+      <nav
+        className="fixed bottom-0 left-0 right-0 z-50 bg-card/95 backdrop-blur-xl border-t border-border/30 pb-[env(safe-area-inset-bottom)]"
+        style={{ bottom: "var(--keyboard-inset, 0px)" }}
+      >
         <div className="flex items-center justify-around h-20 max-[360px]:h-16 max-w-lg mx-auto px-4 max-[360px]:px-2">
           {navItems.map(item => {
           const active = isActive(item.path);

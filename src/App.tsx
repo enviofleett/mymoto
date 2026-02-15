@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense, lazy } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -10,47 +10,50 @@ import SplashScreen from "@/components/SplashScreen";
 import { TermsChecker } from "@/components/auth/TermsChecker";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import RatingListener from "@/components/directory/RatingListener";
-import Index from "./pages/Index";
-import Auth from "./pages/Auth";
-import ForgotPassword from "./pages/ForgotPassword";
-import ResetPassword from "./pages/ResetPassword";
-import Fleet from "./pages/Fleet";
-import Insights from "./pages/Insights";
-import Profile from "./pages/Profile";
-import AdminWallets from "./pages/AdminWallets";
-import AdminStorage from "./pages/AdminStorage";
-import AdminAlerts from "./pages/AdminAlerts";
-import AdminAiSettings from "./pages/AdminAiSettings";
-import AdminAssignments from "./pages/AdminAssignments";
-import AdminPrivacySettings from "./pages/AdminPrivacySettings";
-import AdminEmailTemplates from "./pages/AdminEmailTemplates";
-import AdminReportTemplates from "./pages/AdminReportTemplates";
-import AdminResources from "./pages/AdminResources";
-import NotificationSettings from "./pages/NotificationSettings";
-import NotFound from "./pages/NotFound";
-import InstallApp from "./pages/InstallApp";
-import PwaLogin from "./pages/PwaLogin";
+import { Loader2 } from "lucide-react";
+import { usePwaUpdatePrompt } from "@/hooks/usePwaUpdatePrompt";
+
+const Index = lazy(() => import("./pages/Index"));
+const Auth = lazy(() => import("./pages/Auth"));
+const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
+const ResetPassword = lazy(() => import("./pages/ResetPassword"));
+const Fleet = lazy(() => import("./pages/Fleet"));
+const Insights = lazy(() => import("./pages/Insights"));
+const Profile = lazy(() => import("./pages/Profile"));
+const AdminWallets = lazy(() => import("./pages/AdminWallets"));
+const AdminStorage = lazy(() => import("./pages/AdminStorage"));
+const AdminAlerts = lazy(() => import("./pages/AdminAlerts"));
+const AdminAiSettings = lazy(() => import("./pages/AdminAiSettings"));
+const AdminAssignments = lazy(() => import("./pages/AdminAssignments"));
+const AdminPrivacySettings = lazy(() => import("./pages/AdminPrivacySettings"));
+const AdminEmailTemplates = lazy(() => import("./pages/AdminEmailTemplates"));
+const AdminReportTemplates = lazy(() => import("./pages/AdminReportTemplates"));
+const AdminResources = lazy(() => import("./pages/AdminResources"));
+const NotificationSettings = lazy(() => import("./pages/NotificationSettings"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+const InstallApp = lazy(() => import("./pages/InstallApp"));
+const PwaLogin = lazy(() => import("./pages/PwaLogin"));
 
 // Partner pages
-import PartnerSignup from "./pages/partner/PartnerSignup";
-import PartnerDashboard from "./pages/partner/PartnerDashboard";
+const PartnerSignup = lazy(() => import("./pages/partner/PartnerSignup"));
+const PartnerDashboard = lazy(() => import("./pages/partner/PartnerDashboard"));
 
 // Owner PWA pages
-import OwnerChat from "./pages/owner/OwnerChat";
-import OwnerChatDetail from "./pages/owner/OwnerChatDetail";
-import OwnerVehicles from "./pages/owner/OwnerVehicles";
-import OwnerVehiclesDashboard from "./pages/owner/OwnerVehiclesDashboard";
-import OwnerVehicleProfile from "./pages/owner/OwnerVehicleProfile";
-import OwnerWallet from "./pages/owner/OwnerWallet";
-import OwnerProfile from "./pages/owner/OwnerProfile";
-import OwnerNotificationSettings from "./pages/owner/OwnerNotificationSettings";
-import OwnerPrivacy from "./pages/owner/OwnerPrivacy";
-import OwnerResources from "./pages/owner/OwnerResources";
+const OwnerChat = lazy(() => import("./pages/owner/OwnerChat"));
+const OwnerChatDetail = lazy(() => import("./pages/owner/OwnerChatDetail"));
+const OwnerVehicles = lazy(() => import("./pages/owner/OwnerVehicles"));
+const OwnerVehiclesDashboard = lazy(() => import("./pages/owner/OwnerVehiclesDashboard"));
+const OwnerVehicleProfile = lazy(() => import("./pages/owner/OwnerVehicleProfile"));
+const OwnerWallet = lazy(() => import("./pages/owner/OwnerWallet"));
+const OwnerProfile = lazy(() => import("./pages/owner/OwnerProfile"));
+const OwnerNotificationSettings = lazy(() => import("./pages/owner/OwnerNotificationSettings"));
+const OwnerPrivacy = lazy(() => import("./pages/owner/OwnerPrivacy"));
+const OwnerResources = lazy(() => import("./pages/owner/OwnerResources"));
 
 // Directory pages
-import OwnerDirectory from "./pages/owner/OwnerDirectory";
-import AdminDirectory from "./pages/AdminDirectory";
-import AdminVehicleRequests from "./pages/AdminVehicleRequests";
+const OwnerDirectory = lazy(() => import("./pages/owner/OwnerDirectory"));
+const AdminDirectory = lazy(() => import("./pages/AdminDirectory"));
+const AdminVehicleRequests = lazy(() => import("./pages/AdminVehicleRequests"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -62,6 +65,14 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+function RouteFallback() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+    </div>
+  );
+}
 
 // Check if running as installed PWA
 const isPWA = window.matchMedia('(display-mode: standalone)').matches ||
@@ -90,6 +101,8 @@ const RoleBasedRedirect = () => {
 const App = () => {
   const [showSplash, setShowSplash] = useState(isPWA);
 
+  usePwaUpdatePrompt();
+
   useEffect(() => {
     const handleOnline = () => {
     };
@@ -113,6 +126,7 @@ const App = () => {
           <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
             <AuthProvider>
               <TermsChecker>
+            <Suspense fallback={<RouteFallback />}>
             <Routes>
               <Route path="/auth" element={<Auth />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -165,6 +179,7 @@ const App = () => {
               
               <Route path="*" element={<NotFound />} />
             </Routes>
+            </Suspense>
             <RatingListener />
             </TermsChecker>
           </AuthProvider>

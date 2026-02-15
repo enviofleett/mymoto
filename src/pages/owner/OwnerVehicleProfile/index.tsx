@@ -20,7 +20,6 @@ import { useTripSyncStatus, useTriggerTripSync } from "@/hooks/useTripSync";
 
 // Import sub-components
 import { ProfileHeader } from "./components/ProfileHeader";
-import { VehicleMapSection } from "./components/VehicleMapSection";
 import { CurrentStatusCard } from "./components/CurrentStatusCard";
 import { StatusMetricsRow } from "./components/StatusMetricsRow";
 import { EngineControlCard } from "./components/EngineControlCard";
@@ -150,22 +149,13 @@ export default function OwnerVehicleProfile() {
     displayData?.longitude ?? null
   );
 
-  // Status derivation: online, charging, or offline
+  // Status derivation: online or offline
   const status: "online" | "charging" | "offline" = useMemo(() => {
     if (!displayData?.isOnline) {
       return "offline";
     }
-    
-    // Detect charging/parked state
-    const isParked = 
-      displayData.ignitionOn === false && 
-      displayData.speed === 0;
-    
-    const hasBatteryData = displayData.batteryPercent !== null;
-    const isCharging = isParked && hasBatteryData;
-    
-    return isCharging ? "charging" : "online";
-  }, [displayData?.isOnline, displayData?.batteryPercent, displayData?.ignitionOn, displayData?.speed]);
+    return "online";
+  }, [displayData?.isOnline]);
 
   // Trips and Events for Reports Section
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
@@ -439,7 +429,7 @@ export default function OwnerVehicleProfile() {
               <EngineControlCard
                 deviceId={resolvedDeviceId}
                 ignitionOn={displayData?.ignitionOn ?? null}
-                isOnline={status === "online" || status === "charging"}
+                isOnline={status === "online"}
               />
             </div>
 
@@ -477,32 +467,6 @@ export default function OwnerVehicleProfile() {
                 />
               </div>
             </div>
-            
-            {/* Map Section */}
-            <VehicleMapSection
-              latitude={displayData?.latitude ?? null}
-              longitude={displayData?.longitude ?? null}
-              heading={displayData?.heading ?? null}
-              speed={displayData?.speed ?? 0}
-              address={address}
-              vehicleName={displayName}
-              isOnline={status === "online" || status === "charging"}
-              isLoading={isInitialLoading}
-              isRefreshing={isRefreshing}
-              onRefresh={handleRefresh}
-              routeCoords={routeCoords}
-              routeStartEnd={routeCoords && routeCoords.length > 1 ? {
-                start: routeCoords[0],
-                end: routeCoords[routeCoords.length - 1]
-              } : undefined}
-              geofences={geofenceOverlays}
-              isRouteLoading={false}
-              onViewDetails={() => {
-                toast.info("Map details", {
-                  description: "Tap the map for current status; open Trips for history.",
-                });
-              }}
-            />
         </div>
         {modalTrip && (
           <TripPlaybackModal

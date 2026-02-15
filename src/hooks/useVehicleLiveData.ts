@@ -187,6 +187,11 @@ export async function fetchVehicleLiveDataDirect(
 
     const record = data; // The function returns the normalized object directly
 
+    // Defensive: treat malformed payloads as "no data" so callers can retry/fallback.
+    if (!record || (!record.vehicle_id && !record.device_id)) {
+      throw new Error("No data returned from GPS 51 Proxy");
+    }
+
     if (import.meta.env.DEV) {
       console.log(`[fetchVehicleLiveDataDirect] ✅ Received direct data in ${fetchDuration}ms`);
     }

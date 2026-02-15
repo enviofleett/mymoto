@@ -3,6 +3,17 @@ import type { Map as MapboxMap, Marker as MapboxMarker } from "mapbox-gl";
 import { loadMapbox } from "@/utils/loadMapbox";
 import { useFeatureFlag } from "@/hooks/useFeatureFlags";
 import { cn } from "@/lib/utils";
+import { LeafletVehicleMap } from "@/components/maps/LeafletVehicleMap";
+
+function supportsWebGL2(): boolean {
+  try {
+    const canvas = document.createElement("canvas");
+    const gl2 = canvas.getContext("webgl2");
+    return !!gl2;
+  } catch {
+    return false;
+  }
+}
 
 interface VehicleAvatarMapProps {
   latitude: number | null | undefined;
@@ -18,6 +29,7 @@ export function VehicleAvatarMap({ latitude, longitude, className }: VehicleAvat
   const [mapError, setMapError] = useState<string | null>(null);
   const { data: mapboxFlag } = useFeatureFlag("mapbox_enabled");
   const mapboxEnabled = mapboxFlag?.enabled ?? true;
+  const [renderMode, setRenderMode] = useState<"mapbox" | "leaflet">("mapbox");
 
   const hasValidCoordinates = useMemo(() => {
     return (
@@ -33,13 +45,28 @@ export function VehicleAvatarMap({ latitude, longitude, className }: VehicleAvat
   }, [latitude, longitude]);
 
   useEffect(() => {
-    if (!mapboxEnabled || !hasValidCoordinates || !mapContainer.current || mapRef.current) return;
+    if (!mapboxEnabled) return;
+    const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
+    if (!token) {
+      setRenderMode("leaflet");
+      return;
+    }
+    if (typeof window !== "undefined" && !supportsWebGL2()) {
+      setRenderMode("leaflet");
+      return;
+    }
+    setRenderMode("mapbox");
+  }, [mapboxEnabled, renderMode]);
+
+  useEffect(() => {
+    if (!mapboxEnabled || renderMode !== "mapbox") return;
+    if (!hasValidCoordinates || !mapContainer.current || mapRef.current) return;
 
     const initMap = async () => {
       try {
         const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
         if (!token) {
-          setMapError("Missing Mapbox token");
+          setRenderMode("leaflet");
           return;
         }
 
@@ -62,8 +89,9 @@ export function VehicleAvatarMap({ latitude, longitude, className }: VehicleAvat
             .addTo(mapRef.current as MapboxMap);
         });
       } catch (error) {
-        setMapError("Failed to load map");
-        console.error("[VehicleAvatarMap] init failed:", error);
+        console.warn("[VehicleAvatarMap] Mapbox init failed, falling back to Leaflet", error);
+        setMapError(null);
+        setRenderMode("leaflet");
       } finally {
         setMapboxLoading(false);
       }
@@ -81,9 +109,10 @@ export function VehicleAvatarMap({ latitude, longitude, className }: VehicleAvat
         mapRef.current = null;
       }
     };
-  }, [mapboxEnabled, hasValidCoordinates]);
+  }, [mapboxEnabled, renderMode, hasValidCoordinates, latitude, longitude]);
 
   useEffect(() => {
+    if (renderMode !== "mapbox") return;
     if (!mapRef.current || !hasValidCoordinates) return;
     try {
       mapRef.current.setCenter([longitude as number, latitude as number]);
@@ -93,11 +122,23 @@ export function VehicleAvatarMap({ latitude, longitude, className }: VehicleAvat
     } catch (error) {
       console.error("[VehicleAvatarMap] update failed:", error);
     }
-  }, [hasValidCoordinates, latitude, longitude]);
+  }, [renderMode, hasValidCoordinates, latitude, longitude]);
 
   return (
     <div className={cn("relative h-full w-full overflow-hidden rounded-full", className)}>
-      <div ref={mapContainer} className="absolute inset-0" />
+      {renderMode === "mapbox" ? (
+        <div ref={mapContainer} className="absolute inset-0" />
+      ) : (
+        <div className="absolute inset-0">
+          <LeafletVehicleMap
+            latitude={latitude}
+            longitude={longitude}
+            className="h-full w-full"
+            mapHeight="h-full"
+            interactive={false}
+          />
+        </div>
+      )}
       {!mapboxEnabled && (
         <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground bg-muted">
           Map disabled

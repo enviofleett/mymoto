@@ -3,9 +3,12 @@ import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 import { isIssuerMismatch, parseJwtPayload } from './jwt';
 
-// Hardcoded fallbacks ensure connection persistence even if .env isn't loaded correctly in some environments
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://cmvpnsqiefbsqkwnraka.supabase.co";
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNtdnBuc3FpZWZic3Frd25yYWthIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc3MjIwMDEsImV4cCI6MjA4MzI5ODAwMX0.nJLb5znjUiGsCk_S2QubhBtqIl3DB3I8LbZihIMJdwo";
+const IS_TEST = import.meta.env.MODE === "test";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || (IS_TEST ? "http://localhost:54321" : "");
+const SUPABASE_ANON_KEY =
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+  (IS_TEST ? "test-anon-key" : "");
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   throw new Error(
@@ -29,6 +32,33 @@ function getLocalStorageSafe(): Storage | null {
     return null;
   }
 }
+
+function createMemoryStorage(): Storage {
+  // Minimal in-memory Storage implementation for SSR/tests.
+  const store = new Map<string, string>();
+  return {
+    get length() {
+      return store.size;
+    },
+    clear() {
+      store.clear();
+    },
+    getItem(key: string) {
+      return store.has(key) ? store.get(key)! : null;
+    },
+    key(index: number) {
+      return Array.from(store.keys())[index] ?? null;
+    },
+    removeItem(key: string) {
+      store.delete(key);
+    },
+    setItem(key: string, value: string) {
+      store.set(key, String(value));
+    },
+  };
+}
+
+const STORAGE = getLocalStorageSafe() ?? createMemoryStorage();
 
 const SUPABASE_REF = getSupabaseRef(SUPABASE_URL);
 const LEGACY_AUTH_STORAGE_KEY = "mymoto-auth-v1";
@@ -55,7 +85,7 @@ const AUTH_NOTICE_KEY = `mymoto-auth-notice:${SUPABASE_REF}`;
 
 function writeAuthNotice(reason: 'issuer_mismatch' | 'malformed' | 'invalid_jwt') {
   try {
-    localStorage.setItem(
+    STORAGE.setItem(
       AUTH_NOTICE_KEY,
       JSON.stringify({
         type: 'session_invalid',
@@ -70,7 +100,7 @@ function writeAuthNotice(reason: 'issuer_mismatch' | 'malformed' | 'invalid_jwt'
 
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
-    storage: localStorage,
+    storage: STORAGE,
     storageKey: AUTH_STORAGE_KEY,
     persistSession: true,
     autoRefreshToken: true,
@@ -91,8 +121,8 @@ void (async () => {
       writeAuthNotice('malformed');
       await supabase.auth.signOut();
       try {
-        localStorage.removeItem(AUTH_STORAGE_KEY);
-        localStorage.removeItem(LEGACY_AUTH_STORAGE_KEY);
+        STORAGE.removeItem(AUTH_STORAGE_KEY);
+        STORAGE.removeItem(LEGACY_AUTH_STORAGE_KEY);
       } catch {
         // ignore
       }
@@ -102,8 +132,8 @@ void (async () => {
       writeAuthNotice('issuer_mismatch');
       await supabase.auth.signOut();
       try {
-        localStorage.removeItem(AUTH_STORAGE_KEY);
-        localStorage.removeItem(LEGACY_AUTH_STORAGE_KEY);
+        STORAGE.removeItem(AUTH_STORAGE_KEY);
+        STORAGE.removeItem(LEGACY_AUTH_STORAGE_KEY);
       } catch {
         // ignore
       }
@@ -115,8 +145,8 @@ void (async () => {
     writeAuthNotice('invalid_jwt');
     await supabase.auth.signOut();
     try {
-      localStorage.removeItem(AUTH_STORAGE_KEY);
-      localStorage.removeItem(LEGACY_AUTH_STORAGE_KEY);
+      STORAGE.removeItem(AUTH_STORAGE_KEY);
+      STORAGE.removeItem(LEGACY_AUTH_STORAGE_KEY);
     } catch {
       // ignore
     }
@@ -125,8 +155,8 @@ void (async () => {
   supabase.auth.onAuthStateChange((event) => {
     if (event === 'SIGNED_OUT') {
       try {
-        localStorage.removeItem(AUTH_STORAGE_KEY);
-        localStorage.removeItem(LEGACY_AUTH_STORAGE_KEY);
+        STORAGE.removeItem(AUTH_STORAGE_KEY);
+        STORAGE.removeItem(LEGACY_AUTH_STORAGE_KEY);
       } catch {
         // ignore
       }

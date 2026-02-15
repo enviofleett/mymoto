@@ -84,10 +84,10 @@ export function VehicleSettingsPanel({ deviceId, vehicleName, onClose }: Vehicle
     return () => window.removeEventListener("beforeunload", handler);
   }, [dirty]);
 
-  const validateDetails = () => {
+  const detailsOk = useMemo(() => {
     if (typeof year !== "number") return false;
     return detailsValid({ region, plate, vin, brand, model, year });
-  };
+  }, [year, region, plate, vin, brand, model]);
 
   const daysUntil = (d?: Date) => {
     if (!d) return null;
@@ -109,13 +109,13 @@ export function VehicleSettingsPanel({ deviceId, vehicleName, onClose }: Vehicle
     // Personality completion proxied by LLM settings fetch/save handled internally
     total += 1; done += 1; // Assume persona section completion by interaction
     // Details
-    total += 1; if (validateDetails()) done += 1;
+    total += 1; if (detailsOk) done += 1;
     // Documentation
     total += 1; if (insuranceExp || licenseExp || roadworthyExp) done += 1;
     // Operations
     total += 1; if (typeof speedLimit === "number" && speedLimit > 0) done += 1;
     return Math.round((done / total) * 100);
-  }, [insuranceExp, licenseExp, roadworthyExp, speedLimit, validateDetails]);
+  }, [insuranceExp, licenseExp, roadworthyExp, speedLimit, detailsOk]);
 
   const handleUploadDoc = async (file: File, category: "insurance" | "license" | "roadworthy") => {
     setUploadingDoc(category);

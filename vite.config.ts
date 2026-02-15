@@ -76,8 +76,8 @@ export default defineConfig(({ mode }) => ({
         ],
       },
       workbox: {
-        // Force development mode to avoid workbox minification (terser)
-        mode: "development",
+        // Use production mode in production builds.
+        mode: mode === "development" ? "development" : "production",
         sourcemap: false,
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MiB
@@ -92,9 +92,48 @@ export default defineConfig(({ mode }) => ({
             handler: "NetworkFirst",
             options: {
               cacheName: "supabase-cache",
+              cacheableResponse: { statuses: [0, 200] },
               expiration: {
                 maxEntries: 100,
                 maxAgeSeconds: 60 * 60, // 1 hour
+              },
+            },
+          },
+          // Leaflet fallback tiles
+          {
+            urlPattern: /^https:\/\/([abc]\.)?tile\.openstreetmap\.org\/.*/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "osm-tiles",
+              cacheableResponse: { statuses: [0, 200] },
+              expiration: {
+                maxEntries: 200,
+                maxAgeSeconds: 60 * 60 * 24 * 7, // 7 days
+              },
+            },
+          },
+          {
+            urlPattern: /^https:\/\/server\.arcgisonline\.com\/.*/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "esri-tiles",
+              cacheableResponse: { statuses: [0, 200] },
+              expiration: {
+                maxEntries: 200,
+                maxAgeSeconds: 60 * 60 * 24 * 7, // 7 days
+              },
+            },
+          },
+          // Mapbox geocoding should prefer network (avoid caching error responses).
+          {
+            urlPattern: /^https:\/\/api\.mapbox\.com\/geocoding\/.*/i,
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "mapbox-geocoding",
+              cacheableResponse: { statuses: [0, 200] },
+              expiration: {
+                maxEntries: 50,
+                maxAgeSeconds: 60 * 60 * 6, // 6 hours
               },
             },
           },
@@ -103,6 +142,7 @@ export default defineConfig(({ mode }) => ({
             handler: "CacheFirst",
             options: {
               cacheName: "mapbox-cache",
+              cacheableResponse: { statuses: [0, 200] },
               expiration: {
                 maxEntries: 50,
                 maxAgeSeconds: 60 * 60 * 24, // 24 hours
@@ -121,5 +161,15 @@ export default defineConfig(({ mode }) => ({
   },
   optimizeDeps: {
     include: ["react", "react-dom"],
+  },
+  test: {
+    // Keep vitest scoped to this app only.
+    include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    exclude: [
+      "**/node_modules/**",
+      "dist/**",
+      "e2e/**",
+      "service-provider-pwa/**",
+    ],
   },
 }));

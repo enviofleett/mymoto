@@ -26,12 +26,12 @@ describe('useVehicleLiveData', () => {
     it('should correctly map normalized data with is_online=true', () => {
       // Mock data simulating the FIXED Edge Function response
       const normalizedInput = {
-        device_id: 'test-device-1',
-        latitude: 6.5244,
-        longitude: 3.3792,
-        speed: 45,
+        vehicle_id: 'test-device-1',
+        lat: 6.5244,
+        lon: 3.3792,
+        speed_kmh: 45,
         is_online: true, // This field is crucial
-        gps_time: new Date().toISOString(),
+        last_updated_at: new Date().toISOString(),
         ignition_on: true
       };
 
@@ -45,9 +45,9 @@ describe('useVehicleLiveData', () => {
 
     it('should correctly map normalized data with is_online=false', () => {
       const normalizedInput = {
-        device_id: 'test-device-2',
+        vehicle_id: 'test-device-2',
         is_online: false,
-        gps_time: new Date().toISOString()
+        last_updated_at: new Date().toISOString()
       };
 
       const result = mapDirectResponseToVehicleLiveData(normalizedInput);
@@ -71,8 +71,8 @@ describe('useVehicleLiveData', () => {
 
     it('should correctly map battery percentage', () => {
       const input = {
-        device_id: 'test-device-1',
-        battery_percent: 85,
+        vehicle_id: 'test-device-1',
+        battery_level: 85,
         is_online: true
       };
 

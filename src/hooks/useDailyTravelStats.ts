@@ -90,5 +90,8 @@ export function useDailyTravelStats({
     },
     enabled: enabled && !!deviceId,
     staleTime: 5 * 60 * 1000, // 5 minutes
+    refetchInterval: 60_000, // keep "today" tiles current without relying on reloads
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   })
 }

@@ -103,7 +103,10 @@ export function AdminBottomNav() {
   });
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-card/95 backdrop-blur-xl border-t border-border/30 pb-[env(safe-area-inset-bottom)]">
+    <nav
+      className="fixed bottom-0 left-0 right-0 z-50 bg-card/95 backdrop-blur-xl border-t border-border/30 pb-[env(safe-area-inset-bottom)]"
+      style={{ bottom: "var(--keyboard-inset, 0px)" }}
+    >
       <div className="flex items-center justify-around h-20 max-w-lg mx-auto px-4 max-[360px]:px-2">
         {ADMIN_NAV_ITEMS.map((item) => {
           const isActive = item.activeMatch.test(location.pathname);

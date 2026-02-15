@@ -2,70 +2,43 @@ import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
 import { registerSW } from 'virtual:pwa-register';
+import { initViewportInsets } from "@/hooks/useViewportInsets";
 
 // App version for cache busting
 const APP_VERSION = '1.3.1';
 
-// Force update check for existing PWA users
-const checkAndForceUpdate = async () => {
+declare global {
+  interface Window {
+    __PWA_UPDATE_AVAILABLE__?: boolean;
+    __PWA_APPLY_UPDATE__?: (() => void) | null;
+  }
+}
+
+// Persist version for diagnostics, but do not force-reload mid-session.
+try {
   const storedVersion = localStorage.getItem('mymoto-app-version');
-  
-  if (storedVersion && storedVersion !== APP_VERSION) {
-    if (import.meta.env.DEV) {
-      console.log('[PWA] Version mismatch detected:', storedVersion, '->', APP_VERSION);
-    }
-    
-    // Clear all caches
-    if ('caches' in window) {
-      const cacheNames = await caches.keys();
-      if (import.meta.env.DEV) {
-        console.log('[PWA] Clearing caches:', cacheNames);
-      }
-      await Promise.all(cacheNames.map(name => caches.delete(name)));
-    }
-    
-    // Update stored version
-    localStorage.setItem('mymoto-app-version', APP_VERSION);
-    
-    // Force reload to get fresh assets
-    if (import.meta.env.DEV) {
-      console.log('[PWA] Forcing reload for new version...');
-    }
-    window.location.reload();
-    return;
-  }
-  
-  // Set version if not set
-  if (!storedVersion) {
-    localStorage.setItem('mymoto-app-version', APP_VERSION);
-  }
-};
+  if (!storedVersion) localStorage.setItem('mymoto-app-version', APP_VERSION);
+} catch {
+  // ignore
+}
 
-// Run version check immediately (don't block rendering)
-checkAndForceUpdate().catch(console.error);
+let applyUpdate: ((reloadPage?: boolean) => Promise<void>) | null = null;
 
-// Register service worker with aggressive auto-update
+// Register service worker with user-friendly update flow.
 const updateSW = registerSW({
   immediate: true,
   onNeedRefresh() {
-    if (import.meta.env.DEV) {
-      console.log('[PWA] New version available, force updating...');
-    }
-    
-    // Clear all caches before update
-    if ('caches' in window) {
-      caches.keys().then(names => {
-        if (import.meta.env.DEV) {
-          console.log('[PWA] Clearing caches before update:', names);
-        }
-        Promise.all(names.map(name => caches.delete(name))).then(() => {
-          localStorage.setItem('mymoto-app-version', APP_VERSION);
-          updateSW(true);
-        });
-      });
-    } else {
-      updateSW(true);
-    }
+    // Signal the app shell to prompt the user. Do not clear caches and do not reload immediately.
+    window.__PWA_UPDATE_AVAILABLE__ = true;
+    window.__PWA_APPLY_UPDATE__ = () => {
+      try {
+        localStorage.setItem('mymoto-app-version', APP_VERSION);
+      } catch {
+        // ignore
+      }
+      void applyUpdate?.(true);
+    };
+    window.dispatchEvent(new CustomEvent("pwa:update-available", { detail: { version: APP_VERSION } }));
   },
   onOfflineReady() {
     if (import.meta.env.DEV) {
@@ -76,20 +49,26 @@ const updateSW = registerSW({
     if (import.meta.env.DEV) {
       console.log('[PWA] Service Worker registered:', swUrl, 'Version:', APP_VERSION);
     }
-    // Check for updates every 30 seconds for faster propagation
-    if (r) {
-      setInterval(() => {
-        if (import.meta.env.DEV) {
-          console.log('[PWA] Checking for updates...');
-        }
-        r.update();
-      }, 30000);
-    }
+    if (!r) return;
+    const doUpdateCheck = () => {
+      void r.update();
+    };
+
+    // Check on focus/visibility changes (feels immediate without spamming).
+    window.addEventListener("focus", doUpdateCheck);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") doUpdateCheck();
+    });
+
+    // Periodic background checks (30 minutes).
+    setInterval(doUpdateCheck, 30 * 60 * 1000);
   },
   onRegisterError(error) {
     console.error('[PWA] Service Worker registration error:', error);
   },
 });
+
+applyUpdate = updateSW;
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {
@@ -97,6 +76,8 @@ if (!rootElement) {
 }
 
 try {
+  // Initialize viewport/keyboard CSS vars for stable mobile PWA layout behavior.
+  initViewportInsets();
   createRoot(rootElement).render(<App />);
 } catch (error) {
   console.error("Failed to render app:", error);

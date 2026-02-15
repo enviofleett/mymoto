@@ -1,12 +1,16 @@
 import { supabase } from "@/integrations/supabase/client";
 import { isIssuerMismatch, parseJwtPayload } from "@/integrations/supabase/jwt";
 
-const SUPABASE_URL =
-  import.meta.env.VITE_SUPABASE_URL || "https://cmvpnsqiefbsqkwnraka.supabase.co";
+const IS_TEST = import.meta.env.MODE === "test";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || (IS_TEST ? "http://localhost:54321" : "");
 const SUPABASE_ANON_KEY =
   import.meta.env.VITE_SUPABASE_ANON_KEY ||
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNtdnBuc3FpZWZic3Frd25yYWthIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc3MjIwMDEsImV4cCI6MjA4MzI5ODAwMX0.nJLb5znjUiGsCk_S2QubhBtqIl3DB3I8LbZihIMJdwo";
+  (IS_TEST ? "test-anon-key" : "");
+
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  throw new Error("Missing Supabase env: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY");
+}
 
 function getSupabaseRef(url: string) {
   try {

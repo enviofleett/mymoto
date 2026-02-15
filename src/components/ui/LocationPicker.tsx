@@ -1,13 +1,29 @@
 
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import type { Map as MapboxMap, Marker as MapboxMarker } from 'mapbox-gl';
 import { loadMapbox } from "@/utils/loadMapbox";
 import { useFeatureFlag } from "@/hooks/useFeatureFlags";
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
 import { Search, MapPin, Loader2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
+import { getAddressFromCoordinates } from "@/utils/geocoding";
+import { extractCity } from "@/utils/mapbox-geocoding";
+
+function supportsWebGL2(): boolean {
+  try {
+    const canvas = document.createElement("canvas");
+    const gl2 = canvas.getContext("webgl2");
+    return !!gl2;
+  } catch {
+    return false;
+  }
+}
+
+const LocationPickerLeafletMapClient = lazy(async () => {
+  const m = await import("./LocationPickerLeafletMap.client");
+  return { default: m.LocationPickerLeafletMapClient };
+});
 
 interface LocationPickerProps {
   onLocationSelect: (location: {
@@ -33,13 +49,36 @@ export function LocationPicker({ onLocationSelect, initialLocation }: LocationPi
   const [mapboxLoading, setMapboxLoading] = useState(false);
   const { data: mapboxFlag } = useFeatureFlag("mapbox_enabled");
   const mapboxEnabled = mapboxFlag?.enabled ?? true;
+  const [renderMode, setRenderMode] = useState<"mapbox" | "leaflet">("mapbox");
 
   // Default to Lagos, Nigeria if no initial location
   const defaultLat = initialLocation?.latitude || 6.5244;
   const defaultLng = initialLocation?.longitude || 3.3792;
+  const [pickedLat, setPickedLat] = useState(defaultLat);
+  const [pickedLng, setPickedLng] = useState(defaultLng);
+
+  useEffect(() => {
+    setPickedLat(defaultLat);
+    setPickedLng(defaultLng);
+  }, [defaultLat, defaultLng]);
 
   useEffect(() => {
     if (!mapboxEnabled) return;
+    const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
+    if (!token) {
+      setRenderMode("leaflet");
+      return;
+    }
+    if (typeof window !== "undefined" && !supportsWebGL2()) {
+      setRenderMode("leaflet");
+      return;
+    }
+    setRenderMode("mapbox");
+  }, [mapboxEnabled]);
+
+  useEffect(() => {
+    if (!mapboxEnabled) return;
+    if (renderMode !== "mapbox") return;
     if (!mapContainer.current) return;
 
     const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
@@ -74,6 +113,8 @@ export function LocationPicker({ onLocationSelect, initialLocation }: LocationPi
         map.current.on('click', (e) => {
           if (marker.current) {
             marker.current.setLngLat(e.lngLat);
+            setPickedLat(e.lngLat.lat);
+            setPickedLng(e.lngLat.lng);
             reverseGeocode(e.lngLat.lng, e.lngLat.lat);
           }
         });
@@ -88,11 +129,13 @@ export function LocationPicker({ onLocationSelect, initialLocation }: LocationPi
       marker.current?.remove();
       map.current?.remove();
     };
-  }, [mapboxEnabled]);
+  }, [mapboxEnabled, renderMode, defaultLat, defaultLng]);
 
   const onDragEnd = () => {
     if (!marker.current) return;
     const lngLat = marker.current.getLngLat();
+    setPickedLat(lngLat.lat);
+    setPickedLng(lngLat.lng);
     reverseGeocode(lngLat.lng, lngLat.lat);
   };
 
@@ -121,27 +164,11 @@ export function LocationPicker({ onLocationSelect, initialLocation }: LocationPi
 
   const reverseGeocode = async (lng: number, lat: number) => {
     try {
-      const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
-      const response = await fetch(
-        `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${token}`
-      );
-      const data = await response.json();
-      
-      if (data.features && data.features.length > 0) {
-        const feature = data.features[0];
-        const cityContext = feature.context?.find((c: any) => c.id.startsWith('place'))?.text || 
-                           feature.context?.find((c: any) => c.id.startsWith('region'))?.text || '';
-        
-        const locationData = {
-          address: feature.place_name,
-          city: cityContext,
-          latitude: lat,
-          longitude: lng,
-        };
-
-        setSelectedAddress(feature.place_name);
-        onLocationSelect(locationData);
-      }
+      const address = await getAddressFromCoordinates(lat, lng);
+      const city = extractCity(address);
+      const locationData = { address, city, latitude: lat, longitude: lng };
+      setSelectedAddress(address);
+      onLocationSelect(locationData);
     } catch (error) {
       console.error('Reverse geocoding error:', error);
     }
@@ -217,7 +244,7 @@ export function LocationPicker({ onLocationSelect, initialLocation }: LocationPi
           <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
             Map disabled to save resources
           </div>
-        ) : (
+        ) : renderMode === "mapbox" ? (
           <>
             <div ref={mapContainer} className="h-full w-full" />
             {mapboxLoading && (
@@ -227,6 +254,25 @@ export function LocationPicker({ onLocationSelect, initialLocation }: LocationPi
             )}
             <div className="absolute bottom-2 right-2 bg-background/90 px-2 py-1 rounded text-xs shadow-sm z-10 pointer-events-none">
               Click map to set location
+            </div>
+          </>
+        ) : (
+          <>
+            {typeof window === "undefined" ? null : (
+              <Suspense fallback={<div className="h-full w-full" />}>
+                <LocationPickerLeafletMapClient
+                  lat={pickedLat}
+                  lng={pickedLng}
+                  onPick={(lat, lng) => {
+                    setPickedLat(lat);
+                    setPickedLng(lng);
+                    void reverseGeocode(lng, lat);
+                  }}
+                />
+              </Suspense>
+            )}
+            <div className="absolute bottom-2 right-2 bg-background/90 px-2 py-1 rounded text-xs shadow-sm z-10 pointer-events-none">
+              Tap map to set location
             </div>
           </>
         )}

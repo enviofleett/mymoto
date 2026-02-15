@@ -180,8 +180,14 @@ export default function OwnerVehiclesDashboard() {
     return "bg-status-active shadow-[0_0_8px_hsl(142_70%_50%/0.5)]";
   }, [displayData?.ignitionOn, displayData?.isOnline, displayData?.speed]);
 
-  const todayYmd = useMemo(() => toLagosYmd(new Date()), []);
-  const { data: dailyTravel, isLoading: dailyTravelLoading, isError: dailyTravelError } = useDailyTravelStats({
+  // Compute per-render so it naturally rolls over after midnight Lagos time (the page re-renders regularly).
+  const todayYmd = toLagosYmd(new Date());
+  const {
+    data: dailyTravel,
+    isLoading: dailyTravelLoading,
+    isError: dailyTravelError,
+    refetch: refetchDailyTravel,
+  } = useDailyTravelStats({
     deviceId: selectedDeviceId,
     startDate: todayYmd,
     endDate: todayYmd,
@@ -196,6 +202,8 @@ export default function OwnerVehiclesDashboard() {
     try {
       const fresh = await fetchVehicleLiveDataDirect(selectedDeviceId, { timeoutMs: 8000 });
       setDirectOverride({ data: fresh, fetchedAt: Date.now() });
+      // Keep "Trips Today" / "Distance Today" in sync with manual refresh.
+      refetchDailyTravel();
       toast.success("Updated live status");
     } catch (e: any) {
       toast.error("Live refresh failed", {
@@ -204,11 +212,11 @@ export default function OwnerVehiclesDashboard() {
     } finally {
       setIsRefreshing(false);
     }
-  }, [selectedDeviceId]);
+  }, [refetchDailyTravel, selectedDeviceId]);
 
   const handlePullToRefresh = useCallback(async () => {
-    await refetchLive();
-  }, [refetchLive]);
+    await Promise.all([refetchLive(), refetchDailyTravel()]);
+  }, [refetchDailyTravel, refetchLive]);
 
   const showEmpty = !vehiclesLoading && (vehicles?.length || 0) === 0;
   const showLoading = vehiclesLoading || liveLoading || !selectedDeviceId || !selectedVehicle;
@@ -302,7 +310,7 @@ export default function OwnerVehiclesDashboard() {
           </div>
 
           {showEmpty ? (
-            <div className="mt-10 text-center">
+            <div className="mt-10 text-center footer-gap">
               <div className="w-20 h-20 mx-auto rounded-full shadow-neumorphic bg-card flex items-center justify-center mb-4">
                 <MapPin className="h-9 w-9 text-muted-foreground" />
               </div>
@@ -321,7 +329,7 @@ export default function OwnerVehiclesDashboard() {
               </div>
             </div>
           ) : showLoading ? (
-            <div className="mt-8 space-y-4 px-1">
+            <div className="mt-8 space-y-4 px-1 footer-gap">
               <div className="h-10 rounded-2xl bg-card shadow-neumorphic-inset" />
               <div className="grid grid-cols-2 gap-4">
                 <div className="h-28 rounded-2xl bg-card shadow-neumorphic-inset" />
@@ -335,7 +343,7 @@ export default function OwnerVehiclesDashboard() {
             <div className="mt-3 space-y-4 px-1">
               {/* Status chips - Centralized */}
               <div className="flex justify-center">
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-nowrap gap-2 overflow-x-auto scrollbar-hide max-w-full">
                   <StatusChip
                     icon={Zap}
                     label={displayData?.isOnline ? "Online" : "Offline"}
@@ -395,11 +403,11 @@ export default function OwnerVehiclesDashboard() {
                       address={address}
                       vehicleName={selectedVehicle?.name || selectedDeviceId}
                       showAddressCard={false}
-                      mapHeight="h-48 md:h-64"
+                      mapHeight="h-40 sm:h-48 md:h-64"
                       className="rounded-none"
                     />
                   ) : (
-                    <div className="h-48 md:h-64 flex items-center justify-center bg-muted/30">
+                    <div className="h-40 sm:h-48 md:h-64 flex items-center justify-center bg-muted/30">
                       <div className="text-center">
                         <MapPin className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
                         <p className="text-xs text-muted-foreground">Location unavailable</p>

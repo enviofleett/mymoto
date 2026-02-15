@@ -27,3 +27,8 @@ dist-ssr
 .env*.local
 .trae
 .env
+.env.local
+.env.*.local
+.env.*.production
+.env.*.staging
+.env.*.development

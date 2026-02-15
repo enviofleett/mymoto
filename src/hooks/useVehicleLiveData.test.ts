@@ -12,20 +12,17 @@ vi.mock('@/integrations/supabase/client', () => ({
 }));
 
 describe('GPS 51 Direct Fetch Simulation', () => {
-  const mockGps51Record = {
-    device_id: 'TEST_DEVICE_123',
-    latitude: 6.5244,
-    longitude: 3.3792,
-    speed: 45,
+  const mockNormalizedRecord = {
+    vehicle_id: 'TEST_DEVICE_123',
+    lat: 6.5244,
+    lon: 3.3792,
+    speed_kmh: 45,
     heading: 180,
-    battery_percent: 85,
+    battery_level: 85,
     ignition_on: true,
     is_online: true,
-    is_overspeeding: false,
-    total_mileage: 150500, // 150.5 km (in meters)
-    status_text: 'ACC ON',
-    gps_time: '2023-10-27T10:00:00Z',
-    gps_fix_time: '2023-10-27T10:00:00Z',
+    last_updated_at: '2023-10-27T10:00:00Z',
+    gps_fix_at: '2023-10-27T10:00:00Z',
   };
 
   beforeEach(() => {
@@ -33,7 +30,7 @@ describe('GPS 51 Direct Fetch Simulation', () => {
   });
 
   it('should correctly map raw GPS 51 data to VehicleLiveData', () => {
-    const result = mapDirectResponseToVehicleLiveData(mockGps51Record);
+    const result = mapDirectResponseToVehicleLiveData(mockNormalizedRecord);
 
     expect(result.deviceId).toBe('TEST_DEVICE_123');
     expect(result.latitude).toBe(6.5244);
@@ -43,7 +40,7 @@ describe('GPS 51 Direct Fetch Simulation', () => {
     expect(result.batteryPercent).toBe(85);
     expect(result.ignitionOn).toBe(true);
     expect(result.isOnline).toBe(true);
-    expect(result.totalMileageKm).toBe(151); // 150500 / 1000 rounded
+    expect(result.totalMileageKm).toBeNull();
     expect(result.lastUpdate).toBeInstanceOf(Date);
     expect(result.lastUpdate?.toISOString()).toBe('2023-10-27T10:00:00.000Z');
     expect(result.syncPriority).toBe('high');
@@ -51,7 +48,7 @@ describe('GPS 51 Direct Fetch Simulation', () => {
 
   it('should handle null/missing values gracefully', () => {
     const sparseRecord = {
-      device_id: 'SPARSE_DEVICE',
+      vehicle_id: 'SPARSE_DEVICE',
       speed: 0,
       // missing lat/lon, mileage, etc.
     };
@@ -69,27 +66,21 @@ describe('GPS 51 Direct Fetch Simulation', () => {
   it('should simulate a successful direct API fetch', async () => {
     // Mock the Edge Function response
     mockInvoke.mockResolvedValueOnce({
-      data: {
-        data: {
-          records: [mockGps51Record],
-        },
-      },
+      data: mockNormalizedRecord,
       error: null,
     });
 
     const result = await fetchVehicleLiveDataDirect('TEST_DEVICE_123');
 
-    expect(mockInvoke).toHaveBeenCalledWith('gps-data', {
+    expect(mockInvoke).toHaveBeenCalledWith('get-vehicle-live-status', {
       body: {
-        action: 'lastposition',
-        body_payload: { deviceids: ['TEST_DEVICE_123'] },
-        use_cache: false,
+        device_id: 'TEST_DEVICE_123',
       },
     });
 
     expect(result.deviceId).toBe('TEST_DEVICE_123');
     expect(result.speed).toBe(45);
-    expect(result.totalMileageKm).toBe(151);
+    expect(result.totalMileageKm).toBeNull();
   });
 
   it('should throw error when Edge Function fails', async () => {
@@ -103,18 +94,14 @@ describe('GPS 51 Direct Fetch Simulation', () => {
       .toThrow('Edge Function error: Network error');
   });
 
-  it('should throw error when GPS 51 returns no data', async () => {
+  it('should throw error when proxy returns no data', async () => {
     mockInvoke.mockResolvedValueOnce({
-      data: {
-        data: {
-          records: [], // Empty records
-        },
-      },
+      data: null,
       error: null,
     });
 
     await expect(fetchVehicleLiveDataDirect('TEST_DEVICE_123'))
       .rejects
-      .toThrow('No data returned from GPS 51');
+      .toThrow('No data returned from GPS 51 Proxy');
   });
 });

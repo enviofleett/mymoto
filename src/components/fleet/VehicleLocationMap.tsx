@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { MapPin, Navigation, ExternalLink, WifiOff } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useFeatureFlag } from "@/hooks/useFeatureFlags";
+import { LeafletVehicleMap } from "@/components/maps/LeafletVehicleMap";
 
 interface VehicleLocationMapProps {
   latitude: number | null | undefined;
@@ -36,6 +37,16 @@ type VehicleStatus = 'parked' | 'moving' | 'offline';
 function getVehicleStatus(isOnline: boolean, speed: number): VehicleStatus {
   if (!isOnline) return 'offline';
   return speed >= SPEED_THRESHOLD ? 'moving' : 'parked';
+}
+
+function supportsWebGL2(): boolean {
+  try {
+    const canvas = document.createElement("canvas");
+    const gl2 = canvas.getContext("webgl2");
+    return !!gl2;
+  } catch {
+    return false;
+  }
 }
 
 // Create marker HTML
@@ -86,6 +97,7 @@ export function VehicleLocationMap({
   const [mapboxLoading, setMapboxLoading] = useState(false);
   const { data: mapboxFlag } = useFeatureFlag("mapbox_enabled");
   const mapboxEnabled = mapboxFlag?.enabled ?? true;
+  const [renderMode, setRenderMode] = useState<"mapbox" | "leaflet">("mapbox");
 
   // Validate coordinates
   const hasValidCoordinates = useMemo(() => {
@@ -117,9 +129,25 @@ export function VehicleLocationMap({
       : '#';
   }, [hasValidCoordinates, latitude, longitude]);
 
+  // Decide initial render mode (Mapbox when viable, Leaflet otherwise).
+  useEffect(() => {
+    if (!mapboxEnabled) return;
+    const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
+    if (!token) {
+      setRenderMode("leaflet");
+      return;
+    }
+    if (typeof window !== "undefined" && !supportsWebGL2()) {
+      setRenderMode("leaflet");
+      return;
+    }
+    setRenderMode("mapbox");
+  }, [mapboxEnabled]);
+
   // Warm the mapbox chunk early so the UI doesn't feel "stuck" waiting on it.
   useEffect(() => {
     if (!mapboxEnabled) return;
+    if (renderMode !== "mapbox") return;
     if (mapboxRef.current) return;
     void loadMapbox()
       .then((m) => {
@@ -128,17 +156,19 @@ export function VehicleLocationMap({
       .catch(() => {
         // ignore; init effect will surface a user-facing error if needed
       });
-  }, [mapboxEnabled]);
+  }, [mapboxEnabled, renderMode]);
 
   // Initialize map once
   useEffect(() => {
     if (!mapboxEnabled) return;
+    if (renderMode !== "mapbox") return;
     if (!mapContainer.current || (!hasValidCoordinates && !hasRoute) || map.current) return;
 
     const initMap = async () => {
       const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
       if (!token) {
-        setMapError('Map configuration missing');
+        // Token missing: render Leaflet fallback.
+        setRenderMode("leaflet");
         return;
       }
 
@@ -179,15 +209,19 @@ export function VehicleLocationMap({
         });
 
         mapInstance.on('error', (e) => {
-          console.error('[Map Error]', e);
-          setMapError('Failed to load map');
+          // In PWA, Mapbox can fail due to WebGL/worker/caching quirks. Prefer a resilient fallback.
+          console.warn("[VehicleLocationMap] Mapbox error, falling back to Leaflet", e);
           setMapboxLoading(false);
+          setMapError(null);
+          setRenderMode("leaflet");
         });
 
         map.current = mapInstance;
       } catch (error) {
-        setMapError(error instanceof Error ? error.message : 'Map initialization failed');
+        console.warn("[VehicleLocationMap] Mapbox init failed, falling back to Leaflet", error);
         setMapboxLoading(false);
+        setMapError(null);
+        setRenderMode("leaflet");
       }
     };
 
@@ -201,10 +235,11 @@ export function VehicleLocationMap({
       map.current = null;
       setMapLoaded(false);
     };
-  }, [mapboxEnabled, hasValidCoordinates, hasRoute, routeCoords, routeStartEnd]);
+  }, [mapboxEnabled, renderMode, hasValidCoordinates, hasRoute, routeCoords, routeStartEnd, heading, latitude, longitude]);
 
   // Update marker when position/status changes
   useEffect(() => {
+    if (renderMode !== "mapbox") return;
     if (!map.current || !mapLoaded || !hasValidCoordinates) return;
 
     const updateMarker = async () => {
@@ -258,9 +293,10 @@ export function VehicleLocationMap({
     };
 
     updateMarker();
-  }, [latitude, longitude, heading, speed, vehicleStatus, mapLoaded, hasValidCoordinates]);
+  }, [renderMode, latitude, longitude, heading, speed, vehicleStatus, mapLoaded, hasValidCoordinates]);
 
   useEffect(() => {
+    if (renderMode !== "mapbox") return;
     if (!map.current || !mapLoaded) return;
     const coords = (routeCoords || []).map(p => [p.lon, p.lat]);
     const hasRoute = coords.length > 1;
@@ -322,9 +358,10 @@ export function VehicleLocationMap({
         map.current.removeSource('vehicle-route');
       }
     };
-  }, [routeCoords, mapLoaded]);
+  }, [renderMode, routeCoords, mapLoaded]);
 
   useEffect(() => {
+    if (renderMode !== "mapbox") return;
     if (!map.current || !mapLoaded) return;
     if (!routeStartEnd) {
       if (map.current.getLayer('route-points-layer')) {
@@ -379,7 +416,7 @@ export function VehicleLocationMap({
         }
       } as any);
     }
-  }, [routeStartEnd, mapLoaded]);
+  }, [renderMode, routeStartEnd, mapLoaded]);
 
   function buildCirclePolygon(lat: number, lon: number, radiusMeters: number, steps = 64): number[][] {
     const coords: number[][] = [];
@@ -395,6 +432,7 @@ export function VehicleLocationMap({
   }
 
   useEffect(() => {
+    if (renderMode !== "mapbox") return;
     if (!map.current || !mapLoaded) return;
     const zones = (geofences || []).filter(z => z.latitude && z.longitude && z.radius && z.radius > 0);
     const sourceId = 'geofences-source';
@@ -440,7 +478,7 @@ export function VehicleLocationMap({
         }
       } as any);
     }
-  }, [geofences, mapLoaded]);
+  }, [renderMode, geofences, mapLoaded]);
 
   if (!mapboxEnabled) {
     return (
@@ -450,21 +488,6 @@ export function VehicleLocationMap({
             <MapPin className="h-12 w-12 mx-auto text-muted-foreground opacity-60 mb-3" />
             <p className="text-sm font-medium text-muted-foreground mb-1">Map Disabled</p>
             <p className="text-xs text-muted-foreground">Map loading is disabled to save resources.</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Error state
-  if (mapError) {
-    return (
-      <div className={cn("relative", className)}>
-        <div className={cn("w-full rounded-xl bg-destructive/10 flex items-center justify-center", mapHeight)}>
-          <div className="text-center p-8">
-            <MapPin className="h-12 w-12 mx-auto text-destructive opacity-50 mb-3" />
-            <p className="text-sm font-medium text-destructive mb-1">Map Error</p>
-            <p className="text-xs text-muted-foreground">{mapError}</p>
           </div>
         </div>
       </div>
@@ -487,133 +510,71 @@ export function VehicleLocationMap({
 
   return (
     <div className={cn("relative", className)}>
-      {mapboxLoading && (
-        <div className={cn("absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-background/60 backdrop-blur-sm", mapHeight)}>
-          <div className="text-sm text-muted-foreground">Loading map...</div>
-        </div>
+      {renderMode === "mapbox" ? (
+        <>
+          {mapboxLoading && (
+            <div
+              className={cn(
+                "absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-background/60 backdrop-blur-sm",
+                mapHeight
+              )}
+            >
+              <div className="text-sm text-muted-foreground">Loading map...</div>
+            </div>
+          )}
+          <style>{`
+            .vehicle-car-marker { cursor: pointer; user-select: none; }
+            .car-marker-container { position: relative; width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; transition: transform 0.5s ease-out; }
+            .car-pulse { position: absolute; width: 60px; height: 60px; border-radius: 50%; animation: carPulse 2s infinite; pointer-events: none; }
+            .car-pulse.parked { background: radial-gradient(circle, rgba(34, 197, 94, 0.4) 0%, rgba(34, 197, 94, 0) 70%); }
+            .car-pulse.moving { background: radial-gradient(circle, rgba(59, 130, 246, 0.4) 0%, rgba(59, 130, 246, 0) 70%); }
+            .car-pulse.offline { background: radial-gradient(circle, rgba(107, 114, 128, 0.4) 0%, rgba(107, 114, 128, 0) 70%); }
+            .car-icon { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.4); z-index: 1; transition: background 0.3s ease; }
+            .car-icon.parked { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: white; }
+            .car-icon.moving { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; }
+            .car-icon.offline { background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%); color: white; }
+            .status-dot { width: 20px; height: 20px; border-radius: 50%; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+            .speed-badge { position: absolute; top: -8px; right: -8px; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); font-size: 10px; font-weight: 700; padding: 2px 5px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.3); z-index: 2; white-space: nowrap; }
+            .speed-badge::after { content: ' km/h'; font-size: 7px; font-weight: 400; }
+            @keyframes carPulse { 0% { transform: scale(0.8); opacity: 1; } 100% { transform: scale(1.6); opacity: 0; } }
+            .mapboxgl-popup-content { background: hsl(var(--card)); color: hsl(var(--foreground)); border-radius: 12px; padding: 12px 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); border: 1px solid hsl(var(--border)); }
+            .mapboxgl-popup-tip { border-top-color: hsl(var(--card)); }
+            .mapboxgl-ctrl-group { background: hsl(var(--card)) !important; border: 1px solid hsl(var(--border)) !important; }
+            .mapboxgl-ctrl-group button { background: transparent !important; }
+            .mapboxgl-ctrl-group button + button { border-top: 1px solid hsl(var(--border)) !important; }
+            .mapboxgl-ctrl-icon { filter: invert(1); }
+          `}</style>
+          <div
+            ref={mapContainer}
+            className={cn("w-full rounded-xl overflow-hidden", mapHeight)}
+            role="img"
+            aria-label={`Map showing ${vehicleName || "vehicle"} at ${address || `${latitude}, ${longitude}`}`}
+          />
+        </>
+      ) : (
+        <>
+          {mapError ? (
+            <div className={cn("w-full rounded-xl bg-destructive/10 flex items-center justify-center", mapHeight)}>
+              <div className="text-center p-8">
+                <MapPin className="h-12 w-12 mx-auto text-destructive opacity-50 mb-3" />
+                <p className="text-sm font-medium text-destructive mb-1">Map Error</p>
+                <p className="text-xs text-muted-foreground">{mapError}</p>
+              </div>
+            </div>
+          ) : (
+            <LeafletVehicleMap
+              latitude={latitude}
+              longitude={longitude}
+              className={cn("w-full rounded-xl overflow-hidden")}
+              mapHeight={mapHeight}
+              interactive={true}
+              routeCoords={routeCoords}
+              routeStartEnd={routeStartEnd}
+              geofences={geofences}
+            />
+          )}
+        </>
       )}
-      <style>{`
-        .vehicle-car-marker {
-          cursor: pointer;
-          user-select: none;
-        }
-        .car-marker-container {
-          position: relative;
-          width: 48px;
-          height: 48px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          transition: transform 0.5s ease-out;
-        }
-        .car-pulse {
-          position: absolute;
-          width: 60px;
-          height: 60px;
-          border-radius: 50%;
-          animation: carPulse 2s infinite;
-          pointer-events: none;
-        }
-        .car-pulse.parked {
-          background: radial-gradient(circle, rgba(34, 197, 94, 0.4) 0%, rgba(34, 197, 94, 0) 70%);
-        }
-        .car-pulse.moving {
-          background: radial-gradient(circle, rgba(59, 130, 246, 0.4) 0%, rgba(59, 130, 246, 0) 70%);
-        }
-        .car-pulse.offline {
-          background: radial-gradient(circle, rgba(107, 114, 128, 0.4) 0%, rgba(107, 114, 128, 0) 70%);
-        }
-        .car-icon {
-          width: 40px;
-          height: 40px;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-          z-index: 1;
-          transition: background 0.3s ease;
-        }
-        .car-icon.parked {
-          background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
-          color: white;
-        }
-        .car-icon.moving {
-          background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-          color: white;
-        }
-        .car-icon.offline {
-          background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
-          color: white;
-        }
-        .status-dot {
-          width: 20px;
-          height: 20px;
-          border-radius: 50%;
-          background: white;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-        }
-        .speed-badge {
-          position: absolute;
-          top: -8px;
-          right: -8px;
-          background: hsl(var(--primary));
-          color: hsl(var(--primary-foreground));
-          font-size: 10px;
-          font-weight: 700;
-          padding: 2px 5px;
-          border-radius: 8px;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-          z-index: 2;
-          white-space: nowrap;
-        }
-        .speed-badge::after {
-          content: ' km/h';
-          font-size: 7px;
-          font-weight: 400;
-        }
-        @keyframes carPulse {
-          0% {
-            transform: scale(0.8);
-            opacity: 1;
-          }
-          100% {
-            transform: scale(1.6);
-            opacity: 0;
-          }
-        }
-        .mapboxgl-popup-content {
-          background: hsl(var(--card));
-          color: hsl(var(--foreground));
-          border-radius: 12px;
-          padding: 12px 16px;
-          box-shadow: 0 8px 24px rgba(0,0,0,0.25);
-          border: 1px solid hsl(var(--border));
-        }
-        .mapboxgl-popup-tip {
-          border-top-color: hsl(var(--card));
-        }
-        .mapboxgl-ctrl-group {
-          background: hsl(var(--card)) !important;
-          border: 1px solid hsl(var(--border)) !important;
-        }
-        .mapboxgl-ctrl-group button {
-          background: transparent !important;
-        }
-        .mapboxgl-ctrl-group button + button {
-          border-top: 1px solid hsl(var(--border)) !important;
-        }
-        .mapboxgl-ctrl-icon {
-          filter: invert(1);
-        }
-      `}</style>
-
-      <div
-        ref={mapContainer}
-        className={cn("w-full rounded-xl overflow-hidden", mapHeight)}
-        role="img"
-        aria-label={`Map showing ${vehicleName || 'vehicle'} at ${address || `${latitude}, ${longitude}`}`}
-      />
 
       {showAddressCard && (
         <Card className="absolute bottom-3 left-3 right-3 bg-card/95 backdrop-blur-md border-border/50 shadow-lg z-10">

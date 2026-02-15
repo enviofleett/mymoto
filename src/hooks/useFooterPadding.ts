@@ -53,7 +53,7 @@ export function useFooterPadding() {
     const tinyTotalPadding = navHeight + MIN_FOOTER_SPACING_TINY;
     
     // Return CSS class with calc() for dynamic safe area support
-    return `pb-[calc(${totalPadding}rem+env(safe-area-inset-bottom))] max-[360px]:pb-[calc(${tinyTotalPadding}rem+env(safe-area-inset-bottom))]`;
+    return `pb-[calc(${totalPadding}rem+env(safe-area-inset-bottom)+var(--keyboard-inset,0px))] max-[360px]:pb-[calc(${tinyTotalPadding}rem+env(safe-area-inset-bottom)+var(--keyboard-inset,0px))]`;
   }, [location.pathname, isAdmin]);
 
   return paddingClass;
@@ -67,5 +67,5 @@ export function useOwnerFooterPadding() {
   const totalPadding = NAV_HEIGHTS.OWNER_NAV + MIN_FOOTER_SPACING;
   const tinyNavHeight = 4; // OwnerLayout nav compresses to h-16 on tiny screens
   const tinyTotalPadding = tinyNavHeight + MIN_FOOTER_SPACING_TINY;
-  return `pb-[calc(${totalPadding}rem+env(safe-area-inset-bottom))] max-[360px]:pb-[calc(${tinyTotalPadding}rem+env(safe-area-inset-bottom))]`;
+  return `pb-[calc(${totalPadding}rem+env(safe-area-inset-bottom)+var(--keyboard-inset,0px))] max-[360px]:pb-[calc(${tinyTotalPadding}rem+env(safe-area-inset-bottom)+var(--keyboard-inset,0px))]`;
 }

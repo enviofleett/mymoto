@@ -11,6 +11,8 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "test": "vitest run",
+    "ci:secrets": "node scripts/ci/check-no-secrets.mjs",
+    "e2e": "npx --yes @playwright/test@1.49.0 test",
     "preview": "vite preview",
     "deploy": "sh scripts/setup-vercel.sh",
     "deploy:prod": "npx vercel --prod"
