@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useNotifications } from "@/hooks/useNotifications";
+import { usePushSubscription } from "@/hooks/usePushSubscription";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -223,6 +225,9 @@ export function VehicleNotificationSettings({ deviceId, userId }: VehicleNotific
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const { toast } = useToast();
+  const { permission, requestPermission, isSupported: notifSupported } = useNotifications();
+  const { isSupported: pushSupported, isSubscribed, isChecking: isCheckingPush, ensureSubscribed, unsubscribe, error: pushError } =
+    usePushSubscription();
 
   // Load preferences
   useEffect(() => {
@@ -428,6 +433,66 @@ export function VehicleNotificationSettings({ deviceId, userId }: VehicleNotific
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Device-level push enablement (background notifications) */}
+        {notifSupported && pushSupported && (
+          <div className="p-3 rounded-lg bg-muted/40 border border-border/50">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-foreground">Background Push (This Device)</div>
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  {permission !== "granted"
+                    ? "Grant notification permission to receive alerts in the background."
+                    : isCheckingPush
+                      ? "Checking subscription..."
+                      : isSubscribed
+                        ? "Subscribed for background notifications."
+                        : "Not subscribed yet."}
+                </div>
+                {pushError ? <div className="text-xs text-destructive mt-1">Push error: {pushError}</div> : null}
+              </div>
+              {permission !== "granted" ? (
+                <Switch
+                  checked={false}
+                  onCheckedChange={async (checked) => {
+                    if (!checked) return;
+                    const ok = await requestPermission();
+                    if (ok) {
+                      try {
+                        await ensureSubscribed();
+                        toast({ title: "Enabled", description: "Background notifications enabled on this device." });
+                      } catch (e: any) {
+                        toast({
+                          title: "Subscription Failed",
+                          description: e instanceof Error ? e.message : "Please try again.",
+                          variant: "destructive",
+                        });
+                      }
+                    }
+                  }}
+                />
+              ) : isSubscribed ? (
+                <Switch
+                  checked={true}
+                  onCheckedChange={async (checked) => {
+                    if (checked) return;
+                    await unsubscribe();
+                    toast({ title: "Disabled", description: "Background notifications disabled on this device." });
+                  }}
+                />
+              ) : (
+                <Switch
+                  checked={false}
+                  onCheckedChange={async (checked) => {
+                    if (!checked) return;
+                    await ensureSubscribed();
+                    toast({ title: "Enabled", description: "Background notifications enabled on this device." });
+                  }}
+                />
+              )}
+            </div>
+          </div>
+        )}
+
         {Object.entries(eventsByCategory).map(([category, events]) => (
           <div key={category} className="space-y-3">
             <div className="flex items-center gap-2">

@@ -1,7 +1,7 @@
 /**
  * Retry Failed Notifications Edge Function
  * 
- * This function retries failed proactive-alarm-to-chat calls.
+ * This function retries failed proactive-alarm-to-chat and proactive-alarm-to-push calls.
  * Should be called periodically via cron job or manually.
  * 
  * Usage:
@@ -28,141 +28,94 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    // Get failed events that need retry
-    const { data: failedEvents, error: fetchError } = await supabase
-      .rpc('get_failed_events_for_retry', {
-        p_function_name: 'proactive-alarm-to-chat',
+    const retryOneFunction = async (
+      functionName: 'proactive-alarm-to-chat' | 'proactive-alarm-to-push',
+      opts: { onlyNotifiedFalse?: boolean }
+    ) => {
+      const { data: failedEvents, error: fetchError } = await supabase.rpc('get_failed_events_for_retry', {
+        p_function_name: functionName,
         p_max_retries: 3,
         p_max_age_hours: 24,
       });
 
-    if (fetchError) {
-      console.error('[retry-failed-notifications] Error fetching failed events:', fetchError);
-      throw fetchError;
-    }
-
-    if (!failedEvents || failedEvents.length === 0) {
-      return new Response(
-        JSON.stringify({
-          success: true,
-          message: 'No failed events to retry',
-          retried: 0,
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
-    }
-
-    console.log(`[retry-failed-notifications] Found ${failedEvents.length} failed events to retry`);
-
-    // Get the original events from proactive_vehicle_events
-    const eventIds = failedEvents.map((e: any) => e.event_id).filter(Boolean);
-    
-    if (eventIds.length === 0) {
-      return new Response(
-        JSON.stringify({
-          success: true,
-          message: 'No valid event IDs found',
-          retried: 0,
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
-    }
-
-    const { data: events, error: eventsError } = await supabase
-      .from('proactive_vehicle_events')
-      .select('*')
-      .in('id', eventIds)
-      .eq('notified', false); // Only retry events that haven't been notified
-
-    if (eventsError) {
-      console.error('[retry-failed-notifications] Error fetching events:', eventsError);
-      throw eventsError;
-    }
-
-    if (!events || events.length === 0) {
-      // Mark all as resolved since events are already notified or don't exist
-      const errorIds = failedEvents.map((e: any) => e.error_id);
-      for (const errorId of errorIds) {
-        await supabase.rpc('mark_error_resolved', { p_error_id: errorId });
+      if (fetchError) throw fetchError;
+      if (!failedEvents || failedEvents.length === 0) {
+        return { attempted: 0, successful: 0, failed: 0 };
       }
 
-      return new Response(
-        JSON.stringify({
-          success: true,
-          message: 'All events already notified or not found',
-          retried: 0,
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      const eventIds = failedEvents.map((e: any) => e.event_id).filter(Boolean);
+      if (eventIds.length === 0) {
+        // Resolve empty references.
+        for (const e of failedEvents) {
+          if (e.error_id) await supabase.rpc('mark_error_resolved', { p_error_id: e.error_id });
         }
-      );
-    }
+        return { attempted: 0, successful: 0, failed: 0 };
+      }
 
-    console.log(`[retry-failed-notifications] Retrying ${events.length} events`);
+      let q = supabase.from('proactive_vehicle_events').select('*').in('id', eventIds);
+      if (opts.onlyNotifiedFalse) q = q.eq('notified', false);
 
-    // Retry each event by calling the proactive-alarm-to-chat function
-    const retryResults = await Promise.allSettled(
-      events.map(async (event) => {
-        const errorRecord = failedEvents.find((e: any) => e.event_id === event.id);
-        
-        // Increment retry count
-        if (errorRecord) {
-          await supabase.rpc('increment_retry_count', { p_error_id: errorRecord.error_id });
+      const { data: events, error: eventsError } = await q;
+      if (eventsError) throw eventsError;
+
+      if (!events || events.length === 0) {
+        // Mark all as resolved since events are already handled or don't exist.
+        for (const e of failedEvents) {
+          if (e.error_id) await supabase.rpc('mark_error_resolved', { p_error_id: e.error_id });
         }
+        return { attempted: 0, successful: 0, failed: 0 };
+      }
 
-        // Call the proactive-alarm-to-chat function
-        const { data, error } = await supabase.functions.invoke('proactive-alarm-to-chat', {
-          body: {
-            event: {
-              id: event.id,
-              device_id: event.device_id,
-              event_type: event.event_type,
-              severity: event.severity,
-              title: event.title,
-              message: event.message || event.title || '',
-              description: event.description,
-              metadata: event.metadata || {},
-              latitude: event.latitude,
-              longitude: event.longitude,
-              location_name: event.location_name,
-              created_at: event.created_at,
+      const results = await Promise.allSettled(
+        events.map(async (event: any) => {
+          const errorRecord = failedEvents.find((e: any) => e.event_id === event.id);
+          if (errorRecord?.error_id) {
+            await supabase.rpc('increment_retry_count', { p_error_id: errorRecord.error_id });
+          }
+
+          const { data, error } = await supabase.functions.invoke(functionName, {
+            body: {
+              event: {
+                id: event.id,
+                device_id: event.device_id,
+                event_type: event.event_type,
+                severity: event.severity,
+                title: event.title,
+                message: event.message || event.title || '',
+                description: event.description,
+                metadata: event.metadata || {},
+                latitude: event.latitude,
+                longitude: event.longitude,
+                location_name: event.location_name,
+                created_at: event.created_at,
+              },
             },
-          },
-        });
+          });
 
-        if (error) {
-          throw error;
-        }
+          if (error) throw error;
+          if (errorRecord?.error_id && data?.success) {
+            await supabase.rpc('mark_error_resolved', { p_error_id: errorRecord.error_id });
+          }
 
-        // Mark as resolved if successful
-        if (errorRecord && data?.success) {
-          await supabase.rpc('mark_error_resolved', { p_error_id: errorRecord.error_id });
-        }
+          return { event_id: event.id, success: data?.success || false };
+        })
+      );
 
-        return { event_id: event.id, success: data?.success || false };
-      })
-    );
+      const successful = results.filter((r) => r.status === 'fulfilled' && (r.value as any)?.success).length;
+      const failed = results.filter((r) => r.status === 'rejected' || !(r.value as any)?.success).length;
+      return { attempted: events.length, successful, failed };
+    };
 
-    const successful = retryResults.filter((r) => r.status === 'fulfilled' && (r.value as any)?.success).length;
-    const failed = retryResults.filter((r) => r.status === 'rejected' || !(r.value as any)?.success).length;
-
-    console.log(`[retry-failed-notifications] Retry complete: ${successful} successful, ${failed} failed`);
+    const chat = await retryOneFunction('proactive-alarm-to-chat', { onlyNotifiedFalse: true });
+    const push = await retryOneFunction('proactive-alarm-to-push', { onlyNotifiedFalse: false });
 
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Retried ${successful} events successfully`,
-        retried: successful,
-        failed: failed,
-        total: events.length,
+        chat,
+        push,
       }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
     console.error('[retry-failed-notifications] Error:', error);

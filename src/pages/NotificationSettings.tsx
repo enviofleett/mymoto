@@ -35,6 +35,7 @@ import {
   type SeverityLevel 
 } from "@/hooks/useNotificationPreferences";
 import { useNotifications } from "@/hooks/useNotifications";
+import { usePushSubscription } from "@/hooks/usePushSubscription";
 import { useToast } from "@/hooks/use-toast";
 import {
   Accordion,
@@ -103,7 +104,6 @@ const NotificationSettings = () => {
     setPreferences, 
     updateSeveritySettings,
     updateAlertTypeSettings,
-    updateAIChatPreferences,
     resetToDefaults,
     isInQuietHours
   } = useNotificationPreferences();
@@ -114,12 +114,27 @@ const NotificationSettings = () => {
     playAlertSound,
     isSupported
   } = useNotifications();
+
+  const {
+    isSupported: pushSupported,
+    isSubscribed,
+    isChecking: isCheckingPush,
+    ensureSubscribed,
+    unsubscribe,
+    error: pushError,
+  } = usePushSubscription();
   
   const { toast } = useToast();
 
   const handleRequestPermission = async () => {
     const granted = await requestPermission();
     if (granted) {
+      try {
+        await ensureSubscribed();
+      } catch (e) {
+        // Subscription can fail on unsupported platforms; permission may still be granted.
+        console.warn("[NotificationSettings] Push subscription failed:", e);
+      }
       toast({
         title: "Notifications Enabled",
         description: "You'll now receive push notifications for alerts"
@@ -183,6 +198,41 @@ const NotificationSettings = () => {
                   Enable
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Web Push Subscription Status (Background Notifications) */}
+        {isSupported && permission === "granted" && pushSupported && (
+          <Card className="border-border bg-card">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Bell className="h-5 w-5" />
+                Background Notifications
+              </CardTitle>
+              <CardDescription>
+                Keep this device subscribed so you receive alerts when the PWA is in the background.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex items-center justify-between gap-3">
+              <div className="text-sm text-muted-foreground">
+                Status:{" "}
+                <span className="text-foreground font-medium">
+                  {isCheckingPush ? "Checking..." : isSubscribed ? "Subscribed" : "Not subscribed"}
+                </span>
+                {pushError ? (
+                  <div className="text-xs text-destructive mt-1">Push error: {pushError}</div>
+                ) : null}
+              </div>
+              {isSubscribed ? (
+                <Button variant="outline" onClick={() => void unsubscribe()}>
+                  Disable
+                </Button>
+              ) : (
+                <Button onClick={() => void ensureSubscribed()}>
+                  Enable
+                </Button>
+              )}
             </CardContent>
           </Card>
         )}
@@ -467,39 +517,21 @@ const NotificationSettings = () => {
           </CardContent>
         </Card>
 
-        {/* AI Companion Triggers */}
+        {/* AI Companion Triggers (Deprecated) */}
         <Card className="border-border bg-card">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <MessageSquare className="h-5 w-5" />
-              AI Companion Triggers
+              AI Chat Messages
             </CardTitle>
             <CardDescription>
-              Allow your vehicle to start a conversation when these events occur
+              AI chat triggers are now configured per vehicle. Go to Owner Notification Settings to choose which vehicles/events post into chat.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {[
-              { key: 'ignition_start' as const, label: 'Ignition Start', description: 'Vehicle starts up', icon: Power },
-              { key: 'geofence_event' as const, label: 'Geofence Events', description: 'Entering or leaving geofence zones', icon: MapPin },
-              { key: 'overspeeding' as const, label: 'Overspeeding', description: 'Vehicle exceeds speed limit', icon: Gauge },
-              { key: 'low_battery' as const, label: 'Low Battery', description: 'Battery level drops below threshold', icon: Battery },
-              { key: 'power_off' as const, label: 'Power Off', description: 'Vehicle ignition turns off', icon: Power }
-            ].map(({ key, label, description, icon: Icon }) => (
-              <div key={key} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                <div className="flex items-center gap-3">
-                  <Icon className="h-5 w-5 text-muted-foreground" />
-                  <div>
-                    <p className="font-medium">{label}</p>
-                    <p className="text-xs text-muted-foreground">{description}</p>
-                  </div>
-                </div>
-                <Switch
-                  checked={preferences.aiChatPreferences[key]}
-                  onCheckedChange={(checked) => updateAIChatPreferences(key, checked)}
-                />
-              </div>
-            ))}
+          <CardContent>
+            <div className="text-sm text-muted-foreground">
+              Path: <Badge variant="secondary">/owner/notification-settings</Badge>
+            </div>
           </CardContent>
         </Card>
       </div>

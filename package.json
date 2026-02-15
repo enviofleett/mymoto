@@ -13,6 +13,7 @@
     "test": "vitest run",
     "ci:secrets": "node scripts/ci/check-no-secrets.mjs",
     "e2e": "npx --yes @playwright/test@1.49.0 test",
+    "icons:generate": "node scripts/generate-icons.mjs",
     "preview": "vite preview",
     "deploy": "sh scripts/setup-vercel.sh",
     "deploy:prod": "npx vercel --prod"

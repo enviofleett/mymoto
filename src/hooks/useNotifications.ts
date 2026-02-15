@@ -126,6 +126,36 @@ export function useNotifications(): UseNotificationsReturn {
   
   const isSupported = typeof window !== 'undefined' && 'Notification' in window;
 
+  // Improve reliability of in-app alert sounds on mobile:
+  // resume AudioContext on first user gesture to avoid autoplay restrictions later.
+  useEffect(() => {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    if (ctx.state === "running") return;
+
+    const resumeOnce = () => {
+      try {
+        void ctx.resume();
+      } catch {
+        // ignore
+      } finally {
+        window.removeEventListener("pointerdown", resumeOnce);
+        window.removeEventListener("keydown", resumeOnce);
+        window.removeEventListener("touchstart", resumeOnce);
+      }
+    };
+
+    window.addEventListener("pointerdown", resumeOnce, { passive: true });
+    window.addEventListener("touchstart", resumeOnce, { passive: true });
+    window.addEventListener("keydown", resumeOnce);
+
+    return () => {
+      window.removeEventListener("pointerdown", resumeOnce);
+      window.removeEventListener("touchstart", resumeOnce);
+      window.removeEventListener("keydown", resumeOnce);
+    };
+  }, []);
+
   useEffect(() => {
     if (isSupported) {
       setPermission(Notification.permission);

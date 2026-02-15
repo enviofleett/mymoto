@@ -20,6 +20,7 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close(); // Close the notification
   
   const data = event.notification.data || {};
+  const route = data.route;
   const deviceId = data.deviceId;
   const eventType = data.eventType;
   const eventId = data.eventId;
@@ -31,14 +32,14 @@ self.addEventListener('notificationclick', (event) => {
   }
   
   // Determine navigation URL
-  let url = '/notifications';
+  let url = route || '/notifications';
   if (eventId || deviceId) {
     const qs = new URLSearchParams();
     if (eventId) qs.set('eventId', eventId);
     if (deviceId) qs.set('deviceId', deviceId);
-    url = `/notifications?${qs.toString()}`;
+    url = route || `/notifications?${qs.toString()}`;
   } else if (eventType) {
-    url = '/notifications';
+    url = route || '/notifications';
   }
   
   // Focus existing window or open new one
@@ -131,13 +132,13 @@ self.addEventListener('push', (event) => {
         self.registration.showNotification(data.title || 'New Alert', {
           body: data.body || '',
           icon: data.icon || '/pwa-192x192.png',
-          badge: '/pwa-192x192.png',
+          badge: data.badge || '/pwa-192x192.png',
           tag: data.tag,
           data: data.data || {},
           silent: false,
           vibrate: data.vibrate || [200, 100, 200],
           requireInteraction: data.requireInteraction || false,
-          renotify: true,
+          renotify: data.renotify ?? true,
           timestamp: Date.now()
         })
       );

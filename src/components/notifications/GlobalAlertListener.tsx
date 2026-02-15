@@ -1,8 +1,8 @@
-import { useEffect, useCallback, useRef } from "react";
+import { useEffect, useCallback, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { useNotifications } from "@/hooks/useNotifications";
+import { isAppInForeground, useNotifications } from "@/hooks/useNotifications";
 import { useNotificationPreferences, type AlertType, type SeverityLevel } from "@/hooks/useNotificationPreferences";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOwnerVehicles } from "@/hooks/useOwnerVehicles";
@@ -36,7 +36,7 @@ export function GlobalAlertListener() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { showNotification, playAlertSound, permission } = useNotifications();
-  const { shouldPlaySound, shouldShowPush, preferences } = useNotificationPreferences();
+  const { preferences } = useNotificationPreferences(); // device-local: volume + quiet hours (type filtering is DB-driven)
   const { user, isAdmin } = useAuth();
   const { data: ownerVehicles } = useOwnerVehicles();
   const authRedirectedRef = useRef(false);
@@ -47,6 +47,119 @@ export function GlobalAlertListener() {
   // Get list of device IDs for user's assigned vehicles
   const userDeviceIds = ownerVehicles?.map(v => v.deviceId) || [];
   const userDeviceIdsKey = userDeviceIds.join(",");
+
+  // Per-vehicle notification preferences (DB source of truth).
+  const [vehiclePrefsByDevice, setVehiclePrefsByDevice] = useState<Record<string, any>>({});
+  const [hasPushSubscription, setHasPushSubscription] = useState<boolean>(false);
+
+  const eventTypeToPreferenceKey = useMemo(() => {
+    return {
+      low_battery: "low_battery",
+      critical_battery: "critical_battery",
+      overspeeding: "overspeeding",
+      harsh_braking: "harsh_braking",
+      rapid_acceleration: "rapid_acceleration",
+      ignition_on: "ignition_on",
+      ignition_off: "ignition_off",
+      power_off: "ignition_off",
+      vehicle_moving: "vehicle_moving",
+      geofence_enter: "geofence_enter",
+      geofence_exit: "geofence_exit",
+      idle_too_long: "idle_too_long",
+      offline: "offline",
+      online: "online",
+      maintenance_due: "maintenance_due",
+      trip_completed: "trip_completed",
+      anomaly_detected: "anomaly_detected",
+      morning_greeting: "morning_greeting",
+    } as const;
+  }, []);
+
+  // Best-effort: detect whether this device is subscribed to Web Push.
+  // If so, background notifications should be delivered by server-side push and we should avoid
+  // generating local system notifications from the realtime foreground listener (prevents duplicates).
+  useEffect(() => {
+    let cancelled = false;
+
+    const checkPushSub = async () => {
+      try {
+        if (typeof window === "undefined") return;
+        if (!("serviceWorker" in navigator)) return;
+        if (!("PushManager" in window)) return;
+
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        if (!cancelled) setHasPushSubscription(!!sub);
+      } catch {
+        if (!cancelled) setHasPushSubscription(false);
+      }
+    };
+
+    void checkPushSub();
+    const onVisibilityChange = () => void checkPushSub();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [permission, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    if (!isAdmin && userDeviceIds.length === 0) return;
+
+    let cancelled = false;
+    const loadVehiclePrefs = async () => {
+      try {
+        const q = supabase.from("vehicle_notification_preferences").select("*").eq("user_id", user.id);
+        const query = isAdmin ? q : q.in("device_id", userDeviceIds);
+        const { data, error } = await query;
+        if (error) throw error;
+
+        const map: Record<string, any> = {};
+        (data || []).forEach((row: any) => {
+          map[row.device_id] = row;
+        });
+        if (!cancelled) setVehiclePrefsByDevice(map);
+      } catch (e) {
+        if (import.meta.env.DEV) console.error("[GlobalAlertListener] Failed loading vehicle_notification_preferences:", e);
+        if (!cancelled) setVehiclePrefsByDevice({});
+      }
+    };
+
+    void loadVehiclePrefs();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, isAdmin, userDeviceIdsKey]);
+
+  const isEventEnabledForDevice = useCallback(
+    (deviceId: string, eventType: string): boolean => {
+      const prefKey = (eventTypeToPreferenceKey as any)[eventType] as string | undefined;
+      if (!prefKey) return false;
+
+      const row = vehiclePrefsByDevice[deviceId];
+      if (!row) {
+        // No row (not configured yet): allow only high-signal safety defaults.
+        return ["critical_battery", "offline", "anomaly_detected", "maintenance_due"].includes(prefKey);
+      }
+      return row[prefKey] === true;
+    },
+    [eventTypeToPreferenceKey, vehiclePrefsByDevice]
+  );
+
+  const isInQuietHours = useCallback((): boolean => {
+    if (!preferences.quietHoursEnabled) return false;
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const [startH, startM] = preferences.quietHoursStart.split(":").map(Number);
+    const [endH, endM] = preferences.quietHoursEnd.split(":").map(Number);
+    const startMinutes = startH * 60 + startM;
+    const endMinutes = endH * 60 + endM;
+    if (startMinutes > endMinutes) return currentMinutes >= startMinutes || currentMinutes < endMinutes;
+    return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+  }, [preferences.quietHoursEnabled, preferences.quietHoursStart, preferences.quietHoursEnd]);
 
   // ✅ FIX: Vibration patterns by severity (for Android locked screens)
   const getVibrationPattern = useCallback((severity: SeverityLevel): number[] => {
@@ -141,13 +254,18 @@ export function GlobalAlertListener() {
     const alertType = normalizeEventType(event.event_type) as AlertType;
     const severity = event.severity as SeverityLevel;
 
+    // DB-driven filtering: if the user disabled this event type for this vehicle, do nothing.
+    if (!isEventEnabledForDevice(event.device_id, alertType)) {
+      return;
+    }
+
     // Play sound based on preferences
-    if (shouldPlaySound(alertType, severity)) {
+    if (preferences.soundEnabled && !isInQuietHours()) {
       playAlertSound(severity, preferences.soundVolume);
     }
 
     // Show custom toast for all relevant alerts
-    if (['critical', 'error', 'warning'].includes(severity) || shouldShowPush(alertType, severity)) {
+    if (['critical', 'error', 'warning'].includes(severity)) {
       let dismissToast = () => {};
       const t = toast({
         // @ts-ignore - Custom component support in sonner
@@ -173,8 +291,14 @@ export function GlobalAlertListener() {
       sendEmailNotification(event);
     }
 
-    // Show push notification based on preferences
-    if (permission === 'granted' && shouldShowPush(alertType, severity)) {
+    // Avoid duplicate system notifications when the app is open:
+    // - Foreground: use in-app toast + sound only.
+    // - Background: rely on server-side Web Push when subscribed.
+    // - Fallback: if not subscribed to Web Push, show a local system notification when hidden.
+    const shouldShowLocalSystemNotification =
+      permission === "granted" && !isAppInForeground() && !hasPushSubscription;
+
+    if (shouldShowLocalSystemNotification) {
       showNotification({
         title: severity === 'critical' ? `🚨 ${event.title}` : event.title,
         body: event.message,
@@ -192,7 +316,7 @@ export function GlobalAlertListener() {
         }
       });
     }
-  }, [toast, playAlertSound, showNotification, permission, shouldPlaySound, shouldShowPush, preferences.soundVolume, sendEmailNotification, isAdmin, userDeviceIds, getVibrationPattern, normalizeEventType]);
+  }, [toast, playAlertSound, showNotification, permission, preferences.soundEnabled, preferences.soundVolume, sendEmailNotification, isAdmin, userDeviceIds, getVibrationPattern, normalizeEventType, isEventEnabledForDevice, isInQuietHours, hasPushSubscription, navigate]);
 
   // Use ref to store the latest handleNewEvent to avoid re-subscribing
   const handleNewEventRef = useRef(handleNewEvent);

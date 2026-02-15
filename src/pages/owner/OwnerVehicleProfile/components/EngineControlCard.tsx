@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -13,12 +13,52 @@ import {
 } from "@/components/ui/alert-dialog";
 import { ShieldAlert, ShieldCheck, Loader2, Power } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useVehicleCommand } from "@/hooks/useVehicleProfile";
+import { useVehicleCommand, useVehicleEvents, type VehicleEvent } from "@/hooks/useVehicleProfile";
+import { formatRelativeTime } from "@/lib/timezone";
 
 interface EngineControlCardProps {
   deviceId: string;
   ignitionOn: boolean | null;
   isOnline: boolean;
+}
+
+export function getLastEngineControlEvent(events: VehicleEvent[] | undefined | null): VehicleEvent | null {
+  if (!events || events.length === 0) return null;
+  const relevant = events
+    .filter((evt) => {
+      return (
+        evt.event_type === "engine_shutdown" ||
+        evt.event_type === "engine_enable" ||
+        evt.event_type === "engine_immobilize" ||
+        evt.event_type === "engine_demobilize"
+      );
+    })
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  if (relevant.length === 0) return null;
+  return relevant[0];
+}
+
+export function getLastEngineControlLabel(event: VehicleEvent | null): string | null {
+  if (!event) return null;
+
+  let action: string;
+  switch (event.event_type) {
+    case "engine_shutdown":
+      action = "Shutdown";
+      break;
+    case "engine_enable":
+    case "engine_demobilize":
+      action = "Engine enabled";
+      break;
+    case "engine_immobilize":
+      action = "Engine immobilized";
+      break;
+    default:
+      action = event.title || "Command";
+  }
+
+  const when = formatRelativeTime(event.created_at);
+  return `Last action: ${action} ${when}`;
 }
 
 export function EngineControlCard({ 
@@ -29,10 +69,21 @@ export function EngineControlCard({
   const [showConfirm, setShowConfirm] = useState(false);
   const [pendingCommand, setPendingCommand] = useState<"immobilize_engine" | "demobilize_engine" | "shutdown_engine" | null>(null);
   const { mutate: executeCommand, isPending: isCommandPending } = useVehicleCommand();
+  const { data: events } = useVehicleEvents(deviceId, { limit: 50 }, true);
 
   // Note: True relay status is not always available in basic GPS heartbeat.
   // We use ignition status only as a safety warning.
   const isEngineRunning = ignitionOn === true;
+
+  const lastControlEvent = useMemo(
+    () => getLastEngineControlEvent(events as VehicleEvent[] | undefined),
+    [events]
+  );
+
+  const lastActionLabel = useMemo(
+    () => getLastEngineControlLabel(lastControlEvent),
+    [lastControlEvent]
+  );
 
   const handleCommandRequest = (command: "demobilize_engine" | "shutdown_engine") => {
     setPendingCommand(command);
@@ -63,48 +114,48 @@ export function EngineControlCard({
             <span className="font-medium text-foreground">Security Control</span>
           </div>
 
-          <div className="flex gap-3">
-            {/* Demobilize (Enable) Button */}
+          <div className="flex">
             <button
-              onClick={() => handleCommandRequest("demobilize_engine")}
+              onClick={() =>
+                handleCommandRequest(isEngineRunning ? "shutdown_engine" : "demobilize_engine")
+              }
               disabled={isCommandPending || !isOnline}
+              aria-pressed={isEngineRunning}
+              aria-busy={isCommandPending}
+              aria-label={
+                isEngineRunning
+                  ? "Engine enabled. Press to initiate shutdown."
+                  : "Engine disabled. Press to enable engine."
+              }
               className={cn(
                 "w-full py-3 rounded-xl font-medium transition-all duration-200 flex items-center justify-center",
-                "shadow-neumorphic-sm bg-card text-green-500",
-                "hover:shadow-neumorphic active:shadow-neumorphic-inset",
-                "disabled:opacity-50 disabled:cursor-not-allowed"
+                "shadow-neumorphic-sm hover:shadow-neumorphic active:shadow-neumorphic-inset",
+                "disabled:opacity-50 disabled:cursor-not-allowed",
+                isEngineRunning ? "bg-card text-green-500" : "bg-card text-muted-foreground"
               )}
             >
-              {isCommandPending && pendingCommand === "demobilize_engine" ? (
+              {isCommandPending ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               ) : (
                 <Power className="h-4 w-4 mr-2" />
               )}
-              Enable Engine
-            </button>
-
-            {/* Shutdown (Emergency) Button - Critical Style */}
-            <button
-              onClick={() => handleCommandRequest("shutdown_engine")}
-              disabled={isCommandPending || !isOnline}
-              className={cn(
-                "w-full py-3 rounded-xl font-medium transition-all duration-200 flex items-center justify-center",
-                "shadow-neumorphic-sm bg-card text-destructive",
-                "hover:shadow-neumorphic active:shadow-neumorphic-inset",
-                "disabled:opacity-50 disabled:cursor-not-allowed"
-              )}
-            >
-              {isCommandPending && pendingCommand === "shutdown_engine" ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Power className="h-4 w-4 mr-2" />
-              )}
-              Shutdown
+              {isCommandPending
+                ? isEngineRunning
+                  ? "Shutting down..."
+                  : "Enabling..."
+                : isEngineRunning
+                  ? "Engine Enabled"
+                  : "Engine Disabled"}
             </button>
           </div>
 
-          <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
-             <span>Status: {isOnline ? "Connected" : "Offline"}</span>
+          <div className="mt-4 flex flex-col gap-1 text-xs text-muted-foreground">
+            <span>Status: {isOnline ? "Connected" : "Offline"}</span>
+            {lastActionLabel && (
+              <span className="text-[11px] text-muted-foreground/80">
+                {lastActionLabel}
+              </span>
+            )}
           </div>
         </CardContent>
       </Card>
