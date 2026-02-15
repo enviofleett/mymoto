@@ -80,7 +80,7 @@ export function OwnerLayout({
       {/* Main Content - Dynamic padding ensures content is never cut off by footer */}
       {/* CRITICAL FIX: overflow-x-hidden prevents horizontal scroll, pb-32 ensures content clears footer */}
       {/* ADDED: pt-[calc(env(safe-area-inset-top)+1rem)] prevents top notch cutoff */}
-      <main className={`flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 pt-[calc(env(safe-area-inset-top)+1rem)] ${footerPadding}`}>
+      <main className={`flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 pt-[calc(env(safe-area-inset-top)+1rem)] pad-fluid ${footerPadding}`}>
         <div className="mx-auto max-w-7xl w-full animate-in fade-in slide-in-from-bottom-4 duration-500">
           {children}
         </div>

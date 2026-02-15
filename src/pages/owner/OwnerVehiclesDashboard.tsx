@@ -17,6 +17,8 @@ import { useAddress } from "@/hooks/useAddress";
 import { Battery, Car, Gauge, MapPin, RefreshCw, ShieldAlert, Zap } from "lucide-react";
 import mymotoLogo from "@/assets/mymoto-logo-new.png";
 import { VehicleRequestDialog } from "@/components/owner/VehicleRequestDialog";
+import { VehicleLocationMap } from "@/components/fleet/VehicleLocationMap";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const STORAGE_KEY = "owner-selected-device-id";
 
@@ -238,7 +240,7 @@ export default function OwnerVehiclesDashboard() {
   return (
     <OwnerLayout>
       <PullToRefresh onRefresh={handlePullToRefresh}>
-        <div className="mx-auto w-full max-w-md pb-6">
+        <div className="mx-auto w-full max-w-md pb-6 page-footer-gap-roomy">
           {/* Header */}
           <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm pt-[env(safe-area-inset-top)] -mt-[env(safe-area-inset-top)]">
             <div className="px-1 pt-2 pb-3">
@@ -377,29 +379,98 @@ export default function OwnerVehiclesDashboard() {
                 <MetricCard title="Battery" value={batteryValue} unit="%" icon={Battery} />
               </div>
 
-              {/* Location card */}
-              <button
-                onClick={() => navigate(`/owner/vehicle/${selectedDeviceId}`)}
+              {/* Unified Location + Map card */}
+              <div
                 className={cn(
-                  "w-full text-left rounded-2xl bg-card shadow-neumorphic-sm p-4 transition-all duration-200",
-                  "hover:shadow-neumorphic active:shadow-neumorphic-inset"
+                  "w-full rounded-2xl rounded-system rounded-fluid bg-card shadow-neumorphic-sm overflow-hidden transition-all duration-200 footer-gap",
+                  "hover:shadow-neumorphic",
+                  "mb-10 md:mb-12 lg:mb-16 xl:mb-20"
                 )}
               >
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-full shadow-neumorphic-sm bg-card flex items-center justify-center shrink-0">
-                    <MapPin className="h-5 w-5 text-accent" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs text-muted-foreground">Location</div>
-                    <div className="mt-1 text-sm text-foreground font-medium leading-snug">
-                      {displayData?.latitude == null || displayData?.longitude == null
-                        ? "Location unavailable"
-                        : address || "Address not found"}
+                <div className="relative">
+                  {displayData?.latitude != null && displayData?.longitude != null ? (
+                    <VehicleLocationMap
+                      latitude={displayData.latitude}
+                      longitude={displayData.longitude}
+                      address={address}
+                      vehicleName={selectedVehicle?.name || selectedDeviceId}
+                      showAddressCard={false}
+                      mapHeight="h-48 md:h-64"
+                      className="rounded-none"
+                    />
+                  ) : (
+                    <div className="h-48 md:h-64 flex items-center justify-center bg-muted/30">
+                      <div className="text-center">
+                        <MapPin className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                        <p className="text-xs text-muted-foreground">Location unavailable</p>
+                      </div>
                     </div>
-                    <div className="mt-2 text-xs text-accent font-medium">View details</div>
+                  )}
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div
+                          className="absolute bottom-3 right-3 z-20 px-3 py-1.5 rounded-full bg-background/80 backdrop-blur-sm border border-border text-xs text-muted-foreground cursor-help select-none"
+                          role="button"
+                          tabIndex={0}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }
+                          }}
+                          aria-label="Hint"
+                        >
+                          Tap for hint
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">
+                        Tap the Location row below or its View details link to open the vehicle profile.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <div
+                  className="p-4 cursor-pointer"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => navigate(`/owner/vehicle/${selectedDeviceId}`)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      navigate(`/owner/vehicle/${selectedDeviceId}`);
+                      e.preventDefault();
+                    }
+                  }}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-full shadow-neumorphic-sm bg-card flex items-center justify-center shrink-0">
+                      <MapPin className="h-5 w-5 text-accent" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs text-muted-foreground">Location</div>
+                      <div className="mt-1 text-sm text-foreground font-medium leading-snug">
+                        {displayData?.latitude == null || displayData?.longitude == null
+                          ? "Location unavailable"
+                          : address || "Address not found"}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/owner/vehicle/${selectedDeviceId}`);
+                        }}
+                        className="mt-2 text-xs text-accent font-medium underline underline-offset-2 hover:opacity-90"
+                      >
+                        View details
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </button>
+              </div>
             </div>
           )}
         </div>

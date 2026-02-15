@@ -6,21 +6,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Route,
-  Bell,
   CalendarIcon,
   Play,
   ExternalLink,
   MapPin,
   AlertTriangle,
   AlertCircle,
-  Battery,
-  Zap,
-  Power,
-  Info,
   RefreshCw,
   CheckCircle2,
   Radio,
-  Settings,
   Milestone,
   Gauge,
   Clock,
@@ -31,12 +25,10 @@ import type { DateRange } from "react-day-picker";
 import type { VehicleTrip, VehicleEvent, VehicleDailyStats } from "@/hooks/useVehicleProfile";
 import type { Gps51TripSyncStatus } from "@/hooks/useTripSync";
 import { useAddress } from "@/hooks/useAddress";
-import { useAuth } from "@/contexts/AuthContext";
-import { VehicleNotificationSettings } from "@/components/fleet/VehicleNotificationSettings";
+// Auth not needed for removed notifications tab
 import { GeofenceManager } from "@/components/fleet/GeofenceManager";
 import { TripSyncProgress } from "@/components/fleet/TripSyncProgress";
 import { validateTripContinuity, type ContinuityIssue } from "@/lib/trip-validation";
-import { ReportFilterBar } from "./ReportFilterBar";
 import { MileageCharts } from "./MileageCharts";
 
 interface ReportsSectionProps {
@@ -61,10 +53,9 @@ interface ReportsSectionProps {
 export function ReportsSection({
   deviceId,
   trips,
-  events,
+  // events,
   dailyStats,
   tripsLoading,
-  eventsLoading,
   statsLoading,
   dateRange,
   onDateRangeChange,
@@ -77,7 +68,6 @@ export function ReportsSection({
   isAutoSyncing = false,
 }: ReportsSectionProps) {
   const isFilterActive = !!dateRange?.from;
-  const { user } = useAuth();
   const lastSyncAt = syncStatus?.last_trip_sync_at ?? null;
   const syncError = syncStatus?.trip_sync_error ?? null;
   const tripsSynced = syncStatus?.trips_synced_count ?? 0;
@@ -164,68 +154,12 @@ export function ReportsSection({
     return sortedGroups;
   }, [trips]);
 
-  // Group events by date
-  const groupedEvents = useMemo(() => {
-    if (!events || events.length === 0) return [];
-    
-    const groups: { date: Date; label: string; events: VehicleEvent[] }[] = [];
-    
-    events.forEach(event => {
-      const eventDate = new Date(event.created_at);
-      const eventDateStr = formatLagos(eventDate, 'yyyy-MM-dd');
-      const existingGroup = groups.find(g => formatLagos(g.date, 'yyyy-MM-dd') === eventDateStr);
-      
-      if (existingGroup) {
-        existingGroup.events.push(event);
-      } else {
-        let label: string;
-        const todayStr = formatLagos(new Date(), 'yyyy-MM-dd');
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayStr = formatLagos(yesterday, 'yyyy-MM-dd');
-        
-        if (eventDateStr === todayStr) {
-          label = "Today";
-        } else if (eventDateStr === yesterdayStr) {
-          label = "Yesterday";
-        } else {
-          label = formatLagos(eventDate, "EEE, MMM d");
-        }
-        groups.push({ date: eventDate, label, events: [event] });
-      }
-    });
-    
-    return groups.sort((a, b) => b.date.getTime() - a.date.getTime());
-  }, [events]);
-
-  const getEventIcon = (eventType: string) => {
-    switch (eventType) {
-      case "overspeed":
-        return <AlertTriangle className="h-4 w-4 text-yellow-500 mt-0.5" />;
-      case "low_battery":
-        return <Battery className="h-4 w-4 text-orange-500 mt-0.5" />;
-      case "ignition_on":
-        return <Zap className="h-4 w-4 text-green-500 mt-0.5" />;
-      case "ignition_off":
-        return <Power className="h-4 w-4 text-muted-foreground mt-0.5" />;
-      case "offline":
-        return <Info className="h-4 w-4 text-red-500 mt-0.5" />;
-      default:
-        return <Info className="h-4 w-4 text-muted-foreground mt-0.5" />;
-    }
-  };
+  // Events tab removed
 
   const allTripsCount = trips?.length ?? 0;
   const allTripsDistance = trips?.reduce((sum, t) => sum + (t.distance_km ?? 0), 0) ?? 0;
 
-  const mileageSummary = useMemo(() => {
-    if (!dailyStats || dailyStats.length === 0) return null;
-    
-    const totalKm = dailyStats.reduce((sum, day) => sum + day.total_distance_km, 0);
-    const avgKm = totalKm / dailyStats.length;
-    
-    return { totalKm, avgKm };
-  }, [dailyStats]);
+  // Mileage summary removed
 
   return (
     <Card className="border-border bg-card/50">
@@ -271,12 +205,7 @@ export function ReportsSection({
                  )}
             </div>
             
-            <ReportFilterBar 
-                dateRange={dateRange}
-                onDateRangeChange={onDateRangeChange}
-                onGenerate={onRequestTrips}
-                isLoading={tripsLoading || statsLoading}
-            />
+            {/* Unified filter moved to page level */}
         </div>
 
         {/* Sync Status Details */}
@@ -310,17 +239,9 @@ export function ReportsSection({
               <Gauge className="h-4 w-4 mr-2" />
               Mileage
             </TabsTrigger>
-            <TabsTrigger value="alarms" className="text-sm">
-              <Bell className="h-4 w-4 mr-2" />
-              Alarms
-            </TabsTrigger>
             <TabsTrigger value="geofence" className="text-sm">
               <MapPin className="h-4 w-4 mr-2" />
               Geofence
-            </TabsTrigger>
-            <TabsTrigger value="notifications" className="text-sm">
-              <Settings className="h-4 w-4 mr-2" />
-              Notifications
             </TabsTrigger>
           </TabsList>
 
@@ -364,30 +285,11 @@ export function ReportsSection({
                       const issue = continuityIssues.get(trip.id);
                       return (
                         <div key={trip.id} className="space-y-2">
-                           {issue && (
-                              <div className={cn(
-                                "mx-2 p-3 rounded-md border flex items-start gap-2 text-xs",
-                                issue.severity === 'error' 
-                                  ? "bg-red-500/10 border-red-200 text-red-700 dark:text-red-400"
-                                  : "bg-yellow-500/10 border-yellow-200 text-yellow-700 dark:text-yellow-400"
-                              )}>
-                                <AlertTriangle className={cn(
-                                  "h-4 w-4 mt-0.5 shrink-0",
-                                  issue.severity === 'error' ? "text-red-500" : "text-yellow-500"
-                                )} />
-                                <div>
-                                  <span className="font-semibold block">Continuity Break Detected</span>
-                                  <span>
-                                    Gap of {issue.distanceGapKm}km ({issue.timeGapMinutes} min) 
-                                    detected before this trip.
-                                  </span>
-                                </div>
-                              </div>
-                            )}
                           <TripCard
                             trip={trip}
                             index={index}
                             onPlayTrip={onPlayTrip}
+                            continuityIssue={issue}
                           />
                         </div>
                       );
@@ -472,83 +374,11 @@ export function ReportsSection({
             </div>
           </TabsContent>
 
-          {/* Alarms Tab */}
-          <TabsContent value="alarms" className="mt-0">
-            {/* ... alarms content ... */}
-            <div className="space-y-4 max-h-96 overflow-y-auto">
-              {eventsLoading ? (
-                <div className="space-y-2">
-                  <Skeleton className="h-16 w-full" />
-                  <Skeleton className="h-16 w-full" />
-                </div>
-              ) : groupedEvents.length > 0 ? (
-                groupedEvents.map((group) => (
-                  <div key={group.label} className="space-y-2">
-                    <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      {group.label}
-                    </div>
-                    {group.events.map((event) => (
-                      <div
-                        key={event.id}
-                        className={cn(
-                          "p-3 rounded-lg",
-                          event.severity === 'error' || event.severity === 'warning' 
-                            ? "bg-yellow-500/10" 
-                            : "bg-muted/50"
-                        )}
-                      >
-                        <div className="flex items-start gap-3">
-                          {getEventIcon(event.event_type)}
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium text-foreground">{event.title}</div>
-                            <div className="text-sm text-muted-foreground truncate">{event.message}</div>
-                            <div className="text-xs text-muted-foreground mt-1">
-                              {formatLagos(event.created_at, 'h:mm a')}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ))
-              ) : (
-                <div className="text-center py-6 text-muted-foreground">
-                  <Bell className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">No alerts recorded</p>
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center justify-between mt-4 pt-3 border-t border-border">
-              <span className="text-sm text-muted-foreground">Total alerts</span>
-              <div>
-                <span className="font-medium">{events?.length ?? 0}</span>
-                <span className="text-yellow-500 ml-2">
-                  {events?.filter(a => a.severity === 'warning' || a.severity === 'error').length ?? 0} warnings
-                </span>
-              </div>
-            </div>
-          </TabsContent>
-
           {/* Geofence Tab */}
           <TabsContent value="geofence" className="mt-0">
             <div className="max-h-[600px] overflow-y-auto">
               <GeofenceManager deviceId={deviceId} />
             </div>
-          </TabsContent>
-
-          {/* Notifications Tab */}
-          <TabsContent value="notifications" className="mt-0">
-            {!user?.id ? (
-              <div className="text-center py-6 text-muted-foreground">
-                <Bell className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p className="text-sm">Please sign in to configure notifications</p>
-              </div>
-            ) : (
-              <div className="max-h-96 overflow-y-auto">
-                <VehicleNotificationSettings deviceId={deviceId} userId={user.id} />
-              </div>
-            )}
           </TabsContent>
         </Tabs>
       </CardContent>
@@ -559,11 +389,13 @@ export function ReportsSection({
 function TripCard({ 
   trip, 
   index, 
-  onPlayTrip 
+  onPlayTrip,
+  continuityIssue
 }: { 
   trip: VehicleTrip; 
   index: number; 
   onPlayTrip: (trip: VehicleTrip) => void;
+  continuityIssue?: ContinuityIssue;
 }) {
   const observerOptions = useMemo(() => ({ rootMargin: "200px" }), []);
   const { ref, isInView } = useInView<HTMLDivElement>(observerOptions);
@@ -619,6 +451,20 @@ function TripCard({
         <div>
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-semibold text-foreground">Trip {index + 1}</h3>
+            {continuityIssue && (
+              <Badge variant="outline" className={cn(
+                "text-[10px] h-5 px-1.5 font-normal",
+                continuityIssue.severity === 'error' 
+                  ? "border-red-500/40 text-red-600"
+                  : "border-yellow-500/40 text-yellow-600"
+              )}>
+                <AlertTriangle className={cn(
+                  "h-3 w-3 mr-1",
+                  continuityIssue.severity === 'error' ? "text-red-500" : "text-yellow-500"
+                )} />
+                Gap {continuityIssue.distanceGapKm}km/{continuityIssue.timeGapMinutes}m
+              </Badge>
+            )}
             {isIdling && trip.distance_km != null && (
               <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-normal bg-blue-500/10 text-blue-600 border-blue-200">
                 Idling

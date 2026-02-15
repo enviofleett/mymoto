@@ -106,6 +106,10 @@ export function VehicleLocationMap({
     return getVehicleStatus(isOnline, speed || 0);
   }, [isOnline, speed]);
 
+  const hasRoute = useMemo(() => {
+    return (routeCoords && routeCoords.length > 1) || !!routeStartEnd;
+  }, [routeCoords, routeStartEnd]);
+
   // Google Maps link
   const googleMapsLink = useMemo(() => {
     return hasValidCoordinates
@@ -129,7 +133,7 @@ export function VehicleLocationMap({
   // Initialize map once
   useEffect(() => {
     if (!mapboxEnabled) return;
-    if (!mapContainer.current || !hasValidCoordinates || map.current) return;
+    if (!mapContainer.current || (!hasValidCoordinates && !hasRoute) || map.current) return;
 
     const initMap = async () => {
       const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
@@ -144,10 +148,18 @@ export function VehicleLocationMap({
         mapboxRef.current = mapboxgl;
         mapboxgl.accessToken = token;
 
+        const initialCenter = hasValidCoordinates
+          ? [longitude as number, latitude as number]
+          : routeStartEnd
+            ? [routeStartEnd.start.lon, routeStartEnd.start.lat]
+            : (routeCoords && routeCoords.length > 0)
+              ? [routeCoords[0].lon, routeCoords[0].lat]
+              : [0, 0];
+
         const mapInstance = new mapboxgl.Map({
           container: mapContainer.current,
           style: 'mapbox://styles/mapbox/dark-v11',
-          center: [longitude as number, latitude as number],
+          center: initialCenter as any,
           zoom: MAP_ZOOM,
           pitch: MAP_PITCH,
           bearing: heading || 0,
@@ -189,7 +201,7 @@ export function VehicleLocationMap({
       map.current = null;
       setMapLoaded(false);
     };
-  }, [mapboxEnabled, hasValidCoordinates]);
+  }, [mapboxEnabled, hasValidCoordinates, hasRoute, routeCoords, routeStartEnd]);
 
   // Update marker when position/status changes
   useEffect(() => {
@@ -460,7 +472,7 @@ export function VehicleLocationMap({
   }
 
   // Loading state
-  if (!hasValidCoordinates) {
+  if (!hasValidCoordinates && !hasRoute) {
     return (
       <div className={cn("relative", className)}>
         <div className={cn("w-full rounded-xl bg-muted/50 flex items-center justify-center", mapHeight)}>

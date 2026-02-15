@@ -1,6 +1,6 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { VehicleLocationMap } from "@/components/fleet/VehicleLocationMap";
-import { RefreshCw, MapPin } from "lucide-react";
+import { RefreshCw, MapPin, Loader2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +18,8 @@ interface VehicleMapSectionProps {
   routeCoords?: Array<{ lat: number; lon: number }>;
   routeStartEnd?: { start: { lat: number; lon: number }, end: { lat: number; lon: number } } | undefined;
   geofences?: Array<{ latitude: number; longitude: number; radius: number; name?: string }>;
+  isRouteLoading?: boolean;
+  onViewDetails?: () => void;
 }
 
 export function VehicleMapSection({
@@ -34,6 +36,8 @@ export function VehicleMapSection({
   routeCoords,
   routeStartEnd,
   geofences,
+  isRouteLoading = false,
+  onViewDetails,
 }: VehicleMapSectionProps) {
   // Show loading skeleton while data is being fetched
   if (isLoading) {
@@ -96,13 +100,30 @@ export function VehicleMapSection({
           vehicleName={vehicleName}
           isOnline={isOnline}
           showAddressCard={true}
-          mapHeight="h-80"
+          mapHeight="h-64 md:h-80 lg:h-[28rem]"
           className="rounded-2xl"
           routeCoords={routeCoords}
           routeStartEnd={routeStartEnd}
           geofences={geofences}
         />
       </div>
+      {isRouteLoading && (
+        <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
+          <div className="px-3 py-2 rounded-full bg-card/80 backdrop-blur-md shadow-neumorphic-sm flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+            <span className="text-xs text-foreground">Loading route…</span>
+          </div>
+        </div>
+      )}
+      {/* Tap hint / details action */}
+      <button
+        type="button"
+        onClick={onViewDetails}
+        aria-label="Tap to view map details"
+        className="absolute bottom-3 right-3 z-20 px-3 py-1.5 rounded-full bg-background/80 backdrop-blur-sm border border-border text-xs text-muted-foreground hover:text-foreground transition-colors"
+      >
+        Tap to view details
+      </button>
       {/* Neumorphic refresh button */}
       <button
         onClick={onRefresh}

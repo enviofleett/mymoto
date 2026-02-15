@@ -24,6 +24,10 @@ import { VehicleMapSection } from "./components/VehicleMapSection";
 import { CurrentStatusCard } from "./components/CurrentStatusCard";
 import { StatusMetricsRow } from "./components/StatusMetricsRow";
 import { EngineControlCard } from "./components/EngineControlCard";
+import { ReportsSection } from "./components/ReportsSection";
+import { MileageSection } from "./components/MileageSection";
+import { TripPlaybackModal } from "./components/TripPlaybackModal";
+import { ReportFilterBar } from "./components/ReportFilterBar";
  
 
 export default function OwnerVehicleProfile() {
@@ -36,8 +40,11 @@ export default function OwnerVehicleProfile() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [routeCoords, setRouteCoords] = useState<Array<{ lat: number; lon: number }> | undefined>(undefined);
+  const [routeLoading, setRouteLoading] = useState(false);
   const [geofenceOverlays, setGeofenceOverlays] = useState<Array<{ latitude: number; longitude: number; radius: number; name?: string }>>([]);
   const [directLiveOverride, setDirectLiveOverride] = useState<{ data: VehicleLiveData; fetchedAt: number } | null>(null);
+  const [modalTrip, setModalTrip] = useState<VehicleTrip | null>(null);
+  const [isModalOpen, setModalOpen] = useState(false);
 
   // ============================================================================
   // LIVE DATA FETCHING
@@ -404,26 +411,15 @@ export default function OwnerVehicleProfile() {
 
         {/* Main Content */}
         <div className="flex-1 pb-32 space-y-4">
-            {/* Map Section */}
-            <VehicleMapSection
-              latitude={displayData?.latitude ?? null}
-              longitude={displayData?.longitude ?? null}
-              heading={displayData?.heading ?? null}
-              speed={displayData?.speed ?? 0}
-              address={address}
-              vehicleName={displayName}
-              isOnline={status === "online" || status === "charging"}
-              // Don't block map rendering if we already have fallback coordinates (ownerVehicles/DB).
-              isLoading={isInitialLoading}
-              isRefreshing={isRefreshing}
-              onRefresh={handleRefresh}
-              routeCoords={routeCoords}
-              routeStartEnd={routeCoords && routeCoords.length > 1 ? {
-                start: routeCoords[0],
-                end: routeCoords[routeCoords.length - 1]
-              } : undefined}
-              geofences={geofenceOverlays}
+            {/* Unified Filter */}
+            <ReportFilterBar
+              dateRange={dateRange}
+              onDateRangeChange={setDateRange}
+              onGenerate={handleRequestTrips}
+              isLoading={tripsLoading || statsLoading}
+              className="rounded-lg"
             />
+            {/* Map Section moved to bottom */}
 
             {/* Current Status */}
             <CurrentStatusCard 
@@ -447,8 +443,78 @@ export default function OwnerVehicleProfile() {
               />
             </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-4">
+                <MileageSection
+                  deviceId={resolvedDeviceId}
+                  totalMileage={displayData?.totalMileageKm ?? null}
+                  dailyStats={dailyStats}
+                  mileageStats={undefined}
+                  dailyMileage={undefined}
+                  dateRange={dateRange}
+                />
+              </div>
+              <div className="space-y-4">
+                <ReportsSection
+                  deviceId={resolvedDeviceId}
+                  trips={trips}
+                  events={events}
+                  dailyStats={dailyStats}
+                  tripsLoading={tripsLoading}
+                  eventsLoading={eventsLoading}
+                  statsLoading={statsLoading}
+                  dateRange={dateRange}
+                  onDateRangeChange={setDateRange}
+                  onRequestTrips={handleRequestTrips}
+                  syncStatus={syncStatus}
+                  isSyncing={isSyncing}
+                  onForceSync={handleForceSync}
+                  onPlayTrip={(trip) => {
+                    setModalTrip(trip);
+                    setModalOpen(true);
+                  }}
+                  isRealtimeActive={status === 'online'}
+                />
+              </div>
+            </div>
             
+            {/* Map Section */}
+            <VehicleMapSection
+              latitude={displayData?.latitude ?? null}
+              longitude={displayData?.longitude ?? null}
+              heading={displayData?.heading ?? null}
+              speed={displayData?.speed ?? 0}
+              address={address}
+              vehicleName={displayName}
+              isOnline={status === "online" || status === "charging"}
+              isLoading={isInitialLoading}
+              isRefreshing={isRefreshing}
+              onRefresh={handleRefresh}
+              routeCoords={routeCoords}
+              routeStartEnd={routeCoords && routeCoords.length > 1 ? {
+                start: routeCoords[0],
+                end: routeCoords[routeCoords.length - 1]
+              } : undefined}
+              geofences={geofenceOverlays}
+              isRouteLoading={false}
+              onViewDetails={() => {
+                toast.info("Map details", {
+                  description: "Tap the map for current status; open Trips for history.",
+                });
+              }}
+            />
         </div>
+        {modalTrip && (
+          <TripPlaybackModal
+            open={isModalOpen}
+            deviceId={resolvedDeviceId}
+            trip={modalTrip}
+            onClose={() => {
+              setModalOpen(false);
+              setModalTrip(null);
+            }}
+          />
+        )}
       </div>
 
       {/* Vehicle Settings Dialog */}

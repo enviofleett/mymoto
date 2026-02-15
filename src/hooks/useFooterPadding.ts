@@ -14,11 +14,11 @@ export const NAV_HEIGHTS = {
 
 /**
  * Minimum spacing between content and footer (in rem)
- * Ensures content is never cut off
- * Increased to 6rem (96px) - 20% more than previous 5rem to ensure no cutoff
+ * Ensures content is never cut off while avoiding unnecessary scroll
+ * Desktop: 3rem (48px), Tiny: 2rem (32px)
  */
-export const MIN_FOOTER_SPACING = 6; // 6rem = 96px (20% increase from 5rem)
-export const MIN_FOOTER_SPACING_TINY = 4; // 4rem = 64px (for <=360px wide screens)
+export const MIN_FOOTER_SPACING = 3; // 3rem = 48px
+export const MIN_FOOTER_SPACING_TINY = 2; // 2rem = 32px (for <=360px wide screens)
 
 /**
  * Hook to calculate the proper bottom padding for main content

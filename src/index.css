@@ -55,6 +55,9 @@
     --sidebar-accent-foreground: 0 0% 98%;
     --sidebar-border: 220 12% 22%;
     --sidebar-ring: 24 95% 53%;
+    --footer-gap-min: 20px;
+    --footer-gap-vw: 5vw;
+    --footer-gap-max: 60px;
   }
 
   .dark {
@@ -91,6 +94,32 @@
     --nav-height-regular: 4rem; /* 64px - BottomNavigation h-16 */
     --nav-height-owner: 5rem; /* 80px - OwnerLayout nav h-20 */
     --nav-spacing-min: 3rem; /* 48px - Minimum spacing between content and footer */
+  }
+
+  /* Responsive curvature scaling (fluid border radius) */
+  /* Small phones */
+  @media (max-width: 360px) {
+    :root {
+      --radius: 0.6rem;
+    }
+  }
+  /* Phones */
+  @media (max-width: 480px) and (min-width: 361px) {
+    :root {
+      --radius: 0.65rem;
+    }
+  }
+  /* Tablets */
+  @media (min-width: 768px) {
+    :root {
+      --radius: 0.9rem;
+    }
+  }
+  /* Desktops */
+  @media (min-width: 1024px) {
+    :root {
+      --radius: 1rem;
+    }
   }
 }
 
@@ -174,5 +203,39 @@
 
   .no-scrollbar::-webkit-scrollbar {
     display: none;
+  }
+
+  /* Fluid rounded corner utility: scales with viewport while respecting design system radius */
+  .rounded-system {
+    border-radius: var(--radius);
+  }
+  .rounded-fluid {
+    border-radius: clamp(12px, 3vw, 24px);
+  }
+
+  /* Fluid padding utility for touch-friendly spacing */
+  .pad-fluid {
+    padding: clamp(12px, 3.5vw, 24px);
+  }
+
+  /* Fluid card container: rounded + padding combined */
+  .curve-section {
+    border-radius: clamp(12px, 3vw, 24px);
+    padding: clamp(12px, 3.5vw, 24px);
+  }
+
+  /* Ensures consistent vertical spacing before fixed footer */
+  .footer-gap {
+    margin-bottom: clamp(var(--footer-gap-min), var(--footer-gap-vw), var(--footer-gap-max));
+  }
+  .page-footer-gap-compact {
+    --footer-gap-min: 16px;
+    --footer-gap-vw: 4vw;
+    --footer-gap-max: 40px;
+  }
+  .page-footer-gap-roomy {
+    --footer-gap-min: 28px;
+    --footer-gap-vw: 6vw;
+    --footer-gap-max: 72px;
   }
 }
