@@ -1,3 +1,6 @@
+import { invokeEdgeFunction } from "@/integrations/supabase/edge";
+import { getMapboxAccessToken, getMapboxGeocodingCountry } from "@/utils/mapbox-config";
+
 // Mapbox Geocoding Utility
 export interface MapboxFeature {
   id: string;
@@ -29,30 +32,63 @@ export interface MapboxGeocodingResponse {
   attribution: string;
 }
 
+function shouldUseEdgeFallback(status: number | null, error: unknown): boolean {
+  if (status === 401 || status === 403 || status === 429) return true;
+  if (error instanceof TypeError) return true; // network/CORS failures from fetch
+  return false;
+}
+
+async function searchViaEdge(query: string, country: string | undefined, limit: number): Promise<MapboxFeature[]> {
+  try {
+    const data = await invokeEdgeFunction<{ features?: MapboxFeature[] }>("forward-geocode", {
+      query,
+      country,
+      limit,
+    });
+    return Array.isArray(data?.features) ? data.features : [];
+  } catch (error) {
+    console.error("Edge geocoding fallback failed:", error);
+    return [];
+  }
+}
+
 /**
  * Search addresses using Mapbox Geocoding API
  * @param query - Search query string
- * @param country - Optional country code (default: 'NG' for Nigeria)
+ * @param country - Optional country code override; defaults to VITE_MAPBOX_GEOCODING_COUNTRY (if set)
  * @param limit - Maximum number of results (default: 5)
  * @returns Array of Mapbox features
  */
 export async function searchAddresses(
   query: string,
-  country: string = 'NG',
+  country?: string,
   limit: number = 5
 ): Promise<MapboxFeature[]> {
-  const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
-  
+  const normalizedQuery = query.trim();
+  if (!normalizedQuery) return [];
+
+  const token = getMapboxAccessToken();
+  const resolvedCountry = country?.trim() || getMapboxGeocodingCountry();
+  const safeLimit = Math.max(1, Math.min(10, Number.isFinite(limit) ? limit : 5));
+
   if (!token) {
-    console.warn('VITE_MAPBOX_ACCESS_TOKEN not configured');
-    return [];
+    console.warn("VITE_MAPBOX_ACCESS_TOKEN not configured; using edge geocoding fallback");
+    return searchViaEdge(normalizedQuery, resolvedCountry, safeLimit);
   }
 
+  let status: number | null = null;
   try {
-    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}&country=${country}&limit=${limit}`;
-    
+    const params = new URLSearchParams({
+      access_token: token,
+      limit: String(safeLimit),
+      types: "place,address,poi,locality,neighborhood",
+    });
+    if (resolvedCountry) params.set("country", resolvedCountry);
+
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(normalizedQuery)}.json?${params.toString()}`;
     const response = await fetch(url);
-    
+    status = response.status;
+
     if (!response.ok) {
       throw new Error(`Mapbox API error: ${response.status}`);
     }
@@ -60,7 +96,10 @@ export async function searchAddresses(
     const data: MapboxGeocodingResponse = await response.json();
     return data.features || [];
   } catch (error) {
-    console.error('Geocoding error:', error);
+    if (shouldUseEdgeFallback(status, error)) {
+      return searchViaEdge(normalizedQuery, resolvedCountry, safeLimit);
+    }
+    console.error("Geocoding error:", error);
     return [];
   }
 }
@@ -83,7 +122,7 @@ export function getStaticMapUrl(
   zoom: number = 15,
   style: string = 'streets-v12'
 ): string {
-  const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
+  const token = getMapboxAccessToken();
   
   if (!token) {
     console.warn('VITE_MAPBOX_ACCESS_TOKEN not configured');

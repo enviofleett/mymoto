@@ -20,6 +20,7 @@ export default defineConfig(({ mode }) => ({
   },
   build: {
     sourcemap: false,
+    chunkSizeWarningLimit: 2000,
     // Use esbuild minifier to avoid terser + workbox SW generation conflicts
     minify: "esbuild",
     rollupOptions: {

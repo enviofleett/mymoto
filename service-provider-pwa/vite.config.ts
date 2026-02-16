@@ -66,9 +66,22 @@ export default defineConfig(({ mode }) => ({
             handler: "NetworkFirst",
             options: {
               cacheName: "supabase-cache",
+              cacheableResponse: { statuses: [0, 200] },
               expiration: {
                 maxEntries: 100,
                 maxAgeSeconds: 60 * 60,
+              },
+            },
+          },
+          {
+            urlPattern: /^https:\/\/api\.mapbox\.com\/geocoding\/.*/i,
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "mapbox-geocoding",
+              cacheableResponse: { statuses: [0, 200] },
+              expiration: {
+                maxEntries: 50,
+                maxAgeSeconds: 60 * 60 * 6,
               },
             },
           },

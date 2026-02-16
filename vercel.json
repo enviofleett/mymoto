@@ -1,8 +1,16 @@
 {
-  "rewrites": [
+  "buildCommand": "npm run build:all:pwa",
+  "routes": [
     {
-      "source": "/(.*)",
-      "destination": "/index.html"
+      "handle": "filesystem"
+    },
+    {
+      "src": "^/partner(?:/.*)?$",
+      "dest": "/partner/index.html"
+    },
+    {
+      "src": "^/(.*)$",
+      "dest": "/index.html"
     }
   ]
 }

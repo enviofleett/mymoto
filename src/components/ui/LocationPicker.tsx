@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Search, MapPin, Loader2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { getAddressFromCoordinates } from "@/utils/geocoding";
-import { extractCity } from "@/utils/mapbox-geocoding";
+import { extractCity, searchAddresses, type MapboxFeature } from "@/utils/mapbox-geocoding";
 
 function supportsWebGL2(): boolean {
   try {
@@ -43,7 +43,7 @@ export function LocationPicker({ onLocationSelect, initialLocation }: LocationPi
   const map = useRef<MapboxMap | null>(null);
   const marker = useRef<MapboxMarker | null>(null);
   const [query, setQuery] = useState('');
-  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [suggestions, setSuggestions] = useState<MapboxFeature[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [selectedAddress, setSelectedAddress] = useState('');
   const [mapboxLoading, setMapboxLoading] = useState(false);
@@ -147,14 +147,8 @@ export function LocationPicker({ onLocationSelect, initialLocation }: LocationPi
 
     setIsSearching(true);
     try {
-      const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
-      const response = await fetch(
-        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
-          searchText
-        )}.json?access_token=${token}&country=NG&types=place,address,poi`
-      );
-      const data = await response.json();
-      setSuggestions(data.features || []);
+      const results = await searchAddresses(searchText);
+      setSuggestions(results);
     } catch (error) {
       console.error('Geocoding error:', error);
     } finally {
@@ -174,7 +168,7 @@ export function LocationPicker({ onLocationSelect, initialLocation }: LocationPi
     }
   };
 
-  const handleSuggestionClick = (feature: any) => {
+  const handleSuggestionClick = (feature: MapboxFeature) => {
     const [lng, lat] = feature.center;
     
     if (map.current && marker.current) {
@@ -182,8 +176,10 @@ export function LocationPicker({ onLocationSelect, initialLocation }: LocationPi
       marker.current.setLngLat([lng, lat]);
     }
 
-    const cityContext = feature.context?.find((c: any) => c.id.startsWith('place'))?.text || 
-                       feature.context?.find((c: any) => c.id.startsWith('region'))?.text || '';
+    const cityContext =
+      feature.context?.find((c) => c.id.startsWith('place'))?.text ||
+      feature.context?.find((c) => c.id.startsWith('region'))?.text ||
+      '';
 
     const locationData = {
       address: feature.place_name,

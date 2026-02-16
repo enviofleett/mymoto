@@ -1,14 +1,9 @@
 import pLimit from "p-limit";
 import { invokeEdgeFunction } from "@/integrations/supabase/edge";
+import { getMapboxAccessToken } from "@/utils/mapbox-config";
 
 // Limit concurrent requests to reduce 429s and general PWA network pressure.
 const limit = pLimit(2);
-
-function getMapboxToken(): string | undefined {
-  // Allow tests to override without mutating import.meta.env (which can be readonly).
-  const override = (globalThis as any).__VITE_MAPBOX_ACCESS_TOKEN__;
-  return override ?? import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
-}
 
 function isValidCoord(n: unknown): n is number {
   return typeof n === "number" && Number.isFinite(n) && n !== 0;
@@ -57,7 +52,7 @@ export async function getAddressFromCoordinates(lat: number, lon: number): Promi
   }
 
   return limit(async () => {
-    const token = getMapboxToken();
+    const token = getMapboxAccessToken();
 
     // Try Mapbox first when configured.
     if (token) {

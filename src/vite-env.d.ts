@@ -3,6 +3,8 @@
 
 interface ImportMetaEnv {
   readonly VITE_VAPID_PUBLIC_KEY?: string;
+  readonly VITE_MAPBOX_ACCESS_TOKEN?: string;
+  readonly VITE_MAPBOX_GEOCODING_COUNTRY?: string;
 }
 
 interface ImportMeta {

@@ -8,6 +8,7 @@
     "dev:open": "./scripts/start-and-open.sh",
     "dev:vehicle": "./scripts/start-and-open.sh /owner/vehicle/358657105966092",
     "build": "vite build",
+    "build:all:pwa": "node scripts/build-all-pwa.mjs",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "test": "vitest run",
@@ -99,7 +100,6 @@
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0",
-    "vercel": "^50.9.3",
     "vite": "^5.4.19",
     "vitest": "^4.0.18"
   },

@@ -132,7 +132,7 @@ const App = () => {
               <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/login" element={<PwaLogin />} />
-              <Route path="/app" element={<InstallApp />} />
+              <Route path="/install" element={<InstallApp />} />
               
               {/* Role-based redirect */}
               <Route path="/redirect" element={<RoleBasedRedirect />} />
