@@ -329,6 +329,17 @@ export default function OwnerVehiclesDashboard() {
                     </SelectContent>
                   </Select>
                 </div>
+
+                <VehicleRequestDialog
+                  trigger={
+                    <button className="w-11 h-11 rounded-full bg-card shadow-neumorphic-sm flex items-center justify-center transition-all duration-200 hover:shadow-neumorphic active:shadow-neumorphic-inset ring-2 ring-accent/50">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                    </button>
+                  }
+                />
               </div>
             </div>
           </div>
@@ -388,10 +399,21 @@ export default function OwnerVehiclesDashboard() {
 
               <div className="flex items-center justify-between rounded-2xl bg-card shadow-neumorphic-inset px-4 py-3">
                 <div className="text-xs text-subtle-foreground">
-                  Last sync{" "}
-                  <span className="text-foreground font-medium">
-                    {displayData?.lastUpdate ? formatRelativeTime(displayData.lastUpdate) : "--"}
-                  </span>
+                  {displayData?.isOnline ? (
+                    <>
+                      Last sync{" "}
+                      <span className="text-foreground font-medium">
+                        {displayData.lastUpdate ? formatRelativeTime(displayData.lastUpdate) : "--"}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      Offline for{" "}
+                      <span className="text-foreground font-medium">
+                        {displayData?.lastUpdate ? formatRelativeTime(displayData.lastUpdate) : "--"}
+                      </span>
+                    </>
+                  )}
                 </div>
                 <button
                   onClick={handleManualRefresh}

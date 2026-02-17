@@ -40,7 +40,7 @@ function LocationCard({ lat, lon, address }: LocationData) {
           }}
         />
         <div className="absolute top-2 right-2 bg-background/90 backdrop-blur-sm px-2 py-1 rounded text-xs font-medium">
-          📍 Live Location
+          Live location
         </div>
       </div>
       <div className="p-3 space-y-2">

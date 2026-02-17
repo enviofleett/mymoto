@@ -1,10 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import {
   Battery,
   Activity,
@@ -24,10 +23,37 @@ interface VehicleHealthDashboardProps {
 
 interface HealthMetrics {
   overall_health_score: number;
+  connectivity_score: number;
+  safety_score: number;
+  utilization_score: number;
+  data_quality_score: number;
+  confidence_score: number;
+  trend: string;
+  score_date?: string;
+  active_recommendations?: number;
+}
+
+interface DailyHealthRow {
+  score_date: string;
+  health_score: number;
+  confidence_score: number;
+  trend: string;
+  component_scores: {
+    connectivity_score?: number;
+    safety_score?: number;
+    utilization_score?: number;
+    data_quality_score?: number;
+  };
+  active_recommendations?: number;
+}
+
+interface LegacyHealthRow {
+  overall_health_score: number;
   battery_health_score: number;
   driving_behavior_score: number;
   connectivity_score: number;
   trend: string;
+  active_recommendations?: number;
 }
 
 export function VehicleHealthDashboard({ deviceId }: VehicleHealthDashboardProps) {
@@ -36,69 +62,87 @@ export function VehicleHealthDashboard({ deviceId }: VehicleHealthDashboardProps
   const [refreshing, setRefreshing] = useState(false);
   const { toast } = useToast();
 
-  useEffect(() => {
-    fetchHealthData();
-  }, [deviceId]);
-
-  const fetchHealthData = async () => {
+  const fetchHealthData = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch position history to calculate health metrics
-      const { data: positions, error } = await (supabase as any)
-        .from('position_history')
-        .select('speed, battery_percent, ignition_on, gps_time')
-        .eq('device_id', deviceId)
-        .order('gps_time', { ascending: false })
-        .limit(100);
+      const today = new Date().toISOString().slice(0, 10);
+      const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-      if (error) throw error;
+      const { data: dailyRows, error: dailyError } = await (supabase as any).rpc('get_vehicle_health_daily', {
+        p_device_id: deviceId,
+        p_start_date: startDate,
+        p_end_date: today
+      });
 
-      if (positions && positions.length > 0) {
-        // Calculate health metrics from position history
-        const batteryReadings = (positions as any[])
-          .filter((p: any) => p.battery_percent && p.battery_percent > 0)
-          .map((p: any) => p.battery_percent as number);
-        
-        const avgBattery = batteryReadings.length > 0 
-          ? batteryReadings.reduce((a, b) => a + b, 0) / batteryReadings.length 
-          : 50;
-        
-        const speedReadings = (positions as any[])
-          .filter((p: any) => p.speed !== null)
-          .map((p: any) => p.speed as number);
-        
-        const avgSpeed = speedReadings.length > 0 
-          ? speedReadings.reduce((a, b) => a + b, 0) / speedReadings.length 
-          : 0;
-        
-        // Calculate scores
-        const batteryScore = Math.min(100, avgBattery * 1.2);
-        const drivingScore = avgSpeed < 80 ? 90 : avgSpeed < 100 ? 70 : 50;
-        const connectivityScore = (positions.length / 100) * 100;
-        const overallScore = Math.round((batteryScore + drivingScore + connectivityScore) / 3);
+      if (dailyError) throw dailyError;
 
+      const latestDaily = (Array.isArray(dailyRows) ? (dailyRows as DailyHealthRow[]) : [])[0] ?? null;
+
+      if (latestDaily) {
+        const components = latestDaily.component_scores ?? {};
         setHealth({
-          overall_health_score: overallScore,
-          battery_health_score: Math.round(batteryScore),
-          driving_behavior_score: drivingScore,
-          connectivity_score: Math.round(connectivityScore),
-          trend: overallScore >= 70 ? 'stable' : 'declining'
+          overall_health_score: latestDaily.health_score ?? 0,
+          connectivity_score: components.connectivity_score ?? 0,
+          safety_score: components.safety_score ?? 0,
+          utilization_score: components.utilization_score ?? 0,
+          data_quality_score: components.data_quality_score ?? 0,
+          confidence_score: latestDaily.confidence_score ?? 0,
+          trend: latestDaily.trend ?? 'stable',
+          score_date: latestDaily.score_date,
+          active_recommendations: latestDaily.active_recommendations ?? 0
         });
+        return;
       }
+
+      const { data: legacyRows, error: legacyError } = await (supabase as any).rpc('get_vehicle_health', {
+        p_device_id: deviceId
+      });
+      if (legacyError) throw legacyError;
+
+      const legacy = (Array.isArray(legacyRows) ? (legacyRows as LegacyHealthRow[]) : [])[0] ?? null;
+      if (!legacy) return;
+
+      setHealth({
+        overall_health_score: legacy.overall_health_score ?? 0,
+        connectivity_score: legacy.connectivity_score ?? 0,
+        safety_score: legacy.driving_behavior_score ?? 0,
+        utilization_score: 70,
+        data_quality_score: legacy.battery_health_score ?? 0,
+        confidence_score: 55,
+        trend: legacy.trend ?? 'stable',
+        active_recommendations: legacy.active_recommendations ?? 0
+      });
     } catch (err) {
       console.error('Error fetching health data:', err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [deviceId]);
+
+  useEffect(() => {
+    fetchHealthData();
+  }, [fetchHealthData]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      await (supabase as any).rpc('compute_vehicle_health_features_day', {
+        p_device_id: deviceId,
+        p_date: today
+      });
+      await (supabase as any).rpc('compute_vehicle_health_score_day', {
+        p_device_id: deviceId,
+        p_date: today
+      });
+    } catch (error) {
+      console.error('Error recomputing daily health:', error);
+    }
     await fetchHealthData();
     setRefreshing(false);
     toast({
       title: "Refreshed",
-      description: "Health metrics updated"
+      description: "Daily health metrics updated"
     });
   };
 
@@ -196,6 +240,10 @@ export function VehicleHealthDashboard({ deviceId }: VehicleHealthDashboardProps
               </Badge>
             </div>
           </div>
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>Confidence: {health.confidence_score}%</span>
+            {health.score_date && <span>Day: {health.score_date}</span>}
+          </div>
 
           <div className="h-2 bg-muted rounded-full overflow-hidden">
             <div 
@@ -210,40 +258,8 @@ export function VehicleHealthDashboard({ deviceId }: VehicleHealthDashboardProps
       <div className="grid grid-cols-3 gap-3">
         <Card className="p-3">
           <div className="flex items-center gap-2 mb-2">
-            <Battery className="h-4 w-4 text-muted-foreground" />
-            <span className="text-xs font-medium">Battery</span>
-          </div>
-          <div className={`text-xl font-bold ${getHealthColor(health.battery_health_score)}`}>
-            {health.battery_health_score}
-          </div>
-          <div className="h-1 bg-muted rounded-full overflow-hidden mt-2">
-            <div 
-              className={`h-full ${getHealthBarColor(health.battery_health_score)}`}
-              style={{ width: `${health.battery_health_score}%` }}
-            />
-          </div>
-        </Card>
-
-        <Card className="p-3">
-          <div className="flex items-center gap-2 mb-2">
-            <Activity className="h-4 w-4 text-muted-foreground" />
-            <span className="text-xs font-medium">Driving</span>
-          </div>
-          <div className={`text-xl font-bold ${getHealthColor(health.driving_behavior_score)}`}>
-            {health.driving_behavior_score}
-          </div>
-          <div className="h-1 bg-muted rounded-full overflow-hidden mt-2">
-            <div 
-              className={`h-full ${getHealthBarColor(health.driving_behavior_score)}`}
-              style={{ width: `${health.driving_behavior_score}%` }}
-            />
-          </div>
-        </Card>
-
-        <Card className="p-3">
-          <div className="flex items-center gap-2 mb-2">
             <Radio className="h-4 w-4 text-muted-foreground" />
-            <span className="text-xs font-medium">Signal</span>
+            <span className="text-xs font-medium">Connectivity</span>
           </div>
           <div className={`text-xl font-bold ${getHealthColor(health.connectivity_score)}`}>
             {health.connectivity_score}
@@ -255,13 +271,47 @@ export function VehicleHealthDashboard({ deviceId }: VehicleHealthDashboardProps
             />
           </div>
         </Card>
+
+        <Card className="p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Activity className="h-4 w-4 text-muted-foreground" />
+            <span className="text-xs font-medium">Safety</span>
+          </div>
+          <div className={`text-xl font-bold ${getHealthColor(health.safety_score)}`}>
+            {health.safety_score}
+          </div>
+          <div className="h-1 bg-muted rounded-full overflow-hidden mt-2">
+            <div 
+              className={`h-full ${getHealthBarColor(health.safety_score)}`}
+              style={{ width: `${health.safety_score}%` }}
+            />
+          </div>
+        </Card>
+
+        <Card className="p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Battery className="h-4 w-4 text-muted-foreground" />
+            <span className="text-xs font-medium">Utilization</span>
+          </div>
+          <div className={`text-xl font-bold ${getHealthColor(health.utilization_score)}`}>
+            {health.utilization_score}
+          </div>
+          <div className="h-1 bg-muted rounded-full overflow-hidden mt-2">
+            <div 
+              className={`h-full ${getHealthBarColor(health.utilization_score)}`}
+              style={{ width: `${health.utilization_score}%` }}
+            />
+          </div>
+        </Card>
       </div>
 
       {/* All Clear Message */}
       <Card className="p-4 text-center">
         <Check className="h-8 w-8 mx-auto mb-2 text-green-600" />
-        <p className="text-sm font-medium">System Healthy</p>
-        <p className="text-xs text-muted-foreground">No active maintenance recommendations</p>
+        <p className="text-sm font-medium">System Status</p>
+        <p className="text-xs text-muted-foreground">
+          Active maintenance recommendations: {health.active_recommendations ?? 0}
+        </p>
       </Card>
     </div>
   );

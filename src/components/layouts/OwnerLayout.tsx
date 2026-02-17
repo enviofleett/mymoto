@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { MessageCircle, Car, Wallet, User, Store, LayoutDashboard, Edit } from "lucide-react";
+import { MessageCircle, Car, User, LayoutDashboard, Edit } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { GlobalAlertListener } from "@/components/notifications/GlobalAlertListener";
 import { StickyAlertBanner } from "@/components/notifications/StickyAlertBanner";
@@ -11,27 +11,23 @@ interface OwnerLayoutProps {
   children: ReactNode;
 }
 
-const ownerNavItems = [{
-  icon: Car,
-  path: "/owner/vehicles",
-  label: "Vehicles"
-}, {
-  icon: MessageCircle,
-  path: "/owner",
-  label: "Chat"
-}, {
-  icon: Store,
-  path: "/owner/directory",
-  label: "Directory"
-}, {
-  icon: Wallet,
-  path: "/owner/wallet",
-  label: "Wallet"
-}, {
-  icon: User,
-  path: "/owner/profile",
-  label: "Profile"
-}];
+const ownerNavItems = [
+  {
+    icon: Car,
+    path: "/owner/vehicles",
+    label: "Vehicles",
+  },
+  {
+    icon: MessageCircle,
+    path: "/owner",
+    label: "Chat",
+  },
+  {
+    icon: User,
+    path: "/owner/profile",
+    label: "Profile",
+  },
+];
 
 const partnerNavItems = [{
   icon: LayoutDashboard,
@@ -65,12 +61,8 @@ export function OwnerLayout({
         return location.pathname === "/partner/profile";
       }
     } else {
-      // Owner navigation
       if (path === "/owner") {
         return location.pathname === "/owner" || location.pathname.startsWith("/owner/chat");
-      }
-      if (path === "/owner/directory") {
-        return location.pathname === "/owner/directory";
       }
     }
     return location.pathname.startsWith(path);

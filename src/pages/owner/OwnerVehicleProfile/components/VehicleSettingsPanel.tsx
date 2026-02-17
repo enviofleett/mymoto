@@ -184,7 +184,7 @@ export function VehicleSettingsPanel({ deviceId, vehicleName, onClose }: Vehicle
         <img src={myMotoLogo} alt="MyMoto" className="w-6 h-6" />
         <div>
           <p className="font-semibold">Vehicle Profile Settings</p>
-          <p className="text-xs text-muted-foreground">Configure personality, details, documentation, and operations</p>
+          <p className="text-xs text-muted-foreground">Configure personality, details, and documentation</p>
         </div>
       </div>
 
@@ -293,8 +293,22 @@ export function VehicleSettingsPanel({ deviceId, vehicleName, onClose }: Vehicle
                     { key: "roadworthy", label: "Roadworthiness", date: roadworthyExp, set: setRoadworthyExp },
                   ].map(({ key, label, date, set }) => {
                     const severity = docSeverity(date);
-                    const border = severity === "critical" ? "border-destructive" : severity === "warning" ? "border-yellow-500" : severity === "notice" ? "border-blue-500" : "border-border";
-                    const hint = severity === "critical" ? "Expiring ≤30d" : severity === "warning" ? "Expiring ≤60d" : severity === "notice" ? "Expiring ≤90d" : "Up to date";
+                    const border =
+                      severity === "critical"
+                        ? "border-destructive"
+                        : severity === "warning"
+                          ? "border-yellow-500"
+                          : severity === "notice"
+                            ? "border-blue-500"
+                            : "border-border";
+                    const hint =
+                      severity === "critical"
+                        ? "Expiring ≤30d"
+                        : severity === "warning"
+                          ? "Expiring ≤60d"
+                          : severity === "notice"
+                            ? "Expiring ≤90d"
+                            : "Up to date";
                     return (
                       <div key={key} className={cn("p-4 rounded-lg border", border)}>
                         <div className="flex items-center justify-between mb-3">
@@ -316,64 +330,17 @@ export function VehicleSettingsPanel({ deviceId, vehicleName, onClose }: Vehicle
                             />
                           </div>
                         </div>
-                        <Calendar mode="single" selected={date} onSelect={(d) => { set(d); setDirty(true); }} />
+                        <Calendar
+                          mode="single"
+                          selected={date}
+                          onSelect={(d) => {
+                            set(d);
+                            setDirty(true);
+                          }}
+                        />
                       </div>
                     );
                   })}
-                </div>
-              </CardContent>
-            </Card>
-          </AccordionContent>
-        </AccordionItem>
-
-        <AccordionItem value="operations">
-          <AccordionTrigger>Operations</AccordionTrigger>
-          <AccordionContent>
-            <Card className="border">
-              <CardContent className="pt-6 space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="space-y-2">
-                    <Label>Speed Limit</Label>
-                    <div className="flex gap-2">
-                      <Input type="number" value={speedLimit} onChange={(e) => { const v = Number(e.target.value); setSpeedLimit(Number.isNaN(v) ? "" : v); setDirty(true); }} placeholder="e.g., 120" />
-                      <Select value={speedUnit} onValueChange={(v) => { setSpeedUnit(v as any); setDirty(true); }}>
-                        <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="kmh">km/h</SelectItem>
-                          <SelectItem value="mph">mph</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <p className={cn("text-xs", typeof speedLimit === "number" && speedLimit > 0 && speedLimit <= (speedUnit === "kmh" ? 300 : 186) ? "text-muted-foreground" : "text-destructive")}>
-                      Valid range: 1–{speedUnit === "kmh" ? "300 km/h" : "186 mph"}
-                    </p>
-                  </div>
-
-                  <div className="md:col-span-2 space-y-2">
-                    <Label>Geofence Settings</Label>
-                    <GeofenceManager deviceId={deviceId} />
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <Label>Reports</Label>
-                  <ReportsSection
-                    deviceId={deviceId}
-                    trips={trips}
-                    events={events}
-                    dailyStats={dailyStats}
-                    tripsLoading={tripsLoading}
-                    eventsLoading={eventsLoading}
-                    statsLoading={statsLoading}
-                    dateRange={reportsDateRange}
-                    onDateRangeChange={setReportsDateRange}
-                    onRequestTrips={() => {}}
-                    syncStatus={null}
-                    isSyncing={false}
-                    onForceSync={() => {}}
-                    onPlayTrip={() => {}}
-                    isRealtimeActive={false}
-                  />
                 </div>
               </CardContent>
             </Card>

@@ -10,10 +10,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Mail, Save, RotateCcw, Eye, Send, Loader2, CheckCircle2, XCircle, LayoutTemplate, FileCode, Monitor, Check } from "lucide-react";
+import { Mail, Save, RotateCcw, Eye, Send, Loader2, CheckCircle2, XCircle, LayoutTemplate, FileCode, Monitor, Check, WandSparkles, AlertCircle } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { emailLayouts, EmailContentProps } from "@/lib/email-layouts";
 import { cn } from "@/lib/utils";
+import { buildDraftForTemplate, extractTags, validateTemplateConformance } from "@/lib/email-template-populator";
+import { TemplateDraft } from "@/lib/email-template-catalog";
 
 interface EmailTemplate {
   id: string;
@@ -32,6 +34,26 @@ interface EmailTemplate {
   } | null;
 }
 
+interface PopulationPreviewRow {
+  id: string;
+  templateKey: string;
+  name: string;
+  oldSubject: string;
+  draft: TemplateDraft;
+  allowedVariables: string[];
+  presentTagCount: number;
+  missingVariables: string[];
+  validationErrors: string[];
+  valid: boolean;
+}
+
+interface PopulationRunReport {
+  updated: number;
+  skipped: number;
+  failed: number;
+  errors: Array<{ templateKey: string; reason: string }>;
+}
+
 // Validate test email (align with backend validateEmail)
 function isValidTestEmail(email: string): boolean {
   const s = (email || "").trim();
@@ -40,7 +62,8 @@ function isValidTestEmail(email: string): boolean {
 }
 
 // Sample data for template preview
-const getSampleData = (templateKey: string): Record<string, string> => {
+const getSampleData = (templateKey: string, variables: string[] = []): Record<string, string> => {
+  const baseTimestamp = new Date().toLocaleString();
   const samples: Record<string, Record<string, string>> = {
     welcome: {
       userName: "John Doe",
@@ -57,7 +80,7 @@ const getSampleData = (templateKey: string): Record<string, string> => {
       title: "Low Battery Alert",
       message: "Your vehicle battery is below 20%",
       vehicleName: "Toyota Camry",
-      timestamp: new Date().toLocaleString(),
+      timestamp: baseTimestamp,
       severityColor: "#f59e0b",
       severityIcon: "⚠️"
     },
@@ -82,9 +105,51 @@ const getSampleData = (templateKey: string): Record<string, string> => {
       message: "We will be performing scheduled maintenance on March 15th from 2 AM to 4 AM.",
       actionLink: "https://app.example.com/notifications",
       actionText: "View Details"
+    },
+    walletTopUp: {
+      userName: "John Doe",
+      amount: "₦10,000",
+      newBalance: "₦32,500",
+      description: "Manual credit for reconciliation",
+      adminName: "Fleet Admin",
+      walletLink: "https://app.example.com/owner/wallet"
+    },
+    newUserBonusNotification: {
+      userName: "John Doe",
+      bonusAmount: "₦2,000",
+      walletLink: "https://app.example.com/owner/wallet"
+    },
+    vehicle_request_approved: {
+      userName: "John Doe",
+      deviceId: "358657105966092",
+      plateNumber: "ABC-123XY",
+      actionLink: "https://app.example.com/owner/vehicles"
+    },
+    vehicle_request_rejected: {
+      userName: "John Doe",
+      plateNumber: "ABC-123XY",
+      adminNotes: "Please verify your ownership documents and resubmit."
     }
   };
-  return samples[templateKey] || {};
+  if (samples[templateKey]) {
+    return samples[templateKey];
+  }
+
+  const genericSamples: Record<string, string> = {
+    userName: "John Doe",
+    title: "Account Update",
+    message: "This is a sample message from MyMoto.",
+    actionLink: "https://app.example.com/notifications",
+    actionText: "View Details",
+    timestamp: baseTimestamp,
+  };
+
+  for (const variable of variables) {
+    if (genericSamples[variable]) continue;
+    genericSamples[variable] = `Sample ${variable.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase()}`;
+  }
+
+  return genericSamples;
 };
 
 // Escape HTML to prevent XSS
@@ -150,6 +215,10 @@ export default function AdminEmailTemplates() {
   const [testEmailAddress, setTestEmailAddress] = useState("");
   const [sendingTest, setSendingTest] = useState(false);
   const [editMode, setEditMode] = useState<'builder' | 'code'>('builder');
+  const [populateDialogOpen, setPopulateDialogOpen] = useState(false);
+  const [populating, setPopulating] = useState(false);
+  const [populationPreviewRows, setPopulationPreviewRows] = useState<PopulationPreviewRow[]>([]);
+  const [populationReport, setPopulationReport] = useState<PopulationRunReport | null>(null);
 
   // Builder state
   const [selectedLayoutId, setSelectedLayoutId] = useState<string>(emailLayouts[0].id);
@@ -217,7 +286,7 @@ export default function AdminEmailTemplates() {
   const updatePreview = () => {
     if (!editedTemplate) return;
     
-    const sampleData = getSampleData(editedTemplate.template_key);
+    const sampleData = getSampleData(editedTemplate.template_key, editedTemplate.variables);
     const processedSubject = replaceTemplateVariables(editedTemplate.subject, sampleData);
     const processedContent = replaceTemplateVariables(editedTemplate.html_content, sampleData);
     const wrappedHtml = wrapInEmailTemplate(processedContent);
@@ -225,10 +294,18 @@ export default function AdminEmailTemplates() {
     setPreviewHtml(wrappedHtml);
   };
 
+  const normalizeTemplates = (data: any[]): EmailTemplate[] =>
+    (data || []).map(t => ({
+      ...t,
+      variables: Array.isArray(t.variables) ? t.variables : [],
+      design_metadata: typeof t.design_metadata === 'string'
+        ? JSON.parse(t.design_metadata)
+        : t.design_metadata || null
+    }));
+
   const fetchTemplates = async () => {
     setLoading(true);
     try {
-      // Cast supabase to any to bypass type check for missing table in types
       const { data, error } = await (supabase as any)
         .from('email_templates')
         .select('*')
@@ -246,14 +323,7 @@ export default function AdminEmailTemplates() {
         }
       } else {
         setTableMissing(false);
-        const formatted = (data || []).map(t => ({
-          ...t,
-          variables: Array.isArray(t.variables) ? t.variables : [],
-          // Ensure design_metadata is typed correctly
-          design_metadata: typeof t.design_metadata === 'string' 
-            ? JSON.parse(t.design_metadata) 
-            : t.design_metadata || null
-        }));
+        const formatted = normalizeTemplates(data || []);
         setTemplates(formatted);
         if (formatted.length > 0 && !selectedTemplate) {
           setSelectedTemplate(formatted[0]);
@@ -264,6 +334,128 @@ export default function AdminEmailTemplates() {
       toast.error(`Error loading templates: ${err.message}`);
     }
     setLoading(false);
+  };
+
+  const fetchLatestTemplatesForPopulation = async (): Promise<EmailTemplate[] | null> => {
+    try {
+      const { data, error } = await (supabase as any)
+        .from('email_templates')
+        .select('*')
+        .order('template_key');
+
+      if (error) {
+        toast.error(`Failed to fetch latest templates: ${error.message}`);
+        return null;
+      }
+      const normalized = normalizeTemplates(data || []);
+      setTemplates(normalized);
+      return normalized;
+    } catch (err: any) {
+      console.error(err);
+      toast.error(`Error fetching latest templates: ${err.message}`);
+      return null;
+    }
+  };
+
+  const preparePopulationPreview = async () => {
+    const latestTemplates = await fetchLatestTemplatesForPopulation();
+    if (!latestTemplates) return;
+
+    const rows: PopulationPreviewRow[] = latestTemplates.map((template) => {
+      const allowedVariables = Array.isArray(template.variables) ? template.variables : [];
+      const draft = buildDraftForTemplate({
+        template_key: template.template_key,
+        subject: template.subject,
+        html_content: template.html_content,
+        text_content: template.text_content,
+        variables: allowedVariables,
+      });
+
+      const validation = validateTemplateConformance(draft, allowedVariables);
+      const presentTags = new Set<string>([
+        ...extractTags(draft.subject),
+        ...extractTags(draft.html_content),
+      ]);
+      const missingVariables = allowedVariables.filter((variable) => !presentTags.has(variable));
+
+      return {
+        id: template.id,
+        templateKey: template.template_key,
+        name: template.name,
+        oldSubject: template.subject,
+        draft,
+        allowedVariables,
+        presentTagCount: allowedVariables.length - missingVariables.length,
+        missingVariables,
+        validationErrors: validation.errors,
+        valid: validation.ok,
+      };
+    });
+
+    setPopulationPreviewRows(rows);
+    setPopulationReport(null);
+    setPopulateDialogOpen(true);
+  };
+
+  const applyPopulation = async () => {
+    if (populationPreviewRows.length === 0) return;
+
+    setPopulating(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const now = new Date().toISOString();
+
+      let updated = 0;
+      let skipped = 0;
+      let failed = 0;
+      const errors: Array<{ templateKey: string; reason: string }> = [];
+
+      for (const row of populationPreviewRows) {
+        if (!row.valid) {
+          skipped += 1;
+          errors.push({
+            templateKey: row.templateKey,
+            reason: row.validationErrors.join("; "),
+          });
+          continue;
+        }
+
+        const { error } = await (supabase as any)
+          .from("email_templates")
+          .update({
+            subject: row.draft.subject,
+            html_content: row.draft.html_content,
+            text_content: row.draft.text_content ?? null,
+            updated_at: now,
+            updated_by: user?.id || null,
+          })
+          .eq("id", row.id);
+
+        if (error) {
+          failed += 1;
+          errors.push({
+            templateKey: row.templateKey,
+            reason: error.message,
+          });
+        } else {
+          updated += 1;
+        }
+      }
+
+      const report: PopulationRunReport = { updated, skipped, failed, errors };
+      setPopulationReport(report);
+      await fetchTemplates();
+
+      if (failed === 0 && skipped === 0) {
+        toast.success(`Professional copy applied to ${updated} template(s).`);
+      } else {
+        toast.warning(`Population complete: ${updated} updated, ${skipped} skipped, ${failed} failed.`);
+      }
+    } catch (err: any) {
+      toast.error(`Population failed: ${err.message || "Unknown error"}`);
+    } finally {
+      setPopulating(false);
+    }
   };
 
   const handleSave = async () => {
@@ -334,7 +526,7 @@ export default function AdminEmailTemplates() {
         return;
       }
 
-      const sampleData = getSampleData(editedTemplate.template_key);
+      const sampleData = getSampleData(editedTemplate.template_key, editedTemplate.variables);
       const processedSubject = replaceTemplateVariables(editedTemplate.subject, sampleData);
       const processedHtml = replaceTemplateVariables(editedTemplate.html_content, sampleData);
       // Logic change: If using builder (Full HTML), don't wrap. If code mode and partial, wrap.
@@ -428,28 +620,34 @@ export default function AdminEmailTemplates() {
               Customize email templates sent to users for registration, alerts, and notifications
             </p>
           </div>
-          {editedTemplate && (
-            <div className="flex items-center gap-2 bg-muted p-1 rounded-lg">
-               <Button 
-                 variant={editMode === 'builder' ? 'default' : 'ghost'} 
-                 size="sm" 
-                 onClick={() => setEditMode('builder')}
-                 className="gap-2"
-               >
-                 <LayoutTemplate className="h-4 w-4" />
-                 Visual Builder
-               </Button>
-               <Button 
-                 variant={editMode === 'code' ? 'default' : 'ghost'} 
-                 size="sm" 
-                 onClick={() => setEditMode('code')}
-                 className="gap-2"
-               >
-                 <FileCode className="h-4 w-4" />
-                 Code Editor
-               </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={preparePopulationPreview} className="gap-2">
+              <WandSparkles className="h-4 w-4" />
+              Populate Professional Copy
+            </Button>
+            {editedTemplate && (
+              <div className="flex items-center gap-2 bg-muted p-1 rounded-lg">
+                <Button
+                  variant={editMode === 'builder' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setEditMode('builder')}
+                  className="gap-2"
+                >
+                  <LayoutTemplate className="h-4 w-4" />
+                  Visual Builder
+                </Button>
+                <Button
+                  variant={editMode === 'code' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setEditMode('code')}
+                  className="gap-2"
+                >
+                  <FileCode className="h-4 w-4" />
+                  Code Editor
+                </Button>
+              </div>
+            )}
             </div>
-          )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -531,7 +729,7 @@ export default function AdminEmailTemplates() {
                           <div className="p-3 bg-muted rounded-lg">
                             <p className="text-sm font-medium mb-1">Preview Data:</p>
                             <pre className="text-xs text-muted-foreground overflow-auto max-h-40">
-                              {JSON.stringify(getSampleData(editedTemplate.template_key), null, 2)}
+                              {JSON.stringify(getSampleData(editedTemplate.template_key, editedTemplate.variables), null, 2)}
                             </pre>
                           </div>
                         </div>
@@ -741,6 +939,110 @@ export default function AdminEmailTemplates() {
           </Card>
         </div>
       </div>
+      <Dialog open={populateDialogOpen} onOpenChange={setPopulateDialogOpen}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Populate Professional Copy</DialogTitle>
+            <DialogDescription>
+              Review generated copy for all templates before applying updates.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-[60vh] overflow-auto border rounded-lg">
+            <div className="grid grid-cols-[1.2fr_2fr_1.2fr_1.4fr] gap-3 px-4 py-2 text-xs font-medium text-muted-foreground border-b bg-muted/40">
+              <span>Template</span>
+              <span>Subject Change</span>
+              <span>Tag Coverage</span>
+              <span>Conformance</span>
+            </div>
+            {populationPreviewRows.map((row) => (
+              <div
+                key={row.id}
+                className="grid grid-cols-[1.2fr_2fr_1.2fr_1.4fr] gap-3 px-4 py-3 border-b last:border-b-0 text-sm"
+              >
+                <div>
+                  <p className="font-medium">{row.name}</p>
+                  <p className="text-xs text-muted-foreground">{row.templateKey}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground line-through">{row.oldSubject}</p>
+                  <p className="font-medium">{row.draft.subject}</p>
+                </div>
+                <div>
+                  <p className={row.missingVariables.length === 0 ? "text-green-600" : "text-amber-600"}>
+                    {row.presentTagCount}/{row.allowedVariables.length || 0} covered
+                  </p>
+                  {row.missingVariables.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Missing: {row.missingVariables.map(v => `{{${v}}}`).join(", ")}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  {row.valid ? (
+                    <p className="text-green-600 flex items-center gap-1">
+                      <CheckCircle2 className="h-4 w-4" />
+                      Pass
+                    </p>
+                  ) : (
+                    <div className="text-amber-600 space-y-1">
+                      <p className="flex items-center gap-1">
+                        <AlertCircle className="h-4 w-4" />
+                        Skip
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {row.validationErrors.join("; ")}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {populationReport && (
+            <div className="rounded-md border p-3 bg-muted/30 text-sm space-y-1">
+              <p className="font-medium">Run Summary</p>
+              <p>Updated: {populationReport.updated}</p>
+              <p>Skipped: {populationReport.skipped}</p>
+              <p>Failed: {populationReport.failed}</p>
+              {populationReport.errors.length > 0 && (
+                <div className="text-xs text-muted-foreground max-h-24 overflow-auto">
+                  {populationReport.errors.map((err, index) => (
+                    <p key={`${err.templateKey}-${index}`}>{err.templateKey}: {err.reason}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setPopulateDialogOpen(false)}
+              disabled={populating}
+            >
+              Close
+            </Button>
+            <Button
+              onClick={applyPopulation}
+              disabled={populating || populationPreviewRows.length === 0}
+            >
+              {populating ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Applying...
+                </>
+              ) : (
+                <>
+                  <WandSparkles className="h-4 w-4 mr-2" />
+                  Confirm and Apply
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

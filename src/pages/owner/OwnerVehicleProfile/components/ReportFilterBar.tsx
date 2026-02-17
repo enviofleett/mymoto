@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DateRange } from "react-day-picker";
 import { addDays, endOfDay, isAfter, startOfDay, subDays } from "date-fns";
-import { Calendar as CalendarIcon, Filter, RefreshCw } from "lucide-react";
+import { Calendar as CalendarIcon, Filter } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
@@ -29,7 +28,6 @@ export function ReportFilterBar({
   className,
 }: ReportFilterBarProps) {
   const [preset, setPreset] = useState<PresetKey>("last30");
-  const [calendarOpen, setCalendarOpen] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
   // Persist + hydrate filter
@@ -81,31 +79,12 @@ export function ReportFilterBar({
     }
   }, [preset, dateRange?.from, dateRange?.to]);
 
-  const displayLabel = useMemo(() => {
-    if (!dateRange?.from || !dateRange.to) return "Filter by date";
-    const from = startOfDay(dateRange.from);
-    const to = endOfDay(dateRange.to);
-    const sameDay = from.getTime() === to.getTime();
-    const formatter = new Intl.DateTimeFormat("en-GB", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
-
-    if (sameDay) {
-      return formatter.format(from);
-    }
-
-    return `${formatter.format(from)} – ${formatter.format(to)}`;
-  }, [dateRange?.from, dateRange?.to]);
-
   const handlePresetChange = (value: string) => {
     const next = value as PresetKey;
     setPreset(next);
     setValidationError(null);
 
     if (next === "custom") {
-      setCalendarOpen(true);
       return;
     }
 
@@ -136,16 +115,8 @@ export function ReportFilterBar({
     }
 
     setValidationError(null);
+    setPreset("custom");
     onDateRangeChange({ from, to });
-  };
-
-  const handleApply = () => {
-    if (!dateRange?.from || !dateRange.to) {
-      setValidationError("Select a valid date range first.");
-      return;
-    }
-    setValidationError(null);
-    setCalendarOpen(false);
     onGenerate();
   };
 
@@ -156,37 +127,24 @@ export function ReportFilterBar({
           <Filter className="h-3.5 w-3.5" />
           <span>Filter</span>
         </div>
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+        <div className="flex flex-col gap-2 w-full sm:w-auto">
           <Select value={preset} onValueChange={handlePresetChange} disabled={isLoading}>
-            <SelectTrigger className="h-9 w-full sm:w-[150px] text-xs">
-              <SelectValue placeholder="Preset" />
+            <SelectTrigger className="h-9 w-full sm:w-[220px] text-xs">
+              <SelectValue placeholder="Select range" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="today">Today</SelectItem>
               <SelectItem value="last7">Last 7 days</SelectItem>
-              <SelectItem value="last30">Last 30 days</SelectItem>
-              <SelectItem value="thisMonth">This month</SelectItem>
-              <SelectItem value="custom">Custom range</SelectItem>
+              <SelectItem value="custom">Custom date selection</SelectItem>
             </SelectContent>
           </Select>
 
-          <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className={cn(
-                  "h-9 px-3 text-xs justify-between w-full sm:w-auto",
-                  !dateRange?.from && "text-muted-foreground",
-                  isLoading && "cursor-wait",
-                )}
-                disabled={isLoading}
-              >
-                <CalendarIcon className="mr-2 h-3.5 w-3.5" />
-                {displayLabel}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="end">
+          {preset === "custom" && (
+            <div className="rounded-xl border border-border/60 bg-card/80 p-2">
+              <div className="flex items-center gap-2 mb-2 text-[11px] font-medium text-muted-foreground">
+                <CalendarIcon className="h-3.5 w-3.5" />
+                <span>Select custom date range</span>
+              </div>
               <Calendar
                 mode="range"
                 selected={dateRange}
@@ -195,37 +153,11 @@ export function ReportFilterBar({
                 defaultMonth={dateRange?.from}
                 disabled={(date) => isAfter(date, new Date())}
               />
-              <div className="flex items-center justify-between gap-2 border-t border-border/60 px-3 py-2">
-                <div className="text-[11px] text-destructive min-h-[1.25rem]">
-                  {validationError ? validationError : null}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-[11px]"
-                    onClick={() => {
-                      setValidationError(null);
-                      onDateRangeChange(undefined);
-                    }}
-                  >
-                    Clear
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-7 px-3 text-[11px]"
-                    onClick={handleApply}
-                    disabled={isLoading}
-                  >
-                    <RefreshCw className={cn("mr-1 h-3 w-3", isLoading && "animate-spin")} />
-                    Apply
-                  </Button>
-                </div>
+              <div className="mt-1 text-[11px] text-destructive min-h-[1.25rem]">
+                {validationError ? validationError : null}
               </div>
-            </PopoverContent>
-          </Popover>
+            </div>
+          )}
         </div>
       </div>
     </div>

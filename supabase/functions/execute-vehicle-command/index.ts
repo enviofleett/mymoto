@@ -36,20 +36,33 @@ const COMMANDS_REQUIRING_CONFIRMATION = [
   'clear_speed_limit'
 ]
 
-// Map our command types to GPS51 command strings
-// UPDATED: Added shutdown_engine with password authentication
+// Engine shutdown password used by GPS51 STOP command (configured in environment)
+const GPS51_ENGINE_PASSWORD = Deno.env.get('GPS51_ENGINE_PASSWORD')
+
+// Map our command types to base GPS51 command strings
+// NOTE: shutdown_engine builds its command dynamically to avoid hardcoding the password
 const GPS51_COMMANDS: Record<string, string> = {
   // Security / Immobilization
-  immobilize_engine: 'RELAY,1',    // Cut fuel/power
-  demobilize_engine: 'RELAY,0',    // Restore fuel/power
-  shutdown_engine: 'STOP,zhuyi',   // Shutdown engine with password (GPS51 API requirement)
-  
+  immobilize_engine: 'RELAY,1',
+  demobilize_engine: 'RELAY,0',
+
   // Alerts
-  sound_alarm: 'FINDCAR',          // Sound horn/flash lights
+  sound_alarm: 'FINDCAR',
   silence_alarm: 'FINDCAROFF',
-  
+
   // Maintenance
   reset: 'RESET'
+}
+
+function getGps51CommandString(commandType: string): string | null {
+  if (commandType === 'shutdown_engine') {
+    if (!GPS51_ENGINE_PASSWORD) {
+      console.error('[GPS51] Engine shutdown password not configured (GPS51_ENGINE_PASSWORD missing)')
+      return null
+    }
+    return `STOP,${GPS51_ENGINE_PASSWORD}`
+  }
+  return GPS51_COMMANDS[commandType] ?? null
 }
 
 // Commands that don't send to GPS51 but are handled locally
@@ -76,7 +89,6 @@ async function callGps51Command(
   console.log(`[GPS51] Sending command: ${command} to device: ${deviceId}`)
   
   try {
-    // Use shared client for centralized rate limiting
     const result = await callGps51WithRateLimit(supabase, proxyUrl, 'sendcommand', token, serverid, {
       deviceid: deviceId,
       command: command
@@ -85,9 +97,26 @@ async function callGps51Command(
     console.log(`[GPS51] Command response:`, JSON.stringify(result))
 
     if (result.status !== 0) {
+      const rawStatus = typeof result.status === 'number' || typeof result.status === 'string'
+        ? result.status
+        : 'Unknown'
+
+      const cause =
+        (result && typeof result === 'object' && 'cause' in result && result.cause) ||
+        (result && typeof result === 'object' && 'message' in result && result.message) ||
+        (result && typeof result === 'object' && 'error' in result && result.error) ||
+        null
+
+      const errorMessage =
+        cause && rawStatus !== -1 && rawStatus !== "-1"
+          ? `GPS51 error: ${cause} (status: ${rawStatus})`
+          : cause
+            ? `GPS51 error: ${cause}`
+            : `GPS51 error: status ${rawStatus}`
+
       return {
         success: false,
-        error: result.message || `GPS51 error: status ${result.status}`
+        error: errorMessage
       }
     }
 
@@ -452,7 +481,7 @@ serve(async (req) => {
       executionResult = await handleLocalCommand(supabase, activeDeviceId, activeCommandType, activePayload)
     } else {
       // Get GPS51 command string
-      const gps51Command = GPS51_COMMANDS[activeCommandType]
+      const gps51Command = getGps51CommandString(activeCommandType)
       
       if (!gps51Command) {
         executionResult = { success: false, error: `Unsupported or restricted command type: ${activeCommandType}` }

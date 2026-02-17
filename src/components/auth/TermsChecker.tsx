@@ -7,6 +7,24 @@ export function TermsChecker({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
   const [showTermsDialog, setShowTermsDialog] = useState(false);
   const [hasCheckedTerms, setHasCheckedTerms] = useState(false);
+  const [lastUserId, setLastUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user) {
+      if (lastUserId !== null) {
+        setLastUserId(null);
+        setHasCheckedTerms(false);
+        setShowTermsDialog(false);
+      }
+      return;
+    }
+
+    if (user.id !== lastUserId) {
+      setLastUserId(user.id);
+      setHasCheckedTerms(false);
+      setShowTermsDialog(false);
+    }
+  }, [user, lastUserId]);
 
   useEffect(() => {
     if (!isLoading && user && !hasCheckedTerms) {

@@ -71,8 +71,6 @@ export function EngineControlCard({
   const { mutate: executeCommand, isPending: isCommandPending } = useVehicleCommand();
   const { data: events } = useVehicleEvents(deviceId, { limit: 50 }, true);
 
-  // Note: True relay status is not always available in basic GPS heartbeat.
-  // We use ignition status only as a safety warning.
   const isEngineRunning = ignitionOn === true;
 
   const lastControlEvent = useMemo(
@@ -84,6 +82,20 @@ export function EngineControlCard({
     () => getLastEngineControlLabel(lastControlEvent),
     [lastControlEvent]
   );
+
+  const isEngineDisabled = useMemo(() => {
+    if (!lastControlEvent) return false;
+    return (
+      lastControlEvent.event_type === "engine_shutdown" ||
+      lastControlEvent.event_type === "engine_immobilize"
+    );
+  }, [lastControlEvent]);
+
+  const disabledSinceLabel = useMemo(() => {
+    if (!isEngineDisabled || !lastControlEvent) return null;
+    const when = formatRelativeTime(lastControlEvent.created_at);
+    return `Disabled ${when}`;
+  }, [isEngineDisabled, lastControlEvent]);
 
   const handleCommandRequest = (command: "demobilize_engine" | "shutdown_engine") => {
     setPendingCommand(command);
@@ -117,21 +129,21 @@ export function EngineControlCard({
           <div className="flex">
             <button
               onClick={() =>
-                handleCommandRequest(isEngineRunning ? "shutdown_engine" : "demobilize_engine")
+                handleCommandRequest(isEngineDisabled ? "demobilize_engine" : "shutdown_engine")
               }
               disabled={isCommandPending || !isOnline}
-              aria-pressed={isEngineRunning}
+              aria-pressed={isEngineDisabled}
               aria-busy={isCommandPending}
               aria-label={
-                isEngineRunning
-                  ? "Engine enabled. Press to initiate shutdown."
-                  : "Engine disabled. Press to enable engine."
+                isEngineDisabled
+                  ? "Engine disabled. Press to enable engine."
+                  : "Engine OK. Press to initiate shutdown."
               }
               className={cn(
                 "w-full py-3 rounded-xl font-medium transition-all duration-200 flex items-center justify-center",
                 "shadow-neumorphic-sm hover:shadow-neumorphic active:shadow-neumorphic-inset",
                 "disabled:opacity-50 disabled:cursor-not-allowed",
-                isEngineRunning ? "bg-card text-green-500" : "bg-card text-muted-foreground"
+                isEngineDisabled ? "bg-card text-destructive" : "bg-card text-green-500"
               )}
             >
               {isCommandPending ? (
@@ -140,18 +152,23 @@ export function EngineControlCard({
                 <Power className="h-4 w-4 mr-2" />
               )}
               {isCommandPending
-                ? isEngineRunning
-                  ? "Shutting down..."
-                  : "Enabling..."
-                : isEngineRunning
-                  ? "Engine Enabled"
-                  : "Engine Disabled"}
+                ? isEngineDisabled
+                  ? "Enabling..."
+                  : "Shutting down..."
+                : isEngineDisabled
+                  ? "Engine Disabled"
+                  : "Engine OK"}
             </button>
           </div>
 
           <div className="mt-4 flex flex-col gap-1 text-xs text-muted-foreground">
             <span>Status: {isOnline ? "Connected" : "Offline"}</span>
-            {lastActionLabel && (
+            {disabledSinceLabel && (
+              <span className="text-[11px] text-muted-foreground/80">
+                {disabledSinceLabel}
+              </span>
+            )}
+            {!disabledSinceLabel && lastActionLabel && (
               <span className="text-[11px] text-muted-foreground/80">
                 {lastActionLabel}
               </span>

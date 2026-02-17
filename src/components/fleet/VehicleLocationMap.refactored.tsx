@@ -472,6 +472,18 @@ export function VehicleLocationMap({
         .mapboxgl-ctrl-icon {
           filter: invert(1);
         }
+        .mapboxgl-ctrl-bottom-right {
+          top: 6px;
+          left: 6px;
+          right: auto;
+          bottom: auto;
+        }
+        .mapboxgl-ctrl-attrib {
+          font-size: 9px;
+          padding: 2px 4px;
+          background: rgba(17, 24, 39, 0.4);
+          border-radius: 6px;
+        }
       `}</style>
 
       <div

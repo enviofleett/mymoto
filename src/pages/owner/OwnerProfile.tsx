@@ -24,6 +24,7 @@ import {
   Phone,
   Pencil,
   BookOpen,
+  Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -54,6 +55,7 @@ export default function OwnerProfile() {
 
   const menuItems = [
     { icon: Bell, label: "Notifications", path: "/owner/notifications" },
+    { icon: Wallet, label: "Wallet", path: "/owner/wallet" },
     { icon: Shield, label: "Privacy & Security", path: "/owner/privacy" },
     { icon: HelpCircle, label: "Help & Support", path: "/owner/help" },
     { icon: BookOpen, label: "Resources", path: "/owner/resources" },

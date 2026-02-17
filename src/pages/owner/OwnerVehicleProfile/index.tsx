@@ -493,7 +493,7 @@ export default function OwnerVehicleProfile() {
           <DialogHeader>
             <DialogTitle>Vehicle Settings</DialogTitle>
             <DialogDescription className="sr-only">
-              Configure personality, details, documentation, and operations
+              Configure personality, details, and documentation
             </DialogDescription>
           </DialogHeader>
           <VehicleSettingsPanel 
