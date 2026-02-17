@@ -21,11 +21,11 @@ fi
 
 # Verify build
 echo "🏗️  Verifying build..."
-if npm run build; then
-    echo "✅ Build verification passed."
+if npm run build:all:pwa; then
+  echo "✅ Build verification passed."
 else
-    echo "❌ Build failed. Please fix errors before deploying."
-    exit 1
+  echo "❌ Build failed. Please fix errors before deploying."
+  exit 1
 fi
 
 # Deploy to Vercel
