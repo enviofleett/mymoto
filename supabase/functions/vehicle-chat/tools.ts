@@ -511,7 +511,7 @@ const get_trip_analytics: ToolDefinition = {
     properties: {
       start_date: { type: 'string', description: 'ISO date string for start of period (e.g., "2024-01-15")' },
       end_date: { type: 'string', description: 'ISO date string for end of period (e.g., "2024-01-15")' },
-      period: { type: 'string', enum: ['today', 'yesterday', 'this_week', 'last_week', 'this_month', 'custom'], description: 'Predefined period or custom range' }
+      period: { type: 'string', enum: ['today', 'yesterday', 'this_week', 'last_week', 'this_month', 'last_month', 'last_trip', 'custom', 'none'], description: 'Predefined period or custom range' }
     },
     required: []
   },
@@ -541,7 +541,19 @@ const get_trip_analytics: ToolDefinition = {
       case 'this_month':
         startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0)
         break
+      case 'last_month':
+        startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0)
+        endDate = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59)
+        break
+      case 'last_trip':
+        startDate = start_date ? new Date(start_date) : new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30, 0, 0, 0)
+        endDate = end_date ? new Date(end_date) : endDate
+        break
       case 'custom':
+        startDate = start_date ? new Date(start_date) : new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0)
+        endDate = end_date ? new Date(end_date) : endDate
+        break
+      case 'none':
         startDate = start_date ? new Date(start_date) : new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0)
         endDate = end_date ? new Date(end_date) : endDate
         break

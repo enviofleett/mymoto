@@ -16,6 +16,7 @@
     "e2e": "npx --yes @playwright/test@1.49.0 test",
     "icons:generate": "node scripts/generate-icons.mjs",
     "preview": "vite preview",
+    "test:vehicle-agent:integration": "node supabase/functions/vehicle-chat/tests/vehicle-chat.integration.mjs",
     "deploy": "sh scripts/setup-vercel.sh",
     "deploy:prod": "npx vercel --prod"
   },

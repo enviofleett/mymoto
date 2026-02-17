@@ -206,7 +206,7 @@ export function useRealtimeTripUpdates(deviceId: string | null, enabled: boolean
 
     console.log(`[Realtime] Subscribing to trip updates for device: ${deviceId}`);
 
-    // Subscribe to new trips
+    // Subscribe to new and updated trips
     const tripsChannel = supabase
       .channel(`trips:${deviceId}`)
       .on(
@@ -223,13 +223,11 @@ export function useRealtimeTripUpdates(deviceId: string | null, enabled: boolean
             console.log("[Realtime] New trip detected:", newTrip);
           }
 
-          // Directly update cache instead of invalidating (instant update, no refetch delay)
           queryClient.setQueriesData(
             { queryKey: ["vehicle-trips", deviceId] },
             (oldData: VehicleTrip[] | undefined) => {
               if (!oldData) return [newTrip];
               
-              // Check if trip already exists (prevent duplicates)
               const exists = oldData.some(t => 
                 t.id === newTrip.id || 
                 (t.start_time === newTrip.start_time && 
@@ -238,17 +236,46 @@ export function useRealtimeTripUpdates(deviceId: string | null, enabled: boolean
               
               if (exists) return oldData;
               
-              // Add new trip at the beginning (most recent first)
               return [newTrip, ...oldData];
             }
           );
           
-          // Invalidate related queries (for derived stats)
           queryClient.invalidateQueries({ queryKey: ["mileage-stats", deviceId] });
           queryClient.invalidateQueries({ queryKey: ["vehicle-daily-stats", deviceId] });
+          queryClient.invalidateQueries({ queryKey: ["daily-travel-stats", deviceId] });
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "vehicle_trips",
+          filter: `device_id=eq.${deviceId}`,
+        },
+        (payload) => {
+          const updatedTrip = payload.new as VehicleTrip;
+          if (process.env.NODE_ENV === 'development') {
+            console.log("[Realtime] Trip updated:", updatedTrip);
+          }
 
-          // Show toast notification with trip details (only if not in silent mode)
-          // Don't show toast during sync to avoid spam - progress card shows it
+          queryClient.setQueriesData(
+            { queryKey: ["vehicle-trips", deviceId] },
+            (oldData: VehicleTrip[] | undefined) => {
+              if (!oldData) return oldData;
+
+              const index = oldData.findIndex(t => t.id === updatedTrip.id);
+              if (index === -1) return oldData;
+
+              const next = [...oldData];
+              next[index] = { ...next[index], ...updatedTrip };
+              return next;
+            }
+          );
+
+          queryClient.invalidateQueries({ queryKey: ["mileage-stats", deviceId] });
+          queryClient.invalidateQueries({ queryKey: ["vehicle-daily-stats", deviceId] });
+          queryClient.invalidateQueries({ queryKey: ["daily-travel-stats", deviceId] });
         }
       )
       .subscribe((status) => {

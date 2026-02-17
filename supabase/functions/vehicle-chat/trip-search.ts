@@ -1,10 +1,12 @@
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2'
 import { validateTrip } from './trip-utils.ts'
+import { reverseGeocode } from '../_shared/geocoding.ts'
+import { filterTripsByLocation } from './trip-search-core.ts'
 
 export interface TripData {
   id: string
   start_time: string
-  end_time: string
+  end_time?: string | null
   start_location_name?: string
   end_location_name?: string
   start_address?: string
@@ -78,27 +80,49 @@ export async function handleTripSearch(
       console.log(`[Trip Search] Single match found: ${loc.match_text}. Fetching trips...`);
       
       const { data: trips, error: tripError } = await supabase
-        .from('vehicle_trips')
-        .select('id, start_time, end_time, start_location_name, end_location_name, start_address, end_address, distance_km, duration_seconds, start_latitude, start_longitude, end_latitude, end_longitude, max_speed, avg_speed')
+        .from('gps51_trips')
+        .select('id, start_time, end_time, start_latitude, start_longitude, end_latitude, end_longitude, distance_meters, duration_seconds, max_speed_kmh, avg_speed_kmh')
         .eq('device_id', deviceId)
-        // .eq('source', 'gps51') // Removed source restriction to include all valid trips
-        .or(`start_location_name.ilike.%${loc.match_text}%,end_location_name.ilike.%${loc.match_text}%,start_address.ilike.%${loc.match_text}%,end_address.ilike.%${loc.match_text}%`)
         .order('start_time', { ascending: false })
-        .limit(20); // Fetch more to allow for filtering
+        .limit(80); // Fetch enough trips to find location matches reliably
 
       if (tripError) {
           console.error('[Trip Search] Trip fetch error:', tripError);
           return { type: 'error', message: 'Failed to retrieve trip details' };
       }
 
-      const validTrips = (trips || [])
-        .map((t: any) => validateTrip(t))
-        .filter((t: any) => !t.isGhost)
-        .slice(0, 10); // Take top 10 valid
+      const addressCache = new Map<string, string>()
+
+      const resolveAddress = async (lat?: number | null, lng?: number | null): Promise<string | undefined> => {
+        if (lat == null || lng == null || lat === 0 || lng === 0) return undefined
+        const key = `${Number(lat).toFixed(5)},${Number(lng).toFixed(5)}`
+        if (addressCache.has(key)) return addressCache.get(key)
+        try {
+          const geocode = await reverseGeocode(lat, lng)
+          const address = geocode.address || ''
+          addressCache.set(key, address)
+          return address
+        } catch {
+          addressCache.set(key, '')
+          return undefined
+        }
+      }
+
+      const matchingTrips = await filterTripsByLocation(
+        (trips || []) as any[],
+        loc.match_text || searchTerm,
+        resolveAddress,
+        (trip) => validateTrip(trip),
+        10
+      )
+
+      if (matchingTrips.length === 0) {
+        return { type: 'empty', message: `I found "${loc.match_text}" as a location, but there are no matching trips in the current GPS51 trip history window.` }
+      }
 
       return { 
         type: 'success', 
-        trips: validTrips, 
+        trips: matchingTrips, 
         locationName: loc.match_text 
       };
     }

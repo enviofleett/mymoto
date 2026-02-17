@@ -340,6 +340,21 @@ export function extractDateContext(message: string, clientTimestamp?: string, us
       humanReadable: 'recently (last 24 hours)'
     }
   }
+
+  // Generic trip/history questions without explicit date:
+  // default to a practical recent window so we don't query a zero-length "now..now" range.
+  if (
+    isHistoricalMovementQuery(lowerMessage) ||
+    /\b(trips?|journeys?|drives?|travel|history|mileage|distance)\b/i.test(lowerMessage)
+  ) {
+    return {
+      hasDateReference: true,
+      period: 'custom',
+      startDate: startOfDay(subDays(now, 7)).toISOString(),
+      endDate: endOfDay(now).toISOString(),
+      humanReadable: 'recent history (last 7 days)'
+    }
+  }
   
   // No date reference found
   return {

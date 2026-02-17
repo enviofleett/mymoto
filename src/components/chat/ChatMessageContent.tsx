@@ -3,6 +3,14 @@ import { MapPin, ChevronDown, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { cleanMapLinks, parseMessageParts } from "./chatMessageParser";
+
+interface LocationMeta {
+  lastSeenLabel?: string;
+  statusText?: string;
+  batteryText?: string;
+  ignitionText?: string;
+}
 
 interface LocationData {
   lat: number;
@@ -13,45 +21,58 @@ interface LocationData {
 interface ChatMessageContentProps {
   content: string;
   isUser?: boolean;
+  meta?: LocationMeta;
 }
 
-function parseLocationMarkers(content: string): (string | { type: 'location'; data: LocationData })[] {
-  const locationRegex = /\[LOCATION:\s*([\d.-]+),\s*([\d.-]+),\s*"([^"]+)"\]/g;
-  const parts: (string | { type: 'location'; data: LocationData })[] = [];
-  
-  let lastIndex = 0;
-  let match;
-  
-  while ((match = locationRegex.exec(content)) !== null) {
-    // Add text before the match
-    if (match.index > lastIndex) {
-      parts.push(content.slice(lastIndex, match.index));
-    }
-    
-    // Add the location object
-    parts.push({
-      type: 'location',
-      data: {
-        lat: parseFloat(match[1]),
-        lng: parseFloat(match[2]),
-        address: match[3]
+function TripTable({ markdown }: { markdown: string }) {
+  const lines = markdown.split('\n').filter((line) => line.trim());
+  const tableRows: string[][] = [];
+
+  lines.forEach((line) => {
+    if (line.startsWith('|') && line.endsWith('|')) {
+      const cells = line
+        .split('|')
+        .map((cell) => cell.trim())
+        .filter((cell) => cell.length > 0);
+      if (cells.length > 0) {
+        tableRows.push(cells);
       }
-    });
-    
-    lastIndex = match.index + match[0].length;
-  }
-  
-  // Add remaining text
-  if (lastIndex < content.length) {
-    parts.push(content.slice(lastIndex));
-  }
-  
-  return parts;
-}
+    }
+  });
 
-function cleanMapLinks(text: string): string {
-  // Remove markdown map links since we have the location tab
-  return text.replace(/\[Open in Maps\]\([^)]+\)/g, '').trim();
+  if (tableRows.length === 0) {
+    return null;
+  }
+
+  const headers = tableRows[0] || [];
+  const dataRows = tableRows.slice(2);
+
+  return (
+    <div className="mt-2 overflow-x-auto rounded-lg border border-border bg-background/60">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="border-b border-border bg-muted/40">
+            {headers.map((header, index) => (
+              <th key={index} className="px-3 py-2 text-left font-semibold text-foreground">
+                {header}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {dataRows.map((row, rowIndex) => (
+            <tr key={rowIndex} className="border-b border-border/40">
+              {row.map((cell, cellIndex) => (
+                <td key={cellIndex} className="px-3 py-2 text-foreground/90">
+                  {cell}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function MiniMap({ lat, lng }: { lat: number; lng: number }) {
@@ -74,7 +95,7 @@ function MiniMap({ lat, lng }: { lat: number; lng: number }) {
 
     const icon = L.divIcon({
       className: 'custom-marker',
-      html: `<div class="w-6 h-6 bg-primary rounded-full border-2 border-white shadow-lg flex items-center justify-center">
+      html: `<div class="w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center" style="background:#ea580c;">
         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
           <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
           <circle cx="12" cy="10" r="3"/>
@@ -102,8 +123,8 @@ function MiniMap({ lat, lng }: { lat: number; lng: number }) {
   );
 }
 
-function LocationTab({ data, isUser }: { data: LocationData; isUser?: boolean }) {
-  const [isOpen, setIsOpen] = useState(false);
+function LocationTab({ data, isUser, meta }: { data: LocationData; isUser?: boolean; meta?: LocationMeta }) {
+  const [isOpen, setIsOpen] = useState(true);
   const mapsUrl = `https://www.google.com/maps?q=${data.lat},${data.lng}`;
   
   return (
@@ -136,7 +157,15 @@ function LocationTab({ data, isUser }: { data: LocationData; isUser?: boolean })
           isUser ? "border-primary-foreground/20" : "border-border"
         )}>
           <MiniMap lat={data.lat} lng={data.lng} />
-          <p className="text-sm mb-2">{data.address}</p>
+          <p className="text-sm mb-1">{data.address}</p>
+          {meta && (
+            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+              <span>Last: {meta.lastSeenLabel ?? "--"}</span>
+              <span>Status: {meta.statusText ?? "--"}</span>
+              <span>Battery: {meta.batteryText ?? "--"}</span>
+              <span>{meta.ignitionText ?? "Ignition --"}</span>
+            </div>
+          )}
           <a
             href={mapsUrl}
             target="_blank"
@@ -157,9 +186,9 @@ function LocationTab({ data, isUser }: { data: LocationData; isUser?: boolean })
   );
 }
 
-export function ChatMessageContent({ content, isUser }: ChatMessageContentProps) {
+export function ChatMessageContent({ content, isUser, meta }: ChatMessageContentProps) {
   const cleanedContent = cleanMapLinks(content);
-  const parts = parseLocationMarkers(cleanedContent);
+  const parts = parseMessageParts(cleanedContent);
   
   return (
     <>
@@ -170,14 +199,12 @@ export function ChatMessageContent({ content, isUser }: ChatMessageContentProps)
           if (!cleanText) return null;
           return <span key={index}>{cleanText}</span>;
         }
-        
-        return (
-          <LocationTab 
-            key={index} 
-            data={part.data} 
-            isUser={isUser}
-          />
-        );
+
+        if (part.type === 'trip_table') {
+          return <TripTable key={index} markdown={part.markdown} />;
+        }
+
+        return <LocationTab key={index} data={part.data} isUser={isUser} meta={meta} />;
       })}
     </>
   );

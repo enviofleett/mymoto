@@ -4,19 +4,12 @@ import { Circle } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-// Fix default Leaflet marker icons in bundled builds (Vite).
-import icon from "leaflet/dist/images/marker-icon.png";
-import iconShadow from "leaflet/dist/images/marker-shadow.png";
-
-const DefaultIcon = L.icon({
-  iconUrl: icon,
-  shadowUrl: iconShadow,
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
+const orangeDotIcon = L.divIcon({
+  className: "leaflet-orange-dot-icon",
+  html: '<div class="leaflet-orange-dot"></div>',
+  iconSize: [18, 18],
+  iconAnchor: [9, 9],
 });
-
-// One-time global override used by Leaflet.
-L.Marker.prototype.options.icon = DefaultIcon;
 
 type LatLon = { lat: number; lon: number };
 
@@ -106,6 +99,15 @@ export function LeafletVehicleMapClient({
 
   return (
     <div className={className}>
+      <style>{`
+        .leaflet-orange-dot {
+          width: 18px;
+          height: 18px;
+          border-radius: 9999px;
+          background: #ea580c;
+          box-shadow: 0 0 0 6px rgba(234, 88, 12, 0.3);
+        }
+      `}</style>
       <MapContainer
         center={center}
         zoom={15}
@@ -128,12 +130,14 @@ export function LeafletVehicleMapClient({
 
         {routeStartEnd ? (
           <>
-            <Marker position={[routeStartEnd.start.lat, routeStartEnd.start.lon]} />
-            <Marker position={[routeStartEnd.end.lat, routeStartEnd.end.lon]} />
+            <Marker position={[routeStartEnd.start.lat, routeStartEnd.start.lon]} icon={orangeDotIcon} />
+            <Marker position={[routeStartEnd.end.lat, routeStartEnd.end.lon]} icon={orangeDotIcon} />
           </>
         ) : null}
 
-        {hasValidCoordinates ? <Marker position={[latitude as number, longitude as number]} /> : null}
+        {hasValidCoordinates ? (
+          <Marker position={[latitude as number, longitude as number]} icon={orangeDotIcon} />
+        ) : null}
 
         {zones.map((z, idx) => (
           <Circle
@@ -147,4 +151,3 @@ export function LeafletVehicleMapClient({
     </div>
   );
 }
-

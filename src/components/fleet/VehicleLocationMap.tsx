@@ -49,24 +49,18 @@ function supportsWebGL2(): boolean {
   }
 }
 
-// Create marker HTML
+// Create marker HTML (always orange dot)
 function createMarkerHTML(status: VehicleStatus, heading: number, speed: number): string {
-  const rotation = status === 'moving' ? heading : 0;
-  const showSpeed = status === 'moving' && speed > 0;
+  void status;
+  void heading;
+  void speed;
 
   return `
-    <div class="car-marker-container" style="transform: rotate(${rotation}deg)">
-      <div class="car-pulse ${status}"></div>
-      <div class="car-icon ${status}">
-        ${status === 'parked' || status === 'offline' ? `
-          <div class="status-dot"></div>
-        ` : `
-          <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
-            <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/>
-          </svg>
-        `}
+    <div class="car-marker-container">
+      <div class="car-pulse orange"></div>
+      <div class="car-icon orange">
+        <div class="status-dot"></div>
       </div>
-      ${showSpeed ? `<div class="speed-badge">${Math.round(speed)}</div>` : ''}
     </div>
   `;
 }
@@ -526,14 +520,10 @@ export function VehicleLocationMap({
             .vehicle-car-marker { cursor: pointer; user-select: none; }
             .car-marker-container { position: relative; width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; transition: transform 0.5s ease-out; }
             .car-pulse { position: absolute; width: 60px; height: 60px; border-radius: 50%; animation: carPulse 2s infinite; pointer-events: none; }
-            .car-pulse.parked { background: radial-gradient(circle, rgba(34, 197, 94, 0.4) 0%, rgba(34, 197, 94, 0) 70%); }
-            .car-pulse.moving { background: radial-gradient(circle, rgba(59, 130, 246, 0.4) 0%, rgba(59, 130, 246, 0) 70%); }
-            .car-pulse.offline { background: radial-gradient(circle, rgba(107, 114, 128, 0.4) 0%, rgba(107, 114, 128, 0) 70%); }
+            .car-pulse.orange { background: radial-gradient(circle, rgba(234, 88, 12, 0.4) 0%, rgba(234, 88, 12, 0) 70%); }
             .car-icon { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.4); z-index: 1; transition: background 0.3s ease; }
-            .car-icon.parked { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: white; }
-            .car-icon.moving { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; }
-            .car-icon.offline { background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%); color: white; }
-            .status-dot { width: 20px; height: 20px; border-radius: 50%; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+            .car-icon.orange { background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); color: white; }
+            .status-dot { width: 20px; height: 20px; border-radius: 50%; background: #ea580c; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
             .speed-badge { position: absolute; top: -8px; right: -8px; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); font-size: 10px; font-weight: 700; padding: 2px 5px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.3); z-index: 2; white-space: nowrap; }
             .speed-badge::after { content: ' km/h'; font-size: 7px; font-weight: 400; }
             @keyframes carPulse { 0% { transform: scale(0.8); opacity: 1; } 100% { transform: scale(1.6); opacity: 0; } }

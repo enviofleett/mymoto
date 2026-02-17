@@ -1,0 +1,53 @@
+name: Vehicle Agent CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  frontend-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+
+  vehicle-agent-schema:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: supabase/functions/vehicle-chat
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v1
+        with:
+          deno-version: v2.x
+      - name: Validate TOOLS and TOOLS_SCHEMA wiring
+        run: deno run --allow-read tests/validate-tools-schema.ts
+
+  vehicle-agent-integration:
+    runs-on: ubuntu-latest
+    needs:
+      - frontend-checks
+      - vehicle-agent-schema
+    env:
+      VEHICLE_CHAT_URL: ${{ secrets.VEHICLE_CHAT_URL }}
+      VEHICLE_CHAT_TOKEN: ${{ secrets.VEHICLE_CHAT_TOKEN }}
+      VEHICLE_CHAT_DEVICE_ID: ${{ secrets.VEHICLE_CHAT_DEVICE_ID }}
+      VEHICLE_CHAT_TIMEZONE: ${{ secrets.VEHICLE_CHAT_TIMEZONE }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - name: Run vehicle-chat integration tests
+        run: npm run test:vehicle-agent:integration

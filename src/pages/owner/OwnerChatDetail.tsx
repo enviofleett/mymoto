@@ -14,7 +14,7 @@ import { useVehicleAlerts, formatAlertForChat } from "@/hooks/useVehicleAlerts";
 import { ArrowLeft, Car, User, Send, Loader2, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ChatMessageContent } from "@/components/chat/ChatMessageContent";
-import { formatLagosDate } from "@/lib/timezone";
+import { formatLagosDate, formatRelativeTime } from "@/lib/timezone";
 import { useQuery } from "@tanstack/react-query";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
@@ -54,6 +54,21 @@ export default function OwnerChatDetail() {
   const avatarUrl = llmSettings?.avatar_url || vehicle?.avatarUrl;
   
   const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vehicle-chat`;
+
+  const lastSeenLabel = vehicle?.lastUpdate ? formatRelativeTime(vehicle.lastUpdate) : "--";
+  const statusText =
+    vehicle == null
+      ? "No data"
+      : vehicle.status === "offline"
+        ? "Offline"
+        : vehicle.speed && vehicle.speed > 0
+          ? "Moving"
+          : vehicle.ignition
+            ? "Ignition ON"
+            : "Parked";
+  const batteryText = typeof vehicle?.battery === "number" ? `${vehicle.battery}%` : "--";
+  const ignitionText =
+    vehicle?.ignition == null ? "Ignition --" : vehicle.ignition ? "Ignition ON" : "Ignition OFF";
 
   // ✅ FIX: Use React Query for chat history with caching
   const { data: historyData, isLoading: historyLoading } = useQuery({
@@ -786,7 +801,16 @@ export default function OwnerChatDetail() {
                     </div>
                   )}
                   <div className="text-sm whitespace-pre-wrap leading-relaxed">
-                    <ChatMessageContent content={msg.content} isUser={msg.role === "user"} />
+                    <ChatMessageContent
+                      content={msg.content}
+                      isUser={msg.role === "user"}
+                      meta={{
+                        lastSeenLabel,
+                        statusText,
+                        batteryText,
+                        ignitionText,
+                      }}
+                    />
                   </div>
                   <p className={cn(
                     "text-[10px] mt-1.5 text-right",
@@ -821,7 +845,16 @@ export default function OwnerChatDetail() {
               </div>
               <div className="rounded-2xl rounded-bl-md px-4 py-3 max-w-[75%] bg-card shadow-neumorphic-sm">
                 <div className="text-sm whitespace-pre-wrap leading-relaxed">
-                  <ChatMessageContent content={streamingContent} isUser={false} />
+                  <ChatMessageContent
+                    content={streamingContent}
+                    isUser={false}
+                    meta={{
+                      lastSeenLabel,
+                      statusText,
+                      batteryText,
+                      ignitionText,
+                    }}
+                  />
                 </div>
               </div>
             </div>
