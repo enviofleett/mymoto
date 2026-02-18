@@ -533,24 +533,14 @@ export default function AdminEmailTemplates() {
       // But wrapInEmailTemplate handles this check now!
       const finalHtml = wrapInEmailTemplate(processedHtml);
 
-      const isVehicleAssignment = editedTemplate.template_key === 'vehicle_assignment';
-      const templateForInvoke = isVehicleAssignment ? 'systemNotification' : editedTemplate.template_key;
-      const testData: Record<string, string | undefined> = isVehicleAssignment
-        ? {
-            title: "New Vehicle(s) Assigned",
-            message: `Hello ${sampleData.userName ?? 'User'}, ${sampleData.vehicleCount ?? '1'} vehicle(s) have been assigned to your account. You can view them in your dashboard.`,
-            actionLink: sampleData.actionLink ?? "https://app.example.com/fleet",
-            actionText: "View Vehicles",
-            ...(editedTemplate.sender_id && { senderId: editedTemplate.sender_id }),
-          }
-        : {
-            ...sampleData,
-            ...(editedTemplate.sender_id && { senderId: editedTemplate.sender_id }),
-          };
+      const testData: Record<string, string | undefined> = {
+        ...sampleData,
+        ...(editedTemplate.sender_id && { senderId: editedTemplate.sender_id }),
+      };
 
       const { data, error } = await supabase.functions.invoke('send-email', {
         body: {
-          template: templateForInvoke,
+          template: editedTemplate.template_key as any,
           to: trimmedEmail,
           data: testData,
           customSubject: processedSubject,

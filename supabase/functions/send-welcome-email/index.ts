@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { sendEmail, EmailTemplates, getEmailConfig } from "../_shared/email-service.ts";
+import { sendEmail, EmailTemplates, getEmailConfig, renderEmailTemplate } from "../_shared/email-service.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -54,15 +54,35 @@ const handler = async (req: Request): Promise<Response> => {
 
     const loginLink = `${supabaseUrl.replace("/rest/v1", "")}/auth`;
 
-    const emailTemplate = EmailTemplates.welcome({
+    const fallback = EmailTemplates.welcome({
       userName: finalUserName,
       loginLink,
     });
 
+    const rendered = await renderEmailTemplate({
+      supabase,
+      templateKey: "welcome",
+      data: {
+        userName: finalUserName,
+        loginLink,
+        body_content: fallback.html,
+      },
+      fallback,
+    });
+
+    if (rendered.skipped) {
+      return new Response(
+        JSON.stringify({ success: true, skipped: true, message: "Welcome template is disabled" }),
+        { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+
     await sendEmail({
       to: userEmail,
-      subject: emailTemplate.subject,
-      html: emailTemplate.html,
+      subject: rendered.template.subject,
+      html: rendered.template.html,
+      text: rendered.template.text,
+      senderId: rendered.senderId,
       supabase,
       templateKey: 'welcome'
     });

@@ -207,7 +207,68 @@ WHEN TO USE EACH TOOL:
 - "Track my route from A to B" → get_position_history (detailed path)
 `
 
-    const finalSystemPrompt = `${systemPersona}\n${dateSystemInfo}`
+    let alertsSystemInfo = ''
+    const alerts = conversationContext.recent_proactive_alerts || []
+    if (alerts.length > 0) {
+      const lines = alerts.map((a, index) => {
+        const severity = a.severity || ''
+        const title = a.title || ''
+        const messageText = a.message || ''
+        const createdAt = a.created_at || ''
+        return `${index + 1}. [${severity}] ${title} - ${messageText} (${createdAt})`
+      })
+      alertsSystemInfo = `
+
+RECENT PROACTIVE ALERTS (You sent these recently):
+${lines.join('\n')}
+If the user asks about these alerts, provide context and recommendations.`
+    }
+
+    let alertsSummarySystemInfo = ''
+    if (conversationContext.recent_proactive_alerts_summary) {
+      alertsSummarySystemInfo = `
+
+ALERT SUMMARY:
+${conversationContext.recent_proactive_alerts_summary}
+When the user asks about recent issues, use this as a quick overview before diving into details.`
+    }
+
+    const preferencesRaw: any = preferenceContextRaw || {}
+    const proactiveUpdatesPref = preferencesRaw.proactive_updates
+    const alertSeverityPref = preferencesRaw.alert_severity
+
+    let proactiveRulesInfo = ''
+
+    if (proactiveUpdatesPref || alertSeverityPref) {
+      const proactiveLine = proactiveUpdatesPref
+        ? (proactiveUpdatesPref.value
+            ? 'User wants proactive updates when it is genuinely helpful.'
+            : 'User prefers only direct answers to their questions. Avoid unsolicited suggestions.')
+        : null
+
+      let severityLine: string | null = null
+      if (alertSeverityPref) {
+        if (alertSeverityPref.value === 'critical_only') {
+          severityLine = 'Only emphasize CRITICAL alerts unless the user explicitly asks for minor ones.'
+        } else if (alertSeverityPref.value === 'all') {
+          severityLine = 'It is okay to mention minor alerts as well as critical ones.'
+        }
+      }
+
+      const lines: string[] = []
+      if (proactiveLine) lines.push(`- ${proactiveLine}`)
+      if (severityLine) lines.push(`- ${severityLine}`)
+
+      if (lines.length > 0) {
+        proactiveRulesInfo = `
+
+ALERT PREFERENCE RULES:
+${lines.join('\n')}
+Only propose follow-up actions or extra monitoring if this matches these preferences.`
+      }
+    }
+
+    const finalSystemPrompt = `${systemPersona}\n${dateSystemInfo}${alertsSystemInfo}${alertsSummarySystemInfo}${proactiveRulesInfo}`
 
     // 4. Construct Message History
     const messages: any[] = [
@@ -222,6 +283,7 @@ WHEN TO USE EACH TOOL:
     let metadata: any = {}
     const MAX_TURNS = 5
     let turnCount = 0
+    let handledDeterministically = false
 
     // ------------------------------------------------------------------------
     // Deterministic prefetch: fetch the right data before the LLM answers.
@@ -299,6 +361,12 @@ WHEN TO USE EACH TOOL:
             const r = await healthTool.execute({ check_freshness: true }, { supabase, device_id: target_device_id })
             prefetched.push({ tool: 'get_vehicle_health', result: r })
           }
+        } else if (intent.type === 'alert_explanation') {
+          const alertsTool = TOOLS.find(t => t.name === 'get_recent_alerts')
+          if (alertsTool) {
+            const r = await alertsTool.execute({ limit: 20 }, { supabase, device_id: target_device_id })
+            prefetched.push({ tool: 'get_recent_alerts', result: r })
+          }
         }
       }
     } catch (e: any) {
@@ -307,81 +375,180 @@ WHEN TO USE EACH TOOL:
 
     if (prefetched.length > 0) {
       metadata.prefetched = prefetched
-      messages.splice(1, 0, {
-        role: 'assistant',
-        content: `Tool results (prefetched):\n${JSON.stringify(prefetched).slice(0, 12000)}`
-      })
-    }
-    
-    for (let turn = 0; turn < MAX_TURNS; turn++) {
-      turnCount = turn + 1
-      console.log(`[Agent] Turn ${turn + 1}`)
-      
-      const llmResponse = await callLovableAPI(messages, undefined, {
-        tools: TOOLS_SCHEMA,
-        tool_choice: 'auto'
-      })
+      const tripHistoryPrefetch = prefetched.find(p => p.tool === 'get_trip_history')
+      const positionHistoryPrefetch = prefetched.find(p => p.tool === 'get_position_history')
+      const tripAnalyticsPrefetch = prefetched.find(p => p.tool === 'get_trip_analytics')
 
-      // If text content exists, append it (it might be the final answer or a thought)
-      if (llmResponse.text) {
-        messages.push({ role: 'assistant', content: llmResponse.text })
+      if ((intent.type === 'trip' || intent.type === 'history') && tripHistoryPrefetch) {
+        metadata.get_trip_history = tripHistoryPrefetch.result
+        if (positionHistoryPrefetch) {
+          metadata.get_position_history = positionHistoryPrefetch.result
+        }
+
+        const summary = tripHistoryPrefetch.result?.summary
+        const trips = tripHistoryPrefetch.result?.trips || []
+        const tripCount = summary?.count ?? trips.length ?? 0
+        const distanceKm = summary?.total_distance_km ?? trips.reduce((sum: number, t: any) => sum + (t.distance_km || 0), 0)
+
+        if (tripCount === 0) {
+          const positionSummary = positionHistoryPrefetch?.result?.summary
+          const movedDistance = positionSummary?.movement?.approximate_distance_km ?? 0
+          if (movedDistance > 0) {
+            finalResponseText = `I do not have any completed trips recorded for ${dateContext.humanReadable}, but raw GPS points show about ${movedDistance} km of movement. This usually means trips are still being processed or were too short to segment.`
+          } else {
+            finalResponseText = `I do not see any trips or movement for ${dateContext.humanReadable}.`
+          }
+        } else if (dateContext.period === 'last_trip' || /last trip|latest trip|most recent trip/i.test(message)) {
+          const lastTrip = trips[trips.length - 1]
+          const from = lastTrip?.from || 'Unknown location'
+          const to = lastTrip?.to || 'Unknown location'
+          const lastDist = lastTrip?.distance_km ?? 0
+          const lastDurMin = lastTrip?.duration_min ?? null
+          const durationText = lastDurMin != null ? `${lastDurMin} minutes` : 'an unknown duration'
+          finalResponseText = `My last trip went from ${from} to ${to} covering about ${Math.round(lastDist * 10) / 10} km over ${durationText}.`
+        } else {
+          const distanceText = Math.round(distanceKm * 10) / 10
+          const periodText = dateContext.humanReadable || 'that period'
+          if (tripCount === 1) {
+            const t = trips[0]
+            const from = t?.from || 'Unknown location'
+            const to = t?.to || 'Unknown location'
+            const durMin = t?.duration_min ?? null
+            const durText = durMin != null ? `${durMin} minutes` : 'an unknown duration'
+            finalResponseText = `You had 1 trip ${periodText} from ${from} to ${to}, about ${Math.round((t?.distance_km || distanceKm) * 10) / 10} km over ${durText}.`
+          } else {
+            finalResponseText = `You had ${tripCount} trips ${periodText}, covering about ${distanceText} km in total.`
+          }
+        }
+
+        queryType = 'trip_history'
+        handledDeterministically = true
+      } else if (intent.type === 'stats' && tripAnalyticsPrefetch) {
+        metadata.get_trip_analytics = tripAnalyticsPrefetch.result
+        const summary = tripAnalyticsPrefetch.result?.summary
+        const periodInfo = tripAnalyticsPrefetch.result?.period
+        const totalTrips = summary?.total_trips ?? 0
+        const totalDistance = summary?.total_distance_km ?? 0
+        const driveTime = summary?.total_drive_time ?? null
+        const parkingTime = summary?.total_parking_time ?? null
+        const periodLabel = dateContext.humanReadable || periodInfo?.name || 'that period'
+
+        if (totalTrips === 0) {
+          finalResponseText = `I do not see any completed trips for ${periodLabel}.`
+        } else {
+          const distText = Math.round(totalDistance * 10) / 10
+          if (driveTime && parkingTime) {
+            finalResponseText = `For ${periodLabel}, you had ${totalTrips} trips, drove about ${distText} km, spent ${driveTime} driving and about ${parkingTime} parked between trips.`
+          } else if (driveTime) {
+            finalResponseText = `For ${periodLabel}, you had ${totalTrips} trips and drove about ${distText} km over ${driveTime}.`
+          } else {
+            finalResponseText = `For ${periodLabel}, you had ${totalTrips} trips and drove about ${distText} km.`
+          }
+        }
+
+        queryType = 'trip_stats'
+        handledDeterministically = true
+      } else if (intent.type === 'alert_explanation') {
+        const alertsPrefetch = prefetched.find(p => p.tool === 'get_recent_alerts')
+        const recentAlertsData = alertsPrefetch ? alertsPrefetch.result : null
+
+        const alertItems = Array.isArray(recentAlertsData?.alerts)
+          ? (recentAlertsData.alerts as any[])
+          : []
+
+        const summaryLine = conversationContext.weekly_alert_pattern_summary
+          || conversationContext.recent_proactive_alerts_summary
+
+        if (alertItems.length === 0 && !summaryLine) {
+          finalResponseText = 'I do not see any recent alerts for this vehicle in the last few days.'
+        } else if (alertItems.length === 0 && summaryLine) {
+          finalResponseText = `${summaryLine} I do not have any additional alert records to break down right now.`
+        } else {
+          const topCount = Math.min(alertItems.length, 5)
+          const lines: string[] = []
+          for (let i = 0; i < topCount; i++) {
+            const item = alertItems[i]
+            const severity = item.severity || 'info'
+            const title = item.title || item.event_type || 'Alert'
+            const createdAt = item.created_at || ''
+            lines.push(`${i + 1}. [${severity}] ${title} at ${createdAt}`)
+          }
+
+          const intro = summaryLine
+            ? `${summaryLine} Here is a quick breakdown of the most recent alerts:\n`
+            : 'Here is a quick breakdown of your most recent alerts:\n'
+
+          finalResponseText = `${intro}${lines.join('\n')}\nIf you want more detail about any specific alert, ask about its time or title.`
+        }
+
+        queryType = 'alert_explanation'
+        handledDeterministically = true
       }
 
-      // Handle Tool Calls
-      if (llmResponse.tool_calls && llmResponse.tool_calls.length > 0) {
-        queryType = 'agent_action'
+      if (!handledDeterministically) {
+        messages.splice(1, 0, {
+          role: 'assistant',
+          content: `Tool results (prefetched):\n${JSON.stringify(prefetched).slice(0, 12000)}`
+        })
+      }
+    }
+    
+    if (!handledDeterministically && queryType !== 'control_command') {
+      for (let turn = 0; turn < MAX_TURNS; turn++) {
+        turnCount = turn + 1
+        console.log(`[Agent] Turn ${turn + 1}`)
         
-        // If the assistant didn't output text, we need to add a message with just tool_calls
-        // (If it did output text, we already added it above. OpenAI allows both or one.)
-        // Actually, for OpenAI format, if there are tool calls, the message usually has 'tool_calls' field.
-        // Our 'messages' array needs to strictly follow the format.
-        // If we pushed text above, we need to attach tool_calls to THAT message or replace it.
-        
-        // Correct handling:
-        const assistantMsg: any = { role: 'assistant', content: llmResponse.text || null, tool_calls: llmResponse.tool_calls }
-        
-        // If we already pushed text, remove it and replace with the combined message
-        if (llmResponse.text) {
-          messages.pop()
-        }
-        messages.push(assistantMsg)
+        const llmResponse = await callLovableAPI(messages, undefined, {
+          tools: TOOLS_SCHEMA,
+          tool_choice: 'auto'
+        })
 
-        // Execute Tools
-        for (const toolCall of llmResponse.tool_calls) {
-          const functionName = toolCall.function.name
-          const functionArgs = JSON.parse(toolCall.function.arguments)
-          
-          console.log(`[Agent] Executing tool: ${functionName}`, functionArgs)
-          
-          const toolDef = TOOLS.find(t => t.name === functionName)
-          let toolResult: any
-          
-          if (toolDef) {
-            try {
-              toolResult = await toolDef.execute(functionArgs, { supabase, device_id: target_device_id })
-            } catch (err: any) {
-              console.error(`[Agent] Tool error ${functionName}:`, err)
-              toolResult = { error: err.message }
-            }
-          } else {
-            toolResult = { error: `Tool ${functionName} not found` }
-          }
-          
-          // Append Tool Result
-          messages.push({
-            role: 'tool',
-            tool_call_id: toolCall.id,
-            content: JSON.stringify(toolResult)
-          })
-          
-          // Save metadata
-          metadata[functionName] = toolResult
+        if (llmResponse.text) {
+          messages.push({ role: 'assistant', content: llmResponse.text })
         }
-        // Loop continues to get the next response from LLM
-      } else {
-        // No tool calls -> Final Answer
-        finalResponseText = llmResponse.text || "I didn't receive a response."
-        break
+
+        if (llmResponse.tool_calls && llmResponse.tool_calls.length > 0) {
+          queryType = 'agent_action'
+          
+          const assistantMsg: any = { role: 'assistant', content: llmResponse.text || null, tool_calls: llmResponse.tool_calls }
+          
+          if (llmResponse.text) {
+            messages.pop()
+          }
+          messages.push(assistantMsg)
+
+          for (const toolCall of llmResponse.tool_calls) {
+            const functionName = toolCall.function.name
+            const functionArgs = JSON.parse(toolCall.function.arguments)
+            
+            console.log(`[Agent] Executing tool: ${functionName}`, functionArgs)
+            
+            const toolDef = TOOLS.find(t => t.name === functionName)
+            let toolResult: any
+            
+            if (toolDef) {
+              try {
+                toolResult = await toolDef.execute(functionArgs, { supabase, device_id: target_device_id })
+              } catch (err: any) {
+                console.error(`[Agent] Tool error ${functionName}:`, err)
+                toolResult = { error: err.message }
+              }
+            } else {
+              toolResult = { error: `Tool ${functionName} not found` }
+            }
+            
+            messages.push({
+              role: 'tool',
+              tool_call_id: toolCall.id,
+              content: JSON.stringify(toolResult)
+            })
+            
+            metadata[functionName] = toolResult
+          }
+        } else {
+          finalResponseText = llmResponse.text || "I didn't receive a response."
+          break
+        }
       }
     }
 

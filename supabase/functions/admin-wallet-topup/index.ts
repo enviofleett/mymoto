@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { sendEmail, EmailTemplates, getEmailConfig } from "../_shared/email-service.ts";
+import { sendEmail, EmailTemplates, getEmailConfig, renderEmailTemplate } from "../_shared/email-service.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -247,7 +247,7 @@ Deno.serve(async (req) => {
 
           const adminName = adminProfile?.name || adminUser.email || "Admin";
 
-          const emailTemplate = EmailTemplates.walletTopUp({
+          const fallback = EmailTemplates.walletTopUp({
             userName,
             amount,
             currency: wallet.currency || "NGN",
@@ -257,14 +257,37 @@ Deno.serve(async (req) => {
             walletLink: `${supabaseUrl.replace("/rest/v1", "")}/owner/wallet`,
           });
 
-          await sendEmail({
-            to: userEmail,
-            subject: emailTemplate.subject,
-            html: emailTemplate.html,
-            senderId: "MyMoto Fleet <noreply@mymoto.com>",
+          const templateData = {
+            userName,
+            amount,
+            currency: wallet.currency || "NGN",
+            newBalance,
+            description: description || "Admin top-up",
+            adminName,
+            walletLink: `${supabaseUrl.replace("/rest/v1", "")}/owner/wallet`,
+            body_content: fallback.html,
+          };
+
+          const rendered = await renderEmailTemplate({
             supabase,
-            templateKey: "walletTopUp"
+            templateKey: "walletTopUp",
+            data: templateData,
+            fallback,
           });
+
+          if (rendered.skipped) {
+            console.log("Wallet top-up template disabled, skipping notification");
+          } else {
+            await sendEmail({
+              to: userEmail,
+              subject: rendered.template.subject,
+              html: rendered.template.html,
+              text: rendered.template.text,
+              senderId: rendered.senderId || "MyMoto Fleet <noreply@mymoto.com>",
+              supabase,
+              templateKey: "walletTopUp"
+            });
+          }
 
           console.log(`Email notification sent to ${userEmail}`);
         } catch (emailError) {

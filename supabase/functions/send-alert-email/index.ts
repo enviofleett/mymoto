@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { sendEmail, EmailTemplates, getEmailConfig } from "../_shared/email-service.ts";
+import { sendEmail, EmailTemplates, getEmailConfig, renderEmailTemplate } from "../_shared/email-service.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -180,7 +180,7 @@ const handler = async (req: Request): Promise<Response> => {
       timeZoneName: "short",
     });
 
-    const emailTemplate = EmailTemplates.alert({
+    const fallback = EmailTemplates.alert({
       severity: (severity as 'info' | 'warning' | 'error' | 'critical') || 'info',
       title,
       message,
@@ -189,12 +189,35 @@ const handler = async (req: Request): Promise<Response> => {
       metadata,
     });
 
+    const rendered = await renderEmailTemplate({
+      supabase,
+      templateKey: "alert",
+      data: {
+        severity,
+        title,
+        message,
+        vehicleName,
+        timestamp,
+        metadata,
+        body_content: fallback.html,
+      },
+      fallback,
+    });
+
+    if (rendered.skipped) {
+      return new Response(
+        JSON.stringify({ success: true, skipped: true, message: "Alert template is disabled" }),
+        { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+
     // Send email using shared email service
     await sendEmail({
       to: adminEmails,
-      subject: emailTemplate.subject,
-      html: emailTemplate.html,
-      text: message,
+      subject: rendered.template.subject,
+      html: rendered.template.html,
+      text: rendered.template.text || message,
+      senderId: rendered.senderId,
       supabase,
       templateKey: 'alert'
     });

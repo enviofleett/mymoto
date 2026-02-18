@@ -518,12 +518,13 @@ export function VehicleLocationMap({
           )}
           <style>{`
             .vehicle-car-marker { cursor: pointer; user-select: none; }
-            .car-marker-container { position: relative; width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; transition: transform 0.5s ease-out; }
-            .car-pulse { position: absolute; width: 60px; height: 60px; border-radius: 50%; animation: carPulse 2s infinite; pointer-events: none; }
+            .car-marker-container { position: relative; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; transition: transform 0.5s ease-out; }
+            .car-pulse { position: absolute; width: 42px; height: 42px; border-radius: 50%; animation: carPulse 2s infinite; pointer-events: none; }
             .car-pulse.orange { background: radial-gradient(circle, rgba(234, 88, 12, 0.4) 0%, rgba(234, 88, 12, 0) 70%); }
-            .car-icon { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.4); z-index: 1; transition: background 0.3s ease; }
+            .car-icon { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.4); z-index: 1; transition: background 0.3s ease; }
             .car-icon.orange { background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); color: white; }
-            .status-dot { width: 20px; height: 20px; border-radius: 50%; background: #ea580c; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+            .status-dot { width: 14px; height: 14px; border-radius: 50%; background: #ea580c; box-shadow: 0 2px 4px rgba(0,0,0,0.2); position: relative; }
+            .status-dot::after { content: ''; position: absolute; inset: 3px; border-radius: 50%; background: white; }
             .speed-badge { position: absolute; top: -8px; right: -8px; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); font-size: 10px; font-weight: 700; padding: 2px 5px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.3); z-index: 2; white-space: nowrap; }
             .speed-badge::after { content: ' km/h'; font-size: 7px; font-weight: 400; }
             @keyframes carPulse { 0% { transform: scale(0.8); opacity: 1; } 100% { transform: scale(1.6); opacity: 0; } }

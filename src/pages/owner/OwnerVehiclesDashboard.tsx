@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 import { OwnerLayout } from "@/components/layouts/OwnerLayout";
+import { Button } from "@/components/ui/button";
 import { PullToRefresh } from "@/components/ui/pull-to-refresh";
 import { Select, SelectContent, SelectItem } from "@/components/ui/select";
 import * as SelectPrimitive from "@radix-ui/react-select";
@@ -14,13 +15,178 @@ import { fetchVehicleLiveDataDirect, type VehicleLiveData, useVehicleLiveData } 
 import { useDailyTravelStats } from "@/hooks/useDailyTravelStats";
 import { useAddress } from "@/hooks/useAddress";
 import { useRealtimeTripUpdates } from "@/hooks/useTripSync";
+import { useRealtimeVehicleUpdates } from "@/hooks/useRealtimeVehicleUpdates";
+import { supabase } from "@/integrations/supabase/client";
 
-import { Battery, Car, Gauge, MapPin, RefreshCw, ShieldAlert, Zap } from "lucide-react";
+import { Battery, Car, ChevronRight, Gauge, MapPin, RefreshCw, ShieldAlert, Zap } from "lucide-react";
 import mymotoLogo from "@/assets/mymoto-logo-new.png";
 import { VehicleRequestDialog } from "@/components/owner/VehicleRequestDialog";
 import { VehicleLocationMap } from "@/components/fleet/VehicleLocationMap";
 
 const STORAGE_KEY = "owner-selected-device-id";
+const LIVE_CACHE_KEY_PREFIX = "owner-live-cache-v1";
+const DIRECT_OVERRIDE_TTL_MS = 60_000;
+
+function getLiveCacheKey(deviceId: string) {
+  return `${LIVE_CACHE_KEY_PREFIX}:${deviceId}`;
+}
+
+function readCachedLive(deviceId: string): { data: VehicleLiveData; fetchedAt: number } | null {
+  try {
+    const raw = localStorage.getItem(getLiveCacheKey(deviceId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { data: any; fetchedAt: number };
+    if (!parsed || typeof parsed.fetchedAt !== "number" || !parsed.data) return null;
+    const d = parsed.data;
+    const hydrated: VehicleLiveData = {
+      ...d,
+      lastUpdate: d.lastUpdate ? new Date(d.lastUpdate) : null,
+      lastGpsFix: d.lastGpsFix ? new Date(d.lastGpsFix) : null,
+      lastSyncedAt: d.lastSyncedAt ? new Date(d.lastSyncedAt) : null,
+    };
+    return { data: hydrated, fetchedAt: parsed.fetchedAt };
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedLive(deviceId: string, payload: { data: VehicleLiveData; fetchedAt: number }) {
+  try {
+    const serialized = JSON.stringify({
+      data: {
+        ...payload.data,
+        lastUpdate: payload.data.lastUpdate ? payload.data.lastUpdate.toISOString() : null,
+        lastGpsFix: payload.data.lastGpsFix ? payload.data.lastGpsFix.toISOString() : null,
+        lastSyncedAt: payload.data.lastSyncedAt ? payload.data.lastSyncedAt.toISOString() : null,
+      },
+      fetchedAt: payload.fetchedAt,
+    });
+    localStorage.setItem(getLiveCacheKey(deviceId), serialized);
+  } catch {
+  }
+}
+
+export async function fetchLatestTripSummary(deviceId: string): Promise<unknown> {
+  const { data, error } = await (supabase as any)
+    .from("gps51_trips")
+    .select("id, device_id, start_time, end_time, distance_meters, duration_seconds")
+    .eq("device_id", deviceId)
+    .order("start_time", { ascending: false })
+    .limit(1);
+
+  if (error) {
+    throw error;
+  }
+
+  const rows = (data as any[]) || [];
+  const row = rows[0];
+  if (!row) return null;
+
+  return {
+    id: row.id,
+    device_id: row.device_id,
+    start_time: row.start_time,
+    end_time: row.end_time,
+    distance_km: typeof row.distance_meters === "number" ? row.distance_meters / 1000 : null,
+    duration_seconds: row.duration_seconds ?? null,
+  };
+}
+
+export interface LiveRefreshOptions {
+  deviceId: string;
+  getCurrent: () => VehicleLiveData | null;
+  fetchLive: (deviceId: string) => Promise<VehicleLiveData>;
+  refetchDaily: () => Promise<unknown> | void;
+  applyNewData: (payload: { data: VehicleLiveData; fetchedAt: number }) => void;
+  onSuccess: (message: string) => void;
+  onError: (message: string, description?: string) => void;
+  onStale?: () => void;
+  fetchLatestTrip?: (deviceId: string) => Promise<unknown>;
+  cacheLatestTrip?: (trip: unknown) => void;
+  signal?: AbortSignal;
+  maxAttempts?: number;
+  baseDelayMs?: number;
+  now?: () => number;
+}
+
+export async function runLiveRefresh(options: LiveRefreshOptions) {
+  const {
+    deviceId,
+    getCurrent,
+    fetchLive,
+    refetchDaily,
+    applyNewData,
+    onSuccess,
+    onError,
+    onStale,
+    fetchLatestTrip,
+    cacheLatestTrip,
+    signal,
+    maxAttempts,
+    baseDelayMs,
+    now,
+  } = options;
+
+  const attempts = maxAttempts ?? 3;
+  const baseDelay = baseDelayMs ?? 500;
+  const nowFn = now ?? (() => Date.now());
+
+  let attempt = 0;
+  let lastError: unknown = null;
+
+  while (attempt < attempts) {
+    if (signal?.aborted) {
+      return;
+    }
+    try {
+      const fresh = await fetchLive(deviceId);
+      if (signal?.aborted) {
+        return;
+      }
+
+      const current = getCurrent();
+      const currentTs = current?.lastUpdate ? current.lastUpdate.getTime() : 0;
+      const newTs = fresh.lastUpdate ? fresh.lastUpdate.getTime() : 0;
+
+      if (currentTs && newTs && newTs <= currentTs) {
+        if (onStale) {
+          onStale();
+        }
+      } else {
+        const fetchedAt = nowFn();
+        applyNewData({ data: fresh, fetchedAt });
+        await Promise.resolve(refetchDaily());
+        onSuccess("Updated live status");
+      }
+
+      if (fetchLatestTrip) {
+        try {
+          const trip = await fetchLatestTrip(deviceId);
+          if (trip && cacheLatestTrip) {
+            cacheLatestTrip(trip);
+          }
+        } catch {
+        }
+      }
+
+      lastError = null;
+      break;
+    } catch (err) {
+      lastError = err;
+      attempt += 1;
+      if (attempt >= attempts) {
+        break;
+      }
+      const delay = Math.min(baseDelay * Math.pow(2, attempt - 1), 8000);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+
+  if (lastError && !signal?.aborted) {
+    const message = lastError instanceof Error ? lastError.message : String(lastError);
+    onError("Live refresh failed", message);
+  }
+}
 
 type ChipVariant = "success" | "danger" | "muted" | "warning";
 
@@ -129,6 +295,8 @@ export default function OwnerVehiclesDashboard() {
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
   const [directOverride, setDirectOverride] = useState<{ data: VehicleLiveData; fetchedAt: number } | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const refreshStateRef = useRef<{ inFlight: boolean; lastTs: number }>({ inFlight: false, lastTs: 0 });
+  const refreshAbortRef = useRef<AbortController | null>(null);
 
   // Select initial device id (persisted)
   useEffect(() => {
@@ -157,10 +325,39 @@ export default function OwnerVehiclesDashboard() {
     }
   }, [selectedDeviceId]);
 
+  useEffect(() => {
+    if (!selectedDeviceId || directOverride) return;
+    try {
+      const cached = readCachedLive(selectedDeviceId);
+      if (cached) {
+        setDirectOverride(cached);
+      }
+    } catch {
+    }
+  }, [directOverride, selectedDeviceId]);
+
+  useEffect(() => {
+    return () => {
+      if (refreshAbortRef.current) {
+        refreshAbortRef.current.abort();
+        refreshAbortRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (refreshAbortRef.current) {
+      refreshAbortRef.current.abort();
+      refreshAbortRef.current = null;
+    }
+    refreshStateRef.current.inFlight = false;
+    setIsRefreshing(false);
+  }, [selectedDeviceId]);
+
   // Expire direct override
   useEffect(() => {
     if (!directOverride) return;
-    const ttlMs = 20_000;
+    const ttlMs = DIRECT_OVERRIDE_TTL_MS;
     const t = setTimeout(() => setDirectOverride(null), ttlMs);
     return () => clearTimeout(t);
   }, [directOverride]);
@@ -171,6 +368,7 @@ export default function OwnerVehiclesDashboard() {
   );
 
   useRealtimeTripUpdates(selectedDeviceId || null, !!selectedDeviceId);
+  useRealtimeVehicleUpdates(selectedDeviceId || null);
 
   const {
     data: dbLive,
@@ -213,25 +411,51 @@ export default function OwnerVehiclesDashboard() {
 
   const handleManualRefresh = useCallback(async () => {
     if (!selectedDeviceId) return;
+     const now = Date.now();
+     const state = refreshStateRef.current;
+     if (state.inFlight) return;
+     if (now - state.lastTs < 500) return;
+     state.inFlight = true;
+     state.lastTs = now;
+     const controller = new AbortController();
+     refreshAbortRef.current = controller;
     setIsRefreshing(true);
     try {
-      const fresh = await fetchVehicleLiveDataDirect(selectedDeviceId, { timeoutMs: 8000 });
-      setDirectOverride({ data: fresh, fetchedAt: Date.now() });
-      // Keep "Trips Today" / "Distance Today" in sync with manual refresh.
-      refetchDailyTravel();
-      toast.success("Updated live status");
-    } catch (e: any) {
-      toast.error("Live refresh failed", {
-        description: e instanceof Error ? e.message : "Please try again.",
+      await runLiveRefresh({
+        deviceId: selectedDeviceId,
+        getCurrent: () => displayData,
+        fetchLive: (id) => fetchVehicleLiveDataDirect(id, { timeoutMs: 8000 }),
+        refetchDaily: () => refetchDailyTravel(),
+        applyNewData: ({ data, fetchedAt }) => {
+          setDirectOverride({ data, fetchedAt });
+          writeCachedLive(selectedDeviceId, { data, fetchedAt });
+        },
+        onSuccess: (message) => {
+          toast.success(message);
+        },
+        onError: (message, description) => {
+          toast.error(message, {
+            description: description || "Please try again.",
+          });
+        },
+        onStale: () => {
+          toast.info("Live data is already up to date");
+        },
+        fetchLatestTrip: fetchLatestTripSummary,
+        signal: controller.signal,
       });
     } finally {
       setIsRefreshing(false);
+      state.inFlight = false;
+      if (refreshAbortRef.current === controller) {
+        refreshAbortRef.current = null;
+      }
     }
-  }, [refetchDailyTravel, selectedDeviceId]);
+  }, [displayData, refetchDailyTravel, selectedDeviceId]);
 
   const handlePullToRefresh = useCallback(async () => {
-    await Promise.all([refetchLive(), refetchDailyTravel()]);
-  }, [refetchDailyTravel, refetchLive]);
+    await Promise.all([handleManualRefresh(), refetchLive()]);
+  }, [handleManualRefresh, refetchLive]);
 
   const showEmpty = !vehiclesLoading && (vehicles?.length || 0) === 0;
   const showLoading = vehiclesLoading || liveLoading || !selectedDeviceId || !selectedVehicle;
@@ -502,16 +726,19 @@ export default function OwnerVehiclesDashboard() {
                           <span className="text-[10px] text-muted-foreground">
                             Tap for details
                           </span>
-                          <button
+                          <Button
                             type="button"
+                            variant="link"
+                            size="sm"
+                            className="text-xs h-7 px-0"
                             onClick={(e) => {
                               e.stopPropagation();
                               navigate(`/owner/vehicle/${selectedDeviceId}`);
                             }}
-                            className="text-xs text-primary font-medium hover:underline underline-offset-2"
                           >
+                            <ChevronRight className="h-3 w-3 text-accent" />
                             View full profile
-                          </button>
+                          </Button>
                         </div>
                       </div>
                     </div>

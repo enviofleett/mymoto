@@ -10,6 +10,7 @@ export type IntentType =
   | 'trip'            // Trip history, routes, journey info
   | 'stats'           // Analytics, mileage, performance metrics
   | 'maintenance'     // Health status, alerts, diagnostics
+  | 'alert_explanation' // Explain recent alerts and notifications
   | 'control'         // Commands, settings, configurations
   | 'history'         // Historical data, past events
   | 'driver'          // Driver information, assignments
@@ -83,6 +84,17 @@ const INTENT_PATTERNS: Record<IntentType, PatternDefinition> = {
     ],
     weight: 9,
     requires_fresh_data: true,
+    requires_history: true
+  },
+
+  alert_explanation: {
+    patterns: [
+      /\b(explain|break\s+down|summariz(e|e))\s+(my\s+)?(alerts?|warnings?|alarms?)\b/i,
+      /\b(why|how\s+come)\s+(did\s+)?(i\s+)?(get|receive)\s+(these|those|so\s+many)\s+(alerts?|warnings?|alarms?)\b/i,
+      /\b(what\s+are|tell\s+me\s+about|go\s+over)\s+(my\s+)?(recent|last|past)\s+(alerts?|warnings?|alarms?)\b/i
+    ],
+    weight: 11,
+    requires_fresh_data: false,
     requires_history: true
   },
 

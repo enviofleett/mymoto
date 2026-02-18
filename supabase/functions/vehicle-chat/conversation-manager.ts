@@ -23,6 +23,15 @@ export interface ConversationContext {
   conversation_summary: string | null;   // Summary of older messages
   important_facts: string[];             // Extracted key facts
   total_message_count: number;
+  recent_proactive_alerts?: {
+    id: string;
+    severity: string;
+    title: string;
+    message: string | null;
+    created_at: string;
+  }[];
+  recent_proactive_alerts_summary?: string | null;
+  weekly_alert_pattern_summary?: string | null;
 }
 
 /**
@@ -94,11 +103,113 @@ export async function buildConversationContext(
     }
   }
 
+  let recentAlerts: {
+    id: string;
+    severity: string;
+    title: string;
+    message: string | null;
+    created_at: string;
+  }[] = [];
+
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const alertsCutoff = sevenDaysAgo.toISOString();
+
+  const { data: alertRows, error: alertsError } = await supabase
+    .from('proactive_vehicle_events')
+    .select('id, severity, event_type, title, message, created_at')
+    .eq('device_id', deviceId)
+    .gte('created_at', alertsCutoff)
+    .order('created_at', { ascending: false })
+    .limit(100);
+
+  let alertsSummary: string | null = null;
+  let weeklyPatternSummary: string | null = null;
+
+  if (!alertsError && alertRows && alertRows.length > 0) {
+    const allAlerts = alertRows.map((row: any) => ({
+      id: row.id,
+      severity: row.severity,
+      title: row.title,
+      message: row.message ?? null,
+      created_at: row.created_at,
+      event_type: row.event_type as string,
+    }));
+
+    recentAlerts = allAlerts.slice(0, 5).map((a) => ({
+      id: a.id,
+      severity: a.severity,
+      title: a.title,
+      message: a.message,
+      created_at: a.created_at,
+    }));
+
+    const now = new Date();
+    const cutoff24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const window24h = allAlerts.filter((a) => {
+      const t = new Date(a.created_at);
+      return !Number.isNaN(t.getTime()) && t >= cutoff24h;
+    });
+
+    const windowAlerts = window24h.length > 0 ? window24h : allAlerts;
+    const totalCount = windowAlerts.length;
+
+    const byTitle: Record<string, number> = {};
+    for (const alertItem of windowAlerts) {
+      const key = alertItem.title || alertItem.event_type || alertItem.severity || 'alert';
+      byTitle[key] = (byTitle[key] || 0) + 1;
+    }
+
+    const parts = Object.entries(byTitle)
+      .sort((first, second) => second[1] - first[1])
+      .map(([label, count]) => `${count} ${label}${count === 1 ? '' : 's'}`);
+
+    const windowLabel = window24h.length > 0 ? 'last 24 hours' : 'recently';
+    if (parts.length > 0) {
+      alertsSummary = `In the ${windowLabel} you had ${parts.join(', ')}.`;
+    } else {
+      alertsSummary = `In the ${windowLabel} you had ${totalCount} alerts.`;
+    }
+
+    const byType: Record<string, number> = {};
+    const bySeverity: Record<string, number> = {};
+    for (const alertItem of allAlerts) {
+      const typeKey = alertItem.event_type || alertItem.title || 'unknown';
+      const severityKey = alertItem.severity || 'unknown';
+      byType[typeKey] = (byType[typeKey] || 0) + 1;
+      bySeverity[severityKey] = (bySeverity[severityKey] || 0) + 1;
+    }
+
+    const topTypes = Object.entries(byType)
+      .sort((first, second) => second[1] - first[1])
+      .slice(0, 3)
+      .map(([t, c]) => `${c} ${t}${c === 1 ? '' : ' alerts'}`);
+
+    const topSeverities = Object.entries(bySeverity)
+      .sort((first, second) => second[1] - first[1])
+      .map(([s, c]) => `${c} ${s}${c === 1 ? '' : ' alerts'}`);
+
+    if (allAlerts.length > 0) {
+      const weekLabel = 'last 7 days';
+      const pieces: string[] = [];
+      if (topTypes.length > 0) {
+        pieces.push(`${topTypes.join(', ')}`);
+      }
+      if (topSeverities.length > 0) {
+        pieces.push(`with severities: ${topSeverities.join(', ')}`);
+      }
+      weeklyPatternSummary = `In the ${weekLabel} there were ${allAlerts.length} alerts total: ${pieces.join(' ')}.`;
+    }
+  }
+
   return {
     recent_messages: (recentMessages || []).reverse(), // Oldest to newest
     conversation_summary: summary,
     important_facts: facts,
-    total_message_count: count || 0
+    total_message_count: count || 0,
+    recent_proactive_alerts: recentAlerts,
+    recent_proactive_alerts_summary: alertsSummary,
+    weekly_alert_pattern_summary: weeklyPatternSummary
   };
 }
 
@@ -127,10 +238,12 @@ RULES:
 2. If the user asks for factual info (location/status/trips), you must check using the available tools first.
 3. If tool data is unavailable or errors, say you couldn't fetch it right now and ask the user to retry.
 4. If data is missing for the CURRENT status (e.g., speed, battery), check if the user is asking about HISTORY.
-3. You CAN access historical trips ('get_trip_history') and manuals ('search_knowledge_base') even if the vehicle is currently OFFLINE.
-4. If the user asks about past trips, DO NOT say "I can't sense that right now". Call 'get_trip_history'.
-5. Keep responses concise (under 3 sentences) unless asked for details.
-6. Use emojis occasionally (🚗, 🔋, 📍) to add character.
+5. You CAN access historical trips ('get_trip_history'), trip analytics ('get_trip_analytics'), position history ('get_position_history'), and manuals ('search_knowledge_base') even if the vehicle is currently OFFLINE.
+6. For any answers about trips, distances, durations, averages, counts, or mileage, you MUST rely ONLY on the structured tool results (get_trip_history, get_trip_analytics, get_position_history). Do NOT guess or invent numbers under any circumstance.
+7. If the tools return no data for a period, clearly say that no trips were found for that period. Do NOT assume "no movement" if GPS points show movement; explain that trips may still be processing or too short to segment and refer to the tool data.
+8. If there is any conflict between your intuition and the tool data, always trust the tool data and explain using those numbers.
+9. Keep responses concise (under 3 sentences) unless asked for details.
+10. Use emojis occasionally (🚗, 🔋, 📍) to add character.
 `;
 
   return `${identity}\n${status}\n${preferences || ''}\n${rules}`;

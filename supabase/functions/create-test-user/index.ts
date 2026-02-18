@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { sendEmail, EmailTemplates, getEmailConfig } from "../_shared/email-service.ts";
+import { sendEmail, EmailTemplates, getEmailConfig, renderEmailTemplate } from "../_shared/email-service.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -194,8 +194,25 @@ serve(async (req) => {
       // Welcome email: only for newly created auth users.
       if (createdNewAuthUser && userId) {
         try {
-          const t = EmailTemplates.welcome({ userName: name, loginLink: `${supabaseUrl.replace("/rest/v1", "")}/auth` });
-          await sendEmail({ to: email, subject: t.subject, html: t.html, supabase: supabaseAdmin, templateKey: "welcome" });
+          const loginLink = `${supabaseUrl.replace("/rest/v1", "")}/auth`;
+          const fallback = EmailTemplates.welcome({ userName: name, loginLink });
+          const rendered = await renderEmailTemplate({
+            supabase: supabaseAdmin,
+            templateKey: "welcome",
+            data: { userName: name, loginLink, body_content: fallback.html },
+            fallback,
+          });
+          if (!rendered.skipped) {
+            await sendEmail({
+              to: email,
+              subject: rendered.template.subject,
+              html: rendered.template.html,
+              text: rendered.template.text,
+              senderId: rendered.senderId,
+              supabase: supabaseAdmin,
+              templateKey: "welcome",
+            });
+          }
         } catch (e) {
           console.warn("[create-test-user] welcome email failed:", e);
         }
@@ -204,14 +221,38 @@ serve(async (req) => {
       // Assignment email: if vehicles were assigned.
       if (assignedVehicles.length > 0) {
         try {
-          const subject = "New Vehicle(s) Assigned to Your Account";
-          const html = `
+          const actionLink = `${supabaseUrl.replace("/rest/v1", "")}/`;
+          const fallback = {
+            subject: "New Vehicle(s) Assigned to Your Account",
+            html: `
             <h2>Vehicles Assigned</h2>
             <p>Hello ${name},</p>
             <p>${assignedVehicles.length} vehicle(s) have been assigned to your account.</p>
-            <p><a href="${supabaseUrl.replace("/rest/v1", "")}/">Open MyMoto Fleet</a></p>
-          `;
-          await sendEmail({ to: email, subject, html, supabase: supabaseAdmin, templateKey: "vehicle_assignment" });
+            <p><a href="${actionLink}">Open MyMoto Fleet</a></p>
+          `,
+          };
+          const rendered = await renderEmailTemplate({
+            supabase: supabaseAdmin,
+            templateKey: "vehicle_assignment",
+            data: {
+              userName: name,
+              vehicleCount: assignedVehicles.length,
+              actionLink,
+              body_content: fallback.html,
+            },
+            fallback,
+          });
+          if (!rendered.skipped) {
+            await sendEmail({
+              to: email,
+              subject: rendered.template.subject,
+              html: rendered.template.html,
+              text: rendered.template.text,
+              senderId: rendered.senderId,
+              supabase: supabaseAdmin,
+              templateKey: "vehicle_assignment",
+            });
+          }
         } catch (e) {
           console.warn("[create-test-user] assignment email failed:", e);
         }

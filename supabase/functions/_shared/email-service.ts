@@ -23,6 +23,95 @@ export interface EmailOptions {
   templateKey?: string; // Optional: Provide with supabase to check active status
 }
 
+export interface RenderTemplateOptions {
+  supabase: any;
+  templateKey: string;
+  data: Record<string, unknown>;
+  fallback: EmailTemplate;
+  bypassStatusCheck?: boolean;
+  rawHtmlKeys?: string[];
+}
+
+export interface RenderTemplateResult {
+  template: EmailTemplate;
+  senderId?: string;
+  skipped: boolean;
+  source: "db" | "fallback";
+}
+
+function hasTruthyValue(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return false;
+    if (normalized === "false" || normalized === "0" || normalized === "null" || normalized === "undefined") {
+      return false;
+    }
+    return true;
+  }
+  return true;
+}
+
+export function renderTemplateString(
+  template: string,
+  data: Record<string, unknown>,
+  options?: { rawHtmlKeys?: string[] }
+): string {
+  const rawKeys = new Set(options?.rawHtmlKeys || []);
+  const withConditionals = template.replace(
+    /\{\{#if\s+(\w+)\}\}([\s\S]*?)\{\{\/if\}\}/g,
+    (_match, variableName: string, content: string) => (hasTruthyValue(data[variableName]) ? content : "")
+  );
+
+  const withVariables = withConditionals.replace(/\{\{(\w+)\}\}/g, (_match, variableName: string) => {
+    const value = data[variableName];
+    if (value === null || value === undefined) return "";
+    const stringValue = String(value);
+    return rawKeys.has(variableName) ? stringValue : escapeHtml(stringValue);
+  });
+
+  return withVariables.replace(/\{\{[^}]+\}\}/g, "");
+}
+
+export async function renderEmailTemplate(
+  options: RenderTemplateOptions
+): Promise<RenderTemplateResult> {
+  const { supabase, templateKey, data, fallback, bypassStatusCheck = false, rawHtmlKeys = ["body_content"] } = options;
+
+  try {
+    const { data: row, error } = await supabase
+      .from("email_templates")
+      .select("subject, html_content, text_content, sender_id, is_active")
+      .eq("template_key", templateKey)
+      .maybeSingle();
+
+    if (error || !row) {
+      return { template: fallback, skipped: false, source: "fallback" };
+    }
+
+    if (row.is_active === false && !bypassStatusCheck) {
+      return { template: fallback, skipped: true, source: "db" };
+    }
+
+    const rendered: EmailTemplate = {
+      subject: renderTemplateString(row.subject || fallback.subject, data, { rawHtmlKeys: [] }),
+      html: renderTemplateString(row.html_content || fallback.html, data, { rawHtmlKeys }),
+      text: row.text_content ? renderTemplateString(row.text_content, data, { rawHtmlKeys: [] }) : fallback.text,
+    };
+
+    return {
+      template: rendered,
+      senderId: row.sender_id || undefined,
+      skipped: false,
+      source: "db",
+    };
+  } catch (_err) {
+    return { template: fallback, skipped: false, source: "fallback" };
+  }
+}
+
 /**
  * Get Gmail SMTP credentials from environment variables
  */

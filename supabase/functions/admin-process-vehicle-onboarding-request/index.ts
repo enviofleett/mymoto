@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { sendEmail, EmailTemplates, getEmailConfig } from "../_shared/email-service.ts";
+import { sendEmail, EmailTemplates, getEmailConfig, renderTemplateString } from "../_shared/email-service.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -22,17 +22,6 @@ function normalizeToken(authHeader: string) {
     : authHeader.trim();
 }
 
-function replaceTemplateVariables(template: string, data: Record<string, unknown>): string {
-  let result = template;
-  for (const [key, value] of Object.entries(data)) {
-    const regex = new RegExp(`\\{\\{${key}\\}\\}`, "g");
-    result = result.replace(regex, String(value ?? ""));
-  }
-  // Drop simple handlebars if-blocks.
-  result = result.replace(/\{\{#if\s+\w+\}\}[\s\S]*?\{\{\/if\}\}/g, "");
-  return result;
-}
-
 async function renderDbTemplate(
   supabase: any,
   templateKey: string,
@@ -48,8 +37,8 @@ async function renderDbTemplate(
   if (error || !data) return null;
   if (data.is_active === false) return null;
 
-  const subject = replaceTemplateVariables(data.subject, vars);
-  const html = replaceTemplateVariables(data.html_content, vars);
+  const subject = renderTemplateString(data.subject, vars);
+  const html = renderTemplateString(data.html_content, vars, { rawHtmlKeys: ["body_content"] });
   return { subject, html, senderId: data.sender_id || undefined };
 }
 

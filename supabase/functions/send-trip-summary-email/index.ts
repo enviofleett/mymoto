@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { sendEmail, EmailTemplates, getEmailConfig } from "../_shared/email-service.ts";
+import { sendEmail, EmailTemplates, getEmailConfig, renderEmailTemplate } from "../_shared/email-service.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -111,7 +111,7 @@ const handler = async (req: Request): Promise<Response> => {
 
     const distance = trip.distance_km ? `${trip.distance_km.toFixed(2)} km` : "N/A";
 
-    const emailTemplate = EmailTemplates.tripSummary({
+    const fallback = EmailTemplates.tripSummary({
       userName,
       vehicleName,
       date,
@@ -123,10 +123,39 @@ const handler = async (req: Request): Promise<Response> => {
       avgSpeed: trip.avg_speed ? `${trip.avg_speed} km/h` : undefined,
     });
 
+    const templateData = {
+      userName,
+      vehicleName,
+      date,
+      distance,
+      duration,
+      startLocation: trip.start_location || undefined,
+      endLocation: trip.end_location || undefined,
+      maxSpeed: trip.max_speed ? `${trip.max_speed} km/h` : undefined,
+      avgSpeed: trip.avg_speed ? `${trip.avg_speed} km/h` : undefined,
+      body_content: fallback.html,
+    };
+
+    const rendered = await renderEmailTemplate({
+      supabase,
+      templateKey: "tripSummary",
+      data: templateData,
+      fallback,
+    });
+
+    if (rendered.skipped) {
+      return new Response(
+        JSON.stringify({ success: true, skipped: true, message: "Trip summary template is disabled" }),
+        { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+
     await sendEmail({
       to: recipientEmail,
-      subject: emailTemplate.subject,
-      html: emailTemplate.html,
+      subject: rendered.template.subject,
+      html: rendered.template.html,
+      text: rendered.template.text,
+      senderId: rendered.senderId,
       supabase,
       templateKey: 'tripSummary'
     });

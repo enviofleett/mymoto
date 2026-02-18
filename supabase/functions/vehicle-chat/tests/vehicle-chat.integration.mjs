@@ -86,12 +86,21 @@ async function testMaintenanceAlerts() {
   ensure(hasPrefetchedTool(result, 'get_recent_alerts'), 'maintenance: get_recent_alerts not present in metadata.prefetched')
 }
 
+async function testExplainAlerts() {
+  const result = await callAgent('Explain my alerts to me')
+  ensure(result.metadata && result.metadata.intent, 'alert_explanation: missing metadata.intent')
+  const type = result.metadata.intent.type
+  ensure(type === 'alert_explanation', `alert_explanation: unexpected intent.type "${type}"`)
+  ensure(hasPrefetchedTool(result, 'get_recent_alerts'), 'alert_explanation: get_recent_alerts not present in metadata.prefetched')
+}
+
 async function main() {
   const tests = [
     ['location', testLocation],
     ['trip_history', testTripHistory],
     ['trip_analytics', testTripAnalytics],
-    ['maintenance_alerts', testMaintenanceAlerts]
+    ['maintenance_alerts', testMaintenanceAlerts],
+    ['explain_alerts', testExplainAlerts]
   ]
 
   let failed = 0

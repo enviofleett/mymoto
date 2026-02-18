@@ -175,15 +175,18 @@ async function getEmailTemplateFromDb(templateKey: string): Promise<{ subject: s
  * Replace template variables (simple {{variable}} replacement)
  */
 function replaceTemplateVariables(template: string, data: Record<string, unknown>): string {
-  let result = template;
+  const withIfs = template.replace(/\{\{#if\s+(\w+)\}\}([\s\S]*?)\{\{\/if\}\}/g, (_m, variable: string, content: string) => {
+    const value = data[variable];
+    return value ? content : "";
+  });
+
+  let result = withIfs;
   for (const [key, value] of Object.entries(data)) {
-    // Replace {{key}} with value
-    const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
-    result = result.replace(regex, String(value || ''));
+    const regex = new RegExp(`\\{\\{${key}\\}\\}`, "g");
+    result = result.replace(regex, String(value || ""));
   }
-  // Remove any remaining {{#if}} blocks if vehicleCount is not provided (simple handling)
-  result = result.replace(/\{\{#if\s+\w+\}\}[\s\S]*?\{\{\/if\}\}/g, '');
-  return result;
+
+  return result.replace(/\{\{[^}]+\}\}/g, "");
 }
 
 /**
@@ -219,7 +222,14 @@ export async function sendVehicleAssignmentEmail(
     return sendEmail({
       to: userEmail,
       template: isNewUser ? 'welcome' : 'systemNotification',
-      data: {},
+      data: isNewUser
+        ? { userName, loginLink: `${window.location.origin}/auth` }
+        : {
+            title: `${vehicleCount} New Vehicle(s) Assigned`,
+            message: `Hello ${userName}, ${vehicleCount} vehicle(s) have been assigned to your account.`,
+            actionLink: `${window.location.origin}/fleet`,
+            actionText: "View Vehicles",
+          },
       customSubject: subject,
       customHtml: html,
     });

@@ -4,11 +4,18 @@ import { Circle } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-const orangeDotIcon = L.divIcon({
-  className: "leaflet-orange-dot-icon",
-  html: '<div class="leaflet-orange-dot"></div>',
-  iconSize: [18, 18],
-  iconAnchor: [9, 9],
+const vehicleMarkerIcon = L.divIcon({
+  className: "vehicle-car-marker",
+  html: `
+    <div class="car-marker-container">
+      <div class="car-pulse orange"></div>
+      <div class="car-icon orange">
+        <div class="status-dot"></div>
+      </div>
+    </div>
+  `,
+  iconSize: [34, 34],
+  iconAnchor: [17, 17],
 });
 
 type LatLon = { lat: number; lon: number };
@@ -100,13 +107,15 @@ export function LeafletVehicleMapClient({
   return (
     <div className={className}>
       <style>{`
-        .leaflet-orange-dot {
-          width: 18px;
-          height: 18px;
-          border-radius: 9999px;
-          background: #ea580c;
-          box-shadow: 0 0 0 6px rgba(234, 88, 12, 0.3);
-        }
+        .vehicle-car-marker { cursor: pointer; user-select: none; }
+        .car-marker-container { position: relative; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; transition: transform 0.5s ease-out; }
+        .car-pulse { position: absolute; width: 42px; height: 42px; border-radius: 50%; animation: carPulse 2s infinite; pointer-events: none; }
+        .car-pulse.orange { background: radial-gradient(circle, rgba(234, 88, 12, 0.4) 0%, rgba(234, 88, 12, 0) 70%); }
+        .car-icon { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.4); z-index: 1; transition: background 0.3s ease; }
+        .car-icon.orange { background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); color: white; }
+        .status-dot { width: 14px; height: 14px; border-radius: 50%; background: #ea580c; box-shadow: 0 2px 4px rgba(0,0,0,0.2); position: relative; }
+        .status-dot::after { content: ''; position: absolute; inset: 3px; border-radius: 50%; background: white; }
+        @keyframes carPulse { 0% { transform: scale(0.8); opacity: 1; } 100% { transform: scale(1.6); opacity: 0; } }
       `}</style>
       <MapContainer
         center={center}
@@ -130,13 +139,13 @@ export function LeafletVehicleMapClient({
 
         {routeStartEnd ? (
           <>
-            <Marker position={[routeStartEnd.start.lat, routeStartEnd.start.lon]} icon={orangeDotIcon} />
-            <Marker position={[routeStartEnd.end.lat, routeStartEnd.end.lon]} icon={orangeDotIcon} />
+            <Marker position={[routeStartEnd.start.lat, routeStartEnd.start.lon]} icon={vehicleMarkerIcon} />
+            <Marker position={[routeStartEnd.end.lat, routeStartEnd.end.lon]} icon={vehicleMarkerIcon} />
           </>
         ) : null}
 
         {hasValidCoordinates ? (
-          <Marker position={[latitude as number, longitude as number]} icon={orangeDotIcon} />
+          <Marker position={[latitude as number, longitude as number]} icon={vehicleMarkerIcon} />
         ) : null}
 
         {zones.map((z, idx) => (
