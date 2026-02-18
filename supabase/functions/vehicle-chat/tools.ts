@@ -926,60 +926,153 @@ const get_fuel_stats: ToolDefinition = {
       return { found: false, message: 'No fuel data found for this period.' }
     }
 
-    // 1. Fetch Vehicle Profile for Comparison
     const { data: vehicleProfile } = await supabase
       .from('vehicles')
-      .select('make, model, year, official_fuel_efficiency_l_100km')
+      .select('make, model, year, fuel_type, engine_displacement, official_fuel_efficiency_l_100km, vehicle_type, driving_region_or_country, usage_weight')
       .eq('device_id', device_id)
       .maybeSingle()
 
-    // Aggregate stats
     const totalDistance = fuelData.reduce((sum: number, d: any) => sum + (d.totaldistance || 0), 0)
     const avgEfficiency = fuelData.reduce((sum: number, d: any) => sum + (d.oilper100km || 0), 0) / fuelData.length
     const totalLeaks = fuelData.reduce((sum: number, d: any) => sum + (d.leakoil || 0), 0)
 
-    // Check for theft (leak > 0)
     const leaks = fuelData.filter((d: any) => d.leakoil > 0).map((d: any) => ({
       date: d.statisticsday,
       amount_liters: d.leakoil / 100 // Convert 1/100L to L
     }))
 
-    // Calculate Comparison
     let comparison = null;
     let missingProfileData = false;
-    // New top-level message field to guide the LLM
-    let llmMessage = null;
+    let llmMessage: string | null = null;
+
+    const missingProfileFields: string[] = [];
+    if (!vehicleProfile?.official_fuel_efficiency_l_100km) {
+      missingProfileFields.push('official_fuel_efficiency_l_100km');
+    }
+    if (!vehicleProfile?.fuel_type) {
+      missingProfileFields.push('fuel_type');
+    }
+    if (!vehicleProfile?.engine_displacement) {
+      missingProfileFields.push('engine_displacement');
+    }
+    if (!vehicleProfile?.vehicle_type) {
+      missingProfileFields.push('vehicle_type');
+    }
+    if (!vehicleProfile?.driving_region_or_country) {
+      missingProfileFields.push('driving_region_or_country');
+    }
 
     if (vehicleProfile?.official_fuel_efficiency_l_100km) {
-        const rated = vehicleProfile.official_fuel_efficiency_l_100km;
-        
-        // Handle 0 efficiency case (no data yet)
-        if (avgEfficiency <= 0) {
-             comparison = {
-                rated_l_100km: rated,
-                status: 'no_data',
-                message: `I have your rated efficiency (${rated} L/100km), but I haven't received enough driving data from the sensor yet to compare.`
-             };
-             llmMessage = "Fuel consumption data is not yet available from the sensor. Please tell the user that you have their rated efficiency but are waiting for real-world data.";
+      const rated = vehicleProfile.official_fuel_efficiency_l_100km;
+
+      if (avgEfficiency <= 0) {
+        comparison = {
+          rated_l_100km: rated,
+          status: 'no_data',
+          message: `I have your rated efficiency (${rated} L/100km), but I haven't received enough driving data from the sensor yet to compare.`
+        };
+        if (missingProfileFields.length > 0) {
+          llmMessage = "Fuel consumption data is not yet available from the sensor. Let the user know you have their rated efficiency but are waiting for real-world data. Also encourage them to complete missing vehicle profile fields like fuel type, engine size, vehicle type, and primary driving region or country so that future advice can be more accurate. Then call update_vehicle_profile with these details if appropriate.";
         } else {
-            const diff = avgEfficiency - rated;
-            const percentDiff = (diff / rated) * 100;
-            
-            comparison = {
-                rated_l_100km: rated,
-                difference_l_100km: Math.round(diff * 100) / 100,
-                percent_difference: Math.round(percentDiff),
-                status: diff > 0 ? 'inefficient' : 'efficient',
-                message: diff > 0 
-                    ? `You are consuming ${Math.round(percentDiff)}% more fuel than the manufacturer rating (${rated} L/100km).`
-                    : `You are running efficiently! ${Math.abs(Math.round(percentDiff))}% better than rated.`
-            };
+          llmMessage = "Fuel consumption data is not yet available from the sensor. Please tell the user that you have their rated efficiency but are waiting for real-world data.";
         }
+      } else {
+        const diff = avgEfficiency - rated;
+        const percentDiff = (diff / rated) * 100;
+
+        comparison = {
+          rated_l_100km: rated,
+          difference_l_100km: Math.round(diff * 100) / 100,
+          percent_difference: Math.round(percentDiff),
+          status: diff > 0 ? 'inefficient' : 'efficient',
+          message: diff > 0
+            ? `You are consuming ${Math.round(percentDiff)}% more fuel than the manufacturer rating (${rated} L/100km).`
+            : `You are running efficiently! ${Math.abs(Math.round(percentDiff))}% better than rated.`
+        };
+
+        if (missingProfileFields.length > 0) {
+          llmMessage = "You have real-world fuel consumption data, but some profile fields are missing. Ask the user for fuel type, engine size, high-level vehicle type, and primary driving region or country so that future advice can be more accurate. Then call update_vehicle_profile with these details.";
+        }
+      }
     } else {
-        missingProfileData = true;
-        if (avgEfficiency <= 0) {
-            llmMessage = "No fuel consumption data is available yet, and the vehicle profile is missing efficiency ratings. Please ask the user for their vehicle Make, Model, and Year to establish a baseline.";
+      missingProfileData = true;
+      if (avgEfficiency <= 0) {
+        llmMessage = "No fuel consumption data is available yet, and the vehicle profile is missing efficiency ratings. Ask the user for their vehicle Make, Model, Year, Fuel Type, Engine Size, and Vehicle Type (e.g., sedan, SUV, truck), plus primary driving region or country. Then call update_vehicle_profile and include an estimated official_fuel_efficiency value in L/100km.";
+      } else {
+        if (missingProfileFields.length > 0) {
+          llmMessage = "You have real-world fuel consumption data but no manufacturer efficiency rating. Ask the user for their vehicle Make, Model, Year, Fuel Type, Engine Size, Vehicle Type, and driving region or country. Then call update_vehicle_profile and set an estimated official_fuel_efficiency in L/100km based on your knowledge.";
         }
+      }
+    }
+
+    let trend: {
+      has_trend: boolean;
+      recent_avg_l_100km: number | null;
+      past_avg_l_100km: number | null;
+      percent_change: number | null;
+      direction: "increasing" | "decreasing" | "stable";
+      message: string | null;
+    } | null = null;
+
+    const withActualSorted = fuelData
+      .filter((d: any) => typeof d.oilper100km === "number" && d.oilper100km > 0)
+      .sort((a: any, b: any) => {
+        if (!a.statisticsday || !b.statisticsday) return 0;
+        return a.statisticsday.localeCompare(b.statisticsday);
+      });
+
+    if (withActualSorted.length >= 4) {
+      const mid = Math.floor(withActualSorted.length / 2);
+      const pastSlice = withActualSorted.slice(0, mid);
+      const recentSlice = withActualSorted.slice(mid);
+
+      const avgPast = pastSlice.reduce((sum: number, d: any) => sum + (d.oilper100km as number), 0) / pastSlice.length;
+      const avgRecent = recentSlice.reduce((sum: number, d: any) => sum + (d.oilper100km as number), 0) / recentSlice.length;
+
+      if (avgPast > 0) {
+        const delta = avgRecent - avgPast;
+        const percentChange = (delta / avgPast) * 100;
+        const absPercent = Math.abs(percentChange);
+        const threshold = 5;
+
+        let direction: "increasing" | "decreasing" | "stable" = "stable";
+        if (absPercent >= threshold) {
+          direction = percentChange > 0 ? "increasing" : "decreasing";
+        }
+
+        const roundedRecent = Math.round(avgRecent * 100) / 100;
+        const roundedPast = Math.round(avgPast * 100) / 100;
+        const roundedPercent = Math.round(percentChange);
+
+        let trendMessage: string | null = null;
+        if (direction === "increasing") {
+          trendMessage = `Fuel consumption has increased by about ${Math.abs(roundedPercent)}% compared to earlier trips (from ~${roundedPast} to ~${roundedRecent} L/100km).`;
+        } else if (direction === "decreasing") {
+          trendMessage = `Fuel consumption has improved by about ${Math.abs(roundedPercent)}% compared to earlier trips (from ~${roundedPast} to ~${roundedRecent} L/100km).`;
+        } else {
+          trendMessage = `Fuel consumption has been relatively stable across recent trips (around ${roundedRecent} L/100km).`;
+        }
+
+        trend = {
+          has_trend: true,
+          recent_avg_l_100km: roundedRecent,
+          past_avg_l_100km: roundedPast,
+          percent_change: roundedPercent,
+          direction,
+          message: trendMessage,
+        };
+      }
+    }
+
+    if (!trend) {
+      trend = {
+        has_trend: false,
+        recent_avg_l_100km: null,
+        past_avg_l_100km: null,
+        percent_change: null,
+        direction: "stable",
+        message: "Not enough data to determine a fuel consumption trend yet.",
+      };
     }
 
     return {
@@ -989,7 +1082,12 @@ const get_fuel_stats: ToolDefinition = {
       vehicle_info: vehicleProfile ? {
           make: vehicleProfile.make,
           model: vehicleProfile.model,
-          year: vehicleProfile.year
+          year: vehicleProfile.year,
+          fuel_type: vehicleProfile.fuel_type,
+          engine_displacement: vehicleProfile.engine_displacement,
+          vehicle_type: vehicleProfile.vehicle_type,
+          driving_region_or_country: vehicleProfile.driving_region_or_country,
+          usage_weight: vehicleProfile.usage_weight
       } : null,
       missing_rated_data: missingProfileData,
       comparison: comparison,
@@ -1004,7 +1102,8 @@ const get_fuel_stats: ToolDefinition = {
         date: d.statisticsday,
         efficiency: d.oilper100km,
         consumption_l_per_hour: d.oilperhour
-      }))
+      })),
+      trend
     }
   }
 }
@@ -1020,7 +1119,10 @@ const update_vehicle_profile: ToolDefinition = {
       year: { type: 'number', description: 'Year of manufacture' },
       fuel_type: { type: 'string', description: 'Fuel type (e.g., petrol, diesel, hybrid)' },
       engine_displacement: { type: 'string', description: 'Engine size (e.g., 2.0L)' },
-      official_fuel_efficiency: { type: 'number', description: 'Official rated fuel consumption in L/100km (Estimate this if not provided!)' }
+      official_fuel_efficiency: { type: 'number', description: 'Official rated fuel consumption in L/100km (Estimate this if not provided!)' },
+      vehicle_type: { type: 'string', description: 'High-level vehicle type (e.g., sedan, SUV, truck, bus).' },
+      driving_region_or_country: { type: 'string', description: 'Primary driving region or country (e.g., Nigeria, EU, US city).' },
+      usage_weight: { type: 'string', description: 'Typical usage weight or load (light, normal, heavy, or approximate kg/tons).' }
     },
     required: []
   },
@@ -1033,6 +1135,9 @@ const update_vehicle_profile: ToolDefinition = {
     if (args.fuel_type) updates.fuel_type = args.fuel_type;
     if (args.engine_displacement) updates.engine_displacement = args.engine_displacement;
     if (args.official_fuel_efficiency) updates.official_fuel_efficiency_l_100km = args.official_fuel_efficiency;
+    if (args.vehicle_type) updates.vehicle_type = args.vehicle_type;
+    if (args.driving_region_or_country) updates.driving_region_or_country = args.driving_region_or_country;
+    if (args.usage_weight) updates.usage_weight = args.usage_weight;
 
     if (Object.keys(updates).length === 0) {
       return { status: 'error', message: 'No valid fields provided to update.' };

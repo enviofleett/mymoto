@@ -21,6 +21,12 @@ const InstallApp = () => {
   const [installStatus, setInstallStatus] = useState<"idle" | "installing" | "installed">("idle");
   const [showFullDescription, setShowFullDescription] = useState(false);
   const [highlightInstallInstructions, setHighlightInstallInstructions] = useState(false);
+  const previewImages = [
+    "/install/01-banner-text.jpg",
+    "/install/02-trips-screen.jpg",
+    "/install/03-chat-angle.jpg",
+    "/install/04-chat-close.jpg",
+  ];
 
   const scrollToInstallInstructions = () => {
     const instructions = document.getElementById("install-instructions");
@@ -224,48 +230,23 @@ const InstallApp = () => {
       <div className="py-6 border-b border-border/40">
           <h2 className="text-[20px] font-bold px-5 mb-4 tracking-tight">Preview</h2>
           <div className="flex overflow-x-auto px-5 gap-4 pb-4 scrollbar-hide snap-x">
-              {/* Mock Screen 1: Chat */}
-              <div className="w-[240px] h-[480px] bg-background rounded-[32px] border-[6px] border-muted shadow-xl shrink-0 snap-center relative overflow-hidden flex flex-col">
-                   <div className="bg-muted h-6 w-full absolute top-0 left-0 z-10 flex justify-center items-end pb-1">
-                      <div className="w-16 h-4 bg-background rounded-full"></div>
-                   </div>
-                   <div className="mt-8 px-4 space-y-4 flex-1 overflow-hidden bg-background">
-                       <div className="flex gap-2">
-                           <div className="bg-muted p-3 rounded-2xl rounded-tl-none max-w-[80%] text-[10px] text-muted-foreground">
-                               Hello! I noticed your battery is getting low (12.1V).
-                           </div>
-                       </div>
-                       <div className="flex gap-2 justify-end">
-                           <div className="bg-[#007AFF] p-3 rounded-2xl rounded-tr-none max-w-[80%] text-[10px] text-white">
-                               Thanks! Where are you parked right now?
-                           </div>
-                       </div>
-                        <div className="flex gap-2">
-                           <div className="bg-muted p-3 rounded-2xl rounded-tl-none max-w-[80%] text-[10px] text-muted-foreground">
-                               I'm at 123 Main St, near the coffee shop.
-                           </div>
-                       </div>
-                   </div>
-                   <div className="h-12 border-t flex items-center justify-center text-[10px] text-muted-foreground font-medium bg-muted/10">
-                       MyMoto Chat
-                   </div>
-              </div>
-
-               {/* Mock Screen 2: Map */}
-               <div className="w-[240px] h-[480px] bg-muted/10 rounded-[32px] border-[6px] border-muted shadow-xl shrink-0 snap-center relative overflow-hidden flex flex-col">
-                   <div className="bg-muted h-6 w-full absolute top-0 left-0 z-10 flex justify-center items-end pb-1">
-                      <div className="w-16 h-4 bg-background rounded-full"></div>
-                   </div>
-                   <div className="absolute inset-0 bg-muted/20 flex items-center justify-center">
-                        <div className="w-16 h-16 rounded-full bg-[#007AFF]/20 flex items-center justify-center animate-pulse">
-                            <div className="w-4 h-4 bg-[#007AFF] rounded-full border-2 border-white shadow-lg"></div>
-                        </div>
-                   </div>
-                   <div className="absolute bottom-12 left-4 right-4 bg-background/90 backdrop-blur p-3 rounded-xl shadow-sm border border-border/10">
-                       <div className="h-2 w-20 bg-muted rounded mb-2"></div>
-                       <div className="h-2 w-32 bg-muted rounded"></div>
-                   </div>
-              </div>
+              {previewImages.map((src, index) => (
+                <div
+                  key={src}
+                  className="w-[260px] h-[520px] rounded-[24px] border border-border/50 shadow-xl shrink-0 snap-center overflow-hidden bg-muted/20"
+                >
+                  <img
+                    src={src}
+                    alt={`MyMoto preview ${index + 1}`}
+                    className="w-full h-full object-cover"
+                    loading={index === 0 ? "eager" : "lazy"}
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).src = myMotoLogo;
+                      (e.currentTarget as HTMLImageElement).className = "w-full h-full object-contain p-8 bg-background";
+                    }}
+                  />
+                </div>
+              ))}
           </div>
       </div>
 

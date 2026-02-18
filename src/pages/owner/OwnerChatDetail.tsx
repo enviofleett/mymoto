@@ -11,7 +11,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useOwnerVehicles } from "@/hooks/useOwnerVehicles";
 import { useVehicleLLMSettings } from "@/hooks/useVehicleProfile";
 import { useVehicleAlerts, formatAlertForChat } from "@/hooks/useVehicleAlerts";
-import { ArrowLeft, Car, User, Send, Loader2, AlertTriangle } from "lucide-react";
+import { useVoiceAgent } from "@/hooks/useVoiceAgent";
+import { ArrowLeft, Car, User, Send, Loader2, AlertTriangle, Mic, Square, Volume2, VolumeX } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ChatMessageContent } from "@/components/chat/ChatMessageContent";
 import { formatLagosDate, formatRelativeTime } from "@/lib/timezone";
@@ -42,6 +43,7 @@ export default function OwnerChatDetail() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
+  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const isSendingRef = useRef(false); // Track if we're currently sending a message
 
@@ -53,13 +55,114 @@ export default function OwnerChatDetail() {
   const plateNumber = vehicle?.plateNumber || vehicle?.name || "";
   const hasNickname = llmSettings?.nickname && llmSettings.nickname !== plateNumber;
   const avatarUrl = llmSettings?.avatar_url || vehicle?.avatarUrl;
+  const ttsProfile =
+    vehicle && typeof vehicle.speed === "number"
+      ? vehicle.speed > 80
+        ? { rate: 0.9, pitch: 0.9 }
+        : vehicle.speed > 40
+          ? { rate: 1, pitch: 1 }
+          : { rate: 1.05, pitch: 1.05 }
+      : { rate: 1, pitch: 1 };
   
   const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vehicle-chat`;
+
+  const {
+    capability: voiceCapability,
+    state: voiceState,
+    startRecording,
+    stopRecording,
+    speak,
+    stopSpeaking,
+    isSpeaking,
+  } = useVoiceAgent({
+    lang: "en-NG",
+    speechProfile: ttsProfile,
+    onFinalTranscript: (text) => {
+      if (!text.trim()) return;
+      void trackEvent("voice_transcript_success", {
+        device_id: deviceId,
+        transcript_length: text.length,
+      });
+      setInput(text);
+      void handleSendMessage(text);
+    },
+    onError: (type, message) => {
+      if (type === "permission_denied") {
+        void trackEvent("voice_permission_denied", { device_id: deviceId });
+        toast({
+          title: "Microphone blocked",
+          description: "Allow microphone access in browser settings to use voice input.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (type === "empty_transcript") {
+        void trackEvent("voice_transcript_empty", { device_id: deviceId });
+        toast({
+          title: "No transcript",
+          description: "No speech was captured. Try again or type your message.",
+        });
+        return;
+      }
+
+      if (type === "network") {
+        toast({
+          title: "Network issue",
+          description: "Network conditions are affecting voice input. Try again or type your message.",
+        });
+        return;
+      }
+
+      if (type === "unsupported") {
+        void trackEventOnce("voice_unsupported", "owner-chat", {
+          device_id: deviceId,
+          browser: navigator.userAgent,
+        });
+        toast({
+          title: "Voice unavailable",
+          description: "Voice input not supported on this browser. Type instead.",
+        });
+        return;
+      }
+
+      toast({
+        title: "Voice error",
+        description: message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const transcriptConfidenceLabel =
+    voiceState.confidence == null
+      ? null
+      : voiceState.confidence >= 0.75
+        ? "High"
+        : voiceState.confidence >= 0.4
+          ? "Medium"
+          : "Low";
 
   useEffect(() => {
     if (!deviceId) return;
     void trackEventOnce("first_chat_open", deviceId, { device_id: deviceId });
   }, [deviceId]);
+
+  useEffect(() => {
+    if (!isSpeaking && speakingMessageId) {
+      setSpeakingMessageId(null);
+    }
+  }, [isSpeaking, speakingMessageId]);
+
+  useEffect(() => {
+    if (voiceCapability.sttSupported) return;
+    void trackEventOnce("voice_unsupported", "owner-chat", {
+      device_id: deviceId,
+      browser: typeof navigator === "undefined" ? "unknown" : navigator.userAgent,
+      is_ios: voiceCapability.isIOS,
+      is_safari: voiceCapability.isSafari,
+    });
+  }, [deviceId, voiceCapability.isIOS, voiceCapability.isSafari, voiceCapability.sttSupported]);
 
   const lastSeenLabel = vehicle?.lastUpdate ? formatRelativeTime(vehicle.lastUpdate) : "--";
   const statusText =
@@ -603,11 +706,18 @@ export default function OwnerChatDetail() {
     }
   };
 
-  const handleSend = async () => {
-    if (!input.trim() || !user || !deviceId) return;
+  const handleSendMessage = async (messageOverride?: string) => {
+    const messageValue = (messageOverride ?? input).trim();
+    if (!messageValue || !user || !deviceId) return;
     if (loading) return; // Prevent multiple simultaneous sends
 
-    const userMessage = input.trim();
+    if (voiceState.isRecording) {
+      stopRecording();
+    }
+    stopSpeaking();
+    setSpeakingMessageId(null);
+
+    const userMessage = messageValue;
     void trackEvent("first_chat_sent", { device_id: deviceId, message_length: userMessage.length });
     void trackEventOnce("first_chat_sent", `${user.id}:${deviceId}`, {
       device_id: deviceId,
@@ -627,6 +737,55 @@ export default function OwnerChatDetail() {
     setMessages((prev) => [...prev, tempUserMsg]);
 
     await sendWithRetry(userMessage, tempUserMsg, 0);
+  };
+
+  const handleVoiceButton = async () => {
+    if (loading || (llmSettings && !llmSettings.llm_enabled)) return;
+
+    void trackEvent("voice_mic_tap", {
+      device_id: deviceId,
+      action: voiceState.isRecording ? "stop" : "start",
+    });
+
+    if (voiceState.isRecording) {
+      stopRecording();
+      void trackEvent("voice_recording_stopped", { device_id: deviceId, reason: "manual_stop" });
+      return;
+    }
+
+    stopSpeaking();
+    setSpeakingMessageId(null);
+    const started = await startRecording();
+    if (started) {
+      void trackEvent("voice_recording_started", { device_id: deviceId });
+    }
+  };
+
+  const handleListenToggle = (messageId: string, content: string) => {
+    if (!voiceCapability.ttsSupported) return;
+
+    if (isSpeaking && speakingMessageId === messageId) {
+      stopSpeaking();
+      setSpeakingMessageId(null);
+      void trackEvent("voice_tts_stop", { device_id: deviceId, reason: "manual_stop" });
+      return;
+    }
+
+    stopSpeaking();
+    const started = speak(content);
+    if (started) {
+      setSpeakingMessageId(messageId);
+      void trackEvent("voice_tts_play", {
+        device_id: deviceId,
+        message_length: content.length,
+      });
+      return;
+    }
+
+    toast({
+      title: "Audio unavailable",
+      description: "Text-to-speech is not available on this browser.",
+    });
   };
 
   return (
@@ -823,6 +982,25 @@ export default function OwnerChatDetail() {
                       }}
                     />
                   </div>
+                  {msg.role === "assistant" && voiceCapability.ttsSupported && (
+                    <button
+                      onClick={() => handleListenToggle(msg.id, msg.content)}
+                      className="mt-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                      type="button"
+                    >
+                      {isSpeaking && speakingMessageId === msg.id ? (
+                        <>
+                          <VolumeX className="h-3 w-3" />
+                          Stop
+                        </>
+                      ) : (
+                        <>
+                          <Volume2 className="h-3 w-3" />
+                          Listen
+                        </>
+                      )}
+                    </button>
+                  )}
                   <p className={cn(
                     "text-[10px] mt-1.5 text-right",
                     msg.role === "user" ? "text-accent-foreground/70" : "text-muted-foreground"
@@ -888,18 +1066,55 @@ export default function OwnerChatDetail() {
 
       {/* Input - Neumorphic styling */}
       <div className="sticky bottom-0 bg-background/95 backdrop-blur-sm px-4 max-[360px]:px-3 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+        {!voiceCapability.sttSupported && (
+          <p className="text-xs text-muted-foreground mb-2 px-1">
+            Voice input is not available on this browser. You can still type your message.
+          </p>
+        )}
+        {voiceState.isRecording && (
+          <div className="mb-2 px-1">
+            <p className="text-xs text-muted-foreground truncate">
+              Listening... {voiceState.interimTranscript || "Speak now"}
+            </p>
+            {transcriptConfidenceLabel && (
+              <p className="text-[11px] text-muted-foreground/80">
+                Confidence: {transcriptConfidenceLabel}
+              </p>
+            )}
+          </div>
+        )}
         <div className="flex items-center gap-3">
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
+            onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSendMessage()}
             placeholder={llmSettings && !llmSettings.llm_enabled ? "AI Companion is paused. Enable it in settings to chat." : "Type a message..."}
             disabled={loading || (llmSettings && !llmSettings.llm_enabled)}
             className="flex-1 bg-card border-0 shadow-neumorphic-inset rounded-full h-12 max-[360px]:h-11 text-sm px-5 focus-visible:ring-accent/30"
           />
+          {voiceCapability.sttSupported && (
+            <button
+              onClick={handleVoiceButton}
+              disabled={loading || (llmSettings && !llmSettings.llm_enabled)}
+              className={cn(
+                "w-12 h-12 max-[360px]:w-11 max-[360px]:h-11 rounded-full bg-card shadow-neumorphic-sm flex items-center justify-center transition-all duration-200 shrink-0",
+                "hover:shadow-neumorphic active:shadow-neumorphic-inset",
+                "disabled:opacity-50 disabled:cursor-not-allowed",
+                voiceState.isRecording && "ring-2 ring-red-400/70"
+              )}
+              type="button"
+              title={voiceState.isRecording ? "Stop recording" : "Start voice input"}
+            >
+              {voiceState.isRecording ? (
+                <Square className="h-4 w-4 text-red-400" />
+              ) : (
+                <Mic className="h-5 w-5 text-muted-foreground" />
+              )}
+            </button>
+          )}
           {/* Neumorphic send button */}
           <button
-            onClick={handleSend}
+            onClick={() => handleSendMessage()}
             disabled={loading || !input.trim() || (llmSettings && !llmSettings.llm_enabled)}
             className={cn(
               "w-12 h-12 max-[360px]:w-11 max-[360px]:h-11 rounded-full bg-card shadow-neumorphic-sm flex items-center justify-center transition-all duration-200 shrink-0",

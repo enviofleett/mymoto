@@ -48,14 +48,6 @@ const TRANSMISSION_TYPES = [
   { value: "CVT", label: "CVT (Continuously Variable Transmission)" },
 ];
 
-// Common vehicle brands (can be expanded)
-const VEHICLE_BRANDS = [
-  "Toyota", "Honda", "Ford", "Chevrolet", "Nissan", "BMW", "Mercedes-Benz",
-  "Audi", "Volkswagen", "Hyundai", "Kia", "Mazda", "Subaru", "Lexus",
-  "Volvo", "Jeep", "Ram", "GMC", "Cadillac", "Lincoln", "Acura", "Infiniti",
-  "Buick", "Chrysler", "Dodge", "Mitsubishi", "Suzuki", "Isuzu", "Other"
-];
-
 export function VehicleSpecificationsForm({ deviceId, onSaved }: VehicleSpecificationsFormProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -186,26 +178,16 @@ export function VehicleSpecificationsForm({ deviceId, onSaved }: VehicleSpecific
         </Alert>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Brand - Required */}
           <div className="space-y-2">
             <Label htmlFor="brand">
               Vehicle Brand <span className="text-destructive">*</span>
             </Label>
-            <Select
+            <Input
+              id="brand"
               value={specs.brand || ""}
-              onValueChange={(value) => setSpecs({ ...specs, brand: value })}
-            >
-              <SelectTrigger id="brand">
-                <SelectValue placeholder="Select brand" />
-              </SelectTrigger>
-              <SelectContent>
-                {VEHICLE_BRANDS.map((brand) => (
-                  <SelectItem key={brand} value={brand}>
-                    {brand}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={(e) => setSpecs({ ...specs, brand: e.target.value })}
+              placeholder="e.g., Toyota, Honda, Ford"
+            />
           </div>
 
           {/* Model */}

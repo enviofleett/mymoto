@@ -705,19 +705,21 @@ export default function OwnerVehiclesDashboard() {
                 <MetricCard title="Battery" value={batteryValue} unit="%" icon={Battery} />
               </div>
 
-              {/* Map Section - dynamic height with overlay location card */}
+              {/* Map Section with location card below */}
               <div 
                 className={cn(
-                  "w-full rounded-2xl rounded-system rounded-fluid bg-card shadow-neumorphic-sm overflow-hidden transition-all duration-200 footer-gap relative",
+                  "w-full rounded-2xl rounded-system rounded-fluid bg-card shadow-neumorphic-sm overflow-hidden transition-all duration-200 footer-gap",
                   "hover:shadow-neumorphic"
                 )}
-                style={{ 
-                  height: 'calc(100dvh - 28rem)', // Approximate available space: viewport - (header + stats + footer)
-                  minHeight: '320px' 
-                }}
               >
                 {/* Map */}
-                <div className="absolute inset-0 w-full h-full">
+                <div
+                  className="w-full h-full"
+                  style={{ 
+                    height: 'calc(100dvh - 28rem)',
+                    minHeight: '320px' 
+                  }}
+                >
                   {displayData?.latitude != null && displayData?.longitude != null ? (
                     <VehicleLocationMap
                       latitude={displayData.latitude}
@@ -738,8 +740,8 @@ export default function OwnerVehiclesDashboard() {
                   )}
                 </div>
 
-                {/* Location Overlay Card */}
-                <div className="absolute bottom-4 left-4 right-4 z-10">
+                {/* Location Card */}
+                <div className="p-4">
                   <div
                     className={cn(
                       "rounded-xl bg-card/95 backdrop-blur-md shadow-lg border border-border/50 p-4 cursor-pointer",

@@ -39,7 +39,6 @@ export default function OwnerProfile() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [editProfileOpen, setEditProfileOpen] = useState(false);
   const [referralCode, setReferralCode] = useState<string>("");
-  const [creatingReferral, setCreatingReferral] = useState(false);
 
   // Enable real-time updates for owner vehicles
   const deviceIds = vehicles?.map(v => v.deviceId) || [];
@@ -48,8 +47,6 @@ export default function OwnerProfile() {
   const handleProfileUpdated = () => {
     queryClient.invalidateQueries({ queryKey: ["owner-profile"] });
   };
-
-  const primaryVehicleId = vehicles?.[0]?.deviceId;
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -60,7 +57,6 @@ export default function OwnerProfile() {
   const getOrCreateReferralCode = async () => {
     if (!user?.id) return "";
     if (referralCode) return referralCode;
-    setCreatingReferral(true);
     try {
       const { data: existing } = await (supabase as any)
         .from("referral_invites")
@@ -84,8 +80,6 @@ export default function OwnerProfile() {
     } catch (e) {
       toast.error("Could not create referral link");
       return "";
-    } finally {
-      setCreatingReferral(false);
     }
   };
 
@@ -201,28 +195,6 @@ export default function OwnerProfile() {
                   </div>
                 )}
               </div>
-            </CardContent>
-          </Card>
-
-          {/* Referral Card */}
-          <Card className="border-0 bg-card shadow-neumorphic rounded-xl">
-            <CardContent className="p-4 space-y-3">
-              <div>
-                <div className="text-sm font-medium text-foreground">Invite a friend</div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  Share your referral link and help other owners install MyMoto.
-                </div>
-              </div>
-              <button
-                onClick={handleShareReferral}
-                disabled={creatingReferral}
-                className={cn(
-                  "w-full h-11 rounded-xl shadow-neumorphic-sm bg-card text-foreground text-sm font-medium",
-                  "hover:shadow-neumorphic active:shadow-neumorphic-inset disabled:opacity-50"
-                )}
-              >
-                {creatingReferral ? "Preparing link..." : "Share referral link"}
-              </button>
             </CardContent>
           </Card>
 

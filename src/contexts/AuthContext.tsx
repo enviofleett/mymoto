@@ -135,9 +135,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ]);
       setIsAdmin(isAdminResult);
       setIsProvider(isProviderResult);
-      if (import.meta.env.DEV) {
-        console.log('[Auth] Roles refreshed', { userId, isAdmin: isAdminResult, isProvider: isProviderResult });
-      }
+      // Role refresh intentionally silent in normal development flow to reduce console noise.
     } catch (e) {
       // Fail closed on roles (never grant privileges on error), but don't brick the app.
       setIsAdmin(false);

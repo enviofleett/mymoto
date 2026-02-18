@@ -20,6 +20,15 @@ export type AnalyticsEvent =
   | "push_permission_prompt"
   | "push_permission_granted"
   | "push_permission_denied"
+  | "voice_mic_tap"
+  | "voice_recording_started"
+  | "voice_recording_stopped"
+  | "voice_transcript_success"
+  | "voice_transcript_empty"
+  | "voice_permission_denied"
+  | "voice_tts_play"
+  | "voice_tts_stop"
+  | "voice_unsupported"
   | "d1_return"
   | "d7_return";
 

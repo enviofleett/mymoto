@@ -517,6 +517,28 @@ export default function AdminEmailTemplates() {
 
     setSendingTest(true);
     try {
+      const parseFunctionError = async (input: unknown): Promise<string> => {
+        const fallback = input instanceof Error ? input.message : "Failed to send email";
+        const candidate = input as {
+          message?: string;
+          context?: { json?: () => Promise<unknown>; text?: () => Promise<string>; status?: number };
+        };
+        let msg = candidate?.message || fallback;
+        try {
+          const ctx = candidate?.context;
+          if (ctx?.json) {
+            const payload = await ctx.json() as { error?: string; message?: string; code?: string };
+            msg = payload?.error || payload?.message || payload?.code || msg;
+          } else if (ctx?.text) {
+            const text = await ctx.text();
+            if (text) msg = text;
+          }
+        } catch {
+          // ignore parse failures
+        }
+        return msg;
+      };
+
       const { data: { session } } = await supabase.auth.refreshSession();
       const currentSession = session ?? (await supabase.auth.getSession()).data?.session;
       
@@ -554,7 +576,8 @@ export default function AdminEmailTemplates() {
 
       if (error) {
         console.error('Test email error:', error);
-        throw error;
+        const detailedMessage = await parseFunctionError(error);
+        throw new Error(detailedMessage);
       }
 
       if (data?.error) {
@@ -570,7 +593,10 @@ export default function AdminEmailTemplates() {
       }
     } catch (err: any) {
       console.error('Test email exception:', err);
-      toast.error(`Failed to send test email: ${err.message || 'Unknown error'}`);
+      const errorMessage =
+        err?.message ||
+        (typeof err === "string" ? err : "Unknown error");
+      toast.error(`Failed to send test email: ${errorMessage}`);
     }
     setSendingTest(false);
   };

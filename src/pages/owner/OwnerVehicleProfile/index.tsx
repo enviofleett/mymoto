@@ -418,10 +418,10 @@ export default function OwnerVehicleProfile() {
               lastUpdate={displayData?.lastUpdate ?? null}
             />
 
-            {/* Status Metrics */}
             <StatusMetricsRow
-              battery={displayData?.batteryPercent ?? null}
+              deviceId={resolvedDeviceId}
               totalMileage={displayData?.totalMileageKm ?? null}
+              dateRange={dateRange}
             />
 
             {/* Engine Control */}

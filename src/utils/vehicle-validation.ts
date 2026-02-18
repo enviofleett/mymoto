@@ -44,9 +44,10 @@ export function detailsValid(params: {
   model: string;
   year: number;
 }): boolean {
+  const vinOk = !params.vin || isVinValid(params.vin);
   return (
     isPlateValid(params.region, params.plate) &&
-    isVinValid(params.vin) &&
+    vinOk &&
     !!params.brand &&
     !!params.model &&
     isYearValid(params.year)

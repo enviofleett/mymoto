@@ -25,7 +25,7 @@ type SupportedTemplate =
   | "vehicle_request_rejected";
 
 interface SendEmailRequest {
-  template: SupportedTemplate;
+  template: string;
   to: string | string[];
   data: Record<string, unknown>;
   customSubject?: string;
@@ -34,11 +34,33 @@ interface SendEmailRequest {
   bypassStatusCheck?: boolean;
 }
 
-function normalizeTemplateKey(template: SupportedTemplate): Exclude<SupportedTemplate, "new_user_bonus"> {
-  return template === "new_user_bonus" ? "newUserBonusNotification" : template;
+function normalizeTemplateKey(template: string): Exclude<SupportedTemplate, "new_user_bonus"> | null {
+  const key = (template || "").trim();
+  const map: Record<string, Exclude<SupportedTemplate, "new_user_bonus">> = {
+    alert: "alert",
+    passwordReset: "passwordReset",
+    password_reset: "passwordReset",
+    welcome: "welcome",
+    tripSummary: "tripSummary",
+    trip_summary: "tripSummary",
+    systemNotification: "systemNotification",
+    system_notification: "systemNotification",
+    vehicle_assignment: "vehicle_assignment",
+    walletTopUp: "walletTopUp",
+    wallet_topup: "walletTopUp",
+    newUserBonusNotification: "newUserBonusNotification",
+    new_user_bonus: "newUserBonusNotification",
+    new_user_bonus_notification: "newUserBonusNotification",
+    vehicle_request_approved: "vehicle_request_approved",
+    vehicle_request_rejected: "vehicle_request_rejected",
+  };
+  return map[key] ?? null;
 }
 
-function getDefaultTemplate(template: Exclude<SupportedTemplate, "new_user_bonus">, data: Record<string, unknown>) {
+function getDefaultTemplate(
+  template: Exclude<SupportedTemplate, "new_user_bonus">,
+  data: Record<string, unknown>
+): { subject: string; html: string; text?: string } | null {
   switch (template) {
     case "alert":
       return EmailTemplates.alert({
@@ -138,6 +160,8 @@ function getDefaultTemplate(template: Exclude<SupportedTemplate, "new_user_bonus
         title: "Your vehicle request was rejected",
         message: `Your request for ${escapeHtml((data.plateNumber as string) || "your vehicle")} was rejected.${data.adminNotes ? ` Notes: ${escapeHtml(data.adminNotes as string)}` : ""}`,
       });
+    default:
+      return null;
   }
 }
 
@@ -217,6 +241,12 @@ const handler = async (req: Request): Promise<Response> => {
         { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }
+    if (!normalizedTemplate) {
+      return new Response(
+        JSON.stringify({ error: `Unsupported template key: ${template}`, success: false }),
+        { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
 
     if (!isInternalServiceCall && userIdForLogs) {
       const rateLimitCheck = await checkRateLimit(userIdForLogs, supabase);
@@ -277,10 +307,12 @@ const handler = async (req: Request): Promise<Response> => {
 
       return new Response(
         JSON.stringify({
+          success: false,
           error: "Email service not configured",
-          message: "Please configure GMAIL_USER and GMAIL_APP_PASSWORD in Supabase secrets"
+          message: "Please configure GMAIL_USER and GMAIL_APP_PASSWORD in Supabase secrets",
+          code: "email_not_configured",
         }),
-        { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }
 
@@ -290,6 +322,13 @@ const handler = async (req: Request): Promise<Response> => {
     } catch (err: any) {
       return new Response(
         JSON.stringify({ error: err?.message || "Invalid request for template" }),
+        { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+
+    if (!defaultTemplate) {
+      return new Response(
+        JSON.stringify({ error: `No default template handler for key: ${normalizedTemplate}`, success: false }),
         { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }
@@ -318,14 +357,18 @@ const handler = async (req: Request): Promise<Response> => {
 
     let finalSenderId = senderId || (data.senderId as string | undefined) || rendered.senderId;
     if (!finalSenderId) {
-      const { data: senderRow } = await supabase
-        .from("email_sender_names")
-        .select("name")
-        .eq("is_default", true)
-        .eq("is_active", true)
-        .maybeSingle();
-      if (senderRow?.name) {
-        finalSenderId = `${senderRow.name} <${config.gmailUser}>`;
+      try {
+        const { data: senderRow } = await supabase
+          .from("email_sender_names")
+          .select("name")
+          .eq("is_default", true)
+          .eq("is_active", true)
+          .maybeSingle();
+        if (senderRow?.name) {
+          finalSenderId = `${senderRow.name} <${config.gmailUser}>`;
+        }
+      } catch (senderLookupError) {
+        console.warn("[send-email] sender lookup skipped:", senderLookupError);
       }
     }
     if (finalSenderId) {
@@ -391,11 +434,18 @@ const handler = async (req: Request): Promise<Response> => {
         supabase
       );
 
-      throw sendError;
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: errorMessage,
+          code: "email_delivery_failed",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
     }
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    console.error("[send-email] Error:", errorMessage);
+    console.error("[send-email] Error:", errorMessage, error);
 
     return new Response(
       JSON.stringify({ error: errorMessage, success: false }),
