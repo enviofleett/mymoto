@@ -802,6 +802,21 @@ export default function AdminEmailTemplates() {
                       />
                     </div>
 
+                    <div className="space-y-2">
+                      <Label>Sender ID (optional)</Label>
+                      <Input
+                        value={editedTemplate.sender_id || ""}
+                        onChange={(e) => setEditedTemplate({
+                          ...editedTemplate,
+                          sender_id: e.target.value || null
+                        })}
+                        placeholder='MyMoto Fleet <no-reply@mymoto.com>'
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Use "Name &lt;email@domain.com&gt;" or "email@domain.com". If empty, the default sender name is used.
+                      </p>
+                    </div>
+
                     {editMode === 'builder' ? (
                       <div className="space-y-6">
                         {/* Layout Selector */}

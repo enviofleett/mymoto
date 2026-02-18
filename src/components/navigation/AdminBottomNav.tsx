@@ -18,7 +18,8 @@ import {
   FileText,
   LogOut,
   Building2,
-  BookOpen
+  BookOpen,
+  TrendingUp
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NavLink } from "@/components/NavLink";
@@ -35,9 +36,9 @@ import {
 const ADMIN_NAV_ITEMS = [
   { 
     label: "Command", 
-    path: "/", 
+    path: "/admin/dashboard", 
     icon: LayoutDashboard,
-    activeMatch: /^\/$|^\/admin$/
+    activeMatch: /^\/admin\/dashboard$|^\/admin$/
   },
   { 
     label: "Fleet", 
@@ -77,6 +78,7 @@ const MORE_MENU_ITEMS = [
   { title: "Resources", url: "/admin/resources", icon: BookOpen },
   { title: "Privacy & Terms", url: "/admin/privacy-settings", icon: Shield },
   { title: "Directory", url: "/admin/directory", icon: Building2 },
+  { title: "Growth", url: "/admin/growth", icon: TrendingUp },
 ];
 
 export function AdminBottomNav() {
@@ -98,7 +100,7 @@ export function AdminBottomNav() {
 
   // Check if any "More" menu item is active
   const isMoreMenuActive = MORE_MENU_ITEMS.some(item => {
-    if (item.url === "/") return location.pathname === "/";
+    if (item.url === "/admin/dashboard") return location.pathname === "/admin/dashboard";
     return location.pathname.startsWith(item.url);
   });
 
@@ -187,7 +189,7 @@ export function AdminBottomNav() {
             <div className="space-y-2 overflow-y-auto flex-1 p-4 pb-8">
               {MORE_MENU_ITEMS.map((item) => {
                 const isActive = location.pathname.startsWith(item.url) || 
-                  (item.url === "/" && location.pathname === "/");
+                  (item.url === "/admin/dashboard" && location.pathname === "/admin/dashboard");
                 
                 return (
                   <NavLink

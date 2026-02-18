@@ -2,6 +2,10 @@ import { useState, useEffect } from "react";
 import { Bell, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useNotifications } from "@/hooks/useNotifications";
+import { trackEvent } from "@/lib/analytics";
+
+const DISMISS_KEY = "notification-banner-dismissed-at";
+const DISMISS_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
 export function NotificationPermissionBanner() {
   const { permission, isSupported, requestPermission, playAlertSound } = useNotifications();
@@ -10,26 +14,38 @@ export function NotificationPermissionBanner() {
 
   // Check if banner was previously dismissed
   useEffect(() => {
-    const wasDismissed = localStorage.getItem('notification-banner-dismissed');
-    if (wasDismissed === 'true') {
+    const raw = localStorage.getItem(DISMISS_KEY);
+    if (!raw) return;
+    const ts = Number(raw);
+    if (!Number.isFinite(ts)) return;
+    if (Date.now() - ts < DISMISS_COOLDOWN_MS) {
       setDismissed(true);
     }
   }, []);
 
+  useEffect(() => {
+    if (!isSupported || permission !== "default" || dismissed) return;
+    void trackEvent("push_banner_view", { path: window.location.pathname });
+  }, [dismissed, isSupported, permission]);
+
   const handleDismiss = () => {
     setDismissed(true);
-    localStorage.setItem('notification-banner-dismissed', 'true');
+    localStorage.setItem(DISMISS_KEY, `${Date.now()}`);
   };
 
   const handleEnable = async () => {
+    void trackEvent("push_permission_prompt", { source: "permission_banner" });
     setIsRequesting(true);
     const granted = await requestPermission();
     setIsRequesting(false);
     
     if (granted) {
+      void trackEvent("push_permission_granted", { source: "permission_banner" });
       // Play a test sound to confirm it's working
       playAlertSound('info');
       handleDismiss();
+    } else {
+      void trackEvent("push_permission_denied", { source: "permission_banner" });
     }
   };
 

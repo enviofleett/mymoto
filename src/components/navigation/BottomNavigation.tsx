@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/sheet";
 
 const mainNavItems = [
-  { title: "Home", url: "/", icon: LayoutDashboard },
+  { title: "Home", url: "/admin/dashboard", icon: LayoutDashboard },
   { title: "Fleet", url: "/fleet", icon: Truck },
   { title: "Map", url: "/map", icon: Map },
   { title: "Insights", url: "/insights", icon: Brain },
@@ -63,7 +63,7 @@ export function BottomNavigation() {
           <NavLink
             key={item.url}
             to={item.url}
-            end={item.url === "/"}
+            end={item.url === "/admin/dashboard"}
             className="flex flex-col items-center justify-center gap-1 px-3 py-2 text-muted-foreground transition-colors min-w-[64px] max-[360px]:min-w-[52px] max-[360px]:px-2"
             activeClassName="text-primary"
           >

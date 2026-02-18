@@ -316,7 +316,18 @@ const handler = async (req: Request): Promise<Response> => {
     const subject = escapeHtml(customSubject || emailTemplate.subject);
     const html = sanitizeHtml(customHtml || emailTemplate.html);
 
-    const finalSenderId = senderId || (data.senderId as string | undefined) || rendered.senderId;
+    let finalSenderId = senderId || (data.senderId as string | undefined) || rendered.senderId;
+    if (!finalSenderId) {
+      const { data: senderRow } = await supabase
+        .from("email_sender_names")
+        .select("name")
+        .eq("is_default", true)
+        .eq("is_active", true)
+        .maybeSingle();
+      if (senderRow?.name) {
+        finalSenderId = `${senderRow.name} <${config.gmailUser}>`;
+      }
+    }
     if (finalSenderId) {
       const senderValidation = validateSenderId(finalSenderId);
       if (!senderValidation.valid) {

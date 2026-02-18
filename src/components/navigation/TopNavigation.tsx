@@ -16,7 +16,8 @@ import {
   Link2,
   Shield,
   BookOpen,
-  Building2
+  Building2,
+  TrendingUp
 } from "lucide-react";
 import { ConnectionStatus } from "@/hooks/useFleetData";
 
@@ -25,7 +26,7 @@ interface TopNavigationProps {
 }
 
 const navItems = [
-  { title: "Dashboard", url: "/", icon: LayoutDashboard },
+  { title: "Dashboard", url: "/admin/dashboard", icon: LayoutDashboard },
   { title: "Fleet", url: "/fleet", icon: Truck },
   { title: "Map", url: "/map", icon: Map },
   { title: "Insights", url: "/insights", icon: Brain },
@@ -91,7 +92,7 @@ export function TopNavigation({ connectionStatus }: TopNavigationProps) {
             <NavLink
               key={item.url}
               to={item.url}
-              end={item.url === "/"}
+              end={item.url === "/admin/dashboard"}
               className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground rounded-md transition-colors hover:text-foreground hover:bg-muted"
               activeClassName="text-primary bg-primary/10"
             >
@@ -164,6 +165,14 @@ export function TopNavigation({ connectionStatus }: TopNavigationProps) {
               >
                 <Building2 className="h-4 w-4" />
                 <span>Directory</span>
+              </NavLink>
+              <NavLink
+                to="/admin/growth"
+                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground rounded-md transition-colors hover:text-foreground hover:bg-muted"
+                activeClassName="text-primary bg-primary/10"
+              >
+                <TrendingUp className="h-4 w-4" />
+                <span>Growth</span>
               </NavLink>
             </>
           )}

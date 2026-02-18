@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,13 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { z } from 'zod';
 import myMotoLogo from '@/assets/mymoto-logo-new.png';
+import {
+  attachUserAttribution,
+  captureAttributionFromUrl,
+  setAnalyticsUserId,
+  trackEvent,
+  trackReturnMilestones,
+} from '@/lib/analytics';
 
  
 
@@ -29,9 +36,27 @@ const Auth = () => {
   const { signIn, signUp, user, isAdmin, isProvider, isLoading, isRoleLoaded } = useAuth();
   const navigate = useNavigate();
   const [isSignUp, setIsSignUp] = useState(false);
+  const successTrackedForUserRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    captureAttributionFromUrl();
+    void trackEvent('auth_view', { path: '/auth' });
+  }, []);
 
   useEffect(() => {
     if (user && !isLoading && isRoleLoaded) {
+      if (successTrackedForUserRef.current !== user.id) {
+        successTrackedForUserRef.current = user.id;
+        setAnalyticsUserId(user.id);
+        void trackEvent('auth_success', {
+          entry: 'auth',
+          is_admin: isAdmin,
+          is_provider: isProvider,
+        });
+        void attachUserAttribution(user.id);
+        void trackReturnMilestones(user.id);
+      }
+
       // Role-based redirect: admins go to dashboard; non-admins land in owner app.
       let targetPath = '/owner/vehicles';
       if (isAdmin) {
@@ -56,6 +81,7 @@ const Auth = () => {
     e.preventDefault();
     setError(null);
     setSuccess(null);
+    void trackEvent('auth_submit', { mode: 'signin', path: '/auth' });
     
     if (!validateInput()) return;
     
@@ -63,6 +89,7 @@ const Auth = () => {
     const { error } = await signIn(email, password);
     
     if (error) {
+      void trackEvent('auth_error', { mode: 'signin', reason: error.message });
       if (error.message.includes('Invalid login credentials')) {
         setError('Invalid email or password. Please try again.');
       } else {
@@ -76,6 +103,7 @@ const Auth = () => {
     e.preventDefault();
     setError(null);
     setSuccess(null);
+    void trackEvent('auth_submit', { mode: 'signup', path: '/auth' });
     
     if (!validateInput()) return;
     
@@ -84,6 +112,7 @@ const Auth = () => {
     setIsSubmitting(false);
     
     if (error) {
+      void trackEvent('auth_error', { mode: 'signup', reason: error.message });
       setError(error.message || 'Failed to create account. Please try again.');
     } else {
       setSuccess('Account created! Please check your email to confirm your account.');

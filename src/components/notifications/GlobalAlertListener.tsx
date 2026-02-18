@@ -7,6 +7,7 @@ import { useNotificationPreferences, type AlertType, type SeverityLevel } from "
 import { useAuth } from "@/contexts/AuthContext";
 import { useOwnerVehicles } from "@/hooks/useOwnerVehicles";
 import { NotificationToast } from "@/components/notifications/NotificationToast";
+import { trackEventOnce } from "@/lib/analytics";
 
 interface ProactiveEvent {
   id: string;
@@ -42,6 +43,7 @@ export function GlobalAlertListener() {
   const authRedirectedRef = useRef(false);
   const seenEventIdsRef = useRef<Set<string>>(new Set());
   const ignoredDeviceLogRef = useRef<Set<string>>(new Set());
+  const firstAlertTrackedRef = useRef(false);
   const MAX_DEVICE_CHANNELS = 25;
   
   // Get list of device IDs for user's assigned vehicles
@@ -249,6 +251,14 @@ export function GlobalAlertListener() {
     }
 
     console.log('[GlobalAlertListener] New alert for user vehicle:', event.event_type, event.severity, event.device_id);
+
+    if (!firstAlertTrackedRef.current) {
+      firstAlertTrackedRef.current = true;
+      void trackEventOnce("first_alert_seen", user?.id ?? "anon", {
+        event_type: event.event_type,
+        severity: event.severity,
+      });
+    }
 
     // Normalize event type to match notification preferences
     const alertType = normalizeEventType(event.event_type) as AlertType;

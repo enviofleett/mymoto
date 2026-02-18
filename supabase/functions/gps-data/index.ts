@@ -1,8 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import { callGps51WithRateLimit, getValidGps51Token } from "../_shared/gps51-client.ts"
 import { normalizeVehicleTelemetry, detectIgnitionV2, type Gps51RawData } from "../_shared/telemetry-normalizer.ts"
 import { getFeatureFlag } from "../_shared/feature-flags.ts"
+import { calculateDaysOffline } from "../_shared/vehicle-hibernation.ts"
 
 declare const Deno: any;
 
@@ -124,7 +125,6 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * c
 }
 
-// Sync positions from lastposition - batch insert with SMART HISTORY
 async function syncPositions(supabase: any, records: any[]): Promise<any[]> {
   const now = new Date().toISOString()
   
@@ -230,6 +230,60 @@ async function syncPositions(supabase: any, records: any[]): Promise<any[]> {
   }
   
   console.log(`[syncPositions] Updated ${positions.length} positions (${positions.filter(p => p.sync_priority === 'high').length} moving)`)
+
+  const onlinePositions = positions.filter(p => p.is_online)
+  if (onlinePositions.length > 0) {
+    const deviceIds = onlinePositions.map(p => p.device_id)
+    const { data: existingVehicles } = await supabase
+      .from("vehicles")
+      .select("device_id, vehicle_status, last_online_at")
+      .in("device_id", deviceIds)
+
+    const existingMap = new Map<string, { device_id: string; vehicle_status: string | null; last_online_at: string | null }>()
+    if (existingVehicles) {
+      for (const v of existingVehicles) {
+        existingMap.set(v.device_id, {
+          device_id: v.device_id,
+          vehicle_status: v.vehicle_status ?? null,
+          last_online_at: v.last_online_at ?? null
+        })
+      }
+    }
+
+    const nowDate = new Date()
+    const updates: any[] = []
+    const reactivationLogs: any[] = []
+
+    for (const pos of onlinePositions) {
+      updates.push({
+        device_id: pos.device_id,
+        vehicle_status: "active",
+        last_online_at: pos.gps_time,
+        hibernated_at: null
+      })
+
+      const existing = existingMap.get(pos.device_id)
+      if (existing && existing.vehicle_status === "hibernated") {
+        const daysOffline = calculateDaysOffline(existing.last_online_at, nowDate)
+        reactivationLogs.push({
+          device_id: pos.device_id,
+          event_type: "reactivated",
+          event_at: nowDate.toISOString(),
+          last_online_at: existing.last_online_at,
+          days_offline: daysOffline !== null ? Math.floor(daysOffline) : null,
+          notes: "reactivated_via_gps_data"
+        })
+      }
+    }
+
+    if (updates.length > 0) {
+      await supabase.from("vehicles").upsert(updates, { onConflict: "device_id" })
+    }
+
+    if (reactivationLogs.length > 0) {
+      await supabase.from("vehicle_hibernation_log").insert(reactivationLogs)
+    }
+  }
 
   // Phase 3 (shadow mode): insert ignition mismatch logs (guarded by global flag + per-device allowlist).
   // Default OFF. Also logs only mismatches to keep volume low.
@@ -493,7 +547,6 @@ async function syncPositions(supabase: any, records: any[]): Promise<any[]> {
   return positions;
 }
 
-// Get ALL device IDs from database (paginated to handle 600+ vehicles)
 async function getDeviceIdsFromDb(supabase: any): Promise<string[]> {
   const allDeviceIds: string[] = []
   const PAGE_SIZE = 1000
@@ -501,8 +554,9 @@ async function getDeviceIdsFromDb(supabase: any): Promise<string[]> {
   
   while (true) {
     const { data, error } = await supabase
-      .from('vehicles')
-      .select('device_id')
+      .from("vehicles")
+      .select("device_id")
+      .neq("vehicle_status", "hibernated")
       .range(offset, offset + PAGE_SIZE - 1)
     
     if (error || !data || data.length === 0) break

@@ -253,9 +253,16 @@ const Fleet = () => {
     return <Badge className="bg-green-600/90">{battery}%</Badge>;
   };
 
-  const statusBadge = (status: FleetVehicle["status"]) => {
-    if (status === "moving") return <Badge className="bg-green-600/90">Moving</Badge>;
-    if (status === "stopped") return <Badge variant="secondary">Stopped</Badge>;
+  const statusBadge = (vehicle: FleetVehicle) => {
+    if (vehicle.vehicleStatus === "hibernated") {
+      return (
+        <Badge variant="outline" className="border-amber-500/60 text-amber-700 bg-amber-50 flex items-center gap-1">
+          Hibernated
+        </Badge>
+      );
+    }
+    if (vehicle.status === "moving") return <Badge className="bg-green-600/90">Moving</Badge>;
+    if (vehicle.status === "stopped") return <Badge variant="secondary">Stopped</Badge>;
     return (
       <Badge variant="outline" className="border-muted text-muted-foreground flex items-center gap-1">
         <WifiOff className="h-3 w-3" />
@@ -309,12 +316,26 @@ const Fleet = () => {
     return [
       {
         id: "status",
-        title: `Status: ${selectedVehicle.status}`,
-        body: selectedVehicle.status === "offline"
-          ? `Last seen ${selectedVehicle.offlineDuration || "recently"} ago.`
-          : `Live at ${selectedVehicle.speed} km/h.`,
-        icon: selectedVehicle.status === "offline" ? WifiOff : Navigation,
-        tone: selectedVehicle.status === "offline" ? "muted" : "normal",
+        title: selectedVehicle.vehicleStatus === "hibernated"
+          ? "Hibernated vehicle"
+          : `Status: ${selectedVehicle.status}`,
+        body: selectedVehicle.vehicleStatus === "hibernated"
+          ? selectedVehicle.lastOnlineAt
+            ? `Vehicle has been offline since ${formatLagos(selectedVehicle.lastOnlineAt, "MMM dd, yyyy • HH:mm")}.`
+            : "Vehicle has been offline for an extended period and is hibernated."
+          : selectedVehicle.status === "offline"
+            ? `Last seen ${selectedVehicle.offlineDuration || "recently"} ago.`
+            : `Live at ${selectedVehicle.speed} km/h.`,
+        icon: selectedVehicle.vehicleStatus === "hibernated"
+          ? WifiOff
+          : selectedVehicle.status === "offline"
+            ? WifiOff
+            : Navigation,
+        tone: selectedVehicle.vehicleStatus === "hibernated"
+          ? "muted"
+          : selectedVehicle.status === "offline"
+            ? "muted"
+            : "normal",
         time: timestamp,
       },
       selectedVehicle.isOverspeeding ? {
@@ -446,7 +467,7 @@ const Fleet = () => {
                             <h2 className="text-xl font-semibold">{selectedVehicle.name}</h2>
                             <p className="text-sm text-muted-foreground">{selectedVehicle.plate}</p>
                             <div className="mt-2 flex flex-wrap gap-2 items-center">
-                              {statusBadge(selectedVehicle.status)}
+                              {statusBadge(selectedVehicle)}
                               {batteryBadge(selectedVehicle.battery)}
                               {selectedVehicle.ignition ? (
                                 <Badge variant="outline" className="flex items-center gap-1">

@@ -279,6 +279,7 @@ export function VehicleTable({
   const ignitionOnCount = vehicles.filter(v => v.ignition === true).length;
   const ignitionOffCount = vehicles.filter(v => v.ignition === false).length;
   const lowBatteryCount = vehicles.filter(v => v.battery !== null && v.battery > 0 && v.battery < 20).length;
+  const hibernatedCount = vehicles.filter(v => v.vehicleStatus === "hibernated").length;
 
   const toggleFilter = (filter: StatusFilter) => {
     setSelectedFilters((prev) =>
@@ -418,8 +419,13 @@ export function VehicleTable({
                 <CardContent className="p-4">
                   <div className="flex justify-between items-start">
                     <div className="min-w-0 flex-1">
-                      <p className="font-semibold truncate">{v.name}</p>
-                      <p className="text-sm text-muted-foreground">{v.plate}</p>
+                        <p className="font-semibold truncate">{v.name}</p>
+                        <p className="text-sm text-muted-foreground">{v.plate}</p>
+                        {v.vehicleStatus === "hibernated" && (
+                          <p className="text-xs text-amber-600 mt-1">
+                            Hibernated vehicle
+                          </p>
+                        )}
                       <div className="mt-2 flex flex-wrap gap-2 items-center">
                         {getStatusBadge(v)}
                         {getIgnitionIndicator(v.ignition)}
@@ -481,6 +487,11 @@ export function VehicleTable({
                       <div>
                         <p className="font-medium">{v.name}</p>
                         <p className="text-xs text-muted-foreground">{v.plate}</p>
+                        {v.vehicleStatus === "hibernated" && (
+                          <span className="mt-1 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800">
+                            Hibernated
+                          </span>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell>

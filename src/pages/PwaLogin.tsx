@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
 import { z } from "zod";
 import myMotoLogo from "@/assets/mymoto-logo-new.png";
+import {
+  attachUserAttribution,
+  captureAttributionFromUrl,
+  setAnalyticsUserId,
+  trackEvent,
+  trackReturnMilestones,
+} from "@/lib/analytics";
 const gps51Schema = z.object({
   username: z.string().min(1, "Username is required"),
   password: z.string().min(1, "Password is required")
@@ -20,10 +27,17 @@ export default function PwaLogin() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    captureAttributionFromUrl();
+    void trackEvent("auth_view", { path: "/login", method: "gps51" });
+  }, []);
+
   const handleGps51Login = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSuccess(null);
+    void trackEvent("auth_submit", { mode: "signin", method: "gps51", path: "/login" });
     const validation = gps51Schema.safeParse({
       username,
       password
@@ -45,9 +59,11 @@ export default function PwaLogin() {
         }
       });
       if (fnError) {
+        void trackEvent("auth_error", { mode: "signin", method: "gps51", reason: fnError.message || "connection_failed" });
         throw new Error(fnError.message || 'Connection failed');
       }
       if (data?.error) {
+        void trackEvent("auth_error", { mode: "signin", method: "gps51", reason: data.error });
         setError(data.error);
         setIsSubmitting(false);
         return;
@@ -63,9 +79,18 @@ export default function PwaLogin() {
           password: password
         });
         if (signInError) {
+          void trackEvent("auth_error", { mode: "signin", method: "gps51", reason: signInError.message || "sign_in_failed_after_sync" });
           setError('Account synced but sign-in failed. Please try again.');
           setIsSubmitting(false);
           return;
+        }
+
+        const userId = (await supabase.auth.getUser()).data.user?.id ?? null;
+        if (userId) {
+          setAnalyticsUserId(userId);
+          void trackEvent("auth_success", { entry: "gps51" });
+          void attachUserAttribution(userId);
+          void trackReturnMilestones(userId);
         }
 
         // Navigate based on role
@@ -83,11 +108,17 @@ export default function PwaLogin() {
           else navigate('/owner/vehicles');
         }, 1000);
       } else {
+        void trackEvent("auth_error", { mode: "signin", method: "gps51", reason: "unexpected_response" });
         setError('Unexpected response. Please try again.');
         setIsSubmitting(false);
       }
     } catch (err) {
       console.error('GPS51 login error:', err);
+      void trackEvent("auth_error", {
+        mode: "signin",
+        method: "gps51",
+        reason: err instanceof Error ? err.message : "unknown_error",
+      });
       setError(err instanceof Error ? err.message : 'Failed to connect. Please try again.');
       setIsSubmitting(false);
     }

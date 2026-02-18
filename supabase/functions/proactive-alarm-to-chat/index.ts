@@ -291,17 +291,24 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Get vehicle info
     const { data: vehicle } = await supabase
       .from('vehicles')
-      .select('device_id, device_name')
+      .select('device_id, device_name, vehicle_status')
       .eq('device_id', proactiveEvent.device_id)
-      .single();
+      .maybeSingle();
 
     if (!vehicle) {
       console.warn(`[proactive-alarm-to-chat] Vehicle not found: ${proactiveEvent.device_id}`);
       return new Response(JSON.stringify({ success: false, error: 'Vehicle not found' }), {
         status: 404,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (vehicle.vehicle_status === 'hibernated') {
+      console.log(`[proactive-alarm-to-chat] Vehicle ${proactiveEvent.device_id} is hibernated, skipping chat notification.`);
+      return new Response(JSON.stringify({ success: true, skipped: true, reason: 'vehicle_hibernated' }), {
+        status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { useQuery } from "@tanstack/react-query";
 
 import { OwnerLayout } from "@/components/layouts/OwnerLayout";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,8 @@ import { Battery, Car, ChevronRight, Gauge, MapPin, RefreshCw, ShieldAlert, Zap 
 import mymotoLogo from "@/assets/mymoto-logo-new.png";
 import { VehicleRequestDialog } from "@/components/owner/VehicleRequestDialog";
 import { VehicleLocationMap } from "@/components/fleet/VehicleLocationMap";
+import { useAuth } from "@/contexts/AuthContext";
+import { trackEventOnce } from "@/lib/analytics";
 
 const STORAGE_KEY = "owner-selected-device-id";
 const LIVE_CACHE_KEY_PREFIX = "owner-live-cache-v1";
@@ -290,7 +293,22 @@ function MetricCard({
 
 export default function OwnerVehiclesDashboard() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { data: vehicles, isLoading: vehiclesLoading } = useOwnerVehicles();
+  const { data: vehicleRequests } = useQuery({
+    queryKey: ["owner-vehicle-requests", user?.id],
+    enabled: !!user?.id,
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("vehicle_onboarding_requests")
+        .select("status, created_at")
+        .eq("user_id", user!.id)
+        .order("created_at", { ascending: false })
+        .limit(10);
+      if (error) throw error;
+      return (data as Array<{ status: string; created_at: string }>) ?? [];
+    },
+  });
 
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
   const [directOverride, setDirectOverride] = useState<{ data: VehicleLiveData; fetchedAt: number } | null>(null);
@@ -458,7 +476,24 @@ export default function OwnerVehiclesDashboard() {
   }, [handleManualRefresh, refetchLive]);
 
   const showEmpty = !vehiclesLoading && (vehicles?.length || 0) === 0;
+  const pendingRequestsCount = (vehicleRequests || []).filter((r) => r.status === "pending").length;
   const showLoading = vehiclesLoading || liveLoading || !selectedDeviceId || !selectedVehicle;
+
+  useEffect(() => {
+    if (!user?.id || !vehicles || vehicles.length === 0) return;
+    void trackEventOnce("first_vehicle_visible", user.id, {
+      vehicle_count: vehicles.length,
+    });
+  }, [user?.id, vehicles]);
+
+  useEffect(() => {
+    if (!user?.id || !vehicleRequests || vehicleRequests.length === 0) return;
+    const latestApproved = vehicleRequests.find((r) => r.status === "approved");
+    if (!latestApproved) return;
+    void trackEventOnce("vehicle_request_approved", `${user.id}:${latestApproved.created_at}`, {
+      approved_at: latestApproved.created_at,
+    });
+  }, [user?.id, vehicleRequests]);
 
   const speedValue = typeof displayData?.speed === "number" ? Math.round(displayData.speed).toString() : "--";
   const dailyReady = !dailyTravelLoading && !dailyTravelError;
@@ -577,14 +612,27 @@ export default function OwnerVehiclesDashboard() {
               <p className="text-sm text-muted-foreground mt-1">
                 Request a vehicle connection to start tracking.
               </p>
+              {pendingRequestsCount > 0 ? (
+                <p className="text-xs text-accent mt-2">
+                  {pendingRequestsCount} request{pendingRequestsCount > 1 ? "s" : ""} pending admin approval.
+                </p>
+              ) : null}
               <div className="mt-4 flex justify-center">
-                <VehicleRequestDialog
-                  trigger={
-                    <button className="h-12 px-5 rounded-full bg-card shadow-neumorphic-button text-accent font-semibold transition-all duration-200 hover:ring-2 hover:ring-accent/30">
-                      Request Vehicle
-                    </button>
-                  }
-                />
+                <div className="flex flex-col gap-3 w-full max-w-xs">
+                  <button
+                    onClick={() => navigate("/login")}
+                    className="h-12 px-5 rounded-full bg-card shadow-neumorphic-button text-foreground font-semibold transition-all duration-200 hover:ring-2 hover:ring-accent/30"
+                  >
+                    Connect with GPS51 Login
+                  </button>
+                  <VehicleRequestDialog
+                    trigger={
+                      <button className="h-12 px-5 rounded-full bg-card shadow-neumorphic-button text-accent font-semibold transition-all duration-200 hover:ring-2 hover:ring-accent/30">
+                        Request Vehicle Manually
+                      </button>
+                    }
+                  />
+                </div>
               </div>
             </div>
           ) : showLoading ? (

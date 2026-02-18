@@ -47,7 +47,7 @@ export default function AdminWallets() {
   }
 
   if (!isAdmin) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/admin/dashboard" replace />;
   }
 
   const handleAdjust = async () => {

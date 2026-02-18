@@ -14,6 +14,9 @@ export interface FleetVehicle {
   name: string;
   plate: string;
   status: 'moving' | 'stopped' | 'offline';
+  vehicleStatus?: string | null;
+  hibernatedAt?: Date | null;
+  lastOnlineAt?: Date | null;
   speed: number;
   lat: number | null;
   lon: number | null;
@@ -78,6 +81,10 @@ function transformDbRowToVehicle(row: any): FleetVehicle {
   const longitude = row.longitude;
   const speed = row.speed ?? 0;
   const isOnline = row.is_online ?? false;
+  const vehicle = row.vehicles;
+  const vehicleStatus = vehicle?.vehicle_status as string | undefined;
+  const hibernatedAt = vehicle?.hibernated_at as string | undefined;
+  const lastOnlineAt = vehicle?.last_online_at as string | undefined;
   const hasValidCoords = isValidCoordinate(latitude, longitude);
   
   // Status derived from backend is_online field - no frontend calculation
@@ -100,8 +107,6 @@ function transformDbRowToVehicle(row: any): FleetVehicle {
 
   const assignment = row.vehicle_assignments?.[0];
   const profile = assignment?.profiles;
-  const vehicle = row.vehicles;
-
   // Mileage stored in meters - convert to km
   const mileageMeters = row.total_mileage;
   const mileageKm = mileageMeters ? Math.round(mileageMeters / 1000) : null;
@@ -111,6 +116,9 @@ function transformDbRowToVehicle(row: any): FleetVehicle {
     name: assignment?.vehicle_alias || vehicle?.device_name || row.device_id,
     plate: vehicle?.device_name || "N/A",
     status,
+    vehicleStatus: vehicleStatus || null,
+    hibernatedAt: hibernatedAt ? new Date(hibernatedAt) : null,
+    lastOnlineAt: lastOnlineAt ? new Date(lastOnlineAt) : null,
     speed,
     lat: latitude,
     lon: longitude,
@@ -228,20 +236,31 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
     }
   }
 
-  // Fetch vehicles separately
   let allVehicles: any[] = [];
   let vehFrom = 0;
   let vehHasMore = true;
+  let vehiclesSelect =
+    "device_id, device_name, gps_owner, vehicle_status, hibernated_at, last_online_at";
+  let vehiclesFallbackTried = false;
 
   while (vehHasMore) {
     try {
       const { data: vehiclesList, error: vehiclesError } = await (supabase as any)
-        .from('vehicles')
-        .select('device_id, device_name, gps_owner')
+        .from("vehicles")
+        .select(vehiclesSelect)
         .range(vehFrom, vehFrom + BATCH_SIZE - 1);
 
       if (vehiclesError) {
-        console.warn('[useFleetData] Could not fetch vehicles:', vehiclesError.message);
+        const msg = vehiclesError.message || "";
+        if (!vehiclesFallbackTried && msg.includes("vehicle_status")) {
+          console.warn(
+            "[useFleetData] Hibernation columns missing on vehicles table, falling back to legacy select"
+          );
+          vehiclesFallbackTried = true;
+          vehiclesSelect = "device_id, device_name, gps_owner";
+          continue;
+        }
+        console.warn("[useFleetData] Could not fetch vehicles:", msg);
         vehHasMore = false;
       } else if (vehiclesList && vehiclesList.length > 0) {
         allVehicles = [...allVehicles, ...vehiclesList];
@@ -254,7 +273,7 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
         vehHasMore = false;
       }
     } catch (err) {
-      console.warn('[useFleetData] Error in vehicle fetch loop:', err);
+      console.warn("[useFleetData] Error in vehicle fetch loop:", err);
       vehHasMore = false;
     }
   }

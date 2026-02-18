@@ -55,6 +55,37 @@ serve(async (req) => {
       })
     }
 
+    const activeDeviceIds: string[] = []
+
+    if (offlineVehicles && offlineVehicles.length > 0) {
+      const ids = offlineVehicles.map(v => v.device_id)
+      const { data: vehicles } = await supabase
+        .from('vehicles')
+        .select('device_id, vehicle_status')
+        .in('device_id', ids)
+
+      if (vehicles) {
+        for (const v of vehicles) {
+          if (v.vehicle_status !== 'hibernated') {
+            activeDeviceIds.push(v.device_id)
+          }
+        }
+      }
+    }
+
+    const filteredOffline = offlineVehicles.filter(v => activeDeviceIds.includes(v.device_id))
+
+    if (filteredOffline.length === 0) {
+      return new Response(JSON.stringify({ 
+        success: true, 
+        message: 'No eligible offline vehicles (all hibernated or none found)',
+        checked: offlineVehicles.length,
+        alerts_created: 0
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
     // Get recent offline alerts to avoid duplicates
     const cooldownThreshold = new Date(Date.now() - COOLDOWN_MINUTES * 60 * 1000).toISOString()
     
@@ -68,7 +99,7 @@ serve(async (req) => {
     console.log(`[OfflineCheck] ${recentAlertDevices.size} devices have recent offline alerts (cooldown)`)
 
     // Filter out vehicles that already have recent alerts
-    const vehiclesToAlert = offlineVehicles.filter(v => !recentAlertDevices.has(v.device_id))
+    const vehiclesToAlert = filteredOffline.filter(v => !recentAlertDevices.has(v.device_id))
     console.log(`[OfflineCheck] ${vehiclesToAlert.length} vehicles need new offline alerts`)
 
     if (vehiclesToAlert.length === 0) {

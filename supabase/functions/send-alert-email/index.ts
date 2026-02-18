@@ -121,6 +121,20 @@ const handler = async (req: Request): Promise<Response> => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    const { data: vehicleStatusRow } = await supabase
+      .from("vehicles")
+      .select("device_id, vehicle_status")
+      .eq("device_id", deviceId)
+      .maybeSingle();
+
+    if (vehicleStatusRow && vehicleStatusRow.vehicle_status === "hibernated") {
+      console.log(`Skipping alert email for hibernated vehicle ${deviceId}`);
+      return new Response(
+        JSON.stringify({ success: true, skipped: true, reason: "vehicle_hibernated" }),
+        { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+
     // Get admin users to send notifications to
     const { data: adminRoles, error: rolesError } = await supabase
       .from("user_roles")
@@ -159,7 +173,6 @@ const handler = async (req: Request): Promise<Response> => {
 
     console.log(`Sending alert to ${adminEmails.length} admin(s)`);
 
-    // Get vehicle name if available
     const { data: vehicleData } = await supabase
       .from("vehicles")
       .select("device_name")

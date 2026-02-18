@@ -12,6 +12,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import RatingListener from "@/components/directory/RatingListener";
 import { Loader2 } from "lucide-react";
 import { usePwaUpdatePrompt } from "@/hooks/usePwaUpdatePrompt";
+import { captureAttributionFromUrl } from "@/lib/analytics";
 
 const Index = lazy(() => import("./pages/Index"));
 const Auth = lazy(() => import("./pages/Auth"));
@@ -29,10 +30,12 @@ const AdminPrivacySettings = lazy(() => import("./pages/AdminPrivacySettings"));
 const AdminEmailTemplates = lazy(() => import("./pages/AdminEmailTemplates"));
 const AdminReportTemplates = lazy(() => import("./pages/AdminReportTemplates"));
 const AdminResources = lazy(() => import("./pages/AdminResources"));
+const AdminGrowthDashboard = lazy(() => import("./pages/AdminGrowthDashboard"));
 const NotificationSettings = lazy(() => import("./pages/NotificationSettings"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const InstallApp = lazy(() => import("./pages/InstallApp"));
 const PwaLogin = lazy(() => import("./pages/PwaLogin"));
+const OwnerLanding = lazy(() => import("./pages/OwnerLanding"));
 
 // Partner pages
 const PartnerSignup = lazy(() => import("./pages/partner/PartnerSignup"));
@@ -104,6 +107,10 @@ const App = () => {
   usePwaUpdatePrompt();
 
   useEffect(() => {
+    captureAttributionFromUrl();
+  }, []);
+
+  useEffect(() => {
     const handleOnline = () => {
     };
     const handleOffline = () => {
@@ -128,6 +135,8 @@ const App = () => {
               <TermsChecker>
             <Suspense fallback={<RouteFallback />}>
             <Routes>
+              <Route path="/" element={<OwnerLanding />} />
+              <Route path="/go/:channel" element={<OwnerLanding />} />
               <Route path="/auth" element={<Auth />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/reset-password" element={<ResetPassword />} />
@@ -139,7 +148,7 @@ const App = () => {
               
               {/* Admin Dashboard Routes */}
               <Route path="/admin/dashboard" element={<ProtectedRoute requireAdmin><Index /></ProtectedRoute>} />
-              <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+              <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
               <Route path="/fleet" element={<ProtectedRoute><Fleet /></ProtectedRoute>} />
               <Route path="/map" element={<Navigate to="/fleet" replace />} />
               <Route path="/insights" element={<ProtectedRoute><Insights /></ProtectedRoute>} />
@@ -157,6 +166,7 @@ const App = () => {
               <Route path="/admin/email-templates" element={<ProtectedRoute><AdminEmailTemplates /></ProtectedRoute>} />
               <Route path="/admin/report-templates" element={<ProtectedRoute><AdminReportTemplates /></ProtectedRoute>} />
               <Route path="/admin/resources" element={<ProtectedRoute><AdminResources /></ProtectedRoute>} />
+              <Route path="/admin/growth" element={<ProtectedRoute requireAdmin><AdminGrowthDashboard /></ProtectedRoute>} />
               <Route path="/admin/directory" element={<ProtectedRoute requireAdmin><AdminDirectory /></ProtectedRoute>} />
               <Route path="/admin/vehicle-requests" element={<ProtectedRoute requireAdmin><AdminVehicleRequests /></ProtectedRoute>} />
               

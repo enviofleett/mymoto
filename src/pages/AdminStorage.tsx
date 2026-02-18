@@ -106,7 +106,7 @@ export default function AdminStorage() {
   }
 
   if (!isAdmin) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/admin/dashboard" replace />;
   }
 
   return (

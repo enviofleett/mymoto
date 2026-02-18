@@ -240,7 +240,7 @@ export default function AdminAlerts() {
   }
 
   if (!isAdmin) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/admin/dashboard" replace />;
   }
 
   return (

@@ -372,6 +372,23 @@ serve(async (req) => {
 
     console.log(`[handle-vehicle-event] Processing event: ${event.title} for device ${event.device_id}`);
 
+    const { data: vehicle } = await supabase
+      .from('vehicles')
+      .select('device_id, vehicle_status')
+      .eq('device_id', event.device_id)
+      .maybeSingle();
+
+    if (vehicle && vehicle.vehicle_status === 'hibernated') {
+      console.log(`[handle-vehicle-event] Vehicle ${event.device_id} is hibernated, skipping AI conversation.`);
+      return new Response(JSON.stringify({ 
+        message: 'Vehicle is hibernated, skipping event handling',
+        skipped: true 
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // CRITICAL FIX: Deduplication check - skip if already notified
     if (event.id) {
       const { data: existingEvent, error: checkError } = await supabase

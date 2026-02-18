@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { setAnalyticsUserId } from '@/lib/analytics';
 
 interface AuthContextType {
   user: User | null;
@@ -159,6 +160,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         setSession(session);
         setUser(session?.user ?? null);
+        setAnalyticsUserId(session?.user?.id ?? null);
         
         // Defer role checks with setTimeout to prevent deadlock
         if (session?.user) {
@@ -188,6 +190,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       setSession(session);
       setUser(session?.user ?? null);
+      setAnalyticsUserId(session?.user?.id ?? null);
       if (session?.user) {
         void refreshRoles(session.user.id, { blocking: true }).catch((e) => {
           if (import.meta.env.DEV) console.warn('[Auth] refreshRoles rejected', e);
@@ -201,6 +204,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (import.meta.env.DEV) console.warn('[Auth] Initial session check failed', e);
       setSession(null);
       setUser(null);
+      setAnalyticsUserId(null);
       setIsAdmin(false);
       setIsProvider(false);
       setIsRoleLoaded(true);

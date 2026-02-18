@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Share, Star, Download, ChevronRight, Smartphone, CheckCircle2, PlusSquare } from "lucide-react";
 import myMotoLogo from "@/assets/mymoto-logo-new.png";
+import { trackEvent } from "@/lib/analytics";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -15,24 +16,56 @@ const InstallApp = () => {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
+  const [isIOSSafari, setIsIOSSafari] = useState(false);
   const [isAndroid, setIsAndroid] = useState(false);
   const [installStatus, setInstallStatus] = useState<"idle" | "installing" | "installed">("idle");
   const [showFullDescription, setShowFullDescription] = useState(false);
+  const [highlightInstallInstructions, setHighlightInstallInstructions] = useState(false);
+
+  const scrollToInstallInstructions = () => {
+    const instructions = document.getElementById("install-instructions");
+    if (!instructions) return;
+    void trackEvent("install_instruction_view", {
+      platform: isIOS ? "ios" : isAndroid ? "android" : "desktop",
+      safari: isIOSSafari,
+    });
+    setHighlightInstallInstructions(true);
+    instructions.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.setTimeout(() => setHighlightInstallInstructions(false), 1600);
+  };
 
   useEffect(() => {
     // Check if already installed (standalone mode)
-    if (window.matchMedia("(display-mode: standalone)").matches) {
+    if (
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (window.navigator as Navigator & { standalone?: boolean }).standalone === true
+    ) {
       setIsInstalled(true);
       setInstallStatus("installed");
     }
 
     // Detect device type
-    const userAgent = navigator.userAgent.toLowerCase();
-    const isIOSDevice = /iphone|ipad|ipod/.test(userAgent) && !(window as any).MSStream;
-    const isAndroidDevice = /android/.test(userAgent);
-    
+    const userAgent = navigator.userAgent;
+    const userAgentLower = userAgent.toLowerCase();
+    const isIOSDevice =
+      (/iphone|ipad|ipod/.test(userAgentLower) ||
+        (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
+    const isAndroidDevice = /android/.test(userAgentLower);
+    const isSafariBrowser =
+      /safari/i.test(userAgent) &&
+      !/crios|fxios|edgios|opios|duckduckgo|instagram|fban|fbav|line/i.test(userAgentLower);
+
     setIsIOS(isIOSDevice);
+    setIsIOSSafari(isIOSDevice && isSafariBrowser);
     setIsAndroid(isAndroidDevice);
+    void trackEvent("install_view", {
+      ios: isIOSDevice,
+      ios_safari: isIOSDevice && isSafariBrowser,
+      android: isAndroidDevice,
+      standalone:
+        window.matchMedia("(display-mode: standalone)").matches ||
+        (window.navigator as Navigator & { standalone?: boolean }).standalone === true,
+    });
 
     // Listen for beforeinstallprompt (Android/Chrome)
     const handleBeforeInstallPrompt = (e: Event) => {
@@ -57,8 +90,20 @@ const InstallApp = () => {
   }, []);
 
   const handleInstallClick = async () => {
+    void trackEvent("install_cta_click", {
+      installed: isInstalled,
+      has_deferred_prompt: !!deferredPrompt,
+      platform: isIOS ? "ios" : isAndroid ? "android" : "desktop",
+      safari: isIOSSafari,
+    });
+
     if (isInstalled) {
       navigate("/owner/vehicles");
+      return;
+    }
+
+    if (isIOS) {
+      scrollToInstallInstructions();
       return;
     }
 
@@ -80,10 +125,7 @@ const InstallApp = () => {
       setDeferredPrompt(null);
     } else {
       // Fallback or iOS instructions scroll
-      const instructions = document.getElementById("install-instructions");
-      if (instructions) {
-        instructions.scrollIntoView({ behavior: "smooth" });
-      }
+      scrollToInstallInstructions();
     }
   };
 
@@ -124,7 +166,7 @@ const InstallApp = () => {
           </div>
           
           <div className="flex items-center gap-3 mt-auto pb-1">
-             <Button 
+             <Button
                 className={`rounded-full px-6 font-bold h-[30px] text-[13px] tracking-wide uppercase transition-all ${
                   isInstalled 
                     ? "bg-secondary text-secondary-foreground hover:bg-secondary/90" 
@@ -132,7 +174,7 @@ const InstallApp = () => {
                 }`}
                 onClick={handleInstallClick}
              >
-                {isInstalled ? "OPEN" : "GET"}
+                {isInstalled ? "OPEN" : isIOS ? (isIOSSafari ? "HOW TO INSTALL" : "USE SAFARI") : "GET"}
              </Button>
              
              <Button 
@@ -240,7 +282,11 @@ const InstallApp = () => {
               <div className="space-y-4">
                   <div className="flex gap-4 items-start">
                       <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm shrink-0">1</div>
-                      <p className="text-[15px] pt-1">Download the app by clicking the <span className="font-bold text-[#007AFF]">GET</span> button above.</p>
+                      <p className="text-[15px] pt-1">
+                        {isIOS
+                          ? "Open this page in Safari, tap Share, then choose Add to Home Screen."
+                          : <>Download the app by clicking the <span className="font-bold text-[#007AFF]">GET</span> button above.</>}
+                      </p>
                   </div>
                   <div className="flex gap-4 items-start">
                       <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm shrink-0">2</div>
@@ -277,26 +323,39 @@ const InstallApp = () => {
       </div>
 
       {/* Manual Install Instructions */}
-      <div id="install-instructions" className="px-5 py-8 space-y-6">
+      <div
+        id="install-instructions"
+        className={`px-5 py-8 space-y-6 transition-all ${highlightInstallInstructions ? "ring-2 ring-[#007AFF]/40 rounded-xl" : ""}`}
+      >
           {!isInstalled && (
               <div className="bg-secondary/30 rounded-xl p-6 border border-border/50">
                   <h3 className="font-semibold text-center mb-4 text-foreground">Can't install automatically?</h3>
                   
                   {isIOS ? (
                       <div className="space-y-4">
-                        <p className="text-sm text-muted-foreground text-center">Follow these steps for iOS:</p>
+                        <p className="text-sm text-muted-foreground text-center">
+                          {isIOSSafari
+                            ? "Follow these steps in Safari:"
+                            : "iPhone installation works only in Safari. Open this page in Safari first, then follow these steps:"}
+                        </p>
                         <div className="space-y-3 text-sm">
+                            {!isIOSSafari && (
+                              <div className="flex items-center gap-3 bg-background p-3 rounded-lg border border-border/50">
+                                  <Smartphone className="w-5 h-5 text-[#007AFF]" />
+                                  <span>Open this URL in <strong>Safari</strong></span>
+                              </div>
+                            )}
                             <div className="flex items-center gap-3 bg-background p-3 rounded-lg border border-border/50">
                                 <Share className="w-5 h-5 text-[#007AFF]" />
-                                <span>1. Tap the <strong>Share</strong> button in Safari</span>
+                                <span>{isIOSSafari ? "1." : "2."} Tap the <strong>Share</strong> button in Safari</span>
                             </div>
                             <div className="flex items-center gap-3 bg-background p-3 rounded-lg border border-border/50">
                                 <PlusSquare className="w-5 h-5 text-[#007AFF]" />
-                                <span>2. Select <strong>Add to Home Screen</strong></span>
+                                <span>{isIOSSafari ? "2." : "3."} Select <strong>Add to Home Screen</strong></span>
                             </div>
                             <div className="flex items-center gap-3 bg-background p-3 rounded-lg border border-border/50">
                                 <span className="font-bold text-[#007AFF] px-1">Add</span>
-                                <span>3. Tap <strong>Add</strong> in the top right</span>
+                                <span>{isIOSSafari ? "3." : "4."} Tap <strong>Add</strong> in the top right</span>
                             </div>
                         </div>
                       </div>

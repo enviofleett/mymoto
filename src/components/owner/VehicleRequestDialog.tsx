@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -26,6 +26,7 @@ import { Loader2, Plus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { trackEvent } from "@/lib/analytics";
 
 const formSchema = z.object({
   plate_number: z.string().min(2, "Plate number is required"),
@@ -42,6 +43,12 @@ type FormValues = z.infer<typeof formSchema>;
 export function VehicleRequestDialog({ trigger }: { trigger?: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const { user } = useAuth();
+
+  useEffect(() => {
+    if (open) {
+      void trackEvent("vehicle_request_open", { path: window.location.pathname });
+    }
+  }, [open]);
   
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -58,6 +65,10 @@ export function VehicleRequestDialog({ trigger }: { trigger?: React.ReactNode })
 
   const onSubmit = async (values: FormValues) => {
     if (!user) return;
+    void trackEvent("vehicle_request_submit", {
+      has_imei: !!values.requested_device_id?.trim(),
+      has_vin: !!values.vin?.trim(),
+    });
 
     try {
       const { error } = await supabase

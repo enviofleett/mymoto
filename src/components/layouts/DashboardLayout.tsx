@@ -23,7 +23,7 @@ export function DashboardLayout({ children, connectionStatus }: DashboardLayoutP
   // Determine if we should show AdminBottomNav
   // Admin routes: /, /fleet, /map, /insights, /settings, /notifications, and all /admin/* routes
   const isAdminRoute = location.pathname.startsWith('/admin') || 
-                       location.pathname === '/' || 
+                       location.pathname === '/admin/dashboard' || 
                        location.pathname === '/fleet' ||
                        location.pathname === '/map' ||
                        location.pathname === '/insights' ||

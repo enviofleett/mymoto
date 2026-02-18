@@ -211,6 +211,19 @@ Deno.serve(async (req: Request) => {
       throw new Error("Invalid event payload");
     }
 
+    const { data: vehicle } = await supabase
+      .from("vehicles")
+      .select("device_id, vehicle_status")
+      .eq("device_id", proactiveEvent.device_id)
+      .maybeSingle();
+
+    if (vehicle && vehicle.vehicle_status === "hibernated") {
+      return new Response(
+        JSON.stringify({ success: true, skipped: true, reason: "vehicle_hibernated" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const preferenceKey = getPreferenceKey(proactiveEvent.event_type);
     if (!preferenceKey) {
       return new Response(
@@ -375,4 +388,3 @@ Deno.serve(async (req: Request) => {
     });
   }
 });
-

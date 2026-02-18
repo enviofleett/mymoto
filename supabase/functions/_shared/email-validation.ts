@@ -55,6 +55,24 @@ export function validateEmailList(emails: string | string[]): { valid: boolean; 
   return { valid: true, validEmails };
 }
 
+export function validateSenderDisplayName(name: string): { valid: boolean; error?: string } {
+  if (!name) {
+    return { valid: false, error: "Sender name is required" };
+  }
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return { valid: false, error: "Sender name cannot be empty" };
+  }
+  if (trimmed.length > 50) {
+    return { valid: false, error: "Sender name too long (max 50 characters)" };
+  }
+  const pattern = /^[A-Za-z0-9 .-]+$/;
+  if (!pattern.test(trimmed)) {
+    return { valid: false, error: "Sender name can only contain letters, numbers, spaces, hyphens, and periods" };
+  }
+  return { valid: true };
+}
+
 export function sanitizeHtml(html: string): string {
   if (!html || typeof html !== 'string') {
     return '';

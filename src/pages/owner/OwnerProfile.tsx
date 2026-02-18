@@ -27,6 +27,8 @@ import {
   Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 export default function OwnerProfile() {
   const navigate = useNavigate();
@@ -36,6 +38,8 @@ export default function OwnerProfile() {
   const { data: profile, isLoading: profileLoading } = useOwnerProfile();
   const [loggingOut, setLoggingOut] = useState(false);
   const [editProfileOpen, setEditProfileOpen] = useState(false);
+  const [referralCode, setReferralCode] = useState<string>("");
+  const [creatingReferral, setCreatingReferral] = useState(false);
 
   // Enable real-time updates for owner vehicles
   const deviceIds = vehicles?.map(v => v.deviceId) || [];
@@ -51,6 +55,64 @@ export default function OwnerProfile() {
     setLoggingOut(true);
     await signOut();
     navigate("/auth");
+  };
+
+  const getOrCreateReferralCode = async () => {
+    if (!user?.id) return "";
+    if (referralCode) return referralCode;
+    setCreatingReferral(true);
+    try {
+      const { data: existing } = await (supabase as any)
+        .from("referral_invites")
+        .select("code")
+        .eq("inviter_user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (existing?.code) {
+        setReferralCode(existing.code);
+        return existing.code as string;
+      }
+
+      const code = `MM${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+      const { error } = await (supabase as any)
+        .from("referral_invites")
+        .insert({ inviter_user_id: user.id, code, channel: "owner_profile" });
+      if (error) throw error;
+      setReferralCode(code);
+      return code;
+    } catch (e) {
+      toast.error("Could not create referral link");
+      return "";
+    } finally {
+      setCreatingReferral(false);
+    }
+  };
+
+  const handleShareReferral = async () => {
+    const code = await getOrCreateReferralCode();
+    if (!code) return;
+    const url = `${window.location.origin}/go/whatsapp?ref=${encodeURIComponent(code)}&utm_source=referral&utm_medium=owner_share&utm_campaign=owner_invite`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: "MyMoto",
+          text: "Install MyMoto and monitor your vehicle in real-time.",
+          url,
+        });
+      } catch {
+        // user cancelled share
+      }
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Referral link copied");
+    } catch {
+      toast.error("Could not copy referral link");
+    }
   };
 
   const menuItems = [
@@ -139,6 +201,28 @@ export default function OwnerProfile() {
                   </div>
                 )}
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Referral Card */}
+          <Card className="border-0 bg-card shadow-neumorphic rounded-xl">
+            <CardContent className="p-4 space-y-3">
+              <div>
+                <div className="text-sm font-medium text-foreground">Invite a friend</div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  Share your referral link and help other owners install MyMoto.
+                </div>
+              </div>
+              <button
+                onClick={handleShareReferral}
+                disabled={creatingReferral}
+                className={cn(
+                  "w-full h-11 rounded-xl shadow-neumorphic-sm bg-card text-foreground text-sm font-medium",
+                  "hover:shadow-neumorphic active:shadow-neumorphic-inset disabled:opacity-50"
+                )}
+              >
+                {creatingReferral ? "Preparing link..." : "Share referral link"}
+              </button>
             </CardContent>
           </Card>
 

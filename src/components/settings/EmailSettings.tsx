@@ -16,6 +16,7 @@ interface EmailConfig {
   gmail_app_password: string | null;
   email_enabled: boolean;
   test_email: string | null;
+  default_sender_name?: string | null;
 }
 
 export function EmailSettings() {
@@ -30,11 +31,13 @@ export function EmailSettings() {
     gmail_app_password: null,
     email_enabled: false,
     test_email: user?.email || null,
+    default_sender_name: null,
   });
   const [formData, setFormData] = useState({
     gmail_user: "",
     gmail_app_password: "",
     test_email: user?.email || "",
+    default_sender_name: "",
   });
 
   useEffect(() => {
@@ -50,7 +53,7 @@ export function EmailSettings() {
       const { data, error } = await supabase
         .from("app_settings")
         .select("key, value, metadata")
-        .in("key", ["gmail_user", "gmail_app_password", "email_enabled", "test_email"]);
+        .in("key", ["gmail_user", "gmail_app_password", "email_enabled", "test_email", "default_sender_name"]);
 
       if (error && error.code !== "PGRST116") {
         console.error("Error fetching email config:", error);
@@ -66,12 +69,14 @@ export function EmailSettings() {
         gmail_app_password: settings.gmail_app_password ? "••••••••" : null,
         email_enabled: settings.email_enabled === "true",
         test_email: settings.test_email || user?.email || null,
+        default_sender_name: settings.default_sender_name || null,
       });
 
       setFormData({
         gmail_user: settings.gmail_user || "",
         gmail_app_password: "",
         test_email: settings.test_email || user?.email || "",
+        default_sender_name: settings.default_sender_name || "",
       });
     } catch (err) {
       console.error("Error loading email config:", err);
@@ -113,6 +118,7 @@ export function EmailSettings() {
         { key: "gmail_app_password", value: formData.gmail_app_password },
         { key: "email_enabled", value: config.email_enabled.toString() },
         { key: "test_email", value: formData.test_email },
+        { key: "default_sender_name", value: formData.default_sender_name },
       ];
 
       for (const setting of settings) {
@@ -312,6 +318,19 @@ export function EmailSettings() {
         </Alert>
 
         <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="default_sender_name">Default Sender Name</Label>
+            <Input
+              id="default_sender_name"
+              placeholder="e.g. MyMoto Fleet"
+              value={formData.default_sender_name}
+              onChange={(e) => setFormData({ ...formData, default_sender_name: e.target.value })}
+            />
+            <p className="text-xs text-muted-foreground">
+              Displayed to recipients as the sender name. Max 50 characters, letters, numbers, spaces, hyphens, and periods only.
+            </p>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="gmail_user">Gmail Address</Label>
             <Input

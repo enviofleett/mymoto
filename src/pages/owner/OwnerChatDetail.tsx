@@ -17,6 +17,7 @@ import { ChatMessageContent } from "@/components/chat/ChatMessageContent";
 import { formatLagosDate, formatRelativeTime } from "@/lib/timezone";
 import { useQuery } from "@tanstack/react-query";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { trackEvent, trackEventOnce } from "@/lib/analytics";
 
 interface ChatMessage {
   id: string;
@@ -54,6 +55,11 @@ export default function OwnerChatDetail() {
   const avatarUrl = llmSettings?.avatar_url || vehicle?.avatarUrl;
   
   const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vehicle-chat`;
+
+  useEffect(() => {
+    if (!deviceId) return;
+    void trackEventOnce("first_chat_open", deviceId, { device_id: deviceId });
+  }, [deviceId]);
 
   const lastSeenLabel = vehicle?.lastUpdate ? formatRelativeTime(vehicle.lastUpdate) : "--";
   const statusText =
@@ -602,6 +608,11 @@ export default function OwnerChatDetail() {
     if (loading) return; // Prevent multiple simultaneous sends
 
     const userMessage = input.trim();
+    void trackEvent("first_chat_sent", { device_id: deviceId, message_length: userMessage.length });
+    void trackEventOnce("first_chat_sent", `${user.id}:${deviceId}`, {
+      device_id: deviceId,
+      first_message: true,
+    });
     setInput("");
     setLoading(true);
     setStreamingContent("");
