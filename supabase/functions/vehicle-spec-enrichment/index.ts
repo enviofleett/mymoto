@@ -1,6 +1,7 @@
 // @ts-ignore
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callLLM } from "../_shared/llm-client.ts";
+import { buildUpdatePayload, normaliseKey, type EnrichedSpecs } from "./spec-helpers.ts";
 
 declare const Deno: any;
 
@@ -19,12 +20,12 @@ type EnrichmentRequest = {
   vehicle_type?: string | null;
 };
 
-type EnrichedSpecs = {
-  fuel_type?: string | null;
-  engine_displacement?: string | null;
-  official_fuel_efficiency_l_100km?: number | null;
-  vehicle_type?: string | null;
-  usage_weight?: string | null;
+type CatalogSpec = {
+  fuel_type: string | null;
+  engine_displacement: string | null;
+  official_fuel_efficiency_l_100km: number | null;
+  vehicle_type: string | null;
+  usage_weight: string | null;
 };
 
 const KNOWN_SPECS: Record<string, EnrichedSpecs> = {
@@ -485,8 +486,22 @@ const KNOWN_SPECS: Record<string, EnrichedSpecs> = {
   },
 };
 
-function normaliseKey(brand: string, model: string): string {
-  return `${brand}`.toLowerCase().trim() + "|" + `${model}`.toLowerCase().trim();
+async function fetchCatalogSpec(supabase: any, normalizedKey: string): Promise<CatalogSpec | null> {
+  const { data, error } = await supabase
+    .from("vehicle_fuel_specs_catalog")
+    .select(
+      "fuel_type, engine_displacement, official_fuel_efficiency_l_100km, vehicle_type, usage_weight",
+    )
+    .eq("normalized_key", normalizedKey)
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (error) {
+    console.warn(`[vehicle-spec-enrichment] catalog_lookup_error key=${normalizedKey} message=${error.message}`);
+    return null;
+  }
+
+  return (data as CatalogSpec | null) ?? null;
 }
 
 Deno.serve(async (req: Request) => {
@@ -545,19 +560,35 @@ Deno.serve(async (req: Request) => {
     }
 
     const key = normaliseKey(brand, model);
+    const catalogSpec = await fetchCatalogSpec(supabase, key);
+
+    if (catalogSpec) {
+      console.log(`[vehicle-spec-enrichment] catalog_hit key=${key}`);
+      const updatePayload = buildUpdatePayload(catalogSpec);
+
+      const { error: updateError } = await supabase
+        .from("vehicles")
+        .update(updatePayload)
+        .eq("device_id", device_id);
+
+      if (updateError) {
+        return new Response(
+          JSON.stringify({ error: "Failed to update vehicle specs" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      return new Response(
+        JSON.stringify({ success: true, data: updatePayload }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     const known = KNOWN_SPECS[key];
 
     if (known) {
-      const updatePayload: EnrichedSpecs = {
-        fuel_type: known.fuel_type ?? null,
-        engine_displacement: known.engine_displacement ?? null,
-        official_fuel_efficiency_l_100km:
-          typeof known.official_fuel_efficiency_l_100km === "number"
-            ? known.official_fuel_efficiency_l_100km
-            : null,
-        vehicle_type: known.vehicle_type ?? null,
-        usage_weight: known.usage_weight ?? null,
-      };
+      console.log(`[vehicle-spec-enrichment] fallback_known_specs_hit key=${key}`);
+      const updatePayload = buildUpdatePayload(known);
 
       const { error: updateError } = await supabase
         .from("vehicles")
@@ -652,6 +683,8 @@ Deno.serve(async (req: Request) => {
       "usage_weight should be a short description like 'light', 'normal', 'heavy', or an approximate kg/tons string. " +
       "If you are unsure, use null values instead of guessing wildly.";
 
+    console.log(`[vehicle-spec-enrichment] llm_fallback_hit key=${key}`);
+
     const llmResult = await callLLM(systemPrompt, userPrompt, {
       maxOutputTokens: 256,
       temperature: 0.2,
@@ -723,16 +756,7 @@ Deno.serve(async (req: Request) => {
     }
   }
 
-    const updatePayload: EnrichedSpecs = {
-      fuel_type: specs.fuel_type ?? null,
-      engine_displacement: specs.engine_displacement ?? null,
-      official_fuel_efficiency_l_100km:
-        typeof specs.official_fuel_efficiency_l_100km === "number"
-          ? specs.official_fuel_efficiency_l_100km
-          : null,
-      vehicle_type: specs.vehicle_type ?? null,
-      usage_weight: specs.usage_weight ?? null,
-    };
+    const updatePayload = buildUpdatePayload(specs);
 
     const { error: updateError } = await supabase
       .from("vehicles")

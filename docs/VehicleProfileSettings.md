@@ -49,10 +49,31 @@
 - Documents: Uploaded to `documents` bucket under `vehicle-docs/{deviceId}`.
 
 ## Handoff Notes
-- Persistence: Supabase `vehicles`, `vehicle_llm_settings`, `geofence_zones`; localStorage fallback when fields are pending in DB.
+- Persistence: Supabase `vehicles`, `vehicle_llm_settings`, `geofence_zones`. Vehicle details save via secure edge function `save-vehicle-settings`.
 - Reports: Relocated into Operations, using existing hooks for trips, events, stats.
 - Geofence: Uses GeofenceManager with map interactions and radius adjustment.
 
+## API Contract: save-vehicle-settings
+- Endpoint: `supabase/functions/v1/save-vehicle-settings`
+- Method: `POST`
+- Auth: Required (`Authorization: Bearer <access_token>`)
+- Authorization:
+  - Admin can update any vehicle.
+  - Non-admin must be assigned to the vehicle.
+- Request body:
+  - `device_id` (required)
+  - `plate_number`, `vin`, `color`, `make`, `model`, `year`
+  - `fuel_type`, `engine_displacement`, `official_fuel_efficiency_l_100km`
+  - `vehicle_type`, `driving_region_or_country`, `usage_weight`
+  - `speed_limit`, `speed_unit` (`kmh` | `mph`)
+- Validation:
+  - `year`: 1900 to current year
+  - `vin`: 17 chars, `[A-HJ-NPR-Z0-9]`
+  - `official_fuel_efficiency_l_100km`: `> 0` and `<= 40`
+  - `speed_limit`: `> 0` and `<= 300` when provided
+- Response:
+  - `200`: `{ success: true, data: <saved_vehicle_fields> }`
+  - `4xx/5xx`: `{ error: string }`
+
 ## Prototype Access
 - Navigate to Owner Vehicle Profile for a device → Vehicle Settings (top-right) → interact with sections.
-

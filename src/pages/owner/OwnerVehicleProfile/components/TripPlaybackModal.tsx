@@ -15,6 +15,7 @@ type PositionSample = {
   latitude: number;
   longitude: number;
   gps_time: string;
+  speed?: number | null;
   speed_kmh?: number | null;
 };
 
@@ -25,12 +26,32 @@ interface TripPlaybackModalProps {
   onClose: () => void;
 }
 
+function getLegLabel(startTime: string, index: number, total: number, idleMinutes: number): string {
+  const hour = new Date(startTime).getHours();
+  const isFirst = index === 0;
+  const isLast = index === total - 1;
+
+  if (!isFirst && idleMinutes >= 15) return "Stopover leg";
+  if (isLast && total > 1) return "Return leg";
+
+  if (hour >= 5 && hour < 12) return "Morning drive";
+  if (hour >= 12 && hour < 17) return "Afternoon drive";
+  if (hour >= 17 && hour < 22) return "Evening drive";
+  return "Late-night drive";
+}
+
 export function TripPlaybackModal({ open, deviceId, trip, onClose }: TripPlaybackModalProps) {
   const [samples, setSamples] = useState<PositionSample[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [maximized, setMaximized] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setSelectedIndex(null);
+    }
+  }, [open, trip.id]);
 
   useEffect(() => {
     if (!open) return;
@@ -42,7 +63,7 @@ export function TripPlaybackModal({ open, deviceId, trip, onClose }: TripPlaybac
         const to = trip.end_time ?? trip.start_time;
         const { data, error } = await (supabase as any)
           .from("position_history")
-          .select("latitude, longitude, gps_time, speed_kmh")
+          .select("latitude, longitude, gps_time, speed")
           .eq("device_id", deviceId)
           .gte("gps_time", from)
           .lte("gps_time", to)
@@ -64,6 +85,14 @@ export function TripPlaybackModal({ open, deviceId, trip, onClose }: TripPlaybac
   }, [samples]);
 
   const summary = useMemo(() => computeTripSummary(segments), [segments]);
+  const hasComputedSummary = segments.length > 0;
+  const totalDistanceKm = hasComputedSummary ? summary.totalDistanceKm : (trip.distance_km ?? 0);
+  const totalDurationMin = hasComputedSummary
+    ? summary.totalDurationMin
+    : typeof trip.duration_seconds === "number"
+      ? trip.duration_seconds / 60
+      : 0;
+  const avgSpeedKmh = hasComputedSummary ? summary.avgSpeedKmh : (trip.avg_speed ?? 0);
 
   const routeCoords = useMemo(() => {
     if (!samples || samples.length === 0) return [];
@@ -74,6 +103,13 @@ export function TripPlaybackModal({ open, deviceId, trip, onClose }: TripPlaybac
     if (selectedIndex == null || !segments[selectedIndex]) return null;
     return segments[selectedIndex].coords.map(c => ({ lat: c.lat, lon: c.lon }));
   }, [segments, selectedIndex]);
+
+  const selectedSegment = selectedIndex != null ? segments[selectedIndex] : null;
+  const hasSamples = (samples?.length ?? 0) > 0;
+
+  const selectedLegLabel = selectedSegment
+    ? getLegLabel(selectedSegment.startTime, selectedIndex ?? 0, segments.length, selectedSegment.idleMinutes)
+    : null;
 
   const routeStartEnd = useMemo(() => {
     if (!samples || samples.length === 0) return null;
@@ -96,7 +132,12 @@ export function TripPlaybackModal({ open, deviceId, trip, onClose }: TripPlaybac
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className={cn("p-0 overflow-hidden", maximized ? "w-[95vw] h-[90vh]" : "sm:max-w-[900px]")}>
+      <DialogContent
+        className={cn(
+          "p-0 overflow-hidden w-[calc(100vw-1rem)] max-w-none h-[92dvh] max-h-[96dvh] sm:h-auto sm:max-h-[90dvh]",
+          maximized ? "sm:w-[95vw] sm:h-[90vh]" : "sm:max-w-[900px]"
+        )}
+      >
         <DialogHeader className="p-4 border-b">
           <div className="flex items-center justify-between">
             <DialogTitle className="flex items-center gap-2">
@@ -116,10 +157,15 @@ export function TripPlaybackModal({ open, deviceId, trip, onClose }: TripPlaybac
           </div>
         </DialogHeader>
 
-        <div className={cn("grid gap-4 p-4", maximized ? "grid-cols-12 h-[calc(90vh-64px)]" : "grid-cols-12")}>
+        <div
+          className={cn(
+            "grid gap-4 p-4 grid-cols-12 overflow-hidden h-[calc(92dvh-64px)] sm:h-auto",
+            maximized && "sm:h-[calc(90vh-64px)]"
+          )}
+        >
           <div className={cn("col-span-12 md:col-span-7 order-1 md:order-none", maximized && "h-full")}>
-            <Card className="h-full bg-card/50 border-border">
-              <CardContent className="p-0 h-full relative">
+            <Card className="h-full min-h-[280px] bg-card/50 border-border">
+              <CardContent className="p-0 h-full min-h-[280px] relative">
                 {loading && (
                   <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
                     <div className="px-3 py-2 rounded-full bg-card/80 backdrop-blur-md shadow-neumorphic-sm flex items-center gap-2">
@@ -132,35 +178,40 @@ export function TripPlaybackModal({ open, deviceId, trip, onClose }: TripPlaybac
                   latitude={baseLat}
                   longitude={baseLon}
                   showAddressCard={false}
-                  mapHeight={maximized ? "100%" : "420px"}
+                  mapHeight={maximized ? "h-full min-h-[320px]" : "h-[42dvh] min-h-[280px] max-h-[420px]"}
                   routeCoords={selectedCoords ?? routeCoords}
                   routeStartEnd={selectedCoords ? {
-                    start: segments[selectedIndex!].start,
-                    end: segments[selectedIndex!].end,
+                    start: selectedSegment!.start,
+                    end: selectedSegment!.end,
                   } : routeStartEnd}
                 />
               </CardContent>
             </Card>
           </div>
 
-          <div className={cn("col-span-12 md:col-span-5 space-y-3 order-2 md:order-none", maximized && "overflow-y-auto")}>
+          <div
+            className={cn(
+              "col-span-12 md:col-span-5 space-y-3 order-2 md:order-none overflow-y-auto",
+              maximized ? "h-full" : "max-h-[42vh] md:max-h-none"
+            )}
+          >
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               <Card className="bg-muted/40 border-border/80">
                 <CardContent className="p-3">
                   <div className="text-xs text-muted-foreground flex items-center gap-2"><Route className="h-3 w-3" />Total Distance</div>
-                  <div className="text-lg font-semibold">{summary.totalDistanceKm.toFixed(2)} km</div>
+                  <div className="text-lg font-semibold">{totalDistanceKm.toFixed(2)} km</div>
                 </CardContent>
               </Card>
               <Card className="bg-muted/40 border-border/80">
                 <CardContent className="p-3">
                   <div className="text-xs text-muted-foreground flex items-center gap-2"><Clock className="h-3 w-3" />Total Duration</div>
-                  <div className="text-lg font-semibold">{Math.round(summary.totalDurationMin)} min</div>
+                  <div className="text-lg font-semibold">{Math.max(1, Math.round(totalDurationMin))} min</div>
                 </CardContent>
               </Card>
               <Card className="bg-muted/40 border-border/80">
                 <CardContent className="p-3">
                   <div className="text-xs text-muted-foreground flex items-center gap-2"><Gauge className="h-3 w-3" />Avg Speed</div>
-                  <div className="text-lg font-semibold">{Math.round(summary.avgSpeedKmh)} km/h</div>
+                  <div className="text-lg font-semibold">{Math.round(avgSpeedKmh)} km/h</div>
                 </CardContent>
               </Card>
               <Card className="bg-muted/40 border-border/80">
@@ -179,31 +230,55 @@ export function TripPlaybackModal({ open, deviceId, trip, onClose }: TripPlaybac
 
             <Card className="bg-card/50 border-border">
               <CardContent className="p-0">
-                <div className="p-3 border-b text-xs font-medium text-muted-foreground uppercase">Segments</div>
+                <div className="p-3 border-b text-xs font-medium text-muted-foreground uppercase flex items-center justify-between gap-2">
+                  <span>{selectedSegment ? "Focused Leg" : "Trip Legs"}</span>
+                  {selectedSegment && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-[11px]"
+                      onClick={() => setSelectedIndex(null)}
+                    >
+                      Show Full Trip
+                    </Button>
+                  )}
+                </div>
                 <div className="max-h-[320px] overflow-y-auto">
-                  {segments.length === 0 && (
+                  {error && (
+                    <div className="p-4 text-sm text-destructive">{error}</div>
+                  )}
+                  {!error && !loading && !hasSamples && (
+                    <div className="p-4 text-sm text-muted-foreground">
+                      No GPS history was found for this trip window.
+                    </div>
+                  )}
+                  {!error && hasSamples && segments.length === 0 && (
                     <div className="p-4 text-sm text-muted-foreground">No movement detected</div>
                   )}
                   {segments.map((seg, i) => (
                     <button
                       key={i}
                       className={cn(
-                        "w-full text-left px-3 py-2 border-b hover:bg-muted/40",
+                        "w-full text-left px-3 py-2 border-b hover:bg-muted/40 transition-colors",
                         selectedIndex === i && "bg-muted/60"
                       )}
                       onClick={() => setSelectedIndex(i)}
                     >
                       <div className="flex items-center justify-between">
-                        <div className="text-xs text-muted-foreground">
-                          {formatLagos(new Date(seg.startTime), "HH:mm:ss")} – {formatLagos(new Date(seg.endTime), "HH:mm:ss")}
+                        <div className="text-xs text-muted-foreground flex items-center gap-2">
+                          <span className="font-medium text-foreground">
+                            {getLegLabel(seg.startTime, i, segments.length, seg.idleMinutes)}
+                          </span>
+                          <span>·</span>
+                          <span>{formatLagos(new Date(seg.startTime), "HH:mm")} – {formatLagos(new Date(seg.endTime), "HH:mm")}</span>
                         </div>
                         <div className="text-xs flex items-center gap-2">
                           <Badge variant="outline">{seg.distanceKm.toFixed(2)} km</Badge>
                           <Badge variant="outline">{Math.round(seg.avgSpeedKmh)} km/h</Badge>
                         </div>
                       </div>
-                      <div className="mt-1 text-xs">
-                        Start: {seg.start.lat.toFixed(5)}, {seg.start.lon.toFixed(5)} · End: {seg.end.lat.toFixed(5)}, {seg.end.lon.toFixed(5)} · Max: {Math.round(seg.maxSpeedKmh)} km/h · Idle: {Math.round(seg.idleMinutes)} min
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        Duration: {Math.max(1, Math.round(seg.durationMin))} min · Max speed: {Math.round(seg.maxSpeedKmh)} km/h · Idle: {Math.round(seg.idleMinutes)} min
                       </div>
                     </button>
                   ))}
@@ -211,14 +286,14 @@ export function TripPlaybackModal({ open, deviceId, trip, onClose }: TripPlaybac
               </CardContent>
             </Card>
 
-            {selectedIndex != null && segments[selectedIndex] && (
+            {selectedSegment && (
               <div className="text-xs p-2 rounded-md bg-muted/40 border">
                 <div className="flex items-center gap-2">
                   <MapPin className="h-3 w-3 text-primary" />
-                  Focused segment coordinates and speed:
+                  Focused on {selectedLegLabel} (Leg {selectedIndex! + 1}).
                 </div>
                 <div className="mt-1">
-                  Start: {segments[selectedIndex].start.lat.toFixed(5)}, {segments[selectedIndex].start.lon.toFixed(5)} · End: {segments[selectedIndex].end.lat.toFixed(5)}, {segments[selectedIndex].end.lon.toFixed(5)} · Avg: {Math.round(segments[selectedIndex].avgSpeedKmh)} km/h
+                  {formatLagos(new Date(selectedSegment.startTime), "HH:mm")} – {formatLagos(new Date(selectedSegment.endTime), "HH:mm")} · {selectedSegment.distanceKm.toFixed(2)} km · Avg {Math.round(selectedSegment.avgSpeedKmh)} km/h
                 </div>
               </div>
             )}

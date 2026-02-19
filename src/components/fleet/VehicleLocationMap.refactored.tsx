@@ -365,8 +365,8 @@ export function VehicleLocationMap({
         }
         .car-marker-container {
           position: relative;
-          width: 31px;
-          height: 31px;
+          width: 40px;
+          height: 40px;
           display: flex;
           align-items: center;
           justify-content: center;
@@ -390,8 +390,8 @@ export function VehicleLocationMap({
           background: radial-gradient(circle, rgba(107, 114, 128, 0.4) 0%, rgba(107, 114, 128, 0) 70%);
         }
         .car-icon {
-          width: 26px;
-          height: 26px;
+          width: 34px;
+          height: 34px;
           border-radius: 50%;
           display: flex;
           align-items: center;

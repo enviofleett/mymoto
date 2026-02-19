@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { isPlateValid, isVinValid, vinChecksumValid, isYearValid, detailsValid } from '../vehicle-validation';
+import { isPlateValid, isVinValid, vinChecksumValid, isYearValid, detailsValid, normalizePlate } from '../vehicle-validation';
 
 describe('vehicle-validation', () => {
   it('validates Nigeria plate format', () => {
+    expect(isPlateValid('Nigeria', 'ABC123DE')).toBe(true);
     expect(isPlateValid('Nigeria', 'ABC-123DE')).toBe(true);
+    expect(isPlateValid('Nigeria', 'ABC 123 DE')).toBe(true);
     expect(isPlateValid('Nigeria', 'AB-123DE')).toBe(false);
     expect(isPlateValid('Nigeria', 'ABC-12DE')).toBe(false);
     expect(isPlateValid('Nigeria', 'ABC-123D')).toBe(false);
@@ -12,6 +14,10 @@ describe('vehicle-validation', () => {
   it('validates Generic plate format', () => {
     expect(isPlateValid('Generic', 'AB 123-CD')).toBe(true);
     expect(isPlateValid('Generic', 'A')).toBe(false);
+  });
+
+  it('normalizes plate values for storage', () => {
+    expect(normalizePlate('rbc-784 cx')).toBe('RBC784CX');
   });
 
   it('validates VIN characters and checksum', () => {

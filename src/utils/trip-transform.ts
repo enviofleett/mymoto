@@ -18,6 +18,7 @@ type Sample = {
   longitude: number;
   gps_time: string;
   speed_kmh?: number | null;
+  speed?: number | null;
 };
 
 function haversineKm(a: Coord, b: Coord): number {
@@ -39,11 +40,12 @@ export function splitRouteIntoSegments(samples: Sample[]): Segment[] {
   const IDLE_MIN_SECONDS = 60;
 
   const coords = samples.map(s => ({ lat: s.latitude, lon: s.longitude }));
-  const speeds = samples.map(s => (s.speed_kmh ?? null));
+  const speeds = samples.map(s => (s.speed ?? s.speed_kmh ?? null));
   const times = samples.map(s => new Date(s.gps_time).getTime());
 
   const segments: Segment[] = [];
   let current: Segment | null = null;
+  let currentStartMs = 0;
   let idleAccumSec = 0;
   let maxSpeed = 0;
   let distance = 0;
@@ -76,6 +78,7 @@ export function splitRouteIntoSegments(samples: Sample[]): Segment[] {
         maxSpeedKmh: 0,
         idleMinutes: 0,
       };
+      currentStartMs = times[i - 1];
       distance = 0;
       maxSpeed = 0;
     } else {
@@ -85,7 +88,7 @@ export function splitRouteIntoSegments(samples: Sample[]): Segment[] {
     }
     distance += dKm;
     current.distanceKm = distance;
-    current.durationMin = Math.max(0, (times[i] - times[0]) / 60000);
+    current.durationMin = Math.max(0, (times[i] - currentStartMs) / 60000);
     current.maxSpeedKmh = maxSpeed;
     current.idleMinutes = idleAccumSec / 60;
     current.avgSpeedKmh = current.durationMin > 0 ? (current.distanceKm / (current.durationMin / 60)) : 0;

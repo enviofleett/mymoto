@@ -13,64 +13,51 @@ function formatDateForGps51(date: Date): string {
   return date.toISOString().split('T')[0];
 }
 
-// Get vehicle specifications for fuel consumption estimation
-async function getVehicleSpecifications(supabase: any, deviceId: string): Promise<any | null> {
+// Get vehicle profile fields used for fuel consumption estimation
+async function getVehicleProfile(supabase: any, deviceId: string): Promise<any | null> {
   const { data, error } = await supabase
-    .from('vehicle_specifications')
-    .select('*')
+    .from('vehicles')
+    .select('device_id, make, model, year, official_fuel_efficiency_l_100km, fuel_type, engine_displacement, vehicle_type, driving_region_or_country, usage_weight')
     .eq('device_id', deviceId)
     .maybeSingle();
   
   if (error) {
-    console.warn(`[fetch-mileage-detail] Error fetching vehicle specs: ${error.message}`);
+    console.warn(`[fetch-mileage-detail] Error fetching vehicle profile: ${error.message}`);
     return null;
   }
   
   return data;
 }
 
-// Calculate estimated fuel consumption based on manufacturer data and age
+// Calculate estimated fuel consumption based on official profile data and age assumption
 function calculateEstimatedFuelConsumption(
-  vehicleSpecs: any | null,
+  vehicleProfile: any | null,
   drivingType: 'city' | 'highway' | 'combined' = 'combined'
 ): number | null {
-  if (!vehicleSpecs) return null;
-  
-  // Use estimated_current_fuel_consumption if available (already accounts for age)
-  if (vehicleSpecs.estimated_current_fuel_consumption) {
-    return vehicleSpecs.estimated_current_fuel_consumption;
-  }
-  
-  // Otherwise calculate from manufacturer data
-  let baseConsumption: number | null = null;
-  
-  switch (drivingType) {
-    case 'city':
-      baseConsumption = vehicleSpecs.manufacturer_fuel_consumption_city;
-      break;
-    case 'highway':
-      baseConsumption = vehicleSpecs.manufacturer_fuel_consumption_highway;
-      break;
-    case 'combined':
-      baseConsumption = vehicleSpecs.manufacturer_fuel_consumption_combined;
-      break;
-  }
-  
+  if (!vehicleProfile) return null;
+  const baseConsumption = vehicleProfile.official_fuel_efficiency_l_100km;
   if (!baseConsumption) return null;
   
   // Apply age-based degradation
-  const age = vehicleSpecs.vehicle_age_years || 0;
-  const degradationPerYear = vehicleSpecs.fuel_consumption_degradation_per_year || 0.02; // 2% per year
+  const currentYear = new Date().getFullYear();
+  const vehicleYear = typeof vehicleProfile.year === 'number' ? vehicleProfile.year : null;
+  const age = vehicleYear ? Math.max(0, currentYear - vehicleYear) : 0;
+  const degradationPerYear = 0.02; // 2% per year default assumption
   
+  // No city/highway split in profile today; use combined estimate for all modes.
+  if (drivingType === 'city' || drivingType === 'highway' || drivingType === 'combined') {
+    return baseConsumption * Math.pow(1 + degradationPerYear, age);
+  }
+
   return baseConsumption * Math.pow(1 + degradationPerYear, age);
 }
 
 // Convert GPS51 units to app units
-function convertMileageData(gps51Record: any, vehicleSpecs: any | null) {
+function convertMileageData(gps51Record: any, vehicleProfile: any | null) {
   // Calculate estimated fuel consumption
-  const estimatedCombined = calculateEstimatedFuelConsumption(vehicleSpecs, 'combined');
-  const estimatedCity = calculateEstimatedFuelConsumption(vehicleSpecs, 'city');
-  const estimatedHighway = calculateEstimatedFuelConsumption(vehicleSpecs, 'highway');
+  const estimatedCombined = calculateEstimatedFuelConsumption(vehicleProfile, 'combined');
+  const estimatedCity = calculateEstimatedFuelConsumption(vehicleProfile, 'city');
+  const estimatedHighway = calculateEstimatedFuelConsumption(vehicleProfile, 'highway');
   
   // Calculate variance if we have both actual and estimated
   const actualConsumption = gps51Record.oilper100km;
@@ -173,18 +160,20 @@ serve(async (req) => {
     const records = result.records || [];
     console.log(`[fetch-mileage-detail] Received ${records.length} mileage detail records`);
 
-    // Get vehicle specifications for fuel consumption estimation
-    const vehicleSpecs = await getVehicleSpecifications(supabase, deviceid);
-    if (vehicleSpecs) {
-      console.log(`[fetch-mileage-detail] Using vehicle specs: ${vehicleSpecs.brand} ${vehicleSpecs.model} ${vehicleSpecs.year_of_manufacture} (age: ${vehicleSpecs.vehicle_age_years} years)`);
+    // Get vehicle profile for fuel consumption estimation
+    const vehicleProfile = await getVehicleProfile(supabase, deviceid);
+    if (vehicleProfile) {
+      const currentYear = new Date().getFullYear();
+      const age = typeof vehicleProfile.year === 'number' ? Math.max(0, currentYear - vehicleProfile.year) : 0;
+      console.log(`[fetch-mileage-detail] Using vehicle profile: ${vehicleProfile.make || 'Unknown'} ${vehicleProfile.model || ''} ${vehicleProfile.year || 'N/A'} (age: ${age} years)`);
     } else {
-      console.warn(`[fetch-mileage-detail] No vehicle specifications found for ${deviceid}. Fuel consumption estimates will be unavailable.`);
+      console.warn(`[fetch-mileage-detail] No vehicle fuel profile found for ${deviceid}. Fuel consumption estimates will be unavailable.`);
     }
 
     // Convert and store records
     const recordsToInsert = records.map((record: any) => ({
       device_id: deviceid,
-      ...convertMileageData(record, vehicleSpecs),
+      ...convertMileageData(record, vehicleProfile),
     }));
 
     // Insert with conflict handling (upsert on device_id + statisticsday + gps51_record_id)
@@ -221,8 +210,8 @@ serve(async (req) => {
           avg_efficiency_actual: records.length > 0
             ? records.reduce((sum: number, r: any) => sum + (r.oilper100km || 0), 0) / records.length
             : null,
-          avg_efficiency_estimated: vehicleSpecs?.estimated_current_fuel_consumption || null,
-          has_vehicle_specs: !!vehicleSpecs,
+          avg_efficiency_estimated: calculateEstimatedFuelConsumption(vehicleProfile, 'combined'),
+          has_vehicle_profile: !!vehicleProfile,
         },
       }),
       {

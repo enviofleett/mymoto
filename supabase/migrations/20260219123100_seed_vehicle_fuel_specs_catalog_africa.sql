@@ -1,0 +1,93 @@
+-- Seed Africa-focused WLTP combined fuel specs.
+-- Range values from source dataset are stored as midpoints.
+INSERT INTO public.vehicle_fuel_specs_catalog (
+  brand,
+  model,
+  variant,
+  normalized_key,
+  fuel_type,
+  engine_displacement,
+  official_fuel_efficiency_l_100km,
+  vehicle_type,
+  usage_weight,
+  source_note
+)
+VALUES
+  -- Mercedes-Benz
+  ('Mercedes-Benz', 'A-Class', 'A 200 1.3T Petrol', 'mercedes-benz|a 200 1.3t petrol', 'petrol', '1.3T', 6.2, 'hatchback', 'light', 'Africa dataset (2026-02-19)'),
+  ('Mercedes-Benz', 'C-Class', 'C 200 1.5T Petrol', 'mercedes-benz|c 200 1.5t petrol', 'petrol', '1.5T', 7.2, 'sedan', 'normal', 'Africa dataset (2026-02-19)'),
+  ('Mercedes-Benz', 'C-Class', 'C 220d 2.0 Diesel', 'mercedes-benz|c 220d 2.0 diesel', 'diesel', '2.0L', 5.75, 'sedan', 'normal', 'Africa dataset midpoint (5.5-6.0)'),
+  ('Mercedes-Benz', 'C-Class', 'C-Class Avantgarde 3.5L V6 Petrol (2007)', 'mercedes-benz|c-class avantgarde 3.5l v6 petrol (2007)', 'petrol', '3.5L V6', 10.0, 'sedan', 'normal', 'Africa dataset (2026-02-19)'),
+  ('Mercedes-Benz', 'E-Class', 'E 220d 2.0 Diesel', 'mercedes-benz|e 220d 2.0 diesel', 'diesel', '2.0L', 5.8, 'sedan', 'normal', 'Africa dataset (2026-02-19)'),
+  ('Mercedes-Benz', 'S-Class', 'S 350d 2.9 Diesel', 'mercedes-benz|s 350d 2.9 diesel', 'diesel', '2.9L', 7.2, 'sedan', 'heavy', 'Africa dataset (2026-02-19)'),
+  ('Mercedes-Benz', 'GLA', 'GLA 200 Petrol', 'mercedes-benz|gla 200 petrol', 'petrol', '2.0L', 6.5, 'crossover', 'normal', 'Africa dataset (2026-02-19)'),
+  ('Mercedes-Benz', 'GLC', 'GLC 220d 2.0 Diesel', 'mercedes-benz|glc 220d 2.0 diesel', 'diesel', '2.0L', 6.5, 'suv', 'normal', 'Africa dataset (2026-02-19)'),
+  ('Mercedes-Benz', 'GLE', 'GLE 300d 2.0 Diesel', 'mercedes-benz|gle 300d 2.0 diesel', 'diesel', '2.0L', 7.8, 'suv', 'heavy', 'Africa dataset (2026-02-19)'),
+  ('Mercedes-Benz', 'GLS', 'GLS 400d 3.0 Diesel', 'mercedes-benz|gls 400d 3.0 diesel', 'diesel', '3.0L', 8.5, 'suv', 'heavy', 'Africa dataset (2026-02-19)'),
+  ('Mercedes-Benz', 'G-Class', 'G 500 4.0L V8 Petrol', 'mercedes-benz|g 500 4.0l v8 petrol', 'petrol', '4.0L V8', 14.5, 'suv', 'heavy', 'Africa dataset (2026-02-19)'),
+  ('Mercedes-Benz', 'V-Class / Vito', 'Vito 116 CDI 2.0 Diesel', 'mercedes-benz|vito 116 cdi 2.0 diesel', 'diesel', '2.0L', 6.9, 'van', 'heavy', 'Africa dataset (2026-02-19)'),
+  ('Mercedes-Benz', 'Sprinter', '316 CDI 2.7L Diesel', 'mercedes-benz|316 cdi 2.7l diesel', 'diesel', '2.7L', 10.25, 'van', 'heavy', 'Africa dataset midpoint (9.5-11.0)'),
+
+  -- Toyota
+  ('Toyota', 'Agya', 'Agya / Vitz 1.0L Petrol', 'toyota|agya', 'petrol', '1.0L', 4.25, 'hatchback', 'light', 'Africa dataset midpoint (4.2-4.3)'),
+  ('Toyota', 'Vitz', 'Agya / Vitz 1.0L Petrol', 'toyota|vitz', 'petrol', '1.0L', 4.25, 'hatchback', 'light', 'Africa dataset midpoint (4.2-4.3)'),
+  ('Toyota', 'Corolla Quest', 'Corolla Quest / Corolla 1.8L Petrol', 'toyota|corolla quest', 'petrol', '1.8L', 6.65, 'sedan', 'normal', 'Africa dataset midpoint (6.5-6.8)'),
+  ('Toyota', 'Corolla', 'Corolla Quest / Corolla 1.8L Petrol', 'toyota|corolla', 'petrol', '1.8L', 6.65, 'sedan', 'normal', 'Africa dataset midpoint (6.5-6.8)'),
+  ('Toyota', 'Corolla Cross', 'Corolla Cross 1.8L Petrol', 'toyota|corolla cross 1.8l petrol', 'petrol', '1.8L', 6.8, 'crossover', 'normal', 'Africa dataset (2026-02-19)'),
+  ('Toyota', 'Corolla Cross', 'Corolla Cross Hybrid 1.8L', 'toyota|corolla cross hybrid 1.8l', 'hybrid', '1.8L Hybrid', 4.1, 'crossover', 'light', 'Africa dataset (2026-02-19)'),
+  ('Toyota', 'Camry', 'Camry 2.5L Petrol', 'toyota|camry 2.5l petrol', 'petrol', '2.5L', 8.0, 'sedan', 'normal', 'Africa dataset midpoint (7.5-8.5)'),
+  ('Toyota', 'RAV4', 'RAV4 Hybrid 2.5L', 'toyota|rav4 hybrid 2.5l', 'hybrid', '2.5L Hybrid', 4.8, 'suv', 'normal', 'Africa dataset (2026-02-19)'),
+  ('Toyota', 'Rumion', 'Rumion 1.5L Petrol', 'toyota|rumion 1.5l petrol', 'petrol', '1.5L', 6.2, 'mpv', 'normal', 'Africa dataset (2026-02-19)'),
+  ('Toyota', 'Avanza', 'Avanza 1.5L Petrol', 'toyota|avanza 1.5l petrol', 'petrol', '1.5L', 6.8, 'mpv', 'normal', 'Africa dataset (2026-02-19)'),
+  ('Toyota', 'Hilux', 'Hilux 2.4L GD-6 Diesel', 'toyota|hilux 2.4l gd-6 diesel', 'diesel', '2.4L', 7.9, 'pickup', 'heavy', 'Africa dataset (2026-02-19)'),
+  ('Toyota', 'Hilux', 'Hilux 2.8L GD-6 Diesel', 'toyota|hilux 2.8l gd-6 diesel', 'diesel', '2.8L', 8.5, 'pickup', 'heavy', 'Africa dataset (2026-02-19)'),
+  ('Toyota', 'Fortuner', 'Fortuner 2.4L GD-6 Diesel', 'toyota|fortuner 2.4l gd-6 diesel', 'diesel', '2.4L', 7.8, 'suv', 'normal', 'Africa dataset (2026-02-19)'),
+  ('Toyota', 'Fortuner', 'Fortuner 2.8L GD-6 Diesel', 'toyota|fortuner 2.8l gd-6 diesel', 'diesel', '2.8L', 8.3, 'suv', 'normal', 'Africa dataset (2026-02-19)'),
+  ('Toyota', 'Land Cruiser Prado', 'Land Cruiser Prado 2.8L D-4D Diesel', 'toyota|land cruiser prado 2.8l d-4d diesel', 'diesel', '2.8L', 9.5, 'suv', 'heavy', 'Africa dataset (2026-02-19)'),
+  ('Toyota', 'Land Cruiser 300', 'Land Cruiser 300 3.3L V6 Turbodiesel', 'toyota|land cruiser 300 3.3l v6 turbodiesel', 'diesel', '3.3L V6', 8.9, 'suv', 'heavy', 'Africa dataset (2026-02-19)'),
+  ('Toyota', 'Land Cruiser 300', 'Land Cruiser 300 3.5L V6 Twin-Turbo Petrol', 'toyota|land cruiser 300 3.5l v6 twin-turbo petrol', 'petrol', '3.5L V6 Twin-Turbo', 12.1, 'suv', 'heavy', 'Africa dataset (2026-02-19)'),
+  ('Toyota', 'Land Cruiser 79', 'Land Cruiser 79 4.5L V8 Diesel', 'toyota|land cruiser 79 4.5l v8 diesel', 'diesel', '4.5L V8', 11.5, 'pickup', 'heavy', 'Africa dataset (2026-02-19)'),
+  ('Toyota', 'Hiace', 'Hiace 2.5L D-4D Diesel', 'toyota|hiace 2.5l d-4d diesel', 'diesel', '2.5L', 9.0, 'van', 'heavy', 'Africa dataset midpoint (8.5-9.5)'),
+
+  -- Lexus
+  ('Lexus', 'IS', 'IS 300h 2.5L Hybrid', 'lexus|is 300h 2.5l hybrid', 'hybrid', '2.5L', 5.5, 'sedan', 'normal', 'Africa dataset (2026-02-19)'),
+  ('Lexus', 'ES', 'ES 350 3.5L V6 Petrol', 'lexus|es 350 3.5l v6 petrol', 'petrol', '3.5L V6', 8.9, 'sedan', 'normal', 'Africa dataset (2026-02-19)'),
+  ('Lexus', 'ES', 'ES 300h 2.5L Hybrid', 'lexus|es 300h 2.5l hybrid', 'hybrid', '2.5L', 5.2, 'sedan', 'normal', 'Africa dataset (2026-02-19)'),
+  ('Lexus', 'RX', 'RX 350 3.5L V6 Petrol', 'lexus|rx 350 3.5l v6 petrol', 'petrol', '3.5L V6', 10.2, 'suv', 'normal', 'Africa dataset (2026-02-19)'),
+  ('Lexus', 'RX', 'RX 450h 3.5L Hybrid', 'lexus|rx 450h 3.5l hybrid', 'hybrid', '3.5L', 6.8, 'suv', 'normal', 'Africa dataset (2026-02-19)'),
+  ('Lexus', 'NX', 'NX 300 2.0L Turbo Petrol', 'lexus|nx 300 2.0l turbo petrol', 'petrol', '2.0L Turbo', 8.5, 'suv', 'normal', 'Africa dataset (2026-02-19)'),
+  ('Lexus', 'NX', 'NX 350h 2.5L Hybrid', 'lexus|nx 350h 2.5l hybrid', 'hybrid', '2.5L', 6.0, 'suv', 'normal', 'Africa dataset (2026-02-19)'),
+  ('Lexus', 'GX', 'GX 460 4.6L V8 Petrol', 'lexus|gx 460 4.6l v8 petrol', 'petrol', '4.6L V8', 13.5, 'suv', 'heavy', 'Africa dataset (2026-02-19)'),
+  ('Lexus', 'GX', 'GX 550 3.5L V6 Twin-Turbo', 'lexus|gx 550 3.5l v6 twin-turbo', 'petrol', '3.5L V6 Twin-Turbo', 12.3, 'suv', 'heavy', 'Africa dataset (2026-02-19)'),
+  ('Lexus', 'LX', 'LX 570 5.7L V8 Petrol', 'lexus|lx 570 5.7l v8 petrol', 'petrol', '5.7L V8', 14.4, 'suv', 'heavy', 'Africa dataset (2026-02-19)'),
+  ('Lexus', 'LX', 'LX 570 (2011 Model)', 'lexus|lx 570 (2011 model)', 'petrol', '5.7L V8', 14.8, 'suv', 'heavy', 'Africa dataset (2026-02-19)'),
+  ('Lexus', 'LX', 'LX 600 3.5L V6 Twin-Turbo', 'lexus|lx 600 3.5l v6 twin-turbo', 'petrol', '3.5L V6 Twin-Turbo', 12.5, 'suv', 'heavy', 'Africa dataset (2026-02-19)'),
+
+  -- Honda
+  ('Honda', 'Amaze', 'Amaze 1.2L Petrol', 'honda|amaze 1.2l petrol', 'petrol', '1.2L', 5.5, 'sedan', 'light', 'Africa dataset (2026-02-19)'),
+  ('Honda', 'City', 'City 1.5L Petrol', 'honda|city 1.5l petrol', 'petrol', '1.5L', 6.2, 'sedan', 'normal', 'Africa dataset (2026-02-19)'),
+  ('Honda', 'Civic', 'Civic 1.8L Petrol', 'honda|civic 1.8l petrol', 'petrol', '1.8L', 7.0, 'sedan', 'normal', 'Africa dataset midpoint (6.8-7.2)'),
+  ('Honda', 'Accord', 'Accord 2.0L Petrol', 'honda|accord 2.0l petrol', 'petrol', '2.0L', 8.0, 'sedan', 'normal', 'Africa dataset midpoint (7.8-8.2)'),
+  ('Honda', 'Accord', 'Accord 2.4L Petrol', 'honda|accord 2.4l petrol', 'petrol', '2.4L', 8.0, 'sedan', 'normal', 'Africa dataset midpoint (7.8-8.2)'),
+  ('Honda', 'Fit', 'Fit 1.5L Petrol', 'honda|fit 1.5l petrol', 'petrol', '1.5L', 5.8, 'hatchback', 'light', 'Africa dataset (2026-02-19)'),
+  ('Honda', 'Jazz', 'Jazz 1.5L Petrol', 'honda|jazz 1.5l petrol', 'petrol', '1.5L', 5.8, 'hatchback', 'light', 'Africa dataset (2026-02-19)'),
+  ('Honda', 'HR-V', 'HR-V 1.8L Petrol', 'honda|hr-v 1.8l petrol', 'petrol', '1.8L', 6.9, 'suv', 'normal', 'Africa dataset (2026-02-19)'),
+  ('Honda', 'CR-V', 'CR-V 2.0L Petrol', 'honda|cr-v 2.0l petrol', 'petrol', '2.0L', 7.5, 'suv', 'normal', 'Africa dataset (2026-02-19)'),
+  ('Honda', 'CR-V', 'CR-V 1.6L Diesel', 'honda|cr-v 1.6l diesel', 'diesel', '1.6L', 6.2, 'suv', 'normal', 'Africa dataset (2026-02-19)'),
+  ('Honda', 'Pilot', 'Pilot 3.5L V6 Petrol', 'honda|pilot 3.5l v6 petrol', 'petrol', '3.5L V6', 11.5, 'suv', 'heavy', 'Africa dataset (2026-02-19)'),
+  ('Honda', 'Odyssey', 'Odyssey 2.4L Petrol', 'honda|odyssey 2.4l petrol', 'petrol', '2.4L', 8.5, 'mpv', 'normal', 'Africa dataset (2026-02-19)'),
+  ('Honda', 'Stepwgn', 'Stepwgn 1.5L Turbo Petrol', 'honda|stepwgn 1.5l turbo petrol', 'petrol', '1.5L Turbo', 7.2, 'mpv', 'normal', 'Africa dataset (2026-02-19)'),
+  ('Honda', 'CRF1000L Africa Twin', 'CRF1000L Africa Twin 998cc', 'honda|crf1000l africa twin 998cc', 'petrol', '998cc', 4.75, 'motorcycle', 'commercial', 'Africa dataset midpoint (4.6-4.9)')
+ON CONFLICT (normalized_key) DO UPDATE
+SET
+  brand = EXCLUDED.brand,
+  model = EXCLUDED.model,
+  variant = EXCLUDED.variant,
+  fuel_type = EXCLUDED.fuel_type,
+  engine_displacement = EXCLUDED.engine_displacement,
+  official_fuel_efficiency_l_100km = EXCLUDED.official_fuel_efficiency_l_100km,
+  vehicle_type = EXCLUDED.vehicle_type,
+  usage_weight = EXCLUDED.usage_weight,
+  source_note = EXCLUDED.source_note,
+  is_active = true,
+  updated_at = now();

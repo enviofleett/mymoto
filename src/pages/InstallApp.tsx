@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -21,6 +21,11 @@ const InstallApp = () => {
   const [installStatus, setInstallStatus] = useState<"idle" | "installing" | "installed">("idle");
   const [showFullDescription, setShowFullDescription] = useState(false);
   const [highlightInstallInstructions, setHighlightInstallInstructions] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
+  const installLink = useMemo(() => {
+    if (typeof window === "undefined") return "/install";
+    return `${window.location.origin}/install?src=iphone`;
+  }, []);
   const previewImages = [
     "/install/01-banner-text.jpg",
     "/install/02-trips-screen.jpg",
@@ -146,6 +151,17 @@ const InstallApp = () => {
       } catch (err) {
         console.log('Error sharing:', err);
       }
+    }
+  };
+
+  const handleCopyInstallLink = async () => {
+    try {
+      await navigator.clipboard.writeText(installLink);
+      setCopyStatus("copied");
+    } catch {
+      setCopyStatus("error");
+    } finally {
+      window.setTimeout(() => setCopyStatus("idle"), 2200);
     }
   };
 
@@ -314,6 +330,26 @@ const InstallApp = () => {
                   
                   {isIOS ? (
                       <div className="space-y-4">
+                        <div className="bg-background p-3 rounded-lg border border-border/50 space-y-3">
+                          <p className="text-xs text-muted-foreground">
+                            iPhone install link
+                          </p>
+                          <p className="text-sm break-all font-medium text-foreground">{installLink}</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <Button
+                              variant="outline"
+                              className="w-full"
+                              onClick={handleCopyInstallLink}
+                            >
+                              {copyStatus === "copied" ? "Copied" : copyStatus === "error" ? "Copy failed" : "Copy link"}
+                            </Button>
+                            <Button asChild variant="outline" className="w-full">
+                              <a href={installLink}>
+                                Open link
+                              </a>
+                            </Button>
+                          </div>
+                        </div>
                         <p className="text-sm text-muted-foreground text-center">
                           {isIOSSafari
                             ? "Follow these steps in Safari:"

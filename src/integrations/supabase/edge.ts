@@ -84,6 +84,17 @@ async function getValidatedAccessToken() {
 function extractErrorMessage(payload: unknown) {
   if (typeof payload === "string") return payload;
   const p = payload as any;
+  const contextBody = p?.context?.body;
+  if (typeof contextBody === "string" && contextBody.trim()) {
+    try {
+      const parsed = JSON.parse(contextBody);
+      if (parsed?.error) return String(parsed.error);
+      if (parsed?.message) return String(parsed.message);
+      return contextBody;
+    } catch {
+      return contextBody;
+    }
+  }
   return p?.message || p?.error || JSON.stringify(payload);
 }
 
@@ -95,10 +106,13 @@ function isExpiredJwtMessage(msg: string) {
 function isInvalidJwtMessage(msg: string) {
   const m = msg.toLowerCase();
   return (
+    m === "unauthorized" ||
     m.includes("invalid jwt") ||
     m.includes("jwt is invalid") ||
     m.includes("unauthorized: invalid token") ||
     m.includes("unauthorized: no authorization header") ||
+    m.includes("missing authorization header") ||
+    m.includes("missing access token") ||
     m.includes("session invalid")
   );
 }

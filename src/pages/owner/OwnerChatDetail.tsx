@@ -12,7 +12,7 @@ import { useOwnerVehicles } from "@/hooks/useOwnerVehicles";
 import { useVehicleLLMSettings } from "@/hooks/useVehicleProfile";
 import { useVehicleAlerts, formatAlertForChat } from "@/hooks/useVehicleAlerts";
 import { useVoiceAgent } from "@/hooks/useVoiceAgent";
-import { ArrowLeft, Car, User, Send, Loader2, AlertTriangle, Mic, Square, Volume2, VolumeX } from "lucide-react";
+import { ArrowLeft, Car, User, Send, Loader2, AlertTriangle, Mic, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ChatMessageContent } from "@/components/chat/ChatMessageContent";
 import { formatLagosDate, formatRelativeTime } from "@/lib/timezone";
@@ -43,7 +43,6 @@ export default function OwnerChatDetail() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
-  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const isSendingRef = useRef(false); // Track if we're currently sending a message
 
@@ -71,9 +70,7 @@ export default function OwnerChatDetail() {
     state: voiceState,
     startRecording,
     stopRecording,
-    speak,
     stopSpeaking,
-    isSpeaking,
   } = useVoiceAgent({
     lang: "en-NG",
     speechProfile: ttsProfile,
@@ -147,12 +144,6 @@ export default function OwnerChatDetail() {
     if (!deviceId) return;
     void trackEventOnce("first_chat_open", deviceId, { device_id: deviceId });
   }, [deviceId]);
-
-  useEffect(() => {
-    if (!isSpeaking && speakingMessageId) {
-      setSpeakingMessageId(null);
-    }
-  }, [isSpeaking, speakingMessageId]);
 
   useEffect(() => {
     if (voiceCapability.sttSupported) return;
@@ -715,7 +706,6 @@ export default function OwnerChatDetail() {
       stopRecording();
     }
     stopSpeaking();
-    setSpeakingMessageId(null);
 
     const userMessage = messageValue;
     void trackEvent("first_chat_sent", { device_id: deviceId, message_length: userMessage.length });
@@ -753,39 +743,10 @@ export default function OwnerChatDetail() {
       return;
     }
 
-    stopSpeaking();
-    setSpeakingMessageId(null);
     const started = await startRecording();
     if (started) {
       void trackEvent("voice_recording_started", { device_id: deviceId });
     }
-  };
-
-  const handleListenToggle = (messageId: string, content: string) => {
-    if (!voiceCapability.ttsSupported) return;
-
-    if (isSpeaking && speakingMessageId === messageId) {
-      stopSpeaking();
-      setSpeakingMessageId(null);
-      void trackEvent("voice_tts_stop", { device_id: deviceId, reason: "manual_stop" });
-      return;
-    }
-
-    stopSpeaking();
-    const started = speak(content);
-    if (started) {
-      setSpeakingMessageId(messageId);
-      void trackEvent("voice_tts_play", {
-        device_id: deviceId,
-        message_length: content.length,
-      });
-      return;
-    }
-
-    toast({
-      title: "Audio unavailable",
-      description: "Text-to-speech is not available on this browser.",
-    });
   };
 
   return (
@@ -982,25 +943,6 @@ export default function OwnerChatDetail() {
                       }}
                     />
                   </div>
-                  {msg.role === "assistant" && voiceCapability.ttsSupported && (
-                    <button
-                      onClick={() => handleListenToggle(msg.id, msg.content)}
-                      className="mt-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-                      type="button"
-                    >
-                      {isSpeaking && speakingMessageId === msg.id ? (
-                        <>
-                          <VolumeX className="h-3 w-3" />
-                          Stop
-                        </>
-                      ) : (
-                        <>
-                          <Volume2 className="h-3 w-3" />
-                          Listen
-                        </>
-                      )}
-                    </button>
-                  )}
                   <p className={cn(
                     "text-[10px] mt-1.5 text-right",
                     msg.role === "user" ? "text-accent-foreground/70" : "text-muted-foreground"

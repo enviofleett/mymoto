@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DateRange } from "react-day-picker";
-import { addDays, endOfDay, isAfter, startOfDay, subDays } from "date-fns";
+import { addDays, endOfDay, isAfter, startOfDay, subDays, format } from "date-fns";
 import { Calendar as CalendarIcon, Filter } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,15 @@ interface ReportFilterBarProps {
   className?: string;
 }
 
-type PresetKey = "today" | "last7" | "last30" | "thisMonth" | "custom";
+type PresetKey =
+  | "today"
+  | "yesterday"
+  | "last3"
+  | "last5"
+  | "last7"
+  | "last30"
+  | "thisMonth"
+  | "custom";
 
 const STORAGE_KEY = "owner-vehicle-profile:date-filter";
 
@@ -29,6 +37,7 @@ export function ReportFilterBar({
 }: ReportFilterBarProps) {
   const [preset, setPreset] = useState<PresetKey>("last30");
   const [validationError, setValidationError] = useState<string | null>(null);
+   const [showCustomPicker, setShowCustomPicker] = useState(false);
 
   // Persist + hydrate filter
   useEffect(() => {
@@ -53,6 +62,9 @@ export function ReportFilterBar({
       }
 
       setPreset(parsed.preset);
+      if (parsed.preset === "custom") {
+        setShowCustomPicker(true);
+      }
       if (nextRange) {
         onDateRangeChange(nextRange);
       }
@@ -85,8 +97,11 @@ export function ReportFilterBar({
     setValidationError(null);
 
     if (next === "custom") {
+      setShowCustomPicker(true);
       return;
     }
+
+    setShowCustomPicker(false);
 
     const range = computePresetRange(next, new Date());
     onDateRangeChange(range);
@@ -118,6 +133,7 @@ export function ReportFilterBar({
     setPreset("custom");
     onDateRangeChange({ from, to });
     onGenerate();
+    setShowCustomPicker(false);
   };
 
   return (
@@ -134,24 +150,34 @@ export function ReportFilterBar({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="today">Today</SelectItem>
+              <SelectItem value="yesterday">Yesterday</SelectItem>
+              <SelectItem value="last3">Last 3 days</SelectItem>
+              <SelectItem value="last5">Last 5 days</SelectItem>
               <SelectItem value="last7">Last 7 days</SelectItem>
               <SelectItem value="custom">Custom date selection</SelectItem>
             </SelectContent>
           </Select>
 
-          {preset === "custom" && (
+          {dateRange?.from && dateRange.to && (
+            <div className="text-[11px] text-muted-foreground">
+              {format(dateRange.from, "d MMM yyyy")} – {format(dateRange.to, "d MMM yyyy")}
+            </div>
+          )}
+
+          {preset === "custom" && showCustomPicker && (
             <div className="rounded-xl border border-border/60 bg-card/80 p-2">
               <div className="flex items-center gap-2 mb-2 text-[11px] font-medium text-muted-foreground">
                 <CalendarIcon className="h-3.5 w-3.5" />
-                <span>Select custom date range</span>
+                <span>Select custom date</span>
               </div>
               <Calendar
                 mode="range"
                 selected={dateRange}
                 onSelect={handleCalendarSelect}
-                numberOfMonths={2}
+                numberOfMonths={1}
                 defaultMonth={dateRange?.from}
                 disabled={(date) => isAfter(date, new Date())}
+                className="w-full max-w-sm mx-auto"
               />
               <div className="mt-1 text-[11px] text-destructive min-h-[1.25rem]">
                 {validationError ? validationError : null}
@@ -170,6 +196,18 @@ function computePresetRange(preset: PresetKey, now: Date): DateRange {
   switch (preset) {
     case "today": {
       return { from: today, to: endOfDay(today) };
+    }
+    case "yesterday": {
+      const day = startOfDay(subDays(today, 1));
+      return { from: day, to: endOfDay(day) };
+    }
+    case "last3": {
+      const from = startOfDay(subDays(today, 2));
+      return { from, to: endOfDay(today) };
+    }
+    case "last5": {
+      const from = startOfDay(subDays(today, 4));
+      return { from, to: endOfDay(today) };
     }
     case "last7": {
       const from = startOfDay(subDays(today, 6));

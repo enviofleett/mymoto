@@ -1,10 +1,14 @@
 export const plateSchemas: Record<string, RegExp> = {
-  Nigeria: /^[A-Z]{3}-\d{3}[A-Z]{2}$/i,
-  Generic: /^[A-Z0-9- ]{3,20}$/i,
+  Nigeria: /^[A-Z]{3}\d{3}[A-Z]{2}$/i,
+  Generic: /^[A-Z0-9]{3,20}$/i,
 };
 
+export function normalizePlate(plate: string): string {
+  return plate.toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
 export function isPlateValid(region: keyof typeof plateSchemas, plate: string): boolean {
-  return plateSchemas[region].test(plate.trim());
+  return plateSchemas[region].test(normalizePlate(plate));
 }
 
 const vinAllowed = /^[A-HJ-NPR-Z0-9]{17}$/i;
