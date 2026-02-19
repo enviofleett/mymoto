@@ -4,7 +4,6 @@ import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
 
 import { OwnerLayout } from "@/components/layouts/OwnerLayout";
-import { Button } from "@/components/ui/button";
 import { PullToRefresh } from "@/components/ui/pull-to-refresh";
 import { Select, SelectContent, SelectItem } from "@/components/ui/select";
 import * as SelectPrimitive from "@radix-ui/react-select";
@@ -202,16 +201,14 @@ function toLagosYmd(d: Date) {
   });
 }
 
-function formatLocationPreview(address: string | undefined): string {
-  if (!address) return "Address not found";
+function formatShortAddress(address: string | undefined): string | null {
+  if (!address) return null;
   const parts = address
     .split(",")
     .map((part) => part.trim())
     .filter(Boolean);
-
-  if (parts.length === 0) return "Address not found";
+  if (parts.length === 0) return null;
   if (parts.length === 1) return parts[0];
-
   return `${parts[0]}, ${parts[1]}`;
 }
 
@@ -401,7 +398,7 @@ export default function OwnerVehiclesDashboard() {
     return dbLive || null;
   }, [directOverride, dbLive]);
 
-  const { address } = useAddress(displayData?.latitude ?? null, displayData?.longitude ?? null);
+  const { address, isLoading: addressLoading } = useAddress(displayData?.latitude ?? null, displayData?.longitude ?? null);
 
   const statusDotClass = useMemo(() => {
     if (!displayData?.isOnline) return "bg-muted-foreground";
@@ -495,6 +492,12 @@ export default function OwnerVehiclesDashboard() {
     });
   }, [user?.id, vehicleRequests]);
 
+  const isMoving =
+    !!displayData?.isOnline &&
+    typeof displayData.speed === "number" &&
+    displayData.speed > 2;
+  const hasAlarm = !!displayData?.isOverspeeding;
+
   const speedValue = typeof displayData?.speed === "number" ? Math.round(displayData.speed).toString() : "--";
   const dailyReady = !dailyTravelLoading && !dailyTravelError;
   const todayDistanceKm =
@@ -518,24 +521,61 @@ export default function OwnerVehiclesDashboard() {
   const batteryValue = typeof displayData?.batteryPercent === "number" ? `${displayData.batteryPercent}` : "--";
   const tripsTodayValue =
     dailyReady ? (typeof tripsTodayCount === "number" && Number.isFinite(tripsTodayCount) ? `${tripsTodayCount}` : "0") : "--";
-  const locationPreview = displayData?.latitude == null || displayData?.longitude == null
-    ? "Location unavailable"
-    : formatLocationPreview(address);
-  const lastSeenLabel = displayData?.lastUpdate ? formatRelativeTime(displayData.lastUpdate) : "--";
-  const statusText =
-    displayData == null
-      ? "No data"
-      : !displayData.isOnline
-        ? "Offline"
-        : displayData.speed && displayData.speed > 0
-          ? "Moving"
-          : displayData.ignitionOn
-            ? "Ignition ON"
-            : "Parked";
-  const batteryText = typeof displayData?.batteryPercent === "number" ? `${displayData.batteryPercent}%` : "--";
-  const ignitionText =
-    displayData?.ignitionOn == null ? "Ignition --" : displayData.ignitionOn ? "Ignition ON" : "Ignition OFF";
+  const canOpenProfile = Boolean(selectedDeviceId);
+  const hasCoordinates = typeof displayData?.latitude === "number" && typeof displayData?.longitude === "number";
+  const mapsHref = hasCoordinates
+    ? `https://www.google.com/maps?q=${displayData.latitude},${displayData.longitude}`
+    : null;
+  const locationCard = useMemo(() => {
+    if (!hasCoordinates) {
+      return {
+        label: "Unavailable",
+        dotClass: "bg-muted-foreground",
+        primary: "Location unavailable",
+        secondary: "No GPS fix available yet",
+      };
+    }
 
+    const shortAddress = formatShortAddress(address);
+    const fallbackCoords = `${displayData!.latitude!.toFixed(4)}, ${displayData!.longitude!.toFixed(4)}`;
+    const addressLabel = shortAddress ?? fallbackCoords;
+    const lastUpdate = displayData?.lastUpdate ?? null;
+    const minutesSinceUpdate = lastUpdate ? (Date.now() - lastUpdate.getTime()) / (1000 * 60) : null;
+
+    if (addressLoading && !shortAddress) {
+      return {
+        label: "Resolving",
+        dotClass: "bg-accent",
+        primary: fallbackCoords,
+        secondary: "Resolving geocoded address...",
+      };
+    }
+
+    if (displayData?.isOnline && minutesSinceUpdate !== null && minutesSinceUpdate <= 2) {
+      return {
+        label: "Live",
+        dotClass: "bg-status-active shadow-[0_0_8px_hsl(142_70%_50%/0.45)]",
+        primary: addressLabel,
+        secondary: lastUpdate ? `Updated ${formatRelativeTime(lastUpdate)}` : "Updated just now",
+      };
+    }
+
+    if (minutesSinceUpdate !== null && minutesSinceUpdate <= 30) {
+      return {
+        label: "Last known",
+        dotClass: "bg-accent shadow-[0_0_8px_hsl(24_95%_53%/0.45)]",
+        primary: addressLabel,
+        secondary: lastUpdate ? `Last update ${formatRelativeTime(lastUpdate)}` : "Recent last-known position",
+      };
+    }
+
+    return {
+      label: "Unavailable",
+      dotClass: "bg-muted-foreground",
+      primary: shortAddress ? `Last known: ${shortAddress}` : "Location unavailable",
+      secondary: lastUpdate ? `Stale since ${formatRelativeTime(lastUpdate)}` : "No recent position update",
+    };
+  }, [address, addressLoading, displayData, hasCoordinates]);
   return (
     <OwnerLayout>
       <PullToRefresh onRefresh={handlePullToRefresh}>
@@ -669,56 +709,21 @@ export default function OwnerVehiclesDashboard() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between rounded-2xl bg-card shadow-neumorphic-inset px-4 py-3">
-                <div className="text-xs text-subtle-foreground">
-                  {displayData?.isOnline ? (
-                    <>
-                      Last sync{" "}
-                      <span className="text-foreground font-medium">
-                        {displayData.lastUpdate ? formatRelativeTime(displayData.lastUpdate) : "--"}
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      Offline for{" "}
-                      <span className="text-foreground font-medium">
-                        {displayData?.lastUpdate ? formatRelativeTime(displayData.lastUpdate) : "--"}
-                      </span>
-                    </>
-                  )}
-                </div>
-                <button
-                  onClick={handleManualRefresh}
-                  disabled={isRefreshing}
-                  className="w-9 h-9 rounded-full bg-card shadow-neumorphic-sm flex items-center justify-center transition-all duration-200 hover:shadow-neumorphic active:shadow-neumorphic-inset disabled:opacity-50"
-                  title="Refresh live"
-                >
-                  <RefreshCw className={cn("h-4 w-4 text-muted-foreground", isRefreshing && "animate-spin")} />
-                </button>
-              </div>
-
-              {/* Metric cards */}
-              <div className="grid grid-cols-2 gap-4">
-                <MetricCard title="Speed" value={speedValue} unit="km/h" icon={Gauge} variant="hero" />
-                <MetricCard title="Trips Today" value={tripsTodayValue} icon={Car} />
-                <MetricCard title="Distance Today" value={todayDistanceValue} unit="km" icon={MapPin} />
-                <MetricCard title="Battery" value={batteryValue} unit="%" icon={Battery} />
-              </div>
-
-              {/* Map Section with location card below */}
-              <div 
+              {/* Circular map section */}
+              <div
+                data-testid="owner-circular-map"
                 className={cn(
-                  "w-full rounded-2xl rounded-system rounded-fluid bg-card shadow-neumorphic-sm overflow-hidden transition-all duration-200 footer-gap",
-                  "hover:shadow-neumorphic"
+                  "mx-auto w-[min(78vw,20rem)] min-w-[15rem] aspect-square rounded-full bg-card border border-border/60 shadow-neumorphic-sm p-2 overflow-hidden transition-all duration-200 footer-gap",
+                  "hover:shadow-neumorphic",
+                  hasAlarm &&
+                    "border-destructive/80 shadow-[0_0_32px_rgba(220,38,38,0.8)]",
+                  !hasAlarm &&
+                    isMoving &&
+                    "border-accent shadow-[0_0_28px_hsl(24_95%_53%/0.8)]"
                 )}
               >
-                {/* Map */}
                 <div
-                  className="w-full h-full"
-                  style={{ 
-                    height: 'calc(100dvh - 28rem)',
-                    minHeight: '320px' 
-                  }}
+                  className="h-full w-full rounded-full bg-card shadow-neumorphic-inset overflow-hidden"
                 >
                   {displayData?.latitude != null && displayData?.longitude != null ? (
                     <VehicleLocationMap
@@ -727,11 +732,12 @@ export default function OwnerVehiclesDashboard() {
                       address={address}
                       vehicleName={selectedVehicle?.name || selectedDeviceId}
                       showAddressCard={false}
-                      mapHeight="h-full w-full"
-                      className="rounded-none h-full w-full"
+                      controlsInset={true}
+                      mapHeight="h-full"
+                      className="h-full w-full rounded-full overflow-hidden"
                     />
                   ) : (
-                    <div className="h-full w-full flex items-center justify-center bg-muted/30">
+                    <div className="h-full w-full flex items-center justify-center bg-muted/30 rounded-full">
                       <div className="text-center">
                         <MapPin className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
                         <p className="text-xs text-muted-foreground">Location unavailable</p>
@@ -739,62 +745,79 @@ export default function OwnerVehiclesDashboard() {
                     </div>
                   )}
                 </div>
+              </div>
 
-                {/* Location Card */}
-                <div className="p-4">
-                  <div
-                    className={cn(
-                      "rounded-xl bg-card/95 backdrop-blur-md shadow-lg border border-border/50 p-4 cursor-pointer",
-                      "transition-all duration-200 active:scale-[0.98]"
-                    )}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => navigate(`/owner/vehicle/${selectedDeviceId}`)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        navigate(`/owner/vehicle/${selectedDeviceId}`);
-                        e.preventDefault();
-                      }
-                    }}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                        <MapPin className="h-5 w-5 text-primary" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="text-xs text-muted-foreground font-medium">Current Location</div>
-                        <div className="mt-0.5 text-sm text-foreground font-semibold leading-snug line-clamp-2">
-                          {locationPreview}
-                        </div>
-                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
-                          <span>Last: {lastSeenLabel}</span>
-                          <span>Status: {statusText}</span>
-                          <span>Battery: {batteryText}</span>
-                          <span>{ignitionText}</span>
-                        </div>
-                        <div className="flex items-center justify-between mt-2">
-                          <span className="text-[10px] text-muted-foreground">
-                            Tap for details
-                          </span>
-                          <Button
-                            type="button"
-                            variant="link"
-                            size="sm"
-                            className="text-xs h-7 px-0"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              navigate(`/owner/vehicle/${selectedDeviceId}`);
-                            }}
-                          >
-                            <ChevronRight className="h-3 w-3 text-accent" />
-                            View full profile
-                          </Button>
-                        </div>
-                      </div>
+              <div
+                data-testid="owner-sync-container"
+                className="rounded-2xl bg-card shadow-neumorphic-inset border border-border/60 px-4 py-3"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={cn("inline-block h-2.5 w-2.5 rounded-full", locationCard.dotClass)} />
+                      <span className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
+                        {locationCard.label}
+                      </span>
                     </div>
+                    <p className="text-sm font-semibold text-foreground leading-snug line-clamp-2">
+                      {locationCard.primary}
+                    </p>
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      {locationCard.secondary}
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-end gap-2">
+                    <button
+                      onClick={handleManualRefresh}
+                      disabled={isRefreshing}
+                      className="w-9 h-9 rounded-full bg-card shadow-neumorphic-sm flex items-center justify-center transition-all duration-200 hover:shadow-neumorphic active:shadow-neumorphic-inset disabled:opacity-50"
+                      title="Refresh live"
+                    >
+                      <RefreshCw className={cn("h-4 w-4 text-muted-foreground", isRefreshing && "animate-spin")} />
+                    </button>
+                    {mapsHref ? (
+                      <a
+                        href={mapsHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="shrink-0 rounded-full bg-card shadow-neumorphic-sm px-3 py-1.5 text-[11px] font-medium text-foreground transition-all duration-200 hover:shadow-neumorphic active:shadow-neumorphic-inset"
+                      >
+                        Open Maps
+                      </a>
+                    ) : null}
                   </div>
                 </div>
               </div>
+
+              {/* Metric cards */}
+              <div data-testid="owner-metric-grid" className="grid grid-cols-2 gap-4">
+                <MetricCard title="Speed" value={speedValue} unit="km/h" icon={Gauge} variant="hero" />
+                <MetricCard title="Trips Today" value={tripsTodayValue} icon={Car} />
+                <MetricCard title="Distance Today" value={todayDistanceValue} unit="km" icon={MapPin} />
+                <MetricCard title="Battery" value={batteryValue} unit="%" icon={Battery} />
+              </div>
+
+              <button
+                type="button"
+                data-testid="owner-open-profile-button"
+                onClick={() => navigate(`/owner/vehicle/${selectedDeviceId}`)}
+                disabled={!canOpenProfile}
+                className={cn(
+                  "w-full min-h-11 rounded-full bg-card shadow-neumorphic-button px-5 py-3",
+                  "flex items-center justify-between gap-3 text-left transition-all duration-200",
+                  "hover:ring-2 hover:ring-accent/30 active:shadow-neumorphic-inset",
+                  "focus:outline-none focus:ring-2 focus:ring-accent/40 focus:ring-offset-0",
+                  "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:ring-0"
+                )}
+              >
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-foreground">View Full Vehicle Profile</div>
+                  <div className="text-[11px] text-muted-foreground">Open trips, reports, controls, and settings</div>
+                </div>
+                <div className="w-8 h-8 rounded-full bg-card shadow-neumorphic-sm flex items-center justify-center shrink-0">
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </button>
             </div>
           )}
         </div>

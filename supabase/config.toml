@@ -95,3 +95,9 @@ verify_jwt = false
 
 [functions.daily-travel-stats]
 verify_jwt = false
+
+[functions.support-agent-chat]
+verify_jwt = false
+
+[functions.support-ticket-admin-reply]
+verify_jwt = false

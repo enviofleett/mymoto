@@ -18,6 +18,8 @@ import {
   BookOpen,
   Building2,
   TrendingUp
+  ,
+  Headset
 } from "lucide-react";
 import { ConnectionStatus } from "@/hooks/useFleetData";
 
@@ -133,6 +135,14 @@ export function TopNavigation({ connectionStatus }: TopNavigationProps) {
               >
                 <Brain className="h-4 w-4" />
                 <span>AI Brain</span>
+              </NavLink>
+              <NavLink
+                to="/admin/support-agent"
+                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground rounded-md transition-colors hover:text-foreground hover:bg-muted"
+                activeClassName="text-primary bg-primary/10"
+              >
+                <Headset className="h-4 w-4" />
+                <span>Support Agent</span>
               </NavLink>
               <NavLink
                 to="/admin/assignments"

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
@@ -20,7 +21,7 @@ import {
   MapPin,
   Route,
   Timer,
-  StopCircle
+  Loader2
 } from "lucide-react";
 
 // Fix for default Leaflet marker icons in React
@@ -269,9 +270,69 @@ export function TripPlaybackDialog({
     ? [currentPosition.latitude, currentPosition.longitude]
     : [0, 0];
 
+  const hasPositions = positions.length > 0;
+  const isPlayButtonDisabled = loading || !hasPositions;
+  const playButtonLabel = loading
+    ? "Loading trip data"
+    : !hasPositions
+      ? "No trip data to play"
+      : isPlaying
+        ? "Pause playback"
+        : "Play trip";
+
+  const status = loading
+    ? "loading"
+    : !hasPositions
+      ? "idle"
+      : isPlaying
+        ? "playing"
+        : "paused";
+
+  const statusText =
+    status === "loading"
+      ? "Loading…"
+      : status === "playing"
+        ? "Playing"
+        : status === "paused"
+          ? "Paused"
+          : "No data";
+
+  const statusClass =
+    status === "loading"
+      ? "text-xs font-medium text-primary transition-colors"
+      : status === "playing"
+        ? "text-xs font-medium text-emerald-600 dark:text-emerald-400 transition-colors"
+        : status === "paused"
+          ? "text-xs font-medium text-amber-600 dark:text-amber-400 transition-colors"
+          : "text-xs font-medium text-muted-foreground transition-colors";
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.defaultPrevented) return;
+    if (!(event.code === "Space" || event.key === " ")) return;
+
+    const target = event.target as HTMLElement | null;
+    if (!target) return;
+    const tagName = target.tagName;
+    const isEditable =
+      (target as HTMLElement).isContentEditable ||
+      tagName === "INPUT" ||
+      tagName === "TEXTAREA" ||
+      tagName === "SELECT";
+
+    if (isEditable) return;
+
+    event.preventDefault();
+
+    if (isPlayButtonDisabled) return;
+    handlePlayPause();
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent
+        className="max-w-4xl max-h-[90vh] overflow-y-auto"
+        onKeyDown={handleKeyDown}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Route className="h-5 w-5 text-primary" />
@@ -285,7 +346,7 @@ export function TripPlaybackDialog({
         <div className="space-y-4">
           {/* Trip Summary */}
           {positions.length >= 2 && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
               <div className="flex items-center gap-3 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
                 <div className="p-2 rounded-full bg-blue-500/20">
                   <Route className="h-4 w-4 text-blue-500" />
@@ -293,24 +354,6 @@ export function TripPlaybackDialog({
                 <div>
                   <p className="text-xs text-muted-foreground">Distance</p>
                   <p className="text-sm font-semibold">{tripSummary.distance.toFixed(1)} km</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
-                <div className="p-2 rounded-full bg-green-500/20">
-                  <Gauge className="h-4 w-4 text-green-500" />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Avg Speed</p>
-                  <p className="text-sm font-semibold">{tripSummary.avgSpeed.toFixed(0)} km/h</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-orange-500/10 border border-orange-500/20">
-                <div className="p-2 rounded-full bg-orange-500/20">
-                  <StopCircle className="h-4 w-4 text-orange-500" />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Stops</p>
-                  <p className="text-sm font-semibold">{tripSummary.stops}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
@@ -450,49 +493,70 @@ export function TripPlaybackDialog({
           )}
 
           {/* Playback Controls */}
-          <div className="flex items-center justify-center gap-4">
-            <Button 
-              variant="outline" 
-              size="icon"
-              onClick={() => { setIsPlaying(false); setCurrentIndex(0); }}
-              disabled={positions.length === 0}
-            >
-              <SkipBack className="h-4 w-4" />
-            </Button>
-            
-            <Button 
-              size="lg"
-              onClick={handlePlayPause}
-              disabled={positions.length === 0}
-              className="w-16 h-12"
-            >
-              {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
-            </Button>
-            
-            <Button 
-              variant="outline" 
-              size="icon"
-              onClick={() => { setIsPlaying(false); setCurrentIndex(positions.length - 1); }}
-              disabled={positions.length === 0}
-            >
-              <SkipForward className="h-4 w-4" />
-            </Button>
+          <div className="flex flex-col items-center gap-2 sm:gap-3">
+            <div className="flex flex-wrap items-center justify-center gap-4">
+              <Button 
+                variant="outline" 
+                size="icon"
+                onClick={() => { setIsPlaying(false); setCurrentIndex(0); }}
+                disabled={isPlayButtonDisabled}
+                aria-label="Skip to trip start"
+                aria-disabled={isPlayButtonDisabled}
+              >
+                <SkipBack className="h-4 w-4" />
+              </Button>
+              
+              <Button 
+                size="lg"
+                onClick={handlePlayPause}
+                disabled={isPlayButtonDisabled}
+                className="w-16 h-12"
+                aria-label={playButtonLabel}
+                aria-pressed={hasPositions && !loading ? isPlaying : undefined}
+                aria-busy={loading}
+              >
+                {loading ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : isPlaying ? (
+                  <Pause className="h-5 w-5" />
+                ) : (
+                  <Play className="h-5 w-5" />
+                )}
+              </Button>
+              
+              <Button 
+                variant="outline" 
+                size="icon"
+                onClick={() => { setIsPlaying(false); setCurrentIndex(positions.length - 1); }}
+                disabled={isPlayButtonDisabled}
+                aria-label="Skip to trip end"
+                aria-disabled={isPlayButtonDisabled}
+              >
+                <SkipForward className="h-4 w-4" />
+              </Button>
 
-            <Select 
-              value={playbackSpeed.toString()} 
-              onValueChange={(v) => setPlaybackSpeed(parseFloat(v))}
+              <Select 
+                value={playbackSpeed.toString()} 
+                onValueChange={(v) => setPlaybackSpeed(parseFloat(v))}
+              >
+                <SelectTrigger className="w-[100px]" aria-label="Playback speed">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0.5">0.5x</SelectItem>
+                  <SelectItem value="1">1x</SelectItem>
+                  <SelectItem value="2">2x</SelectItem>
+                  <SelectItem value="4">4x</SelectItem>
+                  <SelectItem value="8">8x</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div
+              className={statusClass}
+              aria-live="polite"
             >
-              <SelectTrigger className="w-[100px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="0.5">0.5x</SelectItem>
-                <SelectItem value="1">1x</SelectItem>
-                <SelectItem value="2">2x</SelectItem>
-                <SelectItem value="4">4x</SelectItem>
-                <SelectItem value="8">8x</SelectItem>
-              </SelectContent>
-            </Select>
+              {statusText}
+            </div>
           </div>
         </div>
       </DialogContent>

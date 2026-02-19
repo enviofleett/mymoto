@@ -31,6 +31,7 @@ const AdminEmailTemplates = lazy(() => import("./pages/AdminEmailTemplates"));
 const AdminReportTemplates = lazy(() => import("./pages/AdminReportTemplates"));
 const AdminResources = lazy(() => import("./pages/AdminResources"));
 const AdminGrowthDashboard = lazy(() => import("./pages/AdminGrowthDashboard"));
+const AdminSupportAgent = lazy(() => import("./pages/AdminSupportAgent"));
 const NotificationSettings = lazy(() => import("./pages/NotificationSettings"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const InstallApp = lazy(() => import("./pages/InstallApp"));
@@ -52,6 +53,7 @@ const OwnerProfile = lazy(() => import("./pages/owner/OwnerProfile"));
 const OwnerNotificationSettings = lazy(() => import("./pages/owner/OwnerNotificationSettings"));
 const OwnerPrivacy = lazy(() => import("./pages/owner/OwnerPrivacy"));
 const OwnerResources = lazy(() => import("./pages/owner/OwnerResources"));
+const OwnerHelpSupport = lazy(() => import("./pages/owner/OwnerHelpSupport"));
 
 // Directory pages
 const OwnerDirectory = lazy(() => import("./pages/owner/OwnerDirectory"));
@@ -167,6 +169,7 @@ const App = () => {
               <Route path="/admin/report-templates" element={<ProtectedRoute><AdminReportTemplates /></ProtectedRoute>} />
               <Route path="/admin/resources" element={<ProtectedRoute><AdminResources /></ProtectedRoute>} />
               <Route path="/admin/growth" element={<ProtectedRoute requireAdmin><AdminGrowthDashboard /></ProtectedRoute>} />
+              <Route path="/admin/support-agent" element={<ProtectedRoute requireAdmin><AdminSupportAgent /></ProtectedRoute>} />
               <Route path="/admin/directory" element={<ProtectedRoute requireAdmin><AdminDirectory /></ProtectedRoute>} />
               <Route path="/admin/vehicle-requests" element={<ProtectedRoute requireAdmin><AdminVehicleRequests /></ProtectedRoute>} />
               
@@ -185,6 +188,7 @@ const App = () => {
               <Route path="/owner/notifications" element={<ProtectedRoute><OwnerNotificationSettings /></ProtectedRoute>} />
               <Route path="/owner/privacy" element={<ProtectedRoute><OwnerPrivacy /></ProtectedRoute>} />
               <Route path="/owner/resources" element={<ProtectedRoute><OwnerResources /></ProtectedRoute>} />
+              <Route path="/owner/help" element={<ProtectedRoute><OwnerHelpSupport /></ProtectedRoute>} />
               <Route path="/owner/directory" element={<ProtectedRoute><OwnerDirectory /></ProtectedRoute>} />
               
               <Route path="*" element={<NotFound />} />

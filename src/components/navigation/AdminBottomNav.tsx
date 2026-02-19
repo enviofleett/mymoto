@@ -20,6 +20,8 @@ import {
   Building2,
   BookOpen,
   TrendingUp
+  ,
+  Headset
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NavLink } from "@/components/NavLink";
@@ -79,6 +81,7 @@ const MORE_MENU_ITEMS = [
   { title: "Privacy & Terms", url: "/admin/privacy-settings", icon: Shield },
   { title: "Directory", url: "/admin/directory", icon: Building2 },
   { title: "Growth", url: "/admin/growth", icon: TrendingUp },
+  { title: "Support Agent", url: "/admin/support-agent", icon: Headset },
 ];
 
 export function AdminBottomNav() {

@@ -1,33 +1,14 @@
-import { ArrowLeft, Settings, Car } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { formatLagos } from "@/lib/timezone";
-import { getPersonalityLabel } from "@/hooks/useVehicleProfile";
+import { ArrowLeft, Settings } from "lucide-react";
 
 interface ProfileHeaderProps {
-  displayName: string;
-  plateNumber: string; // Add plate number prop
-  avatarUrl: string | null;
-  personalityMode: string | null;
-  status: 'online' | 'charging' | 'offline';
-  lastGpsFix?: Date | null; // true GPS fix (gps_fix_time)
-  lastSyncedAt?: Date | null; // backend sync heartbeat
   onBack: () => void;
   onSettings: () => void;
 }
 
 export function ProfileHeader({
-  displayName,
-  plateNumber, // Destructure new prop
-  avatarUrl,
-  personalityMode,
-  status,
-  lastGpsFix,
-  lastSyncedAt,
   onBack,
   onSettings,
 }: ProfileHeaderProps) {
-  const showOriginalName = displayName !== plateNumber;
-
   return (
     <>
       {/* Top Navigation - Neumorphic buttons */}
@@ -48,56 +29,7 @@ export function ProfileHeader({
         </div>
       </div>
 
-      {/* Profile Section - Premium styling */}
-      <div className="flex flex-col items-center py-6 px-4">
-        <div className="relative mb-4">
-          {/* Neumorphic avatar container */}
-          <div className="w-24 h-24 rounded-full shadow-neumorphic p-1 bg-card">
-            {avatarUrl ? (
-              <img 
-                src={avatarUrl} 
-                alt={displayName}
-                className="w-full h-full rounded-full object-cover"
-              />
-            ) : (
-              <div className="w-full h-full rounded-full bg-secondary flex items-center justify-center">
-                <Car className="h-10 w-10 text-muted-foreground" />
-              </div>
-            )}
-          </div>
-          {/* Status indicator with glow */}
-          <div
-            className={cn(
-              "absolute bottom-1 right-1 w-5 h-5 rounded-full border-[3px] border-card transition-all duration-300",
-              status === "online"
-                ? "bg-status-active shadow-[0_0_12px_hsl(142_70%_50%/0.6)]"
-                : status === "charging"
-                ? "bg-accent shadow-[0_0_12px_hsl(24_95%_53%/0.6)]"
-                : "bg-muted-foreground"
-            )}
-          />
-        </div>
-        <h1 className="text-xl font-semibold text-foreground">
-          {displayName}
-          {showOriginalName && (
-            <span className="text-muted-foreground font-normal text-sm ml-1">
-              ({plateNumber}) {/* Display plateNumber instead of vehicleName */}
-            </span>
-          )}
-        </h1>
-        {personalityMode && (
-          <p className="text-xs text-muted-foreground mt-1">
-            {getPersonalityLabel(personalityMode)}
-          </p>
-        )}
-        <div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
-          {lastSyncedAt && (
-            <p>
-              Last synced {formatLagos(lastSyncedAt, "MMM d, HH:mm")}
-            </p>
-          )}
-        </div>
-      </div>
+      
     </>
   );
 }

@@ -22,12 +22,13 @@ interface VehicleLocationMapProps {
   routeCoords?: Array<{ lat: number; lon: number }>;
   routeStartEnd?: { start: { lat: number; lon: number }, end: { lat: number; lon: number } } | undefined;
   geofences?: Array<{ latitude: number; longitude: number; radius: number; name?: string }>;
+  controlsInset?: boolean;
 }
 
 // Constants
 const SPEED_THRESHOLD = 3; // km/h - below this is parked
 const MAP_ZOOM = 16;
-const MAP_PITCH = 45;
+const MAP_PITCH = 0;
 const MAP_ANIMATION_DURATION = 1000;
 
 // Vehicle status type
@@ -47,6 +48,14 @@ function supportsWebGL2(): boolean {
   } catch {
     return false;
   }
+}
+
+function canUseMapStyle(map: MapboxMap | null): boolean {
+  if (!map) return false;
+  const anyMap = map as any;
+  if (!anyMap.style) return false;
+  if (typeof map.isStyleLoaded === "function" && !map.isStyleLoaded()) return false;
+  return true;
 }
 
 // Create marker HTML (always orange dot)
@@ -79,6 +88,7 @@ export function VehicleLocationMap({
   routeCoords,
   routeStartEnd,
   geofences,
+  controlsInset = false,
 }: VehicleLocationMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<MapboxMap | null>(null);
@@ -292,10 +302,13 @@ export function VehicleLocationMap({
   useEffect(() => {
     if (renderMode !== "mapbox") return;
     if (!map.current || !mapLoaded) return;
+    if (!canUseMapStyle(map.current)) return;
     const coords = (routeCoords || []).map(p => [p.lon, p.lat]);
     const hasRoute = coords.length > 1;
     const updateRoute = async () => {
       try {
+        const currentMap = map.current;
+        if (!canUseMapStyle(currentMap)) return;
         const mapboxgl = mapboxRef.current ?? (await loadMapbox());
         mapboxRef.current = mapboxgl;
         const sourceId = 'vehicle-route';
@@ -308,15 +321,15 @@ export function VehicleLocationMap({
               coordinates: coords,
             }
           } as any;
-          if (map.current!.getSource(sourceId)) {
-            const src = map.current!.getSource(sourceId) as any;
+          if (currentMap!.getSource(sourceId)) {
+            const src = currentMap!.getSource(sourceId) as any;
             src.setData(data);
           } else {
-            map.current!.addSource(sourceId, {
+            currentMap!.addSource(sourceId, {
               type: 'geojson',
               data
             } as any);
-            map.current!.addLayer({
+            currentMap!.addLayer({
               id: layerId,
               type: 'line',
               source: sourceId,
@@ -332,11 +345,11 @@ export function VehicleLocationMap({
             } as any);
           }
         } else {
-          if (map.current!.getLayer('vehicle-route-layer')) {
-            map.current!.removeLayer('vehicle-route-layer');
+          if (currentMap!.getLayer('vehicle-route-layer')) {
+            currentMap!.removeLayer('vehicle-route-layer');
           }
-          if (map.current!.getSource('vehicle-route')) {
-            map.current!.removeSource('vehicle-route');
+          if (currentMap!.getSource('vehicle-route')) {
+            currentMap!.removeSource('vehicle-route');
           }
         }
       } catch {
@@ -345,11 +358,17 @@ export function VehicleLocationMap({
     };
     updateRoute();
     return () => {
-      if (map.current?.getLayer('vehicle-route-layer')) {
-        map.current.removeLayer('vehicle-route-layer');
-      }
-      if (map.current?.getSource('vehicle-route')) {
-        map.current.removeSource('vehicle-route');
+      try {
+        const currentMap = map.current;
+        if (!canUseMapStyle(currentMap)) return;
+        if (currentMap?.getLayer('vehicle-route-layer')) {
+          currentMap.removeLayer('vehicle-route-layer');
+        }
+        if (currentMap?.getSource('vehicle-route')) {
+          currentMap.removeSource('vehicle-route');
+        }
+      } catch {
+        void 0;
       }
     };
   }, [renderMode, routeCoords, mapLoaded]);
@@ -357,6 +376,7 @@ export function VehicleLocationMap({
   useEffect(() => {
     if (renderMode !== "mapbox") return;
     if (!map.current || !mapLoaded) return;
+    if (!canUseMapStyle(map.current)) return;
     if (!routeStartEnd) {
       if (map.current.getLayer('route-points-layer')) {
         map.current.removeLayer('route-points-layer');
@@ -366,6 +386,8 @@ export function VehicleLocationMap({
       }
       return;
     }
+    const currentMap = map.current;
+    if (!canUseMapStyle(currentMap)) return;
     const points = {
       type: 'FeatureCollection',
       features: [
@@ -387,12 +409,12 @@ export function VehicleLocationMap({
         }
       ]
     } as any;
-    if (map.current.getSource('route-points')) {
-      const src = map.current.getSource('route-points') as any;
+    if (currentMap.getSource('route-points')) {
+      const src = currentMap.getSource('route-points') as any;
       src.setData(points);
     } else {
-      map.current.addSource('route-points', { type: 'geojson', data: points } as any);
-      map.current.addLayer({
+      currentMap.addSource('route-points', { type: 'geojson', data: points } as any);
+      currentMap.addLayer({
         id: 'route-points-layer',
         type: 'circle',
         source: 'route-points',
@@ -428,14 +450,17 @@ export function VehicleLocationMap({
   useEffect(() => {
     if (renderMode !== "mapbox") return;
     if (!map.current || !mapLoaded) return;
+    if (!canUseMapStyle(map.current)) return;
     const zones = (geofences || []).filter(z => z.latitude && z.longitude && z.radius && z.radius > 0);
     const sourceId = 'geofences-source';
     const layerIdFill = 'geofences-fill-layer';
     const layerIdOutline = 'geofences-outline-layer';
+    const currentMap = map.current;
+    if (!canUseMapStyle(currentMap)) return;
     if (zones.length === 0) {
-      if (map.current.getLayer(layerIdFill)) map.current.removeLayer(layerIdFill);
-      if (map.current.getLayer(layerIdOutline)) map.current.removeLayer(layerIdOutline);
-      if (map.current.getSource(sourceId)) map.current.removeSource(sourceId);
+      if (currentMap.getLayer(layerIdFill)) currentMap.removeLayer(layerIdFill);
+      if (currentMap.getLayer(layerIdOutline)) currentMap.removeLayer(layerIdOutline);
+      if (currentMap.getSource(sourceId)) currentMap.removeSource(sourceId);
       return;
     }
     const features = zones.map(z => ({
@@ -447,12 +472,12 @@ export function VehicleLocationMap({
       }
     }));
     const data = { type: 'FeatureCollection', features } as any;
-    if (map.current.getSource(sourceId)) {
-      const src = map.current.getSource(sourceId) as any;
+    if (currentMap.getSource(sourceId)) {
+      const src = currentMap.getSource(sourceId) as any;
       src.setData(data);
     } else {
-      map.current.addSource(sourceId, { type: 'geojson', data } as any);
-      map.current.addLayer({
+      currentMap.addSource(sourceId, { type: 'geojson', data } as any);
+      currentMap.addLayer({
         id: layerIdFill,
         type: 'fill',
         source: sourceId,
@@ -461,7 +486,7 @@ export function VehicleLocationMap({
           'fill-opacity': 0.15
         }
       } as any);
-      map.current.addLayer({
+      currentMap.addLayer({
         id: layerIdOutline,
         type: 'line',
         source: sourceId,
@@ -503,7 +528,7 @@ export function VehicleLocationMap({
   }
 
   return (
-    <div className={cn("relative", className)}>
+    <div className={cn("relative", controlsInset && "vehicle-map-controls-inset", className)}>
       {renderMode === "mapbox" ? (
         <>
           {mapboxLoading && (
@@ -536,6 +561,60 @@ export function VehicleLocationMap({
             .mapboxgl-ctrl-icon { filter: invert(1); }
             .mapboxgl-ctrl-bottom-right { top: 6px; left: 6px; right: auto; bottom: auto; }
             .mapboxgl-ctrl-attrib { font-size: 9px; padding: 2px 4px; background: rgba(17, 24, 39, 0.4); border-radius: 6px; }
+            .vehicle-map-controls-inset .mapboxgl-ctrl-top-right,
+            .vehicle-map-controls-inset .mapboxgl-ctrl-top-left {
+              top: 50% !important;
+              right: auto !important;
+              left: 10px !important;
+              transform: translateY(-50%);
+            }
+            .vehicle-map-controls-inset .mapboxgl-ctrl-top-left .mapboxgl-ctrl,
+            .vehicle-map-controls-inset .mapboxgl-ctrl-top-right .mapboxgl-ctrl {
+              margin: 0 !important;
+            }
+            .vehicle-map-controls-inset .mapboxgl-ctrl-group {
+              border: 1px solid hsl(var(--border)) !important;
+              border-radius: 12px !important;
+              background: color-mix(in oklab, hsl(var(--card)) 88%, black 12%) !important;
+              box-shadow:
+                0 10px 22px rgba(0, 0, 0, 0.35),
+                inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+              overflow: hidden;
+            }
+            .vehicle-map-controls-inset .mapboxgl-ctrl-group button {
+              width: 32px !important;
+              height: 32px !important;
+            }
+            .vehicle-map-controls-inset .mapboxgl-ctrl-group button + button {
+              border-top: 1px solid hsl(var(--border)) !important;
+            }
+            .vehicle-map-controls-inset .mapboxgl-ctrl-icon {
+              opacity: 0.95;
+            }
+            .vehicle-map-controls-inset .leaflet-top.leaflet-left {
+              top: 50%;
+              left: 10px;
+              transform: translateY(-50%);
+              margin-top: 0;
+            }
+            .vehicle-map-controls-inset .leaflet-control-zoom {
+              border: 1px solid hsl(var(--border));
+              border-radius: 12px;
+              overflow: hidden;
+              background: color-mix(in oklab, hsl(var(--card)) 88%, black 12%);
+              box-shadow:
+                0 10px 22px rgba(0, 0, 0, 0.35),
+                inset 0 1px 0 rgba(255, 255, 255, 0.06);
+            }
+            .vehicle-map-controls-inset .leaflet-control-zoom a {
+              width: 32px;
+              height: 32px;
+              line-height: 30px;
+              font-size: 16px;
+              color: hsl(var(--foreground));
+              background: transparent;
+              border-color: hsl(var(--border));
+            }
           `}</style>
           <div
             ref={mapContainer}

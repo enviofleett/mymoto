@@ -20,6 +20,7 @@ import { useTripSyncStatus, useTriggerTripSync } from "@/hooks/useTripSync";
 
 // Import sub-components
 import { ProfileHeader } from "./components/ProfileHeader";
+import { VehiclePhotoGallery } from "./components/VehiclePhotoGallery";
 import { CurrentStatusCard } from "./components/CurrentStatusCard";
 import { StatusMetricsRow } from "./components/StatusMetricsRow";
 import { EngineControlCard } from "./components/EngineControlCard";
@@ -388,16 +389,11 @@ export default function OwnerVehicleProfile() {
       <div {...pullHandlers} className="flex flex-col min-h-full w-full max-w-3xl mx-auto space-y-4">
         {/* Header */}
         <ProfileHeader
-          displayName={displayName}
-          avatarUrl={avatarUrl}
-          personalityMode={personalityMode}
-          status={status}
-          lastGpsFix={displayData?.lastGpsFix ?? null}
-          lastSyncedAt={displayData?.lastSyncedAt ?? null}
           onBack={() => navigate("/owner/vehicles")}
           onSettings={() => setSettingsOpen(true)}
-          plateNumber={plateNumber}
         />
+
+        <VehiclePhotoGallery deviceId={resolvedDeviceId} />
 
         {/* Main Content */}
         <div className="flex-1 pb-32 space-y-4">
