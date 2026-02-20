@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeEdgeFunction } from "@/integrations/supabase/edge";
 
 export type SupportTicketStatus =
   | "new"
@@ -196,15 +197,12 @@ export function useSupportAgentChat() {
       queue_hint?: string;
       voice_meta?: { confidence?: number };
     }) => {
-      const { data, error } = await supabase.functions.invoke("support-agent-chat", {
-        body: payload,
-      });
-      if (error) throw error;
-      return data as {
+      const data = await invokeEdgeFunction<{
         ticket: SupportTicket;
         user_message: SupportMessage;
         agent_message: SupportMessage;
-      };
+      }>("support-agent-chat", payload);
+      return data;
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["owner-support-tickets"] });
@@ -225,11 +223,11 @@ export function useAdminTicketReply() {
       priority?: SupportTicketPriority;
       queue_id?: string | null;
     }) => {
-      const { data, error } = await supabase.functions.invoke("support-ticket-admin-reply", {
-        body: payload,
-      });
-      if (error) throw error;
-      return data as { ticket: SupportTicket; message: SupportMessage | null };
+      const data = await invokeEdgeFunction<{
+        ticket: SupportTicket;
+        message: SupportMessage | null;
+      }>("support-ticket-admin-reply", payload);
+      return data;
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["admin-support-tickets"] });
@@ -238,4 +236,3 @@ export function useAdminTicketReply() {
     },
   });
 }
-

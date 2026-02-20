@@ -6,10 +6,10 @@ WITH catalog AS (
 ), vehicle_keys AS (
   SELECT
     v.device_id,
-    lower(trim(COALESCE(NULLIF(v.make, ''), NULLIF(v.brand, '')))) || '|' || lower(trim(v.model)) AS normalized_key
+    lower(trim(v.make)) || '|' || lower(trim(v.model)) AS normalized_key
   FROM public.vehicles v
   WHERE v.official_fuel_efficiency_l_100km IS NULL
-    AND COALESCE(NULLIF(v.make, ''), NULLIF(v.brand, '')) IS NOT NULL
+    AND NULLIF(trim(v.make), '') IS NOT NULL
     AND NULLIF(trim(v.model), '') IS NOT NULL
 )
 UPDATE public.vehicles v

@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { sendEmail, EmailTemplates, getEmailConfig, renderEmailTemplate } from "../_shared/email-service.ts";
+import { logEmailAttempt } from "../_shared/email-rate-limit.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -188,18 +189,19 @@ serve(async (req) => {
       }
     }
 
-    // 4) Emails (always attempt when configured)
     const emailConfig = getEmailConfig();
     if (emailConfig && email) {
-      // Welcome email: only for newly created auth users.
+      const appBase = Deno.env.get("PUBLIC_APP_URL") || supabaseUrl.replace("/rest/v1", "");
+      const vehicleCount = assignedVehicles.length;
+
       if (createdNewAuthUser && userId) {
         try {
-          const loginLink = `${supabaseUrl.replace("/rest/v1", "")}/auth`;
+          const loginLink = `${appBase}/auth`;
           const fallback = EmailTemplates.welcome({ userName: name, loginLink });
           const rendered = await renderEmailTemplate({
             supabase: supabaseAdmin,
             templateKey: "welcome",
-            data: { userName: name, loginLink, body_content: fallback.html },
+            data: { userName: name, loginLink, body_content: fallback.html, vehicleCount },
             fallback,
           });
           if (!rendered.skipped) {
@@ -212,16 +214,39 @@ serve(async (req) => {
               supabase: supabaseAdmin,
               templateKey: "welcome",
             });
+            await logEmailAttempt(
+              email,
+              rendered.template.subject,
+              "welcome",
+              "sent",
+              null,
+              userId,
+              rendered.senderId || null,
+              supabaseAdmin,
+            );
           }
         } catch (e) {
           console.warn("[create-test-user] welcome email failed:", e);
+          try {
+            const message = e instanceof Error ? e.message : String(e);
+            await logEmailAttempt(
+              email,
+              "Welcome to MyMoto Fleet",
+              "welcome",
+              "failed",
+              message,
+              userId,
+              null,
+              supabaseAdmin,
+            );
+          } catch (_logError) {
+          }
         }
       }
 
-      // Assignment email: if vehicles were assigned.
       if (assignedVehicles.length > 0) {
         try {
-          const actionLink = `${supabaseUrl.replace("/rest/v1", "")}/`;
+          const actionLink = `${appBase}/fleet`;
           const fallback = {
             subject: "New Vehicle(s) Assigned to Your Account",
             html: `
@@ -236,7 +261,7 @@ serve(async (req) => {
             templateKey: "vehicle_assignment",
             data: {
               userName: name,
-              vehicleCount: assignedVehicles.length,
+              vehicleCount,
               actionLink,
               body_content: fallback.html,
             },
@@ -252,9 +277,33 @@ serve(async (req) => {
               supabase: supabaseAdmin,
               templateKey: "vehicle_assignment",
             });
+            await logEmailAttempt(
+              email,
+              rendered.template.subject,
+              "vehicle_assignment",
+              "sent",
+              null,
+              userId,
+              rendered.senderId || null,
+              supabaseAdmin,
+            );
           }
         } catch (e) {
           console.warn("[create-test-user] assignment email failed:", e);
+          try {
+            const message = e instanceof Error ? e.message : String(e);
+            await logEmailAttempt(
+              email,
+              "New Vehicle(s) Assigned to Your Account",
+              "vehicle_assignment",
+              "failed",
+              message,
+              userId,
+              null,
+              supabaseAdmin,
+            );
+          } catch (_logError) {
+          }
         }
       }
     }

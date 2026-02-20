@@ -228,7 +228,6 @@ export function MileageSection({
 
   // Calculate fuel consumption statistics (only if table exists and has data)
   const fuelStats = useMemo(() => {
-    // Check if table exists - if error is PGRST205, table doesn't exist
     const tableExists = !mileageError || (mileageError as any)?.code !== 'PGRST205';
     if (!tableExists || !mileageDetails || mileageDetails.length === 0) return null;
 
@@ -325,6 +324,69 @@ export function MileageSection({
           </div>
         </CardContent>
       </Card>
+
+      {fuelStats && (
+        <Card className="border-border bg-card/50 mt-4">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex flex-col gap-0.5">
+                <div className="flex items-center gap-2">
+                  <Fuel className="h-5 w-5 text-primary" />
+                  <span className="font-medium text-foreground">Fuel Stats</span>
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  {dateRangeLabel}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-lg bg-card/70 border border-border/60 p-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <Gauge className="h-4 w-4 text-blue-500" />
+                  <span className="text-xs text-muted-foreground">Avg Consumption</span>
+                </div>
+                <div className="text-xl font-bold text-white">
+                  {fuelStats.avgActual !== null && fuelStats.avgActual !== undefined
+                    ? `${fuelStats.avgActual.toFixed(1)} L/100km`
+                    : fuelStats.avgEstimated !== null && fuelStats.avgEstimated !== undefined
+                    ? `${fuelStats.avgEstimated.toFixed(1)} L/100km`
+                    : "--"}
+                </div>
+                <div className="text-[11px] text-muted-foreground mt-1">
+                  {fuelStats.avgVariance !== null && fuelStats.avgVariance !== undefined
+                    ? (() => {
+                        const percent = Math.round(fuelStats.avgVariance);
+                        if (percent > 0) return `About ${percent}% above rated`;
+                        if (percent < 0) return `About ${Math.abs(percent)}% better than rated`;
+                        return "In line with rated";
+                      })()
+                    : fuelStats.hasData
+                    ? "Based on GPS data"
+                    : fuelStats.hasEstimates
+                    ? "Manufacturer estimate"
+                    : "No fuel data yet"}
+                </div>
+              </div>
+
+              <div className="rounded-lg bg-card/70 border border-border/60 p-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                  <span className="text-xs text-muted-foreground">Fuel Theft Alerts</span>
+                </div>
+                <div className="text-xl font-bold text-white">
+                  {fuelStats.theftAlerts > 0 ? fuelStats.theftAlerts : 0}
+                </div>
+                <div className="text-[11px] text-muted-foreground mt-1">
+                  {fuelStats.theftAlerts > 0
+                    ? "Potential fuel loss detected in this period"
+                    : "No fuel theft detected in this period"}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </>
   );
 }

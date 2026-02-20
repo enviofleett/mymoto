@@ -496,7 +496,7 @@ function TripCard({
       {/* Header: Trip Title, Time & Play Button */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-sm font-semibold text-foreground">Trip {index + 1}</h3>
             {continuityIssue && (
               <Badge variant="outline" className={cn(

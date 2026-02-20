@@ -23,6 +23,8 @@ interface VehicleLocationMapProps {
   routeStartEnd?: { start: { lat: number; lon: number }, end: { lat: number; lon: number } } | undefined;
   geofences?: Array<{ latitude: number; longitude: number; radius: number; name?: string }>;
   controlsInset?: boolean;
+  forceMapbox?: boolean;
+  allowEmptyMap?: boolean;
 }
 
 // Constants
@@ -89,6 +91,8 @@ export function VehicleLocationMap({
   routeStartEnd,
   geofences,
   controlsInset = false,
+  forceMapbox = false,
+  allowEmptyMap = false,
 }: VehicleLocationMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<MapboxMap | null>(null);
@@ -101,6 +105,7 @@ export function VehicleLocationMap({
   const [mapboxLoading, setMapboxLoading] = useState(false);
   const { data: mapboxFlag } = useFeatureFlag("mapbox_enabled");
   const mapboxEnabled = mapboxFlag?.enabled ?? true;
+  const effectiveMapboxEnabled = forceMapbox ? true : mapboxEnabled;
   const [renderMode, setRenderMode] = useState<"mapbox" | "leaflet">("mapbox");
 
   // Validate coordinates
@@ -135,7 +140,7 @@ export function VehicleLocationMap({
 
   // Decide initial render mode (Mapbox when viable, Leaflet otherwise).
   useEffect(() => {
-    if (!mapboxEnabled) return;
+    if (!effectiveMapboxEnabled) return;
     const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
     if (!token) {
       setRenderMode("leaflet");
@@ -146,11 +151,11 @@ export function VehicleLocationMap({
       return;
     }
     setRenderMode("mapbox");
-  }, [mapboxEnabled]);
+  }, [effectiveMapboxEnabled]);
 
   // Warm the mapbox chunk early so the UI doesn't feel "stuck" waiting on it.
   useEffect(() => {
-    if (!mapboxEnabled) return;
+    if (!effectiveMapboxEnabled) return;
     if (renderMode !== "mapbox") return;
     if (mapboxRef.current) return;
     void loadMapbox()
@@ -160,13 +165,13 @@ export function VehicleLocationMap({
       .catch(() => {
         // ignore; init effect will surface a user-facing error if needed
       });
-  }, [mapboxEnabled, renderMode]);
+  }, [effectiveMapboxEnabled, renderMode]);
 
   // Initialize map once
   useEffect(() => {
-    if (!mapboxEnabled) return;
+    if (!effectiveMapboxEnabled) return;
     if (renderMode !== "mapbox") return;
-    if (!mapContainer.current || (!hasValidCoordinates && !hasRoute) || map.current) return;
+    if (!mapContainer.current || (!hasValidCoordinates && !hasRoute && !allowEmptyMap) || map.current) return;
 
     const initMap = async () => {
       const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
@@ -239,7 +244,7 @@ export function VehicleLocationMap({
       map.current = null;
       setMapLoaded(false);
     };
-  }, [mapboxEnabled, renderMode, hasValidCoordinates, hasRoute, routeCoords, routeStartEnd, heading, latitude, longitude]);
+  }, [effectiveMapboxEnabled, renderMode, hasValidCoordinates, hasRoute, routeCoords, routeStartEnd, heading, latitude, longitude]);
 
   // Update marker when position/status changes
   useEffect(() => {
@@ -499,7 +504,7 @@ export function VehicleLocationMap({
     }
   }, [renderMode, geofences, mapLoaded]);
 
-  if (!mapboxEnabled) {
+  if (!effectiveMapboxEnabled) {
     return (
       <div className={cn("relative", className)}>
         <div className={cn("w-full rounded-xl bg-muted/50 flex items-center justify-center", mapHeight)}>
@@ -514,7 +519,7 @@ export function VehicleLocationMap({
   }
 
   // Loading state
-  if (!hasValidCoordinates && !hasRoute) {
+  if (!hasValidCoordinates && !hasRoute && !allowEmptyMap) {
     return (
       <div className={cn("relative", className)}>
         <div className={cn("w-full rounded-xl bg-muted/50 flex items-center justify-center", mapHeight)}>

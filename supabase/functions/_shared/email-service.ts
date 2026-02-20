@@ -1,5 +1,5 @@
 import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
-import { validateEmailList, sanitizeHtml, escapeHtml, validateSenderId } from "./email-validation.ts";
+import { validateEmailList, sanitizeHtml, escapeHtml, validateSenderId, validateEmail } from "./email-validation.ts";
 
 export interface EmailConfig {
   gmailUser: string;
@@ -174,6 +174,11 @@ export async function sendEmail(options: EmailOptions): Promise<void> {
   
   if (!config) {
     throw new Error("Email service not configured. Please set GMAIL_USER and GMAIL_APP_PASSWORD environment variables.");
+  }
+
+  const senderEmailValidation = validateEmail(config.gmailUser);
+  if (!senderEmailValidation.valid) {
+    throw new Error(`Invalid GMAIL_USER: ${senderEmailValidation.error}`);
   }
 
   const client = new SMTPClient({

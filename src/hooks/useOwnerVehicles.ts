@@ -133,28 +133,50 @@ async function fetchOwnerVehicles(userId: string, isAdmin: boolean): Promise<Own
     }
 
     let aggregatedData: any[] = [];
+    const MAX_RETRIES = 3;
     
-    // Process chunks sequentially to avoid browser connection limits and net::ERR_ABORTED
     for (const chunk of chunks) {
-      let query = (supabase as any)
-        .from(table)
-        .select(select)
-        .in("device_id", chunk);
-      
-      if (orderBy) {
-        query = query.order(orderBy.column, { ascending: orderBy.ascending });
-      }
-      
-      if (limit) {
-        query = query.limit(limit);
-      }
-      
-      const { data, error } = await query;
+      let attempt = 0;
+      let success = false;
 
-      if (error) {
-        console.error(`[useOwnerVehicles] Error fetching ${table} chunk:`, error);
-      } else if (data) {
-        aggregatedData = [...aggregatedData, ...data];
+      while (!success && attempt < MAX_RETRIES) {
+        let query = (supabase as any)
+          .from(table)
+          .select(select)
+          .in("device_id", chunk);
+        
+        if (orderBy) {
+          query = query.order(orderBy.column, { ascending: orderBy.ascending });
+        }
+        
+        if (limit) {
+          query = query.limit(limit);
+        }
+        
+        const { data, error } = await query;
+
+        if (error) {
+          attempt += 1;
+          console.error(
+            `[useOwnerVehicles] Error fetching ${table} chunk (attempt ${attempt}/${MAX_RETRIES}):`,
+            error
+          );
+          const message = (error as any)?.message || "";
+          const isTransient =
+            message.includes("Failed to fetch") ||
+            message.includes("NetworkError") ||
+            message.includes("ECONNRESET") ||
+            message.includes("ECONNREFUSED");
+          if (!isTransient || attempt >= MAX_RETRIES) {
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 300 * attempt));
+        } else if (data) {
+          aggregatedData = [...aggregatedData, ...data];
+          success = true;
+        } else {
+          success = true;
+        }
       }
     }
 

@@ -363,7 +363,9 @@ async function fetchFleetData(): Promise<{ vehicles: FleetVehicle[]; metrics: Fl
   const vehicles = mergedData.map(transformDbRowToVehicle);
   const metrics = calculateMetrics(vehicles);
 
-  console.log(`[useFleetData] Fetched ${vehicles.length} vehicles from DB`);
+  if (import.meta.env.DEV) {
+    console.log(`[useFleetData] Fetched ${vehicles.length} vehicles from DB`);
+  }
 
   return { vehicles, metrics };
 }
@@ -400,7 +402,9 @@ export function useFleetData() {
           table: 'vehicle_positions'
         },
         (payload) => {
-          console.log('[useFleetData] Realtime update:', payload.new.device_id);
+          if (import.meta.env.DEV) {
+            console.log("[useFleetData] Realtime update:", payload.new.device_id);
+          }
           
           // Update specific vehicle in cache without full refetch
           queryClient.setQueryData(['fleet-data'], (oldData: { vehicles: FleetVehicle[]; metrics: FleetMetrics } | undefined) => {

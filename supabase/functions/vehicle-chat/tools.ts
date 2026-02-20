@@ -933,7 +933,14 @@ const get_fuel_stats: ToolDefinition = {
       .maybeSingle()
 
     const totalDistance = fuelData.reduce((sum: number, d: any) => sum + (d.totaldistance || 0), 0)
-    const avgEfficiency = fuelData.reduce((sum: number, d: any) => sum + (d.oilper100km || 0), 0) / fuelData.length
+    const withActualEfficiency = fuelData.filter(
+      (d: any) => typeof d.oilper100km === "number" && d.oilper100km > 0
+    )
+    const avgEfficiency =
+      withActualEfficiency.length > 0
+        ? withActualEfficiency.reduce((sum: number, d: any) => sum + (d.oilper100km as number), 0) /
+          withActualEfficiency.length
+        : 0
     const totalLeaks = fuelData.reduce((sum: number, d: any) => sum + (d.leakoil || 0), 0)
 
     const leaks = fuelData.filter((d: any) => d.leakoil > 0).map((d: any) => ({
@@ -1014,8 +1021,8 @@ const get_fuel_stats: ToolDefinition = {
       message: string | null;
     } | null = null;
 
-    const withActualSorted = fuelData
-      .filter((d: any) => typeof d.oilper100km === "number" && d.oilper100km > 0)
+    const withActualSorted = withActualEfficiency
+      .slice()
       .sort((a: any, b: any) => {
         if (!a.statisticsday || !b.statisticsday) return 0;
         return a.statisticsday.localeCompare(b.statisticsday);

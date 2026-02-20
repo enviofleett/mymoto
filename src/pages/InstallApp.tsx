@@ -98,6 +98,25 @@ const InstallApp = () => {
     [],
   );
 
+  const screenshotImages = [
+    {
+      src: "/screens/mymoto-screen-dashboard.jpg",
+      alt: "Bond better with your car – MyMoto dashboard home screen",
+    },
+    {
+      src: "/screens/mymoto-screen-trips.jpg",
+      alt: "MyMoto trips list showing detailed trip statistics",
+    },
+    {
+      src: "/screens/mymoto-screen-chat-overview.jpg",
+      alt: "MyMoto chat and device overview on dark background",
+    },
+    {
+      src: "/screens/mymoto-screen-chat-detail.jpg",
+      alt: "MyMoto vehicle chat conversation with driving insights",
+    },
+  ];
+
   const handleStartInstall = () => {
     setDialogOpen(true);
     setStage("checking");
@@ -479,16 +498,16 @@ const InstallApp = () => {
               </span>
             </div>
             <div className="flex overflow-x-auto px-5 gap-3 pb-2 scrollbar-hide snap-x">
-              {[1, 2, 3, 4].map((i) => (
+              {screenshotImages.map((shot, index) => (
                 <div
-                  key={i}
+                  key={shot.alt}
                   className="w-[220px] h-[440px] rounded-3xl border border-border/60 shadow-sm shrink-0 snap-start overflow-hidden bg-muted"
                 >
                   <img
-                    src={myMotoLogo}
-                    alt={`MyMoto preview ${i}`}
+                    src={shot.src}
+                    alt={shot.alt}
                     className="w-full h-full object-contain bg-background"
-                    loading={i === 1 ? "eager" : "lazy"}
+                    loading={index === 0 ? "eager" : "lazy"}
                   />
                 </div>
               ))}

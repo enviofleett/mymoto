@@ -458,8 +458,33 @@ export default function AdminEmailTemplates() {
     }
   };
 
+  const validateSenderIdInput = (value: string): string | null => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return "Sender must not be empty when provided";
+    }
+    const angleMatch = trimmed.match(/^(.*)<([^>]+)>\s*$/);
+    let email = trimmed;
+    if (angleMatch) {
+      email = angleMatch[2].trim();
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return 'Sender must be an email like "name@example.com" or "Name <name@example.com>"';
+    }
+    return null;
+  };
+
   const handleSave = async () => {
     if (!editedTemplate) return;
+
+    if (editedTemplate.sender_id) {
+      const senderError = validateSenderIdInput(editedTemplate.sender_id);
+      if (senderError) {
+        toast.error(senderError);
+        return;
+      }
+    }
 
     setSaving(true);
     try {
@@ -513,6 +538,14 @@ export default function AdminEmailTemplates() {
     if (!isValidTestEmail(trimmedEmail)) {
       toast.error("Please enter a valid email address (e.g. name@example.com)");
       return;
+    }
+
+    if (editedTemplate.sender_id) {
+      const senderError = validateSenderIdInput(editedTemplate.sender_id);
+      if (senderError) {
+        toast.error(senderError);
+        return;
+      }
     }
 
     setSendingTest(true);

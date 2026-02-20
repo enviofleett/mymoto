@@ -122,23 +122,27 @@ export function validateSenderId(senderId: string | null | undefined): { valid: 
   if (!senderId) {
     return { valid: true };
   }
-  
-  // Format: "Name <email@domain.com>" or just "email@domain.com"
-  const pattern = /^([^<>\n\r]+)?\s*(<[^\s@]+@[^\s@]+\.[^\s@]+>)?$/;
-  
-  if (!pattern.test(senderId)) {
-    return { valid: false, error: 'Invalid sender ID format. Use: "Name <email@domain.com>" or "email@domain.com"' };
+  const trimmed = senderId.trim();
+  if (!trimmed) {
+    return { valid: false, error: "Sender ID cannot be empty" };
   }
-  
-  // Extract email if present
-  const emailMatch = senderId.match(/<([^>]+)>/);
-  if (emailMatch) {
-    const email = emailMatch[1];
-    const emailValidation = validateEmail(email);
-    if (!emailValidation.valid) {
-      return { valid: false, error: `Invalid email in sender ID: ${emailValidation.error}` };
+  const angleMatch = trimmed.match(/^(.*)<([^>]+)>\s*$/);
+  let email = trimmed;
+  let displayName: string | undefined;
+  if (angleMatch) {
+    displayName = angleMatch[1].trim();
+    email = angleMatch[2].trim();
+    if (displayName) {
+      const nameValidation = validateSenderDisplayName(displayName);
+      if (!nameValidation.valid) {
+        return { valid: false, error: nameValidation.error };
+      }
     }
   }
-  
-  return { valid: true, formatted: senderId.trim() };
+  const emailValidation = validateEmail(email);
+  if (!emailValidation.valid) {
+    return { valid: false, error: `Invalid email in sender ID: ${emailValidation.error}` };
+  }
+  const formatted = displayName ? `${displayName} <${email}>` : email;
+  return { valid: true, formatted };
 }

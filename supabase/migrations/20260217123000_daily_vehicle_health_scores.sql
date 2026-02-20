@@ -201,8 +201,8 @@ BEGIN
         FILTER (WHERE prev_gps_time IS NOT NULL) AS avg_sampling_interval_minutes,
       MAX(EXTRACT(EPOCH FROM (gps_time - prev_gps_time)) / 60.0)
         FILTER (WHERE prev_gps_time IS NOT NULL) AS max_gap_minutes,
-      AVG(battery_percent)::NUMERIC(5, 2) FILTER (WHERE battery_percent IS NOT NULL) AS avg_battery_percent,
-      MIN(battery_percent)::INTEGER FILTER (WHERE battery_percent IS NOT NULL) AS min_battery_percent,
+      AVG(battery_percent) FILTER (WHERE battery_percent IS NOT NULL) AS avg_battery_percent,
+      MIN(battery_percent) FILTER (WHERE battery_percent IS NOT NULL) AS min_battery_percent,
       COUNT(*) FILTER (WHERE speed > 100)::INTEGER AS speeding_points_count,
       COUNT(*) FILTER (
         WHERE prev_gps_time IS NOT NULL

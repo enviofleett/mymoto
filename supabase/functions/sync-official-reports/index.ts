@@ -26,6 +26,36 @@ function formatDateForGps51Date(date: Date): string {
   return date.toISOString().split('T')[0];
 }
 
+async function getVehicleProfileForMileage(supabase: any, deviceId: string) {
+  const { data, error } = await supabase
+    .from('vehicles')
+    .select('device_id, year, official_fuel_efficiency_l_100km')
+    .eq('device_id', deviceId)
+    .maybeSingle();
+
+  if (error) {
+    console.warn(`[sync-official-reports] Error fetching vehicle profile for mileage: ${error.message}`);
+    return null;
+  }
+
+  return data;
+}
+
+function calculateEstimatedFuelConsumptionForMileage(
+  vehicleProfile: any | null
+): number | null {
+  if (!vehicleProfile) return null;
+  const baseConsumption = vehicleProfile.official_fuel_efficiency_l_100km;
+  if (!baseConsumption) return null;
+
+  const currentYear = new Date().getFullYear();
+  const vehicleYear = typeof vehicleProfile.year === 'number' ? vehicleProfile.year : null;
+  const age = vehicleYear ? Math.max(0, currentYear - vehicleYear) : 0;
+  const degradationPerYear = 0.02;
+
+  return baseConsumption * Math.pow(1 + degradationPerYear, age);
+}
+
 // Interface for GPS51 trip response
 interface Gps51Trip {
   starttime?: number;
@@ -256,6 +286,8 @@ async function syncMileageFromGps51(
   let upserted = 0;
 
   try {
+    const vehicleProfile = await getVehicleProfileForMileage(supabase, deviceId);
+    const estimatedCombined = calculateEstimatedFuelConsumptionForMileage(vehicleProfile);
     const startday = formatDateForGps51Date(targetDate);
     const endday = formatDateForGps51Date(targetDate);
 
@@ -292,12 +324,23 @@ async function syncMileageFromGps51(
     // Process all records (upsert each one)
     // GPS51 may return multiple records for the same day (different time periods)
     const mileageRecordsToUpsert = records.map((record: Gps51MileageRecord, index: number) => {
-      // Map GPS51 mileage record to our database format
-      // Note: Keep units as GPS51 provides them (meters for distance, 1/100L for fuel, m/h for speed)
+      let variance: number | null = null;
+      if (
+        typeof record.oilper100km === 'number' &&
+        record.oilper100km > 0 &&
+        typeof estimatedCombined === 'number' &&
+        estimatedCombined > 0
+      ) {
+        variance = ((record.oilper100km - estimatedCombined) / estimatedCombined) * 100;
+      }
+
       return {
         device_id: deviceId,
-        statisticsday: record.statisticsday || startday, // Use API date or fallback to input date
-        totaldistance: record.totaldistance !== undefined && record.totaldistance !== null ? record.totaldistance : null, // Keep as meters
+        statisticsday: record.statisticsday || startday,
+        totaldistance:
+          record.totaldistance !== undefined && record.totaldistance !== null
+            ? record.totaldistance
+            : null,
         runoilper100km: record.runoilper100km !== undefined && record.runoilper100km !== null ? record.runoilper100km : null,
         begindis: record.begindis !== undefined && record.begindis !== null ? record.begindis : null,
         enddis: record.enddis !== undefined && record.enddis !== null ? record.enddis : null,
@@ -306,14 +349,19 @@ async function syncMileageFromGps51(
         ddoil: record.ddoil !== undefined && record.ddoil !== null ? record.ddoil : null,
         idleoil: record.idleoil !== undefined && record.idleoil !== null ? record.idleoil : null,
         leakoil: record.leakoil !== undefined && record.leakoil !== null ? record.leakoil : null,
-        avgspeed: record.avgspeed !== undefined && record.avgspeed !== null ? record.avgspeed / 1000 : null, // m/h to km/h for display
+        avgspeed:
+          record.avgspeed !== undefined && record.avgspeed !== null ? record.avgspeed / 1000 : null,
         overspeed: record.overspeed !== undefined && record.overspeed !== null ? record.overspeed : null,
         oilper100km: record.oilper100km !== undefined && record.oilper100km !== null ? record.oilper100km : null,
         oilperhour: record.oilperhour !== undefined && record.oilperhour !== null ? record.oilperhour : null,
+        estimated_fuel_consumption_combined: estimatedCombined,
+        estimated_fuel_consumption_city: estimatedCombined,
+        estimated_fuel_consumption_highway: estimatedCombined,
+        fuel_consumption_variance: variance,
         totalacc: record.totalacc !== undefined && record.totalacc !== null ? record.totalacc : null,
         starttime: record.starttime !== undefined && record.starttime !== null ? record.starttime : null,
         endtime: record.endtime !== undefined && record.endtime !== null ? record.endtime : null,
-        gps51_record_id: record.id?.toString() || `sync_${deviceId}_${startday}_${index}`, // Generate unique ID if missing
+        gps51_record_id: record.id?.toString() || `sync_${deviceId}_${startday}_${index}`,
       };
     });
 
