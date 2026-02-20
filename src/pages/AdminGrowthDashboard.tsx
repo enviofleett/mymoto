@@ -45,6 +45,13 @@ export default function AdminGrowthDashboard() {
     const firstChat = uniqueUsers("first_chat_sent");
     const pushGranted = uniqueUsers("push_permission_granted");
 
+    const installViews = uniqueSessions("install_view");
+    const installCta = uniqueSessions("install_cta_click");
+    const installPrompt = uniqueSessions("install_beforeinstallprompt");
+    const installAccepted = uniqueSessions("install_prompt_accepted");
+    const installInstalled = uniqueSessions("install_appinstalled");
+    const installErrors = count("install_error");
+
     return {
       landing,
       authSubmit,
@@ -58,6 +65,22 @@ export default function AdminGrowthDashboard() {
       pushOptInPct: authSuccess > 0 ? ((pushGranted / authSuccess) * 100).toFixed(1) : "0.0",
       totalEvents: events.length,
       authErrors: count("auth_error"),
+      installViews,
+      installCta,
+      installPrompt,
+      installAccepted,
+      installInstalled,
+      installErrors,
+      installViewToCtaPct:
+        installViews > 0 ? ((installCta / installViews) * 100).toFixed(1) : "0.0",
+      installCtaToPromptPct:
+        installCta > 0 ? ((installPrompt / installCta) * 100).toFixed(1) : "0.0",
+      installPromptToAcceptPct:
+        installPrompt > 0 ? ((installAccepted / installPrompt) * 100).toFixed(1) : "0.0",
+      installAcceptToInstalledPct:
+        installAccepted > 0 ? ((installInstalled / installAccepted) * 100).toFixed(1) : "0.0",
+      installViewToInstalledPct:
+        installViews > 0 ? ((installInstalled / installViews) * 100).toFixed(1) : "0.0",
     };
   }, [events]);
 
@@ -89,6 +112,63 @@ export default function AdminGrowthDashboard() {
           <Card><CardHeader><CardTitle>Auth to Vehicle Linked</CardTitle></CardHeader><CardContent>{`${metrics.activationPct}%`}</CardContent></Card>
           <Card><CardHeader><CardTitle>Vehicle Linked to First Chat</CardTitle></CardHeader><CardContent>{`${metrics.firstChatPct}%`}</CardContent></Card>
           <Card><CardHeader><CardTitle>Auth to Push Granted</CardTitle></CardHeader><CardContent>{`${metrics.pushOptInPct}%`}</CardContent></Card>
+        </div>
+
+        <div className="space-y-2">
+          <h2 className="text-lg font-semibold">Install Funnel (Last 30 days)</h2>
+          <p className="text-xs text-muted-foreground">
+            Sessions across all platforms from /install view to successful app installation.
+          </p>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card>
+            <CardHeader><CardTitle>/install Sessions</CardTitle></CardHeader>
+            <CardContent>{isLoading ? "--" : metrics.installViews}</CardContent>
+          </Card>
+          <Card>
+            <CardHeader><CardTitle>CTA Click Sessions</CardTitle></CardHeader>
+            <CardContent>{isLoading ? "--" : metrics.installCta}</CardContent>
+          </Card>
+          <Card>
+            <CardHeader><CardTitle>Prompt Eligible Sessions</CardTitle></CardHeader>
+            <CardContent>{isLoading ? "--" : metrics.installPrompt}</CardContent>
+          </Card>
+          <Card>
+            <CardHeader><CardTitle>Prompt Accepted Sessions</CardTitle></CardHeader>
+            <CardContent>{isLoading ? "--" : metrics.installAccepted}</CardContent>
+          </Card>
+          <Card>
+            <CardHeader><CardTitle>Installed Sessions</CardTitle></CardHeader>
+            <CardContent>{isLoading ? "--" : metrics.installInstalled}</CardContent>
+          </Card>
+          <Card>
+            <CardHeader><CardTitle>Install Errors</CardTitle></CardHeader>
+            <CardContent>{isLoading ? "--" : metrics.installErrors}</CardContent>
+          </Card>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card>
+            <CardHeader><CardTitle>View → CTA</CardTitle></CardHeader>
+            <CardContent>{`${metrics.installViewToCtaPct}%`}</CardContent>
+          </Card>
+          <Card>
+            <CardHeader><CardTitle>CTA → Prompt</CardTitle></CardHeader>
+            <CardContent>{`${metrics.installCtaToPromptPct}%`}</CardContent>
+          </Card>
+          <Card>
+            <CardHeader><CardTitle>Prompt → Accept</CardTitle></CardHeader>
+            <CardContent>{`${metrics.installPromptToAcceptPct}%`}</CardContent>
+          </Card>
+          <Card>
+            <CardHeader><CardTitle>Accept → Installed</CardTitle></CardHeader>
+            <CardContent>{`${metrics.installAcceptToInstalledPct}%`}</CardContent>
+          </Card>
+          <Card>
+            <CardHeader><CardTitle>View → Installed</CardTitle></CardHeader>
+            <CardContent>{`${metrics.installViewToInstalledPct}%`}</CardContent>
+          </Card>
         </div>
       </div>
     </DashboardLayout>

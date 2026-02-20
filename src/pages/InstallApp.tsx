@@ -69,26 +69,37 @@ const InstallApp = () => {
     setIsIOS(isIOSDevice);
     setIsIOSSafari(isIOSDevice && isSafariBrowser);
     setIsAndroid(isAndroidDevice);
+    const platform = isIOSDevice ? "ios" : isAndroidDevice ? "android" : "desktop";
+    const standalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
     void trackEvent("install_view", {
       ios: isIOSDevice,
       ios_safari: isIOSDevice && isSafariBrowser,
       android: isAndroidDevice,
-      standalone:
-        window.matchMedia("(display-mode: standalone)").matches ||
-        (window.navigator as Navigator & { standalone?: boolean }).standalone === true,
+      platform,
+      standalone,
     });
 
-    // Listen for beforeinstallprompt (Android/Chrome)
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e as BeforeInstallPromptEvent);
+      void trackEvent("install_beforeinstallprompt", {
+        platform,
+        ios: isIOSDevice,
+        android: isAndroidDevice,
+      });
     };
 
-    // Listen for app installed event
     const handleAppInstalled = () => {
       setIsInstalled(true);
       setInstallStatus("installed");
       setDeferredPrompt(null);
+      void trackEvent("install_appinstalled", {
+        platform,
+        ios: isIOSDevice,
+        android: isAndroidDevice,
+      });
     };
 
     window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
@@ -126,16 +137,26 @@ const InstallApp = () => {
         if (outcome === "accepted") {
           setInstallStatus("installed");
           setIsInstalled(true);
+          void trackEvent("install_prompt_accepted", {
+            platform: isIOS ? "ios" : isAndroid ? "android" : "desktop",
+          });
         } else {
           setInstallStatus("idle");
+          void trackEvent("install_prompt_dismissed", {
+            platform: isIOS ? "ios" : isAndroid ? "android" : "desktop",
+          });
         }
       } catch (error) {
         console.error("Install prompt error:", error);
         setInstallStatus("idle");
+        void trackEvent("install_error", {
+          stage: "prompt",
+          platform: isIOS ? "ios" : isAndroid ? "android" : "desktop",
+          message: error instanceof Error ? error.message : String(error),
+        });
       }
       setDeferredPrompt(null);
     } else {
-      // Fallback or iOS instructions scroll
       scrollToInstallInstructions();
     }
   };
@@ -150,7 +171,19 @@ const InstallApp = () => {
         });
       } catch (err) {
         console.log('Error sharing:', err);
+        void trackEvent("install_share", {
+          status: "error",
+          message: err instanceof Error ? err.message : String(err),
+        });
+        return;
       }
+      void trackEvent("install_share", {
+        status: "success",
+      });
+    } else {
+      void trackEvent("install_share", {
+        status: "unsupported",
+      });
     }
   };
 
@@ -158,8 +191,14 @@ const InstallApp = () => {
     try {
       await navigator.clipboard.writeText(installLink);
       setCopyStatus("copied");
+      void trackEvent("install_copy_link", {
+        status: "success",
+      });
     } catch {
       setCopyStatus("error");
+      void trackEvent("install_copy_link", {
+        status: "error",
+      });
     } finally {
       window.setTimeout(() => setCopyStatus("idle"), 2200);
     }
@@ -196,7 +235,17 @@ const InstallApp = () => {
                 }`}
                 onClick={handleInstallClick}
              >
-                {isInstalled ? "OPEN" : isIOS ? (isIOSSafari ? "HOW TO INSTALL" : "USE SAFARI") : "GET"}
+                {installStatus === "installing"
+                  ? "INSTALLING..."
+                  : isInstalled
+                  ? "OPEN"
+                  : isIOS
+                  ? isIOSSafari
+                    ? "HOW TO INSTALL"
+                    : "USE SAFARI"
+                  : isAndroid && deferredPrompt
+                  ? "INSTALL"
+                  : "GET"}
              </Button>
              
              <Button 
@@ -281,8 +330,8 @@ const InstallApp = () => {
                       <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm shrink-0">1</div>
                       <p className="text-[15px] pt-1">
                         {isIOS
-                          ? "Open this page in Safari, tap Share, then choose Add to Home Screen."
-                          : <>Download the app by clicking the <span className="font-bold text-[#007AFF]">GET</span> button above.</>}
+                          ? "On iPhone, open this page in Safari, tap Share, then choose Add to Home Screen to install MyMoto."
+                          : <>Tap the <span className="font-bold text-[#007AFF]">GET</span> button above to install the MyMoto app.</>}
                       </p>
                   </div>
                   <div className="flex gap-4 items-start">
@@ -352,14 +401,14 @@ const InstallApp = () => {
                         </div>
                         <p className="text-sm text-muted-foreground text-center">
                           {isIOSSafari
-                            ? "Follow these steps in Safari:"
-                            : "iPhone installation works only in Safari. Open this page in Safari first, then follow these steps:"}
+                            ? "Install MyMoto from Safari using the steps below."
+                            : "To install MyMoto, open this page in Safari first, then follow these steps:"}
                         </p>
                         <div className="space-y-3 text-sm">
                             {!isIOSSafari && (
                               <div className="flex items-center gap-3 bg-background p-3 rounded-lg border border-border/50">
                                   <Smartphone className="w-5 h-5 text-[#007AFF]" />
-                                  <span>Open this URL in <strong>Safari</strong></span>
+                                  <span>Open this page in <strong>Safari</strong> on your iPhone</span>
                               </div>
                             )}
                             <div className="flex items-center gap-3 bg-background p-3 rounded-lg border border-border/50">
@@ -368,11 +417,11 @@ const InstallApp = () => {
                             </div>
                             <div className="flex items-center gap-3 bg-background p-3 rounded-lg border border-border/50">
                                 <PlusSquare className="w-5 h-5 text-[#007AFF]" />
-                                <span>{isIOSSafari ? "2." : "3."} Select <strong>Add to Home Screen</strong></span>
+                                <span>{isIOSSafari ? "2." : "3."} Select <strong>Add to Home Screen</strong> from the menu</span>
                             </div>
                             <div className="flex items-center gap-3 bg-background p-3 rounded-lg border border-border/50">
                                 <span className="font-bold text-[#007AFF] px-1">Add</span>
-                                <span>{isIOSSafari ? "3." : "4."} Tap <strong>Add</strong> in the top right</span>
+                                <span>{isIOSSafari ? "3." : "4."} Tap <strong>Add</strong> in the top right to finish</span>
                             </div>
                         </div>
                       </div>
@@ -380,8 +429,8 @@ const InstallApp = () => {
                       <div className="space-y-4">
                           <p className="text-sm text-muted-foreground text-center">
                              {isAndroid 
-                                ? "Tap the menu icon (⋮) in Chrome and select \"Install App\" or \"Add to Home screen\"." 
-                                : "Look for the install icon in your browser address bar or use Chrome/Safari for the best experience."}
+                                ? "On Android, tap the menu icon (⋮) in Chrome and choose \"Install app\" or \"Add to Home screen\" to add MyMoto to your home screen." 
+                                : "Look for the install icon in your browser’s address bar, or open this page in Chrome or Safari for the best install experience."}
                           </p>
                           <Button variant="outline" className="w-full gap-2" onClick={() => navigate("/owner")}>
                               Continue in Browser <ChevronRight className="w-4 h-4" />
