@@ -709,11 +709,10 @@ export default function OwnerVehiclesDashboard() {
                 </div>
               </div>
 
-              {/* Circular map section */}
               <div
                 data-testid="owner-circular-map"
                 className={cn(
-                  "mx-auto w-[min(78vw,20rem)] min-w-[15rem] aspect-square rounded-full bg-card border border-border/60 shadow-neumorphic-sm p-2 overflow-hidden transition-all duration-200 footer-gap",
+                  "relative w-full min-h-[260px] max-h-[300px] rounded-2xl bg-card border border-border/60 shadow-neumorphic-sm overflow-hidden transition-all duration-200 footer-gap",
                   "hover:shadow-neumorphic",
                   hasAlarm &&
                     "border-destructive/80 shadow-[0_0_32px_rgba(220,38,38,0.8)]",
@@ -722,10 +721,8 @@ export default function OwnerVehiclesDashboard() {
                     "border-accent shadow-[0_0_28px_hsl(24_95%_53%/0.8)]"
                 )}
               >
-                <div
-                  className="h-full w-full rounded-full bg-card shadow-neumorphic-inset overflow-hidden"
-                >
-                  {displayData?.latitude != null && displayData?.longitude != null ? (
+                {displayData?.latitude != null && displayData?.longitude != null ? (
+                  <>
                     <VehicleLocationMap
                       latitude={displayData.latitude}
                       longitude={displayData.longitude}
@@ -733,18 +730,19 @@ export default function OwnerVehiclesDashboard() {
                       vehicleName={selectedVehicle?.name || selectedDeviceId}
                       showAddressCard={false}
                       controlsInset={true}
-                      mapHeight="h-full"
-                      className="h-full w-full rounded-full overflow-hidden"
+                      mapHeight="h-[260px]"
+                      className="w-full"
                     />
-                  ) : (
-                    <div className="h-full w-full flex items-center justify-center bg-muted/30 rounded-full">
-                      <div className="text-center">
-                        <MapPin className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-                        <p className="text-xs text-muted-foreground">Location unavailable</p>
-                      </div>
+                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/45 via-black/15 to-transparent" />
+                  </>
+                ) : (
+                  <div className="h-full w-full flex items-center justify-center bg-muted/30">
+                    <div className="text-center">
+                      <MapPin className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                      <p className="text-xs text-muted-foreground">Location unavailable</p>
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
 
               <div

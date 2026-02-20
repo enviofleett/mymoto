@@ -31,7 +31,6 @@ const friendlyGalleryError = (raw?: string | null) => {
 export function VehiclePhotoGallery({ deviceId }: VehiclePhotoGalleryProps) {
   const [photos, setPhotos] = useState<VehiclePhoto[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [zoomOpen, setZoomOpen] = useState(false);
   const [zoomIndex, setZoomIndex] = useState(0);
@@ -42,7 +41,6 @@ export function VehiclePhotoGallery({ deviceId }: VehiclePhotoGalleryProps) {
   const loadPhotos = useCallback(async () => {
     if (!deviceId) return;
     setLoading(true);
-    setError(null);
     try {
       const { data, error } = await (supabase as any)
         .from("vehicle_photos")
@@ -55,7 +53,7 @@ export function VehiclePhotoGallery({ deviceId }: VehiclePhotoGalleryProps) {
       setActiveIndex(0);
     } catch (e: any) {
       const raw = e?.message || (typeof e === "string" ? e : undefined);
-      setError(friendlyGalleryError(raw));
+      friendlyGalleryError(raw);
     } finally {
       setLoading(false);
     }
@@ -151,12 +149,6 @@ export function VehiclePhotoGallery({ deviceId }: VehiclePhotoGalleryProps) {
           )}
         </div>
 
-        {error && (
-          <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-[11px] text-destructive">
-            {error}
-          </div>
-        )}
-
         {loading && !hasPhotos && (
           <div className="space-y-3">
             <Skeleton className="h-40 w-full rounded-2xl" />
@@ -168,7 +160,7 @@ export function VehiclePhotoGallery({ deviceId }: VehiclePhotoGalleryProps) {
           </div>
         )}
 
-        {!loading && !hasPhotos && !error && (
+        {!loading && !hasPhotos && (
           <div className="rounded-2xl border border-dashed border-border/60 bg-card/60 px-4 py-6 text-center space-y-2">
             <p className="text-sm font-medium text-foreground">No photos yet</p>
             <p className="text-[11px] text-muted-foreground max-w-xs mx-auto">
