@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -12,6 +13,7 @@ import { Loader2, Save, XCircle, Images, Upload, Trash2, ArrowLeftRight } from "
 import { cn } from "@/lib/utils";
 import myMotoLogo from "@/assets/mymoto-logo-new.png";
 import { isPlateValid, isVinValid, normalizePlate, plateSchemas } from "@/utils/vehicle-validation";
+import { VehicleSpecificationsForm } from "./VehicleSpecificationsForm";
 
 interface VehicleSettingsPanelProps {
   deviceId: string;
@@ -40,6 +42,7 @@ const friendlyGalleryError = (raw?: string | null) => {
 
 export function VehicleSettingsPanel({ deviceId, vehicleName, onClose }: VehicleSettingsPanelProps) {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -402,6 +405,20 @@ export function VehicleSettingsPanel({ deviceId, vehicleName, onClose }: Vehicle
                 )}
               </CardContent>
             </Card>
+          </AccordionContent>
+        </AccordionItem>
+
+        <AccordionItem value="fuel-specs">
+          <AccordionTrigger>Fuel & Specifications</AccordionTrigger>
+          <AccordionContent>
+            <VehicleSpecificationsForm
+              deviceId={deviceId}
+              onSaved={() => {
+                // Invalidate fuel-related queries so StatusMetricsRow refreshes
+                queryClient.invalidateQueries({ queryKey: ["vehicle-mileage-details", deviceId] });
+                queryClient.invalidateQueries({ queryKey: ["vehicle-specifications", deviceId] });
+              }}
+            />
           </AccordionContent>
         </AccordionItem>
 

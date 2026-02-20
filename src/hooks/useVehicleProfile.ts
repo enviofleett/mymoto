@@ -621,6 +621,55 @@ export function deriveMileageFromStats(stats: VehicleDailyStats[]): DerivedMilea
 
 
 
+// ============ Vehicle Specifications ============
+
+export interface VehicleSpecification {
+  id?: string;
+  device_id: string;
+  brand: string;
+  model: string | null;
+  year_of_manufacture: number | null;
+  vehicle_age_years: number | null;
+  engine_type: string | null;
+  engine_size_cc: number | null;
+  transmission_type: string | null;
+  fuel_tank_capacity_liters: number | null;
+  manufacturer_fuel_consumption_city: number | null;
+  manufacturer_fuel_consumption_highway: number | null;
+  manufacturer_fuel_consumption_combined: number | null;
+  fuel_consumption_degradation_per_year: number;
+  estimated_current_fuel_consumption: number | null;
+  notes: string | null;
+  is_verified: boolean;
+}
+
+async function fetchVehicleSpecifications(deviceId: string): Promise<VehicleSpecification | null> {
+  const { data, error } = await (supabase as any)
+    .from('vehicle_specifications')
+    .select('*')
+    .eq('device_id', deviceId)
+    .maybeSingle();
+
+  if (error) {
+    if (error.code === 'PGRST205' || error.message?.includes('does not exist')) {
+      return null;
+    }
+    throw error;
+  }
+
+  return (data as VehicleSpecification) || null;
+}
+
+export function useVehicleSpecifications(deviceId: string | null, enabled: boolean = true) {
+  return useQuery({
+    queryKey: ["vehicle-specifications", deviceId],
+    queryFn: () => fetchVehicleSpecifications(deviceId!),
+    enabled: enabled && !!deviceId,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    retry: false,
+  });
+}
+
 // ============ Prefetch Function ============
 
 export function usePrefetchVehicleProfile() {
