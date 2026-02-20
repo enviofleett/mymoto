@@ -96,7 +96,9 @@ Deno.serve(async (req: Request) => {
     } = await supabase.auth.getUser(token);
 
     if (userError || !user) {
-      return jsonResponse({ error: "Unauthorized" }, 401);
+      // Pass through the actual error message so the client-side retry logic
+      // can detect "JWT expired" and refresh the token before retrying.
+      return jsonResponse({ error: userError?.message || "Unauthorized" }, 401);
     }
 
     const body = (await req.json()) as SaveVehicleSettingsRequest;
