@@ -1,37 +1,16 @@
 import { useMemo } from "react";
 import { differenceInCalendarDays, endOfDay, isToday, startOfDay } from "date-fns";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Gauge,
-  Route,
-  TrendingUp,
-  Calendar,
-  Filter,
-  Fuel,
-  AlertTriangle,
-  TrendingDown,
-  TrendingUp as TrendingUpIcon,
   Clock,
   Car,
   ParkingCircle,
   Zap,
 } from "lucide-react";
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  ResponsiveContainer,
-  Tooltip,
-  BarChart,
-  Bar,
-} from "recharts";
 import type { DateRange } from "react-day-picker";
 import { formatLagos } from "@/lib/timezone";
 import type { VehicleDailyStats } from "@/hooks/useVehicleProfile";
-import { deriveMileageFromStats, useVehicleMileageDetails } from "@/hooks/useVehicleProfile";
 
 interface MileageSectionProps {
   deviceId: string;
@@ -54,104 +33,8 @@ export function MileageSection({
   dailyMileage,
   dateRange,
 }: MileageSectionProps) {
-  const isFilterActive = !!dateRange?.from;
-  
-  // Fetch mileage details for fuel consumption
-  const startDate = dateRange?.from?.toISOString().split('T')[0];
-  const endDate = dateRange?.to?.toISOString().split('T')[0];
-  const { data: mileageDetails, error: mileageError } = useVehicleMileageDetails(
-    deviceId,
-    startDate,
-    endDate,
-    true
-  );
-  
-  // Handle case where table doesn't exist yet (migration not applied)
-  const hasMileageData = mileageDetails && mileageDetails.length > 0 && !mileageError;
-
   const dateRangeLabel = getDateRangeLabel(dateRange);
 
-  // Derive stats from daily data (Single Source of Truth)
-  const derivedStats = useMemo(() => {
-    if (!dailyStats || dailyStats.length === 0) {
-      return deriveMileageFromStats([]);
-    }
-    
-    if (dateRange?.from) {
-      const fromDate = dateRange.from.toISOString().split('T')[0];
-      const toDate = dateRange.to?.toISOString().split('T')[0] || fromDate;
-      
-      const filtered = dailyStats.filter(s => {
-        const date = s.stat_date;
-        return date >= fromDate && date <= toDate;
-      });
-      
-      return deriveMileageFromStats(filtered);
-    }
-    
-    return deriveMileageFromStats(dailyStats);
-  }, [dailyStats, dateRange]);
-
-  // Calculate today and this week stats from dailyStats (unified source)
-  const todayAndWeekStats = useMemo(() => {
-    if (!dailyStats || dailyStats.length === 0) {
-      return { todayTrips: 0, todayDistance: 0, weekTrips: 0, weekDistance: 0 };
-    }
-    
-    const today = new Date().toISOString().split('T')[0];
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
-    const weekAgoStr = weekAgo.toISOString().split('T')[0];
-    
-    // Today's stats
-    const todayStat = dailyStats.find(s => s.stat_date === today);
-    const todayTrips = todayStat?.trip_count || 0;
-    const todayDistance = todayStat ? Number(todayStat.total_distance_km) : 0;
-    
-    // Last 7 days stats
-    const weekStats = dailyStats.filter(s => s.stat_date >= weekAgoStr && s.stat_date <= today);
-    const weekTrips = weekStats.reduce((sum, s) => sum + s.trip_count, 0);
-    const weekDistance = weekStats.reduce((sum, s) => sum + Number(s.total_distance_km), 0);
-    
-    return { todayTrips, todayDistance, weekTrips, weekDistance };
-  }, [dailyStats]);
-
-  // Convert daily stats to chart data
-  const chartData = useMemo(() => {
-    if (!dailyStats || dailyStats.length === 0) return [];
-    
-    let filtered = dailyStats;
-    if (dateRange?.from) {
-      const fromDate = dateRange.from.toISOString().split('T')[0];
-      const toDate = dateRange.to?.toISOString().split('T')[0] || fromDate;
-      filtered = dailyStats.filter(s => s.stat_date >= fromDate && s.stat_date <= toDate);
-    }
-    
-    return filtered
-      .map(stat => ({
-        day: formatLagos(stat.stat_date, 'EEE'),
-        date: stat.stat_date,
-        distance: Number(stat.total_distance_km),
-        trips: stat.trip_count,
-      }))
-      .sort((a, b) => a.date.localeCompare(b.date));
-  }, [dailyStats, dateRange]);
-
-  // Trip stats calculation
-  const tripStats = useMemo(() => {
-    const { totalTrips, avgPerDay, avgKmPerTrip, daysWithData } = derivedStats;
-    const peakTrips = chartData.length > 0 ? Math.max(...chartData.map(d => d.trips)) : 0;
-    
-    return {
-      totalTrips,
-      avgTripsPerDay: daysWithData > 0 ? totalTrips / daysWithData : 0,
-      avgKmPerTrip,
-      peakTrips,
-    };
-  }, [derivedStats, chartData]);
-
-  // Use chartData consistently to prevent UI jumping
-  const displayData = chartData.length > 0 ? chartData : [];
 
   // Calculate driving stats (driving time, parking time, max/avg speed)
   // These match the GPS51 platform display
@@ -225,42 +108,6 @@ export function MileageSection({
       hasDrivingData: totalDrivingSeconds > 0 || maxSpeed > 0,
     };
   }, [dailyStats, dateRange]);
-
-  // Calculate fuel consumption statistics (only if table exists and has data)
-  const fuelStats = useMemo(() => {
-    // Check if table exists - if error is PGRST205, table doesn't exist
-    const tableExists = !mileageError || (mileageError as any)?.code !== 'PGRST205';
-    if (!tableExists || !mileageDetails || mileageDetails.length === 0) return null;
-
-    const withActual = mileageDetails.filter(m => m.oilper100km !== null);
-    const withEstimated = mileageDetails.filter(m => m.estimated_fuel_consumption_combined !== null);
-    const withBoth = mileageDetails.filter(
-      m => m.oilper100km !== null && m.estimated_fuel_consumption_combined !== null
-    );
-
-    const avgActual = withActual.length > 0
-      ? withActual.reduce((sum, m) => sum + (m.oilper100km || 0), 0) / withActual.length
-      : null;
-
-    const avgEstimated = withEstimated.length > 0
-      ? withEstimated.reduce((sum, m) => sum + (m.estimated_fuel_consumption_combined || 0), 0) / withEstimated.length
-      : null;
-
-    const avgVariance = withBoth.length > 0
-      ? withBoth.reduce((sum, m) => sum + (m.fuel_consumption_variance || 0), 0) / withBoth.length
-      : null;
-
-    const theftAlerts = mileageDetails.filter(m => m.leakoil && m.leakoil > 0).length;
-
-    return {
-      avgActual,
-      avgEstimated,
-      avgVariance,
-      theftAlerts,
-      hasData: withActual.length > 0,
-      hasEstimates: withEstimated.length > 0,
-    };
-  }, [mileageDetails, mileageError]);
 
   return (
     <>

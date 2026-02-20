@@ -3,7 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Fuel, Gauge } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { DateRange } from "react-day-picker";
-import { useVehicleMileageDetails } from "@/hooks/useVehicleProfile";
+import { useVehicleMileageDetails, useVehicleSpecifications } from "@/hooks/useVehicleProfile";
 
 interface StatusMetricsRowProps {
   deviceId: string;
@@ -21,6 +21,10 @@ export function StatusMetricsRow({ deviceId, totalMileage, dateRange }: StatusMe
     endDate,
     true
   );
+
+  // Fallback: fetch vehicle specs directly so we can show the manufacturer estimate
+  // even when vehicle_mileage_details has no estimated data yet.
+  const { data: vehicleSpecs } = useVehicleSpecifications(deviceId, true);
 
   const fuelStats = useMemo(() => {
     const tableExists = !mileageError || (mileageError as any)?.code !== "PGRST205";
@@ -114,28 +118,52 @@ export function StatusMetricsRow({ deviceId, totalMileage, dateRange }: StatusMe
     };
   }, [mileageDetails, mileageError]);
 
-  const fuelValue =
-    fuelStats && fuelStats.avgActual !== null && fuelStats.avgActual !== undefined
-      ? `${fuelStats.avgActual.toFixed(1)} L/100km`
-      : fuelStats && fuelStats.avgEstimated !== null && fuelStats.avgEstimated !== undefined
-        ? `${fuelStats.avgEstimated.toFixed(1)} L/100km`
-        : "--";
+  // Fallback estimate from vehicle_specifications when mileage_details has no data yet.
+  // This ensures fuel monitoring shows immediately after vehicle specs are saved,
+  // even before any GPS51 mileage detail sync has occurred.
+  const specsEstimate = vehicleSpecs?.estimated_current_fuel_consumption ?? null;
+  const specsManufacturerCombined = vehicleSpecs?.manufacturer_fuel_consumption_combined ?? null;
+
+  const fuelValue = (() => {
+    if (fuelStats?.avgActual !== null && fuelStats?.avgActual !== undefined) {
+      return `${fuelStats.avgActual.toFixed(1)} L/100km`;
+    }
+    if (fuelStats?.avgEstimated !== null && fuelStats?.avgEstimated !== undefined) {
+      return `${fuelStats.avgEstimated.toFixed(1)} L/100km`;
+    }
+    // Fallback: use age-adjusted estimate from vehicle_specifications
+    if (specsEstimate !== null) {
+      return `${specsEstimate.toFixed(1)} L/100km`;
+    }
+    // Fallback: use raw manufacturer combined figure from vehicle_specifications
+    if (specsManufacturerCombined !== null) {
+      return `${specsManufacturerCombined.toFixed(1)} L/100km`;
+    }
+    return "--";
+  })();
 
   const fuelLabel = (() => {
-    if (!fuelStats) return "No fuel data yet";
-    if (fuelStats.avgActual !== null && fuelStats.avgEstimated !== null && fuelStats.avgVariance !== null) {
+    if (fuelStats?.avgActual !== null && fuelStats?.avgActual !== undefined &&
+        fuelStats?.avgEstimated !== null && fuelStats?.avgVariance !== null) {
       const percent = Math.round(fuelStats.avgVariance);
       if (percent > 0) return `About ${percent}% above rated`;
       if (percent < 0) return `About ${Math.abs(percent)}% better than rated`;
       return "In line with rated";
     }
-    if (fuelStats.avgActual !== null) return "Based on GPS data";
-    if (fuelStats.avgEstimated !== null) return "Manufacturer estimate";
-    return "No fuel data yet";
+    if (fuelStats?.avgActual !== null && fuelStats?.avgActual !== undefined) return "Based on GPS data";
+    if (fuelStats?.avgEstimated !== null && fuelStats?.avgEstimated !== undefined) return "Manufacturer estimate";
+    // Fallback labels
+    if (specsEstimate !== null) return "Est. based on vehicle age & specs";
+    if (specsManufacturerCombined !== null) return "Manufacturer rated (save specs to refine)";
+    return "Save vehicle specs to enable";
   })();
 
   const fuelTrendLabel = (() => {
     if (!fuelStats || !fuelStats.trend || !fuelStats.trend.hasTrend) {
+      // Show setup hint when no mileage data but specs are saved
+      if (specsEstimate !== null || specsManufacturerCombined !== null) {
+        return "Drive trips to see fuel trend";
+      }
       return "Trend: Not enough data yet";
     }
     const { percentChange, direction, recentAvg } = fuelStats.trend;
@@ -181,9 +209,8 @@ export function StatusMetricsRow({ deviceId, totalMileage, dateRange }: StatusMe
             <span className="text-sm text-muted-foreground">Mileage</span>
           </div>
           <div className="text-2xl font-bold text-foreground">
-            {/* DEFENSIVE FIX: Check strictly for number type */}
             {typeof totalMileage === 'number'
-              ? totalMileage.toLocaleString(undefined, { maximumFractionDigits: 0 }) 
+              ? totalMileage.toLocaleString(undefined, { maximumFractionDigits: 0 })
               : "--"} <span className="text-sm font-normal text-muted-foreground">km</span>
           </div>
           <div className="text-xs text-muted-foreground">Total</div>
