@@ -5,6 +5,21 @@
       "handle": "filesystem"
     },
     {
+      "src": "^/app/install/direct$",
+      "status": 308,
+      "dest": "/install/direct"
+    },
+    {
+      "src": "^/app/install$",
+      "status": 308,
+      "dest": "/install"
+    },
+    {
+      "src": "^/intall/direct$",
+      "status": 308,
+      "dest": "/install/direct"
+    },
+    {
       "src": "^/partner(?:/.*)?$",
       "dest": "/partner/index.html"
     },

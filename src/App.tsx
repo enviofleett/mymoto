@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import SplashScreen from "@/components/SplashScreen";
@@ -103,6 +103,13 @@ const RoleBasedRedirect = () => {
   return null;
 };
 
+const InstallDirectRedirect = () => {
+  const location = useLocation();
+  const search = new URLSearchParams(location.search);
+  search.set("autostart", "1");
+  return <Navigate to={`/install?${search.toString()}`} replace />;
+};
+
 const App = () => {
   const [showSplash, setShowSplash] = useState(isPWA);
 
@@ -144,6 +151,7 @@ const App = () => {
               <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/login" element={<PwaLogin />} />
               <Route path="/install" element={<InstallApp />} />
+              <Route path="/install/direct" element={<InstallDirectRedirect />} />
               
               {/* Role-based redirect */}
               <Route path="/redirect" element={<RoleBasedRedirect />} />
