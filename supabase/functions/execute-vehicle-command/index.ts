@@ -39,6 +39,8 @@ const COMMANDS_REQUIRING_CONFIRMATION = [
 // Engine command password used by GPS51 sendcmd API (configured in environment)
 const GPS51_ENGINE_PASSWORD = Deno.env.get('GPS51_ENGINE_COMMAND_PASSWORD') || Deno.env.get('GPS51_ENGINE_PASSWORD')
 const GPS51_ENGINE_CMDCODE = 'TYPE_SERVER_UNLOCK_CAR'
+const GPS51_ENGINE_SENDCMD_ENABLED = (Deno.env.get('GPS51_ENGINE_SENDCMD_ENABLED') ?? 'true').toLowerCase() !== 'false'
+const GPS51_ENGINE_SENDCMD_FALLBACK_ENABLED = (Deno.env.get('GPS51_ENGINE_SENDCMD_FALLBACK_ENABLED') ?? 'true').toLowerCase() !== 'false'
 
 const GPS51_SENDCMD_SUCCESS_STATUSES = new Set([0, 3, 6])
 
@@ -76,7 +78,8 @@ function getGps51CommandString(commandType: string): string | null {
       console.error('[GPS51] Engine command password not configured (GPS51_ENGINE_COMMAND_PASSWORD / GPS51_ENGINE_PASSWORD missing)')
       return null
     }
-    return null
+    // Keep legacy STOP command available for controlled fallback / rollback.
+    return `STOP,${GPS51_ENGINE_PASSWORD}`
   }
   return GPS51_COMMANDS[commandType] ?? null
 }
@@ -114,54 +117,41 @@ async function callGps51Command(
   deviceId: string,
   commandType: string,
   command?: string
-): Promise<{ success: boolean; commandId?: string; response?: string; error?: string }> {
+): Promise<{ success: boolean; commandId?: string; response?: string; error?: string; transport?: 'sendcmd' | 'sendcommand' }> {
   const engineState = getGps51EngineState(commandType)
-  const isEngineSendCmd = engineState !== null
+  const isEngineCommand = engineState !== null
+  const useSendCmdForEngine = isEngineCommand && GPS51_ENGINE_SENDCMD_ENABLED
 
-  if (isEngineSendCmd && !GPS51_ENGINE_PASSWORD) {
+  if (isEngineCommand && !GPS51_ENGINE_PASSWORD) {
     return {
       success: false,
       error: 'Engine command password is not configured (GPS51_ENGINE_COMMAND_PASSWORD / GPS51_ENGINE_PASSWORD)'
     }
   }
 
+  if (!command && (!isEngineCommand || !useSendCmdForEngine)) {
+    return {
+      success: false,
+      error: `Missing command payload for command type: ${commandType}`
+    }
+  }
+
   console.log(`[GPS51] Sending command type: ${commandType} to device: ${deviceId}`)
-  
-  try {
-    const action = isEngineSendCmd ? 'sendcmd' : 'sendcommand'
-    const requestBody = isEngineSendCmd
-      ? {
-          deviceid: deviceId,
-          cmdcode: GPS51_ENGINE_CMDCODE,
-          params: [],
-          state: engineState,
-          cmdpwd: GPS51_ENGINE_PASSWORD
-        }
-      : {
-          deviceid: deviceId,
-          command: command
-        }
 
-    const result = await callGps51WithRateLimit(supabase, proxyUrl, action, token, serverid, requestBody)
-    
-    console.log(`[GPS51] Command response:`, JSON.stringify(result))
-
-    const rawStatus = Number(result?.status)
-
-    if (isEngineSendCmd) {
-      const statusMessage = GPS51_SENDCMD_STATUS_MESSAGES[rawStatus] || `GPS51 sendcmd returned status ${rawStatus}`
-      if (!GPS51_SENDCMD_SUCCESS_STATUSES.has(rawStatus)) {
-        return {
-          success: false,
-          error: `GPS51 sendcmd failed: ${statusMessage}`
-        }
-      }
-
+  const sendViaSendcommand = async (): Promise<{ success: boolean; commandId?: string; response?: string; error?: string; transport?: 'sendcommand' }> => {
+    if (!command) {
       return {
-        success: true,
-        response: `Engine command accepted: ${statusMessage}`
+        success: false,
+        error: `Missing command payload for sendcommand: ${commandType}`
       }
     }
+
+    const result = await callGps51WithRateLimit(supabase, proxyUrl, 'sendcommand', token, serverid, {
+      deviceid: deviceId,
+      command,
+    })
+
+    console.log(`[GPS51] sendcommand response:`, JSON.stringify(result))
 
     if (result.status !== 0) {
       const rawStatus = typeof result.status === 'number' || typeof result.status === 'string'
@@ -183,14 +173,63 @@ async function callGps51Command(
 
       return {
         success: false,
-        error: errorMessage
+        error: errorMessage,
+        transport: 'sendcommand'
       }
     }
 
     return {
       success: true,
       commandId: result.commandid || result.record?.commandid,
-      response: 'Command sent to device'
+      response: 'Command sent to device',
+      transport: 'sendcommand'
+    }
+  }
+  
+  try {
+    if (!useSendCmdForEngine) {
+      return await sendViaSendcommand()
+    }
+
+    const result = await callGps51WithRateLimit(supabase, proxyUrl, 'sendcmd', token, serverid, {
+      deviceid: deviceId,
+      cmdcode: GPS51_ENGINE_CMDCODE,
+      params: [],
+      state: engineState,
+      cmdpwd: GPS51_ENGINE_PASSWORD
+    })
+    
+    console.log(`[GPS51] sendcmd response:`, JSON.stringify(result))
+
+    const rawStatus = Number(result?.status)
+    const statusMessage = GPS51_SENDCMD_STATUS_MESSAGES[rawStatus] || `GPS51 sendcmd returned status ${rawStatus}`
+
+    if (!GPS51_SENDCMD_SUCCESS_STATUSES.has(rawStatus)) {
+      const fallbackEligible = GPS51_ENGINE_SENDCMD_FALLBACK_ENABLED && !!command
+
+      if (fallbackEligible) {
+        console.warn(`[GPS51] sendcmd failed (${statusMessage}). Falling back to sendcommand for ${commandType}.`)
+        const fallbackResult = await sendViaSendcommand()
+        if (fallbackResult.success) {
+          return {
+            ...fallbackResult,
+            response: `sendcmd failed (${statusMessage}); fallback sendcommand accepted`,
+          }
+        }
+        return fallbackResult
+      }
+
+      return {
+        success: false,
+        error: `GPS51 sendcmd failed: ${statusMessage}`,
+        transport: 'sendcmd'
+      }
+    }
+
+    return {
+      success: true,
+      response: `Engine command accepted: ${statusMessage}`,
+      transport: 'sendcmd'
     }
   } catch (error) {
     console.error(`[GPS51] Command send error:`, error)
@@ -574,21 +613,8 @@ serve(async (req) => {
             
             if (!sendResult.success) {
               executionResult = { success: false, error: sendResult.error }
-            } else if (getGps51EngineState(activeCommandType) !== null) {
-              executionResult = {
-                success: true,
-                response: {
-                  message: sendResult.response || 'Engine command sent via sendcmd',
-                  command_sent: {
-                    action: 'sendcmd',
-                    cmdcode: GPS51_ENGINE_CMDCODE,
-                    state: getGps51EngineState(activeCommandType)
-                  },
-                  executed_at: new Date().toISOString()
-                }
-              }
             } else if (sendResult.commandId) {
-              // Poll for result (with extended timeout for critical commands like shutdown/immobilize)
+              // Poll for result whenever GPS51 returns a command id (including fallback to sendcommand)
               const maxAttempts = (activeCommandType === 'shutdown_engine' || activeCommandType === 'immobilize_engine') ? 10 : 5
               const pollResult = await pollCommandResult(supabase, DO_PROXY_URL, token, serverid, sendResult.commandId, maxAttempts)
               executionResult = {
@@ -597,9 +623,23 @@ serve(async (req) => {
                   command_id: sendResult.commandId,
                   device_response: pollResult.response,
                   command_sent: gps51Command,
+                  transport: sendResult.transport || 'sendcommand',
                   executed_at: new Date().toISOString()
                 },
                 error: pollResult.error
+              }
+            } else if (getGps51EngineState(activeCommandType) !== null) {
+              executionResult = {
+                success: true,
+                response: {
+                  message: sendResult.response || 'Engine command sent',
+                  command_sent: {
+                    action: sendResult.transport || 'sendcmd',
+                    cmdcode: GPS51_ENGINE_CMDCODE,
+                    state: getGps51EngineState(activeCommandType)
+                  },
+                  executed_at: new Date().toISOString()
+                }
               }
             } else {
               executionResult = {
