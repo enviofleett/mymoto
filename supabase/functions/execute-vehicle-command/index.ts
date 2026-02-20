@@ -36,8 +36,24 @@ const COMMANDS_REQUIRING_CONFIRMATION = [
   'clear_speed_limit'
 ]
 
-// Engine shutdown password used by GPS51 STOP command (configured in environment)
-const GPS51_ENGINE_PASSWORD = Deno.env.get('GPS51_ENGINE_PASSWORD')
+// Engine command password used by GPS51 sendcmd API (configured in environment)
+const GPS51_ENGINE_PASSWORD = Deno.env.get('GPS51_ENGINE_COMMAND_PASSWORD') || Deno.env.get('GPS51_ENGINE_PASSWORD')
+const GPS51_ENGINE_CMDCODE = 'TYPE_SERVER_UNLOCK_CAR'
+
+const GPS51_SENDCMD_SUCCESS_STATUSES = new Set([0, 3, 6])
+
+const GPS51_SENDCMD_STATUS_MESSAGES: Record<number, string> = {
+  [-1]: 'Unknown error',
+  0: 'Send successfully, awaiting confirmation',
+  1: 'Password error',
+  2: 'Device is offline and command was not cached',
+  3: 'Device is offline and command was cached',
+  4: 'Default password must be changed before command can run',
+  5: 'Detailed command error',
+  6: 'Send successfully and confirmed',
+  7: 'Failed to send after retry attempts',
+  8: 'Synchronous command confirmation timeout'
+}
 
 // Map our command types to base GPS51 command strings
 // NOTE: shutdown_engine builds its command dynamically to avoid hardcoding the password
@@ -57,12 +73,24 @@ const GPS51_COMMANDS: Record<string, string> = {
 function getGps51CommandString(commandType: string): string | null {
   if (commandType === 'shutdown_engine') {
     if (!GPS51_ENGINE_PASSWORD) {
-      console.error('[GPS51] Engine shutdown password not configured (GPS51_ENGINE_PASSWORD missing)')
+      console.error('[GPS51] Engine command password not configured (GPS51_ENGINE_COMMAND_PASSWORD / GPS51_ENGINE_PASSWORD missing)')
       return null
     }
-    return `STOP,${GPS51_ENGINE_PASSWORD}`
+    return null
   }
   return GPS51_COMMANDS[commandType] ?? null
+}
+
+function getGps51EngineState(commandType: string): number | null {
+  switch (commandType) {
+    case 'shutdown_engine':
+    case 'immobilize_engine':
+      return -1
+    case 'demobilize_engine':
+      return 1
+    default:
+      return null
+  }
 }
 
 // Commands that don't send to GPS51 but are handled locally
@@ -84,17 +112,56 @@ async function callGps51Command(
   token: string,
   serverid: string,
   deviceId: string,
-  command: string
+  commandType: string,
+  command?: string
 ): Promise<{ success: boolean; commandId?: string; response?: string; error?: string }> {
-  console.log(`[GPS51] Sending command: ${command} to device: ${deviceId}`)
+  const engineState = getGps51EngineState(commandType)
+  const isEngineSendCmd = engineState !== null
+
+  if (isEngineSendCmd && !GPS51_ENGINE_PASSWORD) {
+    return {
+      success: false,
+      error: 'Engine command password is not configured (GPS51_ENGINE_COMMAND_PASSWORD / GPS51_ENGINE_PASSWORD)'
+    }
+  }
+
+  console.log(`[GPS51] Sending command type: ${commandType} to device: ${deviceId}`)
   
   try {
-    const result = await callGps51WithRateLimit(supabase, proxyUrl, 'sendcommand', token, serverid, {
-      deviceid: deviceId,
-      command: command
-    })
+    const action = isEngineSendCmd ? 'sendcmd' : 'sendcommand'
+    const requestBody = isEngineSendCmd
+      ? {
+          deviceid: deviceId,
+          cmdcode: GPS51_ENGINE_CMDCODE,
+          params: [],
+          state: engineState,
+          cmdpwd: GPS51_ENGINE_PASSWORD
+        }
+      : {
+          deviceid: deviceId,
+          command: command
+        }
+
+    const result = await callGps51WithRateLimit(supabase, proxyUrl, action, token, serverid, requestBody)
     
     console.log(`[GPS51] Command response:`, JSON.stringify(result))
+
+    const rawStatus = Number(result?.status)
+
+    if (isEngineSendCmd) {
+      const statusMessage = GPS51_SENDCMD_STATUS_MESSAGES[rawStatus] || `GPS51 sendcmd returned status ${rawStatus}`
+      if (!GPS51_SENDCMD_SUCCESS_STATUSES.has(rawStatus)) {
+        return {
+          success: false,
+          error: `GPS51 sendcmd failed: ${statusMessage}`
+        }
+      }
+
+      return {
+        success: true,
+        response: `Engine command accepted: ${statusMessage}`
+      }
+    }
 
     if (result.status !== 0) {
       const rawStatus = typeof result.status === 'number' || typeof result.status === 'string'
@@ -483,7 +550,7 @@ serve(async (req) => {
       // Get GPS51 command string
       const gps51Command = getGps51CommandString(activeCommandType)
       
-      if (!gps51Command) {
+      if (!gps51Command && getGps51EngineState(activeCommandType) === null) {
         executionResult = { success: false, error: `Unsupported or restricted command type: ${activeCommandType}` }
       } else {
         // Get proxy URL and token
@@ -495,10 +562,31 @@ serve(async (req) => {
             const { token, serverid } = await getValidGps51Token(supabase)
             
             // Send command to GPS51 (with centralized rate limiting)
-            const sendResult = await callGps51Command(supabase, DO_PROXY_URL, token, serverid, activeDeviceId, gps51Command)
+            const sendResult = await callGps51Command(
+              supabase,
+              DO_PROXY_URL,
+              token,
+              serverid,
+              activeDeviceId,
+              activeCommandType,
+              gps51Command || undefined
+            )
             
             if (!sendResult.success) {
               executionResult = { success: false, error: sendResult.error }
+            } else if (getGps51EngineState(activeCommandType) !== null) {
+              executionResult = {
+                success: true,
+                response: {
+                  message: sendResult.response || 'Engine command sent via sendcmd',
+                  command_sent: {
+                    action: 'sendcmd',
+                    cmdcode: GPS51_ENGINE_CMDCODE,
+                    state: getGps51EngineState(activeCommandType)
+                  },
+                  executed_at: new Date().toISOString()
+                }
+              }
             } else if (sendResult.commandId) {
               // Poll for result (with extended timeout for critical commands like shutdown/immobilize)
               const maxAttempts = (activeCommandType === 'shutdown_engine' || activeCommandType === 'immobilize_engine') ? 10 : 5
