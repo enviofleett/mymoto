@@ -41,6 +41,7 @@ const OwnerLanding = lazy(() => import("./pages/OwnerLanding"));
 // Partner pages
 const PartnerSignup = lazy(() => import("./pages/partner/PartnerSignup"));
 const PartnerDashboard = lazy(() => import("./pages/partner/PartnerDashboard"));
+const PartnerProfile = lazy(() => import("./pages/partner/PartnerProfile"));
 
 // Owner PWA pages
 const OwnerChat = lazy(() => import("./pages/owner/OwnerChat"));
@@ -184,6 +185,7 @@ const App = () => {
               {/* Partner Routes */}
               <Route path="/partner/signup" element={<PartnerSignup />} />
               <Route path="/partner/dashboard" element={<ProtectedRoute requireProvider><PartnerDashboard /></ProtectedRoute>} />
+              <Route path="/partner/profile" element={<ProtectedRoute requireProvider><PartnerProfile /></ProtectedRoute>} />
               
               {/* Owner PWA Routes */}
               <Route path="/owner" element={<ProtectedRoute><OwnerChat /></ProtectedRoute>} />

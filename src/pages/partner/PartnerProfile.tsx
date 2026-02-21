@@ -69,44 +69,46 @@ export default function PartnerProfile() {
     queryKey: ['provider-profile', user?.id],
     queryFn: async () => {
       if (!user?.id) return null;
-      
+
       const { data, error } = await supabase
         .from('service_providers')
         .select('*')
         .eq('user_id', user.id)
         .single();
-      
+
       if (error) throw error;
       return data as ProviderProfile;
     },
     enabled: !!user?.id,
-    onSuccess: (data) => {
-      if (data) {
-        setDescription(data.profile_data?.description || "");
-        setContactPerson(data.contact_person || "");
-        if (data.profile_data?.location) {
-          setLocationSearch(data.profile_data.location.address);
-          // Reconstruct location from stored data
-          setSelectedLocation({
-            id: data.profile_data.location.mapbox_place_id || '',
-            type: 'Feature',
-            place_type: ['place'],
-            relevance: 1,
-            properties: {},
-            text: '',
-            place_name: data.profile_data.location.address,
-            center: [data.profile_data.location.lng, data.profile_data.location.lat],
-            geometry: {
-              type: 'Point',
-              coordinates: [data.profile_data.location.lng, data.profile_data.location.lat],
-            },
-          });
-        }
-        setPerks(data.profile_data?.perks || []);
-        setLogoPreview(data.profile_data?.logo_url || null);
-      }
-    },
   });
+
+  // Populate form fields when provider data loads
+  // onSuccess was removed in TanStack Query v5; use useEffect instead
+  useEffect(() => {
+    if (provider) {
+      setDescription(provider.profile_data?.description || "");
+      setContactPerson(provider.contact_person || "");
+      if (provider.profile_data?.location) {
+        setLocationSearch(provider.profile_data.location.address);
+        setSelectedLocation({
+          id: provider.profile_data.location.mapbox_place_id || '',
+          type: 'Feature',
+          place_type: ['place'],
+          relevance: 1,
+          properties: {},
+          text: '',
+          place_name: provider.profile_data.location.address,
+          center: [provider.profile_data.location.lng, provider.profile_data.location.lat],
+          geometry: {
+            type: 'Point',
+            coordinates: [provider.profile_data.location.lng, provider.profile_data.location.lat],
+          },
+        });
+      }
+      setPerks(provider.profile_data?.perks || []);
+      setLogoPreview(provider.profile_data?.logo_url || null);
+    }
+  }, [provider]);
 
   // Search locations
   useEffect(() => {
@@ -156,8 +158,7 @@ export default function PartnerProfile() {
     setUploadingLogo(true);
     try {
       const fileExt = file.name.split('.').pop();
-      const fileName = `${provider.id}/logo.${fileExt}`;
-      const filePath = `provider-logos/${fileName}`;
+      const filePath = `${provider.id}/logo.${fileExt}`;
 
       // Upload to storage
       const { error: uploadError } = await supabase.storage
