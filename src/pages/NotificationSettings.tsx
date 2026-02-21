@@ -1,3 +1,4 @@
+import React from "react";
 import { DashboardLayout } from "@/components/layouts/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -7,11 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { 
-  Bell, 
-  Volume2, 
-  VolumeX, 
-  Moon, 
+import {
+  Bell,
+  Volume2,
+  VolumeX,
+  Moon,
   RotateCcw,
   AlertTriangle,
   AlertCircle,
@@ -25,7 +26,8 @@ import {
   Clock,
   ChevronRight,
   Navigation,
-  MessageSquare
+  MessageSquare,
+  Sun
 } from "lucide-react";
 import { 
   useNotificationPreferences, 
@@ -95,22 +97,23 @@ const ALERT_TYPE_ICONS: Record<AlertType, React.ElementType> = {
   idle_too_long: Clock,
   offline: Radio,
   online: Radio,
-  predictive_briefing: Navigation
+  predictive_briefing: Navigation,
+  morning_greeting: Sun
 };
 
 const NotificationSettings = () => {
-  const { 
-    preferences, 
-    setPreferences, 
+  const {
+    preferences,
+    setPreferences,
     updateSeveritySettings,
     updateAlertTypeSettings,
     resetToDefaults,
     isInQuietHours
   } = useNotificationPreferences();
-  
-  const { 
-    permission, 
-    requestPermission, 
+
+  const {
+    permission,
+    requestPermission,
     playAlertSound,
     isSupported
   } = useNotifications();
@@ -123,8 +126,10 @@ const NotificationSettings = () => {
     unsubscribe,
     error: pushError,
   } = usePushSubscription();
-  
+
   const { toast } = useToast();
+  // Tracks async push operations to prevent double-clicks.
+  const [isPushLoading, setIsPushLoading] = React.useState(false);
 
   const handleRequestPermission = async () => {
     const granted = await requestPermission();
@@ -208,29 +213,70 @@ const NotificationSettings = () => {
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <Bell className="h-5 w-5" />
-                Background Notifications
+                Background Notifications (This Device)
               </CardTitle>
               <CardDescription>
-                Keep this device subscribed so you receive alerts when the PWA is in the background.
+                Keep this device subscribed so you receive alerts when the PWA is in the background or closed.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex items-center justify-between gap-3">
               <div className="text-sm text-muted-foreground">
                 Status:{" "}
                 <span className="text-foreground font-medium">
-                  {isCheckingPush ? "Checking..." : isSubscribed ? "Subscribed" : "Not subscribed"}
+                  {isPushLoading
+                    ? "Updating..."
+                    : isCheckingPush
+                      ? "Checking..."
+                      : isSubscribed
+                        ? "Subscribed"
+                        : "Not subscribed"}
                 </span>
-                {pushError ? (
-                  <div className="text-xs text-destructive mt-1">Push error: {pushError}</div>
+                {pushError && !isPushLoading ? (
+                  <div className="text-xs text-destructive mt-1">Error: {pushError}</div>
                 ) : null}
               </div>
               {isSubscribed ? (
-                <Button variant="outline" onClick={() => void unsubscribe()}>
-                  Disable
+                <Button
+                  variant="outline"
+                  disabled={isCheckingPush || isPushLoading}
+                  onClick={async () => {
+                    setIsPushLoading(true);
+                    try {
+                      await unsubscribe();
+                      toast({ title: "Disabled", description: "Background notifications disabled on this device." });
+                    } catch (e: any) {
+                      toast({
+                        title: "Failed",
+                        description: e instanceof Error ? e.message : "Could not disable push notifications.",
+                        variant: "destructive",
+                      });
+                    } finally {
+                      setIsPushLoading(false);
+                    }
+                  }}
+                >
+                  {isPushLoading ? "Disabling..." : "Disable"}
                 </Button>
               ) : (
-                <Button onClick={() => void ensureSubscribed()}>
-                  Enable
+                <Button
+                  disabled={isCheckingPush || isPushLoading}
+                  onClick={async () => {
+                    setIsPushLoading(true);
+                    try {
+                      await ensureSubscribed();
+                      toast({ title: "Enabled", description: "Background notifications enabled on this device." });
+                    } catch (e: any) {
+                      toast({
+                        title: "Subscription Failed",
+                        description: e instanceof Error ? e.message : "Please check your push configuration and try again.",
+                        variant: "destructive",
+                      });
+                    } finally {
+                      setIsPushLoading(false);
+                    }
+                  }}
+                >
+                  {isPushLoading ? "Enabling..." : "Enable"}
                 </Button>
               )}
             </CardContent>

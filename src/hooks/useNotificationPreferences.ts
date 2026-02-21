@@ -338,7 +338,8 @@ export const ALERT_TYPE_LABELS: Record<AlertType, string> = {
   idle_too_long: 'Extended Idle',
   offline: 'Vehicle Offline',
   online: 'Vehicle Online',
-  predictive_briefing: 'Trip Briefing'
+  predictive_briefing: 'Trip Briefing',
+  morning_greeting: 'Morning Greeting'
 };
 
 // Alert type descriptions
@@ -356,5 +357,6 @@ export const ALERT_TYPE_DESCRIPTIONS: Record<AlertType, string> = {
   idle_too_long: 'Vehicle idle for extended period',
   offline: 'Vehicle loses GPS connection',
   online: 'Vehicle reconnects after being offline',
-  predictive_briefing: 'AI predicts an upcoming trip based on habits'
+  predictive_briefing: 'AI predicts an upcoming trip based on habits',
+  morning_greeting: 'Daily AI morning briefing at 7 AM'
 };

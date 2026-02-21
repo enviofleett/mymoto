@@ -27,6 +27,26 @@ function subscriptionToRow(sub: PushSubscription): SubscriptionRow {
   return { endpoint, keys: { p256dh, auth } };
 }
 
+/**
+ * Wraps a promise with a timeout. Rejects with a clear error if the promise
+ * doesn't settle within `ms` milliseconds. This is critical for
+ * `navigator.serviceWorker.ready` which never rejects on its own — it will
+ * hang forever if no service worker is registered (e.g. dev mode without PWA).
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`${label} timed out after ${ms / 1000}s. Ensure the PWA service worker is registered.`)),
+        ms
+      )
+    ),
+  ]);
+}
+
+const SW_READY_TIMEOUT_MS = 10_000; // 10 seconds
+
 export function usePushSubscription() {
   const { user } = useAuth();
 
@@ -52,11 +72,16 @@ export function usePushSubscription() {
     }
 
     try {
-      const reg = await navigator.serviceWorker.ready;
+      const reg = await withTimeout(
+        navigator.serviceWorker.ready,
+        SW_READY_TIMEOUT_MS,
+        "Service worker ready"
+      );
       const existing = await reg.pushManager.getSubscription();
       setIsSubscribed(!!existing);
     } catch (e: any) {
-      setError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
       setIsSubscribed(false);
     } finally {
       setIsChecking(false);
@@ -74,9 +99,14 @@ export function usePushSubscription() {
     if (Notification.permission !== "granted") throw new Error("Notification permission is not granted");
 
     const publicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
-    if (!publicKey) throw new Error("Missing VITE_VAPID_PUBLIC_KEY");
+    if (!publicKey) throw new Error("VAPID public key is not configured. Contact support.");
 
-    const reg = await navigator.serviceWorker.ready;
+    const reg = await withTimeout(
+      navigator.serviceWorker.ready,
+      SW_READY_TIMEOUT_MS,
+      "Service worker ready"
+    );
+
     let sub = await reg.pushManager.getSubscription();
     if (!sub) {
       sub = await reg.pushManager.subscribe({
@@ -87,7 +117,7 @@ export function usePushSubscription() {
 
     const row = subscriptionToRow(sub);
 
-    await supabase.from("user_push_subscriptions").upsert(
+    const { error: upsertError } = await supabase.from("user_push_subscriptions").upsert(
       {
         user_id: user.id,
         endpoint: row.endpoint,
@@ -100,6 +130,10 @@ export function usePushSubscription() {
       { onConflict: "user_id,endpoint" }
     );
 
+    if (upsertError) {
+      throw new Error(`Failed to save subscription: ${upsertError.message}`);
+    }
+
     setIsSubscribed(true);
   }, [isSupported, user?.id]);
 
@@ -108,7 +142,11 @@ export function usePushSubscription() {
     if (!isSupported) return;
     if (!user?.id) return;
 
-    const reg = await navigator.serviceWorker.ready;
+    const reg = await withTimeout(
+      navigator.serviceWorker.ready,
+      SW_READY_TIMEOUT_MS,
+      "Service worker ready"
+    );
     const sub = await reg.pushManager.getSubscription();
     if (sub) {
       const row = subscriptionToRow(sub);
@@ -133,4 +171,3 @@ export function usePushSubscription() {
     unsubscribe,
   };
 }
-
