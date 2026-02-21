@@ -90,7 +90,7 @@ export function ProactiveNotifications({
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
   const { showNotification, playAlertSound, permission } = useNotifications();
-  const { shouldPlaySound, shouldShowPush, preferences } = useNotificationPreferences();
+  const { shouldPlaySound, preferences } = useNotificationPreferences();
 
   // Fetch historical events from database
   const fetchEvents = useCallback(async () => {
@@ -220,7 +220,7 @@ export function ProactiveNotifications({
     return () => {
       supabase.removeChannel(eventsChannel);
     };
-  }, [deviceId, fetchEvents, limit, toast, playAlertSound, permission, shouldPlaySound, shouldShowPush, preferences.soundVolume]);
+  }, [deviceId, fetchEvents, limit, toast, playAlertSound, permission, shouldPlaySound, preferences.soundVolume]);
 
   if (loading) {
     return (

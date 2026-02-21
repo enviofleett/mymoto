@@ -207,6 +207,24 @@ const NotificationSettings = () => {
           </Card>
         )}
 
+        {/* iOS / unsupported browser notice for push */}
+        {isSupported && permission === "granted" && !pushSupported && (() => {
+          const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+          const isStandalone = window.matchMedia('(display-mode: standalone)').matches || !!(navigator as any).standalone;
+          return (
+            <Card className="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20">
+              <CardContent className="p-4 text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">Background Notifications — not available</span>
+                <p className="mt-1 text-xs">
+                  {isIOS && !isStandalone
+                    ? "On iPhone/iPad, background push requires the app to be added to your Home Screen. In Safari, tap Share → Add to Home Screen, then reopen the app."
+                    : "Background push is not supported in this browser. Use Chrome, Edge, or Firefox, or install the app to your Home Screen."}
+                </p>
+              </CardContent>
+            </Card>
+          );
+        })()}
+
         {/* Web Push Subscription Status (Background Notifications) */}
         {isSupported && permission === "granted" && pushSupported && (
           <Card className="border-border bg-card">

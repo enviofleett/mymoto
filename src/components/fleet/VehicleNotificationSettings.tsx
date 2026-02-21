@@ -610,14 +610,20 @@ export function VehicleNotificationSettings({ deviceId, userId }: VehicleNotific
         )}
 
         {/* Fallback for browsers that don't support push */}
-        {notifSupported && !pushSupported && (
-          <div className="p-3 rounded-lg bg-muted/40 border border-border/50">
-            <div className="text-sm font-medium text-foreground">Background Push (This Device)</div>
-            <div className="text-xs text-muted-foreground mt-0.5">
-              Background push is not supported in this browser. Try installing the app or using a supported browser (Chrome, Edge, Firefox).
+        {notifSupported && !pushSupported && (() => {
+          const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+          const isStandalone = window.matchMedia('(display-mode: standalone)').matches || !!(navigator as any).standalone;
+          return (
+            <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 dark:bg-amber-900/20 dark:border-amber-800">
+              <div className="text-sm font-medium text-foreground">Background Push (This Device)</div>
+              <div className="text-xs text-muted-foreground mt-0.5">
+                {isIOS && !isStandalone
+                  ? "On iPhone/iPad, background push requires the app to be installed to your Home Screen. In Safari, tap Share → Add to Home Screen, then reopen the app."
+                  : "Background push is not supported in this browser. Try Chrome, Edge, or Firefox, or install the app to your Home Screen."}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {Object.entries(eventsByCategory).map(([category, events]) => (
           <div key={category} className="space-y-3">
