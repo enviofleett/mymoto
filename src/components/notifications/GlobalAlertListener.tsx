@@ -74,6 +74,7 @@ export function GlobalAlertListener() {
       trip_completed: "trip_completed",
       anomaly_detected: "anomaly_detected",
       morning_greeting: "morning_greeting",
+      predictive_briefing: "predictive_briefing",
     } as const;
   }, []);
 
@@ -179,31 +180,6 @@ export function GlobalAlertListener() {
     }
   }, []);
 
-  // Send email notification for critical/error events
-  const sendEmailNotification = useCallback(async (event: ProactiveEvent) => {
-    if (event.severity !== 'critical' && event.severity !== 'error') {
-      return;
-    }
-
-    try {
-      console.log(`[GlobalAlertListener] Sending email for ${event.severity} event: ${event.title}`);
-      
-      await supabase.functions.invoke('send-alert-email', {
-        body: {
-          eventId: event.id,
-          deviceId: event.device_id,
-          eventType: event.event_type,
-          severity: event.severity,
-          title: event.title,
-          message: event.message,
-          metadata: event.metadata
-        }
-      });
-    } catch (err) {
-      console.error('[GlobalAlertListener] Email notification error:', err);
-    }
-  }, []);
-
   // Normalize event type to match notification preference keys
   const normalizeEventType = useCallback((eventType: string): AlertType => {
     // Map database event types to notification preference keys
@@ -296,11 +272,6 @@ export function GlobalAlertListener() {
       dismissToast = t.dismiss;
     }
 
-    // Trigger email for critical/error
-    if (severity === 'critical' || severity === 'error') {
-      sendEmailNotification(event);
-    }
-
     // Avoid duplicate system notifications when the app is open:
     // - Foreground: use in-app toast + sound only.
     // - Background: rely on server-side Web Push when subscribed.
@@ -326,7 +297,7 @@ export function GlobalAlertListener() {
         }
       });
     }
-  }, [toast, playAlertSound, showNotification, permission, preferences.soundEnabled, preferences.soundVolume, sendEmailNotification, isAdmin, userDeviceIds, getVibrationPattern, normalizeEventType, isEventEnabledForDevice, isInQuietHours, hasPushSubscription, navigate]);
+  }, [toast, playAlertSound, showNotification, permission, preferences.soundEnabled, preferences.soundVolume, isAdmin, userDeviceIds, getVibrationPattern, normalizeEventType, isEventEnabledForDevice, isInQuietHours, hasPushSubscription, navigate]);
 
   // Use ref to store the latest handleNewEvent to avoid re-subscribing
   const handleNewEventRef = useRef(handleNewEvent);

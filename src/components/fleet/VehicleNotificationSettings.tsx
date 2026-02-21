@@ -69,6 +69,52 @@ interface VehicleNotificationSettingsProps {
   userId: string;
 }
 
+export function stripAiChatPreferences(preferences: VehicleNotificationPreferences): VehicleNotificationPreferences {
+  const {
+    enable_ai_chat_ignition_on,
+    enable_ai_chat_ignition_off,
+    enable_ai_chat_vehicle_moving,
+    enable_ai_chat_low_battery,
+    enable_ai_chat_critical_battery,
+    enable_ai_chat_overspeeding,
+    enable_ai_chat_harsh_braking,
+    enable_ai_chat_rapid_acceleration,
+    enable_ai_chat_geofence_enter,
+    enable_ai_chat_geofence_exit,
+    enable_ai_chat_idle_too_long,
+    enable_ai_chat_trip_completed,
+    enable_ai_chat_offline,
+    enable_ai_chat_online,
+    enable_ai_chat_maintenance_due,
+    enable_ai_chat_anomaly_detected,
+    ...rest
+  } = preferences;
+  return rest;
+}
+
+export function getSaveErrorMessage(error: any): string {
+  if (!error) return "Unknown error";
+  if (error.code === "PGRST301" || error.message?.includes("permission denied")) {
+    return "Permission denied while saving preferences. Please contact support.";
+  }
+  if (error.code === "23503" || error.message?.includes("foreign key")) {
+    return "Related vehicle or user record is missing. Please refresh and try again.";
+  }
+  if (error.message?.includes("schema cache")) {
+    return "Server API schema cache is out of date. Please refresh the Supabase API cache or redeploy.";
+  }
+  if (error.message?.includes("on_conflict")) {
+    return "Server upsert configuration is invalid. Please ensure a unique constraint on user_id,device_id.";
+  }
+  if (error.code === "42703" || error.message?.includes("enable_ai_chat_")) {
+    return "Server schema is missing AI Chat columns for this environment.";
+  }
+  if (error.code === "42P01" || error.message?.includes("does not exist")) {
+    return "Notification preferences table is missing. Please run the latest database migrations.";
+  }
+  return error.message || error.details || "Unknown error";
+}
+
 const EVENT_CONFIG: Array<{
   key: keyof VehicleNotificationPreferences;
   label: string;
@@ -283,7 +329,7 @@ export function VehicleNotificationSettings({ deviceId, userId }: VehicleNotific
           };
           
           // Save defaults to database
-          const { error: insertError } = await supabase
+          const { data: inserted, error: insertError } = await supabase
             .from('vehicle_notification_preferences')
             .insert(defaults)
             .select()
@@ -304,7 +350,7 @@ export function VehicleNotificationSettings({ deviceId, userId }: VehicleNotific
               variant: "destructive"
             });
           } else {
-            setPreferences(defaults);
+            setPreferences(inserted as VehicleNotificationPreferences);
           }
         }
       } catch (error: any) {
@@ -349,34 +395,99 @@ export function VehicleNotificationSettings({ deviceId, userId }: VehicleNotific
     value: boolean
   ) => {
     if (!preferences) return;
-
-    const updated = { ...preferences, [key]: value };
+    const updated: VehicleNotificationPreferences = { ...preferences, [key]: value } as VehicleNotificationPreferences;
     setPreferences(updated);
     setSaving(true);
 
     try {
+      const basePayload = {
+        ...updated,
+        updated_at: new Date().toISOString()
+      };
+
       const { error } = await supabase
         .from('vehicle_notification_preferences')
-        .upsert({
-          ...updated,
-          updated_at: new Date().toISOString()
-        }, {
+        .upsert(basePayload, {
           onConflict: 'user_id,device_id'
         });
 
-      if (error) throw error;
+      if (error) {
+        const isAiChatSchemaError =
+          error.code === '42703' ||
+          error.message?.includes('enable_ai_chat_');
+
+        const isOnConflictError = error.message?.includes("on_conflict");
+
+        if (isOnConflictError) {
+          console.warn('Upsert failed due to invalid on_conflict configuration. Falling back to insert/update.', {
+            code: error.code,
+            message: error.message,
+            details: error.details,
+            hint: error.hint
+          });
+
+          if (updated.id) {
+            const { error: updateError } = await supabase
+              .from('vehicle_notification_preferences')
+              .update(basePayload)
+              .eq('id', updated.id);
+
+            if (updateError) throw updateError;
+          } else {
+            const { error: insertError } = await supabase
+              .from('vehicle_notification_preferences')
+              .insert(basePayload);
+
+            if (insertError) throw insertError;
+          }
+        } else if (isAiChatSchemaError) {
+          console.warn('Retrying save without AI Chat preferences due to schema mismatch', {
+            code: error.code,
+            message: error.message,
+            details: error.details,
+            hint: error.hint
+          });
+
+          const stripped = stripAiChatPreferences(updated);
+          const retryPayload = {
+            ...stripped,
+            updated_at: new Date().toISOString()
+          };
+
+          const { error: retryError } = await supabase
+            .from('vehicle_notification_preferences')
+            .upsert(retryPayload, {
+              onConflict: 'user_id,device_id'
+            });
+
+          if (retryError) {
+            throw retryError;
+          }
+        } else {
+          throw error;
+        }
+      }
 
       toast({
         title: "Settings Updated",
         description: "Notification preference saved successfully"
       });
-    } catch (error) {
-      console.error('Error saving preference:', error);
-      // Revert on error
+    } catch (error: any) {
+      console.error('Error saving preference:', {
+        error,
+        errorCode: error?.code,
+        errorMessage: error?.message,
+        errorDetails: error?.details,
+        errorHint: error?.hint,
+        deviceId: preferences.device_id,
+        userId: preferences.user_id,
+        key,
+        value
+      });
       setPreferences(preferences);
       toast({
         title: "Error",
-        description: "Failed to save notification preference",
+        description: `Failed to save notification preference: ${getSaveErrorMessage(error)}`,
         variant: "destructive"
       });
     } finally {
@@ -456,17 +567,16 @@ export function VehicleNotificationSettings({ deviceId, userId }: VehicleNotific
                   onCheckedChange={async (checked) => {
                     if (!checked) return;
                     const ok = await requestPermission();
-                    if (ok) {
-                      try {
-                        await ensureSubscribed();
-                        toast({ title: "Enabled", description: "Background notifications enabled on this device." });
-                      } catch (e: any) {
-                        toast({
-                          title: "Subscription Failed",
-                          description: e instanceof Error ? e.message : "Please try again.",
-                          variant: "destructive",
-                        });
-                      }
+                    if (!ok) return;
+                    try {
+                      await ensureSubscribed();
+                      toast({ title: "Enabled", description: "Background notifications enabled on this device." });
+                    } catch (e: any) {
+                      toast({
+                        title: "Subscription Failed",
+                        description: e instanceof Error ? e.message : "Please check your push configuration and try again.",
+                        variant: "destructive",
+                      });
                     }
                   }}
                 />
@@ -484,8 +594,16 @@ export function VehicleNotificationSettings({ deviceId, userId }: VehicleNotific
                   checked={false}
                   onCheckedChange={async (checked) => {
                     if (!checked) return;
-                    await ensureSubscribed();
-                    toast({ title: "Enabled", description: "Background notifications enabled on this device." });
+                    try {
+                      await ensureSubscribed();
+                      toast({ title: "Enabled", description: "Background notifications enabled on this device." });
+                    } catch (e: any) {
+                      toast({
+                        title: "Subscription Failed",
+                        description: e instanceof Error ? e.message : "Please check your push configuration and try again.",
+                        variant: "destructive",
+                      });
+                    }
                   }}
                 />
               )}
@@ -540,6 +658,9 @@ export function VehicleNotificationSettings({ deviceId, userId }: VehicleNotific
                           >
                             Push Notification
                           </Label>
+                          <span className="text-[10px] text-muted-foreground border border-border/60 rounded-full px-2 py-0.5">
+                            Controls email alerts
+                          </span>
                         </div>
                         <Switch
                           id={`push-${event.key}`}

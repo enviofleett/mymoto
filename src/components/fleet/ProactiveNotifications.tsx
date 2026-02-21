@@ -126,46 +126,6 @@ export function ProactiveNotifications({
     }
   }, [deviceId, limit, showHistory]);
 
-  // Send email notification for critical/error events (triggered by new events from DB)
-  const sendEmailNotification = useCallback(async (event: {
-    id: string;
-    device_id: string;
-    event_type: string;
-    severity: string;
-    title: string;
-    message: string;
-    metadata?: Record<string, unknown>;
-  }) => {
-    // Only send emails for critical and error severity events
-    if (event.severity !== 'critical' && event.severity !== 'error') {
-      return;
-    }
-
-    try {
-      console.log(`Sending email notification for ${event.severity} event: ${event.title}`);
-      
-      const { error } = await supabase.functions.invoke('send-alert-email', {
-        body: {
-          eventId: event.id,
-          deviceId: event.device_id,
-          eventType: event.event_type,
-          severity: event.severity,
-          title: event.title,
-          message: event.message,
-          metadata: event.metadata
-        }
-      });
-
-      if (error) {
-        console.error('Failed to send email notification:', error);
-      } else {
-        console.log('Email notification sent successfully');
-      }
-    } catch (err) {
-      console.error('Error invoking send-alert-email function:', err);
-    }
-  }, []);
-
   // Acknowledge an event
   const handleAcknowledge = useCallback(async (eventId: string) => {
     try {
@@ -244,39 +204,13 @@ export function ProactiveNotifications({
                 description: mappedEvent.message,
                 variant: "destructive"
               });
-              
-              // Trigger email notification for critical events
-              sendEmailNotification({
-                id: mappedEvent.id,
-                device_id: mappedEvent.device_id,
-                event_type: mappedEvent.event_type,
-                severity: mappedEvent.severity,
-                title: mappedEvent.title,
-                message: mappedEvent.message,
-                metadata: mappedEvent.metadata
-              });
             } else if (severity === 'warning') {
               toast({
                 title: mappedEvent.title,
                 description: mappedEvent.message
               });
             }
-            
-            // Check user preferences for push notification
-            if (permission === 'granted' && shouldShowPush(alertType, severity)) {
-              showNotification({
-                title: severity === 'critical' ? `🚨 ${mappedEvent.title}` : mappedEvent.title,
-                body: mappedEvent.message,
-                tag: `alert-${mappedEvent.id}`,
-                requireInteraction: severity === 'critical',
-                data: {
-                  eventId: mappedEvent.id,
-                  deviceId: mappedEvent.device_id,
-                  eventType: mappedEvent.event_type
-                }
-              });
-            }
-            
+
             return [mappedEvent, ...prev].slice(0, limit);
           });
         }
@@ -286,7 +220,7 @@ export function ProactiveNotifications({
     return () => {
       supabase.removeChannel(eventsChannel);
     };
-  }, [deviceId, fetchEvents, limit, toast, sendEmailNotification, showNotification, playAlertSound, permission, shouldPlaySound, shouldShowPush, preferences.soundVolume]);
+  }, [deviceId, fetchEvents, limit, toast, playAlertSound, permission, shouldPlaySound, shouldShowPush, preferences.soundVolume]);
 
   if (loading) {
     return (

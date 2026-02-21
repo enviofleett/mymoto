@@ -118,6 +118,7 @@ function getPreferenceKey(eventType: string): string | null {
     anomaly_detected: "anomaly_detected",
     vehicle_moving: "vehicle_moving",
     morning_greeting: "morning_greeting",
+    predictive_briefing: "predictive_briefing",
   };
   return map[eventType] ?? null;
 }

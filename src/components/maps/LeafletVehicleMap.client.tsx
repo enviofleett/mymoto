@@ -9,7 +9,7 @@ const vehicleMarkerIcon = L.divIcon({
   html: `
     <div class="car-marker-container">
       <div class="car-pulse orange"></div>
-      <div class="car-icon orange">
+      <div class="car-icon orange breathing" role="img" aria-label="Vehicle online">
         <div class="status-dot"></div>
       </div>
     </div>
@@ -111,11 +111,17 @@ export function LeafletVehicleMapClient({
         .car-marker-container { position: relative; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; transition: transform 0.5s ease-out; }
         .car-pulse { position: absolute; width: 42px; height: 42px; border-radius: 50%; animation: carPulse 2s infinite; pointer-events: none; }
         .car-pulse.orange { background: radial-gradient(circle, rgba(234, 88, 12, 0.4) 0%, rgba(234, 88, 12, 0) 70%); }
-        .car-icon { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.4); z-index: 1; transition: background 0.3s ease; }
+        .car-icon { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.4); z-index: 1; transition: background 0.3s ease; transform: scale(1); will-change: transform, opacity; }
         .car-icon.orange { background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); color: white; }
+        .car-icon.breathing { animation: carBreathing 2s ease-in-out infinite; }
         .status-dot { width: 14px; height: 14px; border-radius: 50%; background: #ea580c; box-shadow: 0 2px 4px rgba(0,0,0,0.2); position: relative; }
         .status-dot::after { content: ''; position: absolute; inset: 3px; border-radius: 50%; background: white; }
         @keyframes carPulse { 0% { transform: scale(0.8); opacity: 1; } 100% { transform: scale(1.6); opacity: 0; } }
+        @keyframes carBreathing { 0% { transform: scale(1); opacity: 0.7; } 50% { transform: scale(1.2); opacity: 1; } 100% { transform: scale(1); opacity: 0.7; } }
+        @media (prefers-reduced-motion: reduce) {
+          .car-icon.breathing { animation: none; }
+          .car-pulse { animation: none; }
+        }
       `}</style>
       <MapContainer
         center={center}

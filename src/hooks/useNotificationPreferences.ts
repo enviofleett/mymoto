@@ -15,7 +15,8 @@ export type AlertType =
   | 'idle_too_long'
   | 'offline'
   | 'online'
-  | 'predictive_briefing';
+  | 'predictive_briefing'
+  | 'morning_greeting';
 
 export type SeverityLevel = 'info' | 'warning' | 'error' | 'critical';
 
