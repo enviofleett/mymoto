@@ -278,6 +278,7 @@ serve(async (req) => {
         // Analyze the positions
         const { harshEvents, avgSpeed, maxSpeed } = analyzePositionData(positions);
         const tripDurationMinutes = (trip.duration_seconds || 0) / 60;
+        const isLongHaul = tripDurationMinutes > 180;
         
         // Calculate driver score
         const driverScore = calculateDriverScore(harshEvents, tripDurationMinutes);
@@ -314,6 +315,10 @@ serve(async (req) => {
           total_events: harshEvents.length,
           events: harshEvents.slice(0, 10), // Store first 10 events
         };
+        const weatherData = {
+          long_haul: isLongHaul,
+          trip_duration_minutes: tripDurationMinutes,
+        };
         
         // Insert into trip_analytics
         const { error: insertError } = await supabase
@@ -324,7 +329,7 @@ serve(async (req) => {
             driver_score: driverScore,
             harsh_events: harshEventsSummary,
             summary_text: summaryText,
-            weather_data: {}, // Can be enhanced with weather API
+            weather_data: weatherData,
             embedding: formatEmbeddingForPg(embedding),
           });
         

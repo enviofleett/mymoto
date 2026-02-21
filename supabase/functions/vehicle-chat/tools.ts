@@ -499,6 +499,263 @@ const create_geofence_alert: ToolDefinition = {
   }
 }
 
+const create_geofence_notification_for_zone: ToolDefinition = {
+  name: 'create_geofence_notification_for_zone',
+  description:
+    'Create a notification rule for an existing geofence zone. Use when the user says things like "alert me when the car enters Home" or "notify me when I leave the office". This works on top of existing geofence zones created in the dashboard.',
+  parameters: {
+    type: 'object',
+    properties: {
+      zone_name: {
+        type: 'string',
+        description:
+          'Name of the geofence zone to monitor (e.g., "Home", "Office"). If multiple zones match, the most recent one is used.'
+      },
+      trigger_on: {
+        type: 'string',
+        enum: ['enter', 'exit', 'both'],
+        description: 'Whether to trigger when entering, exiting, or both.',
+        default: 'enter'
+      },
+      duration_hours: {
+        type: 'number',
+        description:
+          'How long the notification should remain active, in hours. Defaults to 24 hours.',
+        default: 24
+      },
+      one_time: {
+        type: 'boolean',
+        description: 'If true, the notification will fire only once and then disable.',
+        default: false
+      }
+    },
+    required: ['zone_name']
+  },
+  execute: async ({ zone_name, trigger_on = 'enter', duration_hours = 24, one_time = false }, { supabase, device_id }) => {
+    const zoneQuery = supabase
+      .from('geofence_zones' as any)
+      .select('id, name, center_latitude, center_longitude, radius_meters')
+      .or(`device_id.eq.${device_id},applies_to_all.eq.true`)
+      .ilike('name', zone_name)
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    const { data: zones, error: zoneError } = await zoneQuery
+
+    if (zoneError) throw new Error(`Failed to look up geofence zones: ${zoneError.message}`)
+
+    if (!zones || zones.length === 0) {
+      return {
+        status: 'error',
+        message: `I could not find a geofence zone named "${zone_name}". Please check the name or create the zone first in the dashboard.`
+      }
+    }
+
+    const zone = zones[0] as any
+
+    const expiresAt = new Date()
+    const safeDuration = Math.max(1, Math.min(Number(duration_hours) || 24, 168))
+    expiresAt.setHours(expiresAt.getHours() + safeDuration)
+
+    const insertPayload: any = {
+      device_id,
+      location_id: zone.id,
+      location_name: zone.name,
+      latitude: zone.center_latitude ?? null,
+      longitude: zone.center_longitude ?? null,
+      radius_meters: zone.radius_meters,
+      trigger_on,
+      is_active: true,
+      one_time,
+      expires_at: expiresAt.toISOString()
+    }
+
+    const { data: monitor, error: insertError } = await supabase
+      .from('geofence_monitors' as any)
+      .insert(insertPayload)
+      .select('*')
+      .single()
+
+    if (insertError) {
+      throw new Error(`Failed to create geofence notification: ${insertError.message}`)
+    }
+
+    return {
+      status: 'success',
+      message: `I will notify you when the vehicle ${trigger_on === 'both' ? 'enters or exits' : trigger_on + 's'} the "${zone.name}" zone.`,
+      monitor
+    }
+  }
+}
+
+const set_geofence_speed_limit: ToolDefinition = {
+  name: 'set_geofence_speed_limit',
+  description:
+    'Set or update the speed limit for an existing geofence zone. Use when the user says things like "set a 60 km/h limit around Home".',
+  parameters: {
+    type: 'object',
+    properties: {
+      zone_name: {
+        type: 'string',
+        description:
+          'Name of the geofence zone to update (e.g., "Highway stretch", "School area"). If multiple zones match, the most recent one is used.'
+      },
+      speed_limit_kmh: {
+        type: 'number',
+        description: 'Speed limit in km/h to associate with this zone.',
+        minimum: 1
+      }
+    },
+    required: ['zone_name', 'speed_limit_kmh']
+  },
+  execute: async ({ zone_name, speed_limit_kmh }, { supabase, device_id }) => {
+    const safeSpeed = Math.max(1, Math.min(Number(speed_limit_kmh) || 1, 200))
+
+    const zoneQuery = supabase
+      .from('geofence_zones' as any)
+      .select('id, name, speed_limit_kmh')
+      .or(`device_id.eq.${device_id},applies_to_all.eq.true`)
+      .ilike('name', zone_name)
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    const { data: zones, error: zoneError } = await zoneQuery
+
+    if (zoneError) throw new Error(`Failed to look up geofence zones: ${zoneError.message}`)
+
+    if (!zones || zones.length === 0) {
+      return {
+        status: 'error',
+        message: `I could not find a geofence zone named "${zone_name}". Please check the name or create the zone first in the dashboard.`
+      }
+    }
+
+    const zone = zones[0] as any
+
+    const { data: updated, error: updateError } = await supabase
+      .from('geofence_zones' as any)
+      .update({ speed_limit_kmh: safeSpeed })
+      .eq('id', zone.id)
+      .select('*')
+      .single()
+
+    if (updateError) {
+      throw new Error(`Failed to set speed limit for geofence: ${updateError.message}`)
+    }
+
+    return {
+      status: 'success',
+      message: `Speed limit for "${zone.name}" is now ${safeSpeed} km/h.`,
+      zone: updated
+    }
+  }
+}
+
+const create_geofence_rule: ToolDefinition = {
+  name: 'create_geofence_rule',
+  description:
+    'Create a geofence rule for an existing zone. Use this for parking limits, time-based restrictions, or custom behaviors like "no parking longer than 30 minutes at Office" or "only allow visits during business hours".',
+  parameters: {
+    type: 'object',
+    properties: {
+      zone_name: {
+        type: 'string',
+        description:
+          'Name of the geofence zone this rule applies to. If multiple zones match, the most recent one is used.'
+      },
+      name: {
+        type: 'string',
+        description: 'Short name for this rule (e.g., "Office parking limit").'
+      },
+      description: {
+        type: 'string',
+        description: 'Optional human-readable description of the rule.'
+      },
+      rule_type: {
+        type: 'string',
+        description:
+          'Rule type identifier, e.g., "parking_limit", "time_window", or another descriptive type string.'
+      },
+      priority: {
+        type: 'number',
+        description:
+          'Priority for this rule. Higher values win when multiple rules apply. Defaults to 0.',
+        default: 0
+      },
+      config: {
+        type: 'object',
+        description:
+          'Free-form configuration JSON for this rule. For example, a parking limit can use { "max_minutes": 30 }. A time window rule can use { "start_time": "08:00", "end_time": "18:00", "days_of_week": ["Mon", "Tue", "Wed", "Thu", "Fri"] }.'
+      },
+      is_active: {
+        type: 'boolean',
+        description: 'Whether this rule is active.',
+        default: true
+      },
+      scope: {
+        type: 'string',
+        enum: ['vehicle', 'global'],
+        description:
+          'Whether this rule should apply only to this vehicle ("vehicle") or to all vehicles that use this zone ("global"). Defaults to "vehicle".',
+        default: 'vehicle'
+      }
+    },
+    required: ['zone_name', 'name', 'rule_type']
+  },
+  execute: async (
+    { zone_name, name, description, rule_type, priority = 0, config = {}, is_active = true, scope = 'vehicle' },
+    { supabase, device_id }
+  ) => {
+    const zoneQuery = supabase
+      .from('geofence_zones' as any)
+      .select('id, name')
+      .or(`device_id.eq.${device_id},applies_to_all.eq.true`)
+      .ilike('name', zone_name)
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    const { data: zones, error: zoneError } = await zoneQuery
+
+    if (zoneError) throw new Error(`Failed to look up geofence zones: ${zoneError.message}`)
+
+    if (!zones || zones.length === 0) {
+      return {
+        status: 'error',
+        message: `I could not find a geofence zone named "${zone_name}". Please check the name or create the zone first in the dashboard.`
+      }
+    }
+
+    const zone = zones[0] as any
+
+    const insertPayload: any = {
+      geofence_id: zone.id,
+      device_id: scope === 'vehicle' ? device_id : null,
+      rule_type,
+      name,
+      description,
+      priority,
+      config: config || {},
+      is_active: is_active !== false
+    }
+
+    const { data: rule, error: insertError } = await supabase
+      .from('geofence_rules' as any)
+      .insert(insertPayload)
+      .select('*')
+      .single()
+
+    if (insertError) {
+      throw new Error(`Failed to create geofence rule: ${insertError.message}`)
+    }
+
+    return {
+      status: 'success',
+      message: `Created rule "${name}" on zone "${zone.name}".`,
+      rule
+    }
+  }
+}
+
 // ============================================================================
 // NEW: Trip Analytics Tool
 // ============================================================================
@@ -1248,7 +1505,10 @@ export const TOOLS: ToolDefinition[] = [
   search_trip_locations,
   request_vehicle_command,
   search_knowledge_base,
-  create_geofence_alert
+  create_geofence_alert,
+  create_geofence_notification_for_zone,
+  set_geofence_speed_limit,
+  create_geofence_rule
 ]
 
 // OpenAI/OpenRouter compatible format - tools must be wrapped with type: "function"

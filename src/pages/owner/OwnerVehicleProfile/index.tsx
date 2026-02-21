@@ -13,6 +13,7 @@ import { fetchVehicleLiveDataDirect, type VehicleLiveData, useVehicleLiveData } 
 import { useAddress } from "@/hooks/useAddress";
 import { useVehicleLLMSettings, useVehicleTrips, useVehicleEvents, useVehicleDailyStats, type VehicleTrip } from "@/hooks/useVehicleProfile";
 import { useOwnerVehicles } from "@/hooks/useOwnerVehicles";
+import { useVehicleIntelligence } from "@/hooks/useTripAnalytics";
 import { supabase } from "@/integrations/supabase/client";
 import { type DateRange } from "react-day-picker";
 import { preloadMapbox } from "@/utils/loadMapbox";
@@ -197,6 +198,13 @@ export default function OwnerVehicleProfile() {
     hasDeviceId && shouldFetchTrips
   );
 
+  const {
+    data: intelligenceSummary,
+    isLoading: intelligenceLoading,
+    error: intelligenceError,
+    refetch: refetchIntelligence
+  } = useVehicleIntelligence(hasDeviceId ? resolvedDeviceId : null, hasDeviceId);
+
   const { data: syncStatus } = useTripSyncStatus(resolvedDeviceId, hasDeviceId);
   const triggerSync = useTriggerTripSync();
   const isSyncing = triggerSync.isPending;
@@ -266,6 +274,7 @@ export default function OwnerVehicleProfile() {
       // DB refresh is the baseline and should succeed even if the proxy times out.
       const dbResult = refetchLive();
       const profileResult = refetchProfile();
+      const intelligenceResult = refetchIntelligence();
 
       // Only call the GPS51 proxy on explicit user refresh.
       const directResult = fetchVehicleLiveDataDirect(resolvedDeviceId, { timeoutMs: 12_000 })
@@ -277,7 +286,7 @@ export default function OwnerVehicleProfile() {
           return { ok: false as const, err };
         });
 
-      const [db, profile, direct] = await Promise.all([dbResult, profileResult, directResult]);
+      const [db, profile, intelligence, direct] = await Promise.all([dbResult, profileResult, intelligenceResult, directResult]);
 
       if (!direct.ok) {
         const msg = 'err' in direct
@@ -298,7 +307,7 @@ export default function OwnerVehicleProfile() {
     } finally {
       setIsRefreshing(false);
     }
-  }, [hasDeviceId, refetchLive, refetchProfile, resolvedDeviceId]);
+  }, [hasDeviceId, refetchLive, refetchProfile, refetchIntelligence, resolvedDeviceId]);
 
   const { pullDistance, handlers: pullHandlers } = usePullToRefresh({
     onRefresh: handleRefresh,
@@ -449,6 +458,9 @@ export default function OwnerVehicleProfile() {
                   tripsLoading={tripsLoading}
                   eventsLoading={eventsLoading}
                   statsLoading={statsLoading}
+                  intelligenceSummary={intelligenceSummary}
+                  intelligenceLoading={intelligenceLoading}
+                  intelligenceError={intelligenceError instanceof Error ? intelligenceError : null}
                   dateRange={dateRange}
                   onDateRangeChange={setDateRange}
                   onRequestTrips={handleRequestTrips}

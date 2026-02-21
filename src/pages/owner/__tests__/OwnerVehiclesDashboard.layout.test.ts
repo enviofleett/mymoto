@@ -12,7 +12,7 @@ function fileContent() {
 }
 
 describe("OwnerVehiclesDashboard layout structure", () => {
-  it("renders sync container before circular map and metric grid", () => {
+  it("renders circular map before sync container and metric grid", () => {
     const source = fileContent();
 
     const syncIdx = source.indexOf('data-testid="owner-sync-container"');
@@ -24,8 +24,8 @@ describe("OwnerVehiclesDashboard layout structure", () => {
     expect(circleIdx).toBeGreaterThan(-1);
     expect(metricIdx).toBeGreaterThan(-1);
     expect(ctaIdx).toBeGreaterThan(-1);
-    expect(syncIdx).toBeLessThan(circleIdx);
-    expect(circleIdx).toBeLessThan(metricIdx);
+    expect(circleIdx).toBeLessThan(syncIdx);
+    expect(syncIdx).toBeLessThan(metricIdx);
     expect(metricIdx).toBeLessThan(ctaIdx);
   });
 

@@ -18,18 +18,36 @@ import {
   Milestone,
   Gauge,
   Clock,
+  Brain,
 } from "lucide-react";
+import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer } from "recharts";
 import { formatLagos, formatRelativeTime } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
 import type { DateRange } from "react-day-picker";
-import type { VehicleTrip, VehicleEvent, VehicleDailyStats } from "@/hooks/useVehicleProfile";
+import type { VehicleTrip, VehicleEvent, VehicleDailyStats, VehicleMileageDetail } from "@/hooks/useVehicleProfile";
+import type { VehicleIntelligenceSummary } from "@/hooks/useTripAnalytics";
 import type { Gps51TripSyncStatus } from "@/hooks/useTripSync";
+import { useVehicleMileageDetails } from "@/hooks/useVehicleProfile";
+import { useVehicleLiveData } from "@/hooks/useVehicleLiveData";
 import { useAddress } from "@/hooks/useAddress";
-// Auth not needed for removed notifications tab
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { GeofenceManager } from "@/components/fleet/GeofenceManager";
 import { TripSyncProgress } from "@/components/fleet/TripSyncProgress";
 import { validateTripContinuity, type ContinuityIssue } from "@/lib/trip-validation";
 import { MileageCharts } from "./MileageCharts";
+
+const INTELLIGENCE_THRESHOLDS = {
+  fuelVarianceWarning: 0.15,
+  fuelVarianceCritical: 0.3,
+  fatigueHigh: 70,
+  overspeedEventsHigh: 10,
+  overspeedEventsCritical: 20,
+  safetyEventsIncreaseFraction: 0.25,
+  connectivityScoreLow: 60,
+  offlineEventsHigh: 5,
+  offlineMinutesCritical: 30,
+};
 
 interface ReportsSectionProps {
   deviceId: string;
@@ -39,6 +57,9 @@ interface ReportsSectionProps {
   tripsLoading: boolean;
   eventsLoading: boolean;
   statsLoading?: boolean;
+   intelligenceSummary?: VehicleIntelligenceSummary | null;
+   intelligenceLoading?: boolean;
+   intelligenceError?: Error | null;
   dateRange: DateRange | undefined;
   onDateRangeChange: (range: DateRange | undefined) => void;
   onRequestTrips: () => void;
@@ -57,6 +78,9 @@ export function ReportsSection({
   dailyStats,
   tripsLoading,
   statsLoading,
+  intelligenceSummary,
+  intelligenceLoading,
+  intelligenceError,
   dateRange,
   onDateRangeChange,
   onRequestTrips,
@@ -249,6 +273,10 @@ export function ReportsSection({
               <MapPin className="h-4 w-4 mr-2" />
               Geofence
             </TabsTrigger>
+            <TabsTrigger value="intelligence" className="text-sm">
+              <Brain className="h-4 w-4 mr-2" />
+              Intelligence
+            </TabsTrigger>
           </TabsList>
 
           {/* Trips Tab */}
@@ -386,9 +414,419 @@ export function ReportsSection({
               <GeofenceManager deviceId={deviceId} />
             </div>
           </TabsContent>
+
+          <TabsContent value="intelligence" className="mt-0">
+            <IntelligenceTab
+              deviceId={deviceId}
+              summary={intelligenceSummary}
+              loading={!!intelligenceLoading}
+              error={intelligenceError}
+              dailyStats={dailyStats}
+            />
+          </TabsContent>
         </Tabs>
       </CardContent>
     </Card>
+  );
+}
+
+interface IntelligenceTabProps {
+  deviceId: string;
+  summary?: VehicleIntelligenceSummary | null;
+  loading: boolean;
+  error?: Error | null;
+  dailyStats?: VehicleDailyStats[] | undefined;
+}
+
+function IntelligenceTab({ deviceId, summary, loading, error, dailyStats }: IntelligenceTabProps) {
+  const { user } = useAuth();
+  const [specBaselineLPer100km, setSpecBaselineLPer100km] = useState<number | null>(null);
+  const liveQuery = useVehicleLiveData(deviceId);
+  const live = liveQuery.data;
+  const { data: mileageDetails } = useVehicleMileageDetails(deviceId, undefined, undefined, true);
+
+  const fatigueIndex = summary?.fatigue_index ?? 0;
+  const fatigueLevel = summary?.fatigue_level ?? "low";
+  const connectivityScore = summary?.connectivity_score ?? 0;
+  const lateNightTrips = summary?.late_night_trips_7d ?? 0;
+  const idleMinutes = summary?.idle_minutes_7d ?? 0;
+  const offlineEvents = summary?.offline_events_7d ?? 0;
+  const hardBraking = summary?.hard_braking_events_7d ?? 0;
+  const overspeedEvents = summary?.overspeed_events_7d ?? 0;
+  const safetyThisWeek = summary?.safety_events_this_week ?? 0;
+  const safetyLastWeek = summary?.safety_events_last_week ?? 0;
+
+  const clampedFatigue = Math.max(0, Math.min(100, fatigueIndex));
+
+  useEffect(() => {
+    let active = true;
+    const loadSpecs = async () => {
+      try {
+        const { data, error } = await (supabase as any)
+          .from("vehicle_specifications")
+          .select(
+            "manufacturer_fuel_consumption_combined, manufacturer_fuel_consumption_city, manufacturer_fuel_consumption_highway, estimated_current_fuel_consumption",
+          )
+          .eq("device_id", deviceId)
+          .maybeSingle();
+
+        if (error) {
+          return;
+        }
+
+        if (!data || !active) {
+          return;
+        }
+
+        const estimated = (data as any).estimated_current_fuel_consumption as number | null;
+        const combined = (data as any).manufacturer_fuel_consumption_combined as number | null;
+        const city = (data as any).manufacturer_fuel_consumption_city as number | null;
+        const highway = (data as any).manufacturer_fuel_consumption_highway as number | null;
+
+        const base =
+          estimated ??
+          combined ??
+          (city != null && highway != null ? (city + highway) / 2 : null);
+
+        setSpecBaselineLPer100km(base);
+      } catch {
+      }
+    };
+
+    loadSpecs();
+
+    return () => {
+      active = false;
+    };
+  }, [deviceId]);
+
+  const fuelStats = useMemo(() => {
+    if (!dailyStats || dailyStats.length === 0) {
+      return {
+        currentDistance: 0,
+        previousDistance: 0,
+        estimatedCurrentLiters: 0,
+        estimatedPreviousLiters: 0,
+        baselineLPer100km: specBaselineLPer100km ?? 8,
+      };
+    }
+
+    const sorted = [...dailyStats].sort((a, b) => a.stat_date.localeCompare(b.stat_date));
+    const recent = sorted.slice(-7);
+    const past = sorted.slice(-14, -7);
+
+    const sumDistance = (items: VehicleDailyStats[]) =>
+      items.reduce((total, stat) => total + (stat.total_distance_km || 0), 0);
+
+    const currentDistance = sumDistance(recent);
+    const previousDistance = sumDistance(past);
+
+    const baselineEfficiency = specBaselineLPer100km ?? 8;
+
+    const estimatedCurrentLiters = currentDistance > 0 ? (currentDistance * baselineEfficiency) / 100 : 0;
+    const estimatedPreviousLiters = previousDistance > 0 ? (previousDistance * baselineEfficiency) / 100 : 0;
+
+    return {
+      currentDistance,
+      previousDistance,
+      estimatedCurrentLiters,
+      estimatedPreviousLiters,
+      baselineLPer100km: baselineEfficiency,
+    };
+  }, [dailyStats, specBaselineLPer100km]);
+
+  const realtimeAlerts = useMemo(() => {
+    const alerts: {
+      id: string;
+      severity: "critical" | "warning" | "info";
+      label: string;
+      message: string;
+      category: "fuel" | "safety" | "behavior" | "connectivity";
+    }[] = [];
+
+    if (specBaselineLPer100km && mileageDetails && mileageDetails.length > 0) {
+      const recent = (mileageDetails as VehicleMileageDetail[]).slice(0, 7);
+      const withActual = recent.filter((m) => m.oilper100km !== null);
+      if (withActual.length > 0) {
+        const avgActual =
+          withActual.reduce((sum, m) => sum + (m.oilper100km || 0), 0) / withActual.length;
+        const diff = avgActual - specBaselineLPer100km;
+        const diffFraction = diff / specBaselineLPer100km;
+        if (diffFraction > INTELLIGENCE_THRESHOLDS.fuelVarianceCritical) {
+          alerts.push({
+            id: "fuel-critical",
+            severity: "critical",
+            label: "Fuel efficiency anomaly",
+            message: `Actual consumption is about ${(diffFraction * 100).toFixed(0)}% higher than baseline.`,
+            category: "fuel",
+          });
+        } else if (diffFraction > INTELLIGENCE_THRESHOLDS.fuelVarianceWarning) {
+          alerts.push({
+            id: "fuel-warning",
+            severity: "warning",
+            label: "Fuel efficiency drop",
+            message: `Consumption is trending ${(diffFraction * 100).toFixed(0)}% above normal.`,
+            category: "fuel",
+          });
+        }
+      }
+    }
+
+    if (clampedFatigue >= INTELLIGENCE_THRESHOLDS.fatigueHigh || lateNightTrips > 0) {
+      alerts.push({
+        id: "behavior-fatigue",
+        severity: clampedFatigue >= INTELLIGENCE_THRESHOLDS.fatigueHigh + 10 ? "critical" : "warning",
+        label: "Driver fatigue risk",
+        message:
+          clampedFatigue >= INTELLIGENCE_THRESHOLDS.fatigueHigh
+            ? `Fatigue index ${clampedFatigue}/100 with ${lateNightTrips} late-night trips.`
+            : `${lateNightTrips} late-night trips recorded recently.`,
+        category: "behavior",
+      });
+    }
+
+    if (overspeedEvents >= INTELLIGENCE_THRESHOLDS.overspeedEventsCritical) {
+      alerts.push({
+        id: "safety-overspeed-critical",
+        severity: "critical",
+        label: "Frequent overspeeding",
+        message: `${overspeedEvents} overspeed events in the last 7 days.`,
+        category: "safety",
+      });
+    } else if (overspeedEvents >= INTELLIGENCE_THRESHOLDS.overspeedEventsHigh) {
+      alerts.push({
+        id: "safety-overspeed",
+        severity: "warning",
+        label: "Overspeeding pattern",
+        message: `${overspeedEvents} overspeed events in the last 7 days.`,
+        category: "safety",
+      });
+    }
+
+    if (hardBraking > 0 && safetyThisWeek >= safetyLastWeek) {
+      alerts.push({
+        id: "safety-braking",
+        severity: "warning",
+        label: "Harsh braking events",
+        message: `${hardBraking} hard braking events this week.`,
+        category: "safety",
+      });
+    }
+
+    if (safetyLastWeek > 0) {
+      const change = safetyThisWeek - safetyLastWeek;
+      const frac = change / safetyLastWeek;
+      if (change > 0 && frac >= INTELLIGENCE_THRESHOLDS.safetyEventsIncreaseFraction) {
+        alerts.push({
+          id: "safety-trend",
+          severity: "warning",
+          label: "Rising safety incidents",
+          message: `Safety events are up by about ${(frac * 100).toFixed(0)}% week-over-week.`,
+          category: "safety",
+        });
+      }
+    }
+
+    if (
+      connectivityScore < INTELLIGENCE_THRESHOLDS.connectivityScoreLow ||
+      offlineEvents >= INTELLIGENCE_THRESHOLDS.offlineEventsHigh ||
+      live?.isOnline === false
+    ) {
+      let severity: "critical" | "warning" = "warning";
+      let message = "";
+
+      if (live?.isOnline === false && live.lastUpdate) {
+        const minutesOffline = (Date.now() - live.lastUpdate.getTime()) / 60000;
+        if (minutesOffline >= INTELLIGENCE_THRESHOLDS.offlineMinutesCritical) {
+          severity = "critical";
+          message = `Vehicle appears offline for about ${minutesOffline.toFixed(0)} minutes.`;
+        } else {
+          message = `Vehicle is currently offline; recent offline events: ${offlineEvents}.`;
+        }
+      } else if (offlineEvents >= INTELLIGENCE_THRESHOLDS.offlineEventsHigh) {
+        message = `${offlineEvents} offline events in the last 7 days.`;
+      } else {
+        message = `Connectivity score is ${connectivityScore}/100.`;
+      }
+
+      alerts.push({
+        id: "connectivity",
+        severity,
+        label: "Connectivity issues",
+        message,
+        category: "connectivity",
+      });
+    }
+
+    const severityRank: Record<"critical" | "warning" | "info", number> = {
+      critical: 0,
+      warning: 1,
+      info: 2,
+    };
+
+    return alerts.sort((a, b) => severityRank[a.severity] - severityRank[b.severity]);
+  }, [
+    specBaselineLPer100km,
+    mileageDetails,
+    clampedFatigue,
+    lateNightTrips,
+    overspeedEvents,
+    hardBraking,
+    safetyThisWeek,
+    safetyLastWeek,
+    connectivityScore,
+    offlineEvents,
+    live,
+  ]);
+
+  if (loading && !summary) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-32 w-full rounded-xl" />
+        <Skeleton className="h-40 w-full rounded-xl" />
+      </div>
+    );
+  }
+
+  if (!summary) {
+    if (error) {
+      return (
+        <div className="space-y-2 text-sm text-destructive">
+          <div>Unable to load intelligence data.</div>
+          <div className="text-xs text-muted-foreground">{error.message}</div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex flex-col items-center justify-center py-12 space-y-2 text-center">
+        <Milestone className="h-8 w-8 text-muted-foreground mb-2" />
+        <p className="text-sm text-muted-foreground">No intelligence data available yet.</p>
+        <p className="text-xs text-muted-foreground">
+          Drive normally for a few days to build up behavior insights.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1.4fr)] max-h-[600px] overflow-y-auto pr-1">
+      <div className="space-y-4">
+        <Card className="border-primary/30 bg-gradient-to-br from-primary/10 via-primary/5 to-background shadow-sm">
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-xs font-medium text-primary uppercase tracking-wide">
+                  Intelligence behavior summary
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  Key behavior and risk indicators for this vehicle
+                </div>
+              </div>
+              <Badge variant="outline" className="text-[11px] px-2 py-0.5">
+                Fatigue {clampedFatigue}/100
+              </Badge>
+            </div>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+              <div>
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Connectivity
+                </div>
+                <div className="text-sm font-semibold">{connectivityScore}/100</div>
+                <div className="text-[11px] text-muted-foreground">
+                  Offline events: {offlineEvents}
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Safety events
+                </div>
+                <div className="text-sm font-semibold">{safetyThisWeek}</div>
+                <div className="text-[11px] text-muted-foreground">
+                  Last week: {safetyLastWeek}
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Fuel estimate
+                </div>
+                <div className="text-sm font-semibold">
+                  {fuelStats.estimatedCurrentLiters.toFixed(1)} L
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  vs {fuelStats.estimatedPreviousLiters.toFixed(1)} L last week
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {realtimeAlerts.length > 0 && (
+          <Card className="border-border bg-card/60">
+            <CardContent className="p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-medium text-foreground uppercase tracking-wide">
+                    Intelligence alerts
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Prioritized issues from fuel, safety, behavior, and connectivity
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {realtimeAlerts.map((alert) => (
+                  <div
+                    key={alert.id}
+                    className={cn(
+                      "flex items-start gap-2 rounded-md border px-3 py-2 text-xs",
+                      alert.severity === "critical"
+                        ? "border-destructive/60 bg-destructive/5"
+                        : alert.severity === "warning"
+                          ? "border-amber-500/60 bg-amber-500/5"
+                          : "border-border bg-muted/40",
+                    )}
+                  >
+                    <AlertTriangle
+                      className={cn(
+                        "h-3 w-3 mt-0.5",
+                        alert.severity === "critical"
+                          ? "text-destructive"
+                          : alert.severity === "warning"
+                            ? "text-amber-500"
+                            : "text-muted-foreground",
+                      )}
+                    />
+                    <div className="flex-1 space-y-0.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">{alert.label}</span>
+                        <span
+                          className={cn(
+                            "rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wide",
+                            alert.severity === "critical"
+                              ? "bg-destructive text-destructive-foreground"
+                              : alert.severity === "warning"
+                                ? "bg-amber-500 text-amber-950"
+                                : "bg-muted text-muted-foreground",
+                          )}
+                        >
+                          {alert.severity === "critical"
+                            ? "Urgent"
+                            : alert.severity === "warning"
+                              ? "Warning"
+                              : "Info"}
+                        </span>
+                      </div>
+                      <p className="text-muted-foreground">{alert.message}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    </div>
   );
 }
 

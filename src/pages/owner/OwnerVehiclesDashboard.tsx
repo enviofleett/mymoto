@@ -585,7 +585,6 @@ export default function OwnerVehiclesDashboard() {
             <div className="px-1 pt-2 pb-3">
               <div className="flex items-center justify-between gap-3">
                 <button
-                  onClick={() => navigate("/owner/vehicles/list")}
                   className="w-11 h-11 rounded-full bg-card shadow-neumorphic-sm flex items-center justify-center transition-all duration-200 hover:shadow-neumorphic active:shadow-neumorphic-inset"
                   title="All vehicles"
                 >

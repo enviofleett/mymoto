@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import myMotoLogo from "@/assets/mymoto-logo-new.png";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Star, ShieldCheck, CheckCircle2, AlertCircle, WifiOff, HardDrive, XCircle } from "lucide-react";
+import { trackEvent, trackEventOnce } from "@/lib/analytics";
 
 type Platform = "android" | "ios" | "other";
 
@@ -60,8 +61,35 @@ const InstallApp = () => {
   const isAndroid = platform === "android";
   const isIOS = platform === "ios";
 
+  const deferredPromptRef = useRef<BeforeInstallPromptEvent | null>(null);
+  const [installPromptSeen, setInstallPromptSeen] = useState(false);
+
+  useEffect(() => {
+    trackEventOnce("install_view", "install_page");
+  }, []);
+
   useEffect(() => {
     setPlatform(getPlatform());
+
+    const handleBeforeInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      deferredPromptRef.current = event as BeforeInstallPromptEvent;
+      setInstallPromptSeen(true);
+      void trackEventOnce("install_beforeinstallprompt", "global");
+    };
+
+    const handleAppInstalled = () => {
+      void trackEventOnce("install_appinstalled", "global");
+      setStage("success");
+    };
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt as EventListener);
+    window.addEventListener("appinstalled", handleAppInstalled);
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt as EventListener);
+      window.removeEventListener("appinstalled", handleAppInstalled);
+    };
   }, []);
 
   useEffect(() => {
@@ -117,7 +145,27 @@ const InstallApp = () => {
     },
   ];
 
-  const handleStartInstall = () => {
+  const handleStartInstall = async () => {
+    if (isAndroid && deferredPromptRef.current) {
+      try {
+        await trackEvent("install_cta_click", { platform: "android" });
+        deferredPromptRef.current.prompt();
+        const choiceResult = await deferredPromptRef.current.userChoice;
+        if (choiceResult.outcome === "accepted") {
+          await trackEvent("install_prompt_accepted", { platform: "android" });
+        } else {
+          await trackEvent("install_prompt_dismissed", { platform: "android" });
+        }
+        deferredPromptRef.current = null;
+      } catch {
+        await trackEvent("install_error", { platform: "android", source: "prompt" });
+      }
+    }
+
+    if (isIOS) {
+      await trackEventOnce("install_instruction_view", "ios_help");
+    }
+
     setDialogOpen(true);
     setStage("checking");
     setProgress(0);
@@ -687,7 +735,9 @@ const InstallApp = () => {
               <span>Installing MyMoto</span>
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Follow the steps below to complete installation on {formatPlatformName(platform)}.
+              {isIOS
+                ? "On iPhone, tap the share icon in Safari, then choose “Add to Home Screen”."
+                : `Follow the steps below to complete installation on ${formatPlatformName(platform)}.`}
             </DialogDescription>
           </DialogHeader>
 

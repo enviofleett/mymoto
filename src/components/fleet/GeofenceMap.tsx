@@ -11,6 +11,28 @@ import { Label } from "@/components/ui/label";
 import { Search, Loader2, MapPin } from "lucide-react";
 import { searchAddresses } from "@/utils/mapbox-geocoding";
 
+function supportsWebGL2(): boolean {
+  try {
+    const canvas = document.createElement("canvas");
+    const gl2 = canvas.getContext("webgl2");
+    return !!gl2;
+  } catch {
+    return false;
+  }
+}
+
+export function mapboxErrorToMessage(error: any): string | null {
+  const message = error?.message || error?.error?.message || "";
+  const status = error?.status || error?.error?.status;
+  if (status === 401 || status === 403 || message.toLowerCase().includes("forbidden")) {
+    return "Map service is not authorized. Check the Mapbox access token permissions.";
+  }
+  if (message.includes("ERR_ABORTED") || message.toLowerCase().includes("networkerror") || message.toLowerCase().includes("failed to fetch")) {
+    return "Network error while loading the map. Check your connection and try again.";
+  }
+  return null;
+}
+
 interface GeofenceMapProps {
   initialLat?: number;
   initialLng?: number;
@@ -38,14 +60,15 @@ export function GeofenceMap({
   const { data: mapboxFlag } = useFeatureFlag("mapbox_enabled");
   const mapboxEnabled = mapboxFlag?.enabled ?? true;
 
-  // Initialize Map
   useEffect(() => {
     if (!mapboxEnabled) {
       setMapError("Map loading is disabled to save resources.");
       return;
     }
-    if (!mapContainer.current) return;
-
+    if (typeof window !== "undefined" && !supportsWebGL2()) {
+      setMapError("This browser does not support the required graphics features to render the map.");
+      return;
+    }
     const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
     if (!token) {
       console.error("Mapbox token missing");
@@ -53,12 +76,18 @@ export function GeofenceMap({
       return;
     }
 
-    const initMap = async () => {
-      setMapboxLoading(true);
-      const mapboxgl = await loadMapbox();
-      mapboxgl.accessToken = token;
+    let cancelled = false;
 
+    const initMap = async () => {
       try {
+        setMapboxLoading(true);
+        const mapboxgl = await loadMapbox();
+        mapboxgl.accessToken = token;
+
+        if (cancelled || !mapContainer.current) {
+          return;
+        }
+
         map.current = new mapboxgl.Map({
           container: mapContainer.current,
           style: theme === 'dark' ? 'mapbox://styles/mapbox/dark-v11' : 'mapbox://styles/mapbox/streets-v12',
@@ -68,55 +97,53 @@ export function GeofenceMap({
 
         map.current.on('error', (e) => {
           console.error("Mapbox error:", e);
-          if ((e.error as any)?.message?.includes('Forbidden') || (e.error as any)?.status === 401 || (e.error as any)?.status === 403) {
-            setMapError("Invalid or restricted Mapbox Token. Please check your token settings.");
+          const userMessage = mapboxErrorToMessage(e.error ?? e);
+          if (userMessage) {
+            setMapError(userMessage);
           }
+        });
+
+        map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
+
+        marker.current = new mapboxgl.Marker({
+          draggable: true,
+          color: '#ef4444'
+        })
+          .setLngLat([initialLng, initialLat])
+          .addTo(map.current);
+
+        marker.current.on('dragend', () => {
+          const lngLat = marker.current?.getLngLat();
+          if (lngLat) {
+            updateLocation(lngLat.lat, lngLat.lng);
+          }
+        });
+
+        map.current.on('click', (e) => {
+          updateLocation(e.lngLat.lat, e.lngLat.lng);
+        });
+
+        map.current.on('load', () => {
+          drawRadiusCircle(initialLat, initialLng, initialRadius);
         });
       } catch (err: any) {
         console.error("Mapbox init error:", err);
-        setMapError("Failed to initialize map: " + err.message);
+        const userMessage = mapboxErrorToMessage(err) || "Failed to initialize the map. Please refresh and try again.";
+        setMapError(userMessage);
       } finally {
         setMapboxLoading(false);
       }
-
-      if (!map.current) return;
-
-      // Add navigation controls
-      map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
-
-      // Initialize marker
-      marker.current = new mapboxgl.Marker({
-        draggable: true,
-        color: '#ef4444'
-      })
-        .setLngLat([initialLng, initialLat])
-        .addTo(map.current);
     };
 
     void initMap();
 
-    // Handle marker drag
-    marker.current.on('dragend', () => {
-      const lngLat = marker.current?.getLngLat();
-      if (lngLat) {
-        updateLocation(lngLat.lat, lngLat.lng);
-      }
-    });
-
-    // Handle map click
-    map.current.on('click', (e) => {
-      updateLocation(e.lngLat.lat, e.lngLat.lng);
-    });
-
-    // Draw initial radius circle
-    map.current.on('load', () => {
-      drawRadiusCircle(initialLat, initialLng, initialRadius);
-    });
-
     return () => {
+      cancelled = true;
       map.current?.remove();
+      map.current = null;
+      marker.current = null;
     };
-  }, []);
+  }, [mapboxEnabled, theme, initialLat, initialLng, initialRadius]);
 
   // Update circle when radius changes
   useEffect(() => {

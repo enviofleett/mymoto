@@ -20,6 +20,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
 import { Plus, Loader2 } from "lucide-react";
 import { GeofenceMap } from "./GeofenceMap";
 import { GeofenceList, type Geofence } from "./GeofenceList";
@@ -28,11 +30,30 @@ interface GeofenceManagerProps {
   deviceId: string;
 }
 
+interface GeofenceRule {
+  id: string;
+  geofence_id: string;
+  device_id: string | null;
+  rule_type: string;
+  name: string;
+  description: string | null;
+  priority: number | null;
+  config: any;
+  is_active: boolean;
+  created_at?: string;
+}
+
 export function GeofenceManager({ deviceId }: GeofenceManagerProps) {
   const [geofences, setGeofences] = useState<Geofence[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState<"zones" | "rules">("zones");
+  const [rules, setRules] = useState<GeofenceRule[]>([]);
+  const [rulesLoading, setRulesLoading] = useState(false);
+  const [showRuleDialog, setShowRuleDialog] = useState(false);
+  const [savingRule, setSavingRule] = useState(false);
+  const [editingRule, setEditingRule] = useState<GeofenceRule | null>(null);
   const { toast } = useToast();
 
   // Form state
@@ -40,9 +61,21 @@ export function GeofenceManager({ deviceId }: GeofenceManagerProps) {
     name: '',
     description: '',
     zone_type: 'custom',
-    latitude: 6.5244, // Default to Lagos
+    latitude: 6.5244,
     longitude: 3.3792,
-    radius_meters: 100
+    radius_meters: 100,
+    priority: 0,
+    speed_limit_kmh: '' as number | ''
+  });
+
+  const [ruleFormData, setRuleFormData] = useState({
+    geofence_id: "",
+    name: "",
+    description: "",
+    rule_type: "",
+    priority: 0,
+    configText: "{}",
+    is_active: true,
   });
 
   const fetchGeofences = async () => {
@@ -64,8 +97,36 @@ export function GeofenceManager({ deviceId }: GeofenceManagerProps) {
     }
   };
 
+  const fetchRules = async () => {
+    setRulesLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("geofence_rules" as any)
+        .select("*")
+        .or(`device_id.eq.${deviceId},device_id.is.null`)
+        .order("priority", { ascending: false });
+
+      if (error) throw error;
+      setRules((data as any) || []);
+    } catch (error: any) {
+      const code = error?.code || error?.cause?.code;
+      if (code === "PGRST205") {
+        setRules([]);
+      } else {
+        console.error("Error fetching geofence rules:", error);
+        setRules([]);
+      }
+    } finally {
+      setRulesLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchGeofences();
+  }, [deviceId]);
+
+  useEffect(() => {
+    fetchRules();
   }, [deviceId]);
 
   const handleCreate = async () => {
@@ -90,12 +151,13 @@ export function GeofenceManager({ deviceId }: GeofenceManagerProps) {
           description: formData.description,
           zone_type: formData.zone_type,
           shape_type: 'circle',
-          // Create GeoJSON Point
           center_point: `POINT(${formData.longitude} ${formData.latitude})`,
           center_latitude: formData.latitude,
           center_longitude: formData.longitude,
           radius_meters: formData.radius_meters,
-          is_active: true
+          is_active: true,
+          priority: formData.priority,
+          speed_limit_kmh: formData.speed_limit_kmh === '' ? null : formData.speed_limit_kmh
         })
         .select()
         .single();
@@ -194,35 +256,252 @@ export function GeofenceManager({ deviceId }: GeofenceManagerProps) {
       zone_type: 'custom',
       latitude: 6.5244,
       longitude: 3.3792,
-      radius_meters: 100
+      radius_meters: 100,
+      priority: 0,
+      speed_limit_kmh: ''
     });
+  };
+
+  const openCreateRuleDialog = () => {
+    setEditingRule(null);
+    setRuleFormData({
+      geofence_id: geofences[0]?.id || "",
+      name: "",
+      description: "",
+      rule_type: "",
+      priority: 0,
+      configText: "{}",
+      is_active: true,
+    });
+    setShowRuleDialog(true);
+  };
+
+  const openEditRuleDialog = (rule: GeofenceRule) => {
+    setEditingRule(rule);
+    setRuleFormData({
+      geofence_id: rule.geofence_id,
+      name: rule.name,
+      description: rule.description || "",
+      rule_type: rule.rule_type,
+      priority: rule.priority ?? 0,
+      configText: JSON.stringify(rule.config || {}, null, 2),
+      is_active: rule.is_active,
+    });
+    setShowRuleDialog(true);
+  };
+
+  const handleSaveRule = async () => {
+    if (!ruleFormData.geofence_id || !ruleFormData.name || !ruleFormData.rule_type) {
+      toast({
+        title: "Validation Error",
+        description: "Zone, name, and rule type are required",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    let parsedConfig: any = {};
+    if (ruleFormData.configText.trim()) {
+      try {
+        parsedConfig = JSON.parse(ruleFormData.configText);
+      } catch (error) {
+        toast({
+          title: "Invalid Config",
+          description: "Config must be valid JSON.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
+    setSavingRule(true);
+    try {
+      const payload: any = {
+        geofence_id: ruleFormData.geofence_id,
+        device_id: deviceId,
+        rule_type: ruleFormData.rule_type,
+        name: ruleFormData.name,
+        description: ruleFormData.description || null,
+        priority: ruleFormData.priority,
+        config: parsedConfig,
+        is_active: ruleFormData.is_active,
+      };
+
+      if (editingRule) {
+        const { error } = await supabase
+          .from("geofence_rules" as any)
+          .update(payload)
+          .eq("id", editingRule.id);
+
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from("geofence_rules" as any)
+          .insert(payload);
+
+        if (error) throw error;
+      }
+
+      toast({
+        title: "Rule Saved",
+        description: "Geofence rule has been saved successfully.",
+      });
+
+      setShowRuleDialog(false);
+      fetchRules();
+    } catch (error: any) {
+      console.error("Error saving geofence rule:", error);
+      toast({
+        title: "Save Failed",
+        description: error.message || "Failed to save rule",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingRule(false);
+    }
+  };
+
+  const handleDeleteRule = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from("geofence_rules" as any)
+        .delete()
+        .eq("id", id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Rule Deleted",
+        description: "Geofence rule has been removed.",
+      });
+
+      fetchRules();
+    } catch (error: any) {
+      console.error("Error deleting geofence rule:", error);
+      toast({
+        title: "Delete Failed",
+        description: error.message || "Failed to delete rule",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
     <>
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="font-semibold text-base">Geofence Zones</h3>
-            <p className="text-xs text-muted-foreground">Manage virtual boundaries for this vehicle</p>
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "zones" | "rules")}>
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold text-base">Geofences</h3>
+              <p className="text-xs text-muted-foreground">
+                Manage zones and automation rules for this vehicle
+              </p>
+            </div>
+            <TabsList className="bg-muted/60">
+              <TabsTrigger value="zones" className="text-xs px-3">
+                Zones
+              </TabsTrigger>
+              <TabsTrigger value="rules" className="text-xs px-3">
+                Rules
+              </TabsTrigger>
+            </TabsList>
           </div>
-          <Button
-            size="sm"
-            onClick={() => {
-              resetForm();
-              setShowCreateDialog(true);
-            }}
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            Add Zone
-          </Button>
-        </div>
 
-        <GeofenceList 
-          geofences={geofences} 
-          loading={loading} 
-          onDelete={handleDelete} 
-        />
+          <TabsContent value="zones" className="mt-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs text-muted-foreground">
+                Zones define the geographic areas used by alerts and rules.
+              </p>
+              <Button
+                size="sm"
+                onClick={() => {
+                  resetForm();
+                  setShowCreateDialog(true);
+                }}
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Add Zone
+              </Button>
+            </div>
+
+            <GeofenceList
+              geofences={geofences}
+              loading={loading}
+              onDelete={handleDelete}
+            />
+          </TabsContent>
+
+          <TabsContent value="rules" className="mt-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs text-muted-foreground">
+                Rules control behaviors like parking limits and time-based access for each zone.
+              </p>
+              <Button size="sm" onClick={openCreateRuleDialog} disabled={geofences.length === 0}>
+                <Plus className="h-4 w-4 mr-1" />
+                Add Rule
+              </Button>
+            </div>
+
+            {geofences.length === 0 ? (
+              <div className="text-xs text-muted-foreground border border-dashed rounded-md p-3">
+                Create at least one zone before adding rules.
+              </div>
+            ) : rulesLoading ? (
+              <div className="text-xs text-muted-foreground">Loading rules...</div>
+            ) : rules.length === 0 ? (
+              <div className="text-xs text-muted-foreground border border-dashed rounded-md p-3">
+                No rules configured yet. Add a rule to automate parking limits or time-based restrictions.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {rules.map((rule) => {
+                  const zone = geofences.find((g) => g.id === rule.geofence_id);
+                  return (
+                    <div
+                      key={rule.id}
+                      className="flex items-start justify-between rounded-md border bg-card px-3 py-2 text-xs"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{rule.name}</span>
+                          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] uppercase tracking-wide">
+                            {rule.rule_type}
+                          </span>
+                          <span className="rounded-full px-2 py-0.5 text-[10px] border">
+                            {rule.is_active ? "Active" : "Inactive"}
+                          </span>
+                        </div>
+                        <div className="text-muted-foreground">
+                          <span>
+                            Zone: {zone?.name || "Unknown"} • Priority: {rule.priority ?? 0}
+                          </span>
+                        </div>
+                        {rule.description && (
+                          <div className="text-muted-foreground line-clamp-2">
+                            {rule.description}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button variant="outline" size="sm" onClick={() => openEditRuleDialog(rule)}>
+                          Edit
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-destructive border-destructive/40"
+                          onClick={() => handleDeleteRule(rule.id)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
       </div>
 
       {/* Create Dialog */}
@@ -273,12 +552,57 @@ export function GeofenceManager({ deviceId }: GeofenceManagerProps) {
                   rows={3}
                 />
               </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="priority">Zone Priority</Label>
+                  <Input
+                    id="priority"
+                    type="number"
+                    value={formData.priority}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        priority: Number.isNaN(parseInt(e.target.value, 10))
+                          ? 0
+                          : parseInt(e.target.value, 10),
+                      })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="speed_limit_kmh">Speed Limit (km/h)</Label>
+                  <Input
+                    id="speed_limit_kmh"
+                    type="number"
+                    placeholder="Optional"
+                    value={formData.speed_limit_kmh}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setFormData({
+                        ...formData,
+                        speed_limit_kmh:
+                          value === ''
+                            ? ''
+                            : parseInt(value, 10),
+                      });
+                    }}
+                  />
+                </div>
+              </div>
               
               <div className="p-3 bg-muted/30 rounded-lg text-xs text-muted-foreground">
                 <p className="font-medium mb-1">Coordinates:</p>
                 <p>Lat: {formData.latitude.toFixed(6)}</p>
                 <p>Lng: {formData.longitude.toFixed(6)}</p>
                 <p>Radius: {formData.radius_meters}m</p>
+                 <p>Priority: {formData.priority}</p>
+                 <p>
+                   Speed Limit:{' '}
+                   {formData.speed_limit_kmh === ''
+                     ? 'None'
+                     : `${formData.speed_limit_kmh} km/h`}
+                 </p>
               </div>
             </div>
 
@@ -313,6 +637,139 @@ export function GeofenceManager({ deviceId }: GeofenceManagerProps) {
                 </>
               ) : (
                 'Save Zone'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showRuleDialog} onOpenChange={setShowRuleDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editingRule ? "Edit Rule" : "Create Rule"}</DialogTitle>
+            <DialogDescription>
+              Define rules like parking limits or time-based access for a geofence zone.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="rule_geofence">Zone *</Label>
+              <Select
+                value={ruleFormData.geofence_id}
+                onValueChange={(value) =>
+                  setRuleFormData((prev) => ({ ...prev, geofence_id: value }))
+                }
+              >
+                <SelectTrigger id="rule_geofence">
+                  <SelectValue placeholder="Select zone" />
+                </SelectTrigger>
+                <SelectContent>
+                  {geofences.map((g) => (
+                    <SelectItem key={g.id} value={g.id}>
+                      {g.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="rule_name">Rule Name *</Label>
+              <Input
+                id="rule_name"
+                placeholder="e.g., Office parking limit"
+                value={ruleFormData.name}
+                onChange={(e) =>
+                  setRuleFormData((prev) => ({ ...prev, name: e.target.value }))
+                }
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="rule_type">Rule Type *</Label>
+              <Input
+                id="rule_type"
+                placeholder="e.g., parking_limit, time_window"
+                value={ruleFormData.rule_type}
+                onChange={(e) =>
+                  setRuleFormData((prev) => ({ ...prev, rule_type: e.target.value }))
+                }
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="rule_priority">Priority</Label>
+              <Input
+                id="rule_priority"
+                type="number"
+                value={ruleFormData.priority}
+                onChange={(e) =>
+                  setRuleFormData((prev) => ({
+                    ...prev,
+                    priority: Number.isNaN(parseInt(e.target.value, 10))
+                      ? 0
+                      : parseInt(e.target.value, 10),
+                  }))
+                }
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="rule_description">Description</Label>
+              <Textarea
+                id="rule_description"
+                placeholder="Optional description of what this rule does"
+                value={ruleFormData.description}
+                onChange={(e) =>
+                  setRuleFormData((prev) => ({ ...prev, description: e.target.value }))
+                }
+                rows={3}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="rule_config">Config JSON</Label>
+                <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                  <span>Active</span>
+                  <Switch
+                    checked={ruleFormData.is_active}
+                    onCheckedChange={(checked) =>
+                      setRuleFormData((prev) => ({ ...prev, is_active: checked }))
+                    }
+                  />
+                </div>
+              </div>
+              <Textarea
+                id="rule_config"
+                value={ruleFormData.configText}
+                onChange={(e) =>
+                  setRuleFormData((prev) => ({ ...prev, configText: e.target.value }))
+                }
+                rows={6}
+                className="font-mono text-xs"
+                placeholder={`Examples:\n{"max_minutes": 30}\n{"start_time": "08:00", "end_time": "18:00", "days_of_week": ["Mon","Tue","Wed","Thu","Fri"]}`}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowRuleDialog(false)}
+              disabled={savingRule}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleSaveRule} disabled={savingRule}>
+              {savingRule ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Saving...
+                </>
+              ) : (
+                "Save Rule"
               )}
             </Button>
           </DialogFooter>

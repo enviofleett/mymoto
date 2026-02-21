@@ -26,6 +26,22 @@ export interface DriverScoreData {
   trips_analyzed: number;
 }
 
+export interface VehicleIntelligenceSummary {
+  fatigue_index: number;
+  fatigue_level: 'low' | 'moderate' | 'high';
+  total_engine_hours_24h: number;
+  has_long_haul_24h: boolean;
+  late_night_trips_7d: number;
+  idle_minutes_7d: number;
+  offline_events_7d: number;
+  connectivity_score: number;
+  hard_braking_events_7d: number;
+  overspeed_events_7d: number;
+  safety_events_this_week: number;
+  safety_events_last_week: number;
+  updated_at: string;
+}
+
 // Helper to safely parse harsh_events from Json
 function parseHarshEvents(harshEvents: Json): TripAnalytics['harsh_events'] {
   if (!harshEvents || typeof harshEvents !== 'object' || Array.isArray(harshEvents)) {
@@ -92,6 +108,45 @@ export function useDriverScore(deviceId: string | null, enabled = true) {
     },
     enabled: enabled && !!deviceId,
     staleTime: 2 * 60 * 1000, // 2 minutes
+  });
+}
+
+export function useVehicleIntelligence(deviceId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: ['vehicle-intelligence', deviceId],
+    queryFn: async (): Promise<VehicleIntelligenceSummary | null> => {
+      if (!deviceId) return null;
+
+      const { data, error } = await (supabase as any)
+        .rpc('get_vehicle_intelligence_summary', { p_device_id: deviceId });
+
+      if (error) {
+        console.error('Error fetching vehicle intelligence summary:', error);
+        throw error;
+      }
+
+      if (!data) return null;
+
+      const result = data as any;
+
+      return {
+        fatigue_index: typeof result.fatigue_index === 'number' ? result.fatigue_index : 0,
+        fatigue_level: (result.fatigue_level as VehicleIntelligenceSummary['fatigue_level']) || 'low',
+        total_engine_hours_24h: typeof result.total_engine_hours_24h === 'number' ? result.total_engine_hours_24h : 0,
+        has_long_haul_24h: Boolean(result.has_long_haul_24h),
+        late_night_trips_7d: typeof result.late_night_trips_7d === 'number' ? result.late_night_trips_7d : 0,
+        idle_minutes_7d: typeof result.idle_minutes_7d === 'number' ? result.idle_minutes_7d : 0,
+        offline_events_7d: typeof result.offline_events_7d === 'number' ? result.offline_events_7d : 0,
+        connectivity_score: typeof result.connectivity_score === 'number' ? result.connectivity_score : 0,
+        hard_braking_events_7d: typeof result.hard_braking_events_7d === 'number' ? result.hard_braking_events_7d : 0,
+        overspeed_events_7d: typeof result.overspeed_events_7d === 'number' ? result.overspeed_events_7d : 0,
+        safety_events_this_week: typeof result.safety_events_this_week === 'number' ? result.safety_events_this_week : 0,
+        safety_events_last_week: typeof result.safety_events_last_week === 'number' ? result.safety_events_last_week : 0,
+        updated_at: typeof result.updated_at === 'string' ? result.updated_at : new Date().toISOString(),
+      };
+    },
+    enabled: enabled && !!deviceId,
+    staleTime: 2 * 60 * 1000,
   });
 }
 
