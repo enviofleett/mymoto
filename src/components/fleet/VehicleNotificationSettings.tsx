@@ -270,6 +270,8 @@ export function VehicleNotificationSettings({ deviceId, userId }: VehicleNotific
   const [preferences, setPreferences] = useState<VehicleNotificationPreferences | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Tracks async push enable/disable to prevent double-clicks and show disabled state.
+  const [isPushLoading, setIsPushLoading] = useState(false);
   const { toast } = useToast();
   const { permission, requestPermission, isSupported: notifSupported } = useNotifications();
   const { isSupported: pushSupported, isSubscribed, isChecking: isCheckingPush, ensureSubscribed, unsubscribe, error: pushError } =
@@ -551,62 +553,68 @@ export function VehicleNotificationSettings({ deviceId, userId }: VehicleNotific
               <div className="min-w-0">
                 <div className="text-sm font-medium text-foreground">Background Push (This Device)</div>
                 <div className="text-xs text-muted-foreground mt-0.5">
-                  {permission !== "granted"
-                    ? "Grant notification permission to receive alerts in the background."
-                    : isCheckingPush
-                      ? "Checking subscription..."
-                      : isSubscribed
-                        ? "Subscribed for background notifications."
-                        : "Not subscribed yet."}
+                  {isPushLoading
+                    ? "Updating subscription..."
+                    : permission !== "granted"
+                      ? "Grant notification permission to receive alerts in the background."
+                      : isCheckingPush
+                        ? "Checking subscription..."
+                        : isSubscribed
+                          ? "Subscribed for background notifications."
+                          : "Not subscribed. Enable to receive alerts when the app is closed."}
                 </div>
-                {pushError ? <div className="text-xs text-destructive mt-1">Push error: {pushError}</div> : null}
+                {pushError && !isPushLoading ? (
+                  <div className="text-xs text-destructive mt-1">Error: {pushError}</div>
+                ) : null}
               </div>
-              {permission !== "granted" ? (
-                <Switch
-                  checked={false}
-                  onCheckedChange={async (checked) => {
-                    if (!checked) return;
-                    const ok = await requestPermission();
-                    if (!ok) return;
-                    try {
+              {/* Single Switch whose checked value and handler reflect actual state.
+                  Disabled while checking, loading, or saving any other preference.   */}
+              <Switch
+                checked={isSubscribed}
+                disabled={isCheckingPush || isPushLoading || saving}
+                onCheckedChange={async (checked) => {
+                  setIsPushLoading(true);
+                  try {
+                    if (checked) {
+                      // Need permission first
+                      if (permission !== "granted") {
+                        const ok = await requestPermission();
+                        if (!ok) {
+                          toast({
+                            title: "Permission Required",
+                            description: "Notification permission was denied. Please allow notifications in your browser settings.",
+                            variant: "destructive",
+                          });
+                          return;
+                        }
+                      }
                       await ensureSubscribed();
                       toast({ title: "Enabled", description: "Background notifications enabled on this device." });
-                    } catch (e: any) {
-                      toast({
-                        title: "Subscription Failed",
-                        description: e instanceof Error ? e.message : "Please check your push configuration and try again.",
-                        variant: "destructive",
-                      });
+                    } else {
+                      await unsubscribe();
+                      toast({ title: "Disabled", description: "Background notifications disabled on this device." });
                     }
-                  }}
-                />
-              ) : isSubscribed ? (
-                <Switch
-                  checked={true}
-                  onCheckedChange={async (checked) => {
-                    if (checked) return;
-                    await unsubscribe();
-                    toast({ title: "Disabled", description: "Background notifications disabled on this device." });
-                  }}
-                />
-              ) : (
-                <Switch
-                  checked={false}
-                  onCheckedChange={async (checked) => {
-                    if (!checked) return;
-                    try {
-                      await ensureSubscribed();
-                      toast({ title: "Enabled", description: "Background notifications enabled on this device." });
-                    } catch (e: any) {
-                      toast({
-                        title: "Subscription Failed",
-                        description: e instanceof Error ? e.message : "Please check your push configuration and try again.",
-                        variant: "destructive",
-                      });
-                    }
-                  }}
-                />
-              )}
+                  } catch (e: any) {
+                    toast({
+                      title: checked ? "Subscription Failed" : "Unsubscribe Failed",
+                      description: e instanceof Error ? e.message : "Please check your push configuration and try again.",
+                      variant: "destructive",
+                    });
+                  } finally {
+                    setIsPushLoading(false);
+                  }
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Fallback for browsers that don't support push */}
+        {notifSupported && !pushSupported && (
+          <div className="p-3 rounded-lg bg-muted/40 border border-border/50">
+            <div className="text-sm font-medium text-foreground">Background Push (This Device)</div>
+            <div className="text-xs text-muted-foreground mt-0.5">
+              Background push is not supported in this browser. Try installing the app or using a supported browser (Chrome, Edge, Firefox).
             </div>
           </div>
         )}
