@@ -57,7 +57,7 @@ serve(async (req: Request) => {
     });
 
     // 2. Send notification to Admin
-    const dashboardUrl = `${Deno.env.get("PUBLIC_APP_URL") || "https://app.fleethub.com"}/admin/directory`;
+    const dashboardUrl = `${Deno.env.get("PUBLIC_APP_URL") || "https://mymotofleet.com"}/admin/directory`;
     const adminTemplate = EmailTemplates.providerRegistrationAdmin({
       businessName: businessName,
       email: providerEmail,

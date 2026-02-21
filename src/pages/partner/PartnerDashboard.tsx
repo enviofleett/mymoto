@@ -1,17 +1,10 @@
 import { useNavigate } from "react-router-dom";
+import { useState } from "react";
 import { OwnerLayout } from "@/components/layouts/OwnerLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   Calendar,
   CheckCircle2,
@@ -62,6 +55,7 @@ export default function PartnerDashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const [deliveringBookingId, setDeliveringBookingId] = useState<string | null>(null);
 
   // Fetch provider profile
   const { data: provider, isLoading: providerLoading } = useQuery({
@@ -154,6 +148,7 @@ export default function PartnerDashboard() {
   const markDelivered = useMutation({
     mutationFn: async (bookingId: string) => {
       if (!user?.id) throw new Error('Not authenticated');
+      setDeliveringBookingId(bookingId);
 
       const { error } = await supabase
         .from('directory_bookings')
@@ -163,7 +158,7 @@ export default function PartnerDashboard() {
           fulfilled_by: user.id,
         })
         .eq('id', bookingId);
-      
+
       if (error) throw error;
 
       // Notify user
@@ -179,6 +174,9 @@ export default function PartnerDashboard() {
     onError: (error: unknown) => {
       const message = error instanceof Error ? error.message : 'Unknown error';
       toast.error('Failed to mark as delivered', { description: message });
+    },
+    onSettled: () => {
+      setDeliveringBookingId(null);
     },
   });
 
@@ -358,11 +356,11 @@ export default function PartnerDashboard() {
                         onClick={() => markDelivered.mutate(booking.id)}
                         disabled={
                           !canMarkDelivered(booking.booking_date) ||
-                          markDelivered.isPending ||
+                          deliveringBookingId === booking.id ||
                           booking.status === 'completed'
                         }
                       >
-                        {markDelivered.isPending ? (
+                        {deliveringBookingId === booking.id ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
                           <>
