@@ -35,8 +35,28 @@ const friendlyGalleryError = (raw?: string | null) => {
   if (msg.includes("vehicle_photos") && msg.includes("schema cache")) {
     return "Vehicle photo gallery is not yet configured. Please contact support if this persists.";
   }
+  if (msg.includes("row-level security") || msg.includes("permission denied")) {
+    return "You do not have permission to upload vehicle photos. Please contact support.";
+  }
+  if (msg.includes("payload too large") || msg.includes("request entity too large")) {
+    return "Image is too large for upload. Please choose a smaller image (max 2MB).";
+  }
   return "Failed to load vehicle photos. Please try again.";
 };
+
+export function validateVehiclePhotoFile(file: File): string | null {
+  if (!file.type.startsWith("image/")) {
+    return "Only image files are allowed";
+  }
+  const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"];
+  if (file.type && !allowedTypes.includes(file.type)) {
+    return "Only JPG, PNG, WEBP, or GIF images are allowed";
+  }
+  if (file.size > 2 * 1024 * 1024) {
+    return "Images must be under 2MB";
+  }
+  return null;
+}
 
 export function VehicleSettingsPanel({ deviceId, vehicleName, onClose }: VehicleSettingsPanelProps) {
   const { toast } = useToast();
@@ -138,19 +158,24 @@ export function VehicleSettingsPanel({ deviceId, vehicleName, onClose }: Vehicle
     setUploading(true);
     try {
       const fileArray = Array.from(files);
+      let currentMaxOrder =
+        photos.length > 0
+          ? Math.max(
+              ...photos.map((p) =>
+                typeof p.sort_order === "number" ? p.sort_order : 0
+              )
+            )
+          : -1;
       for (const file of fileArray) {
-        if (!file.type.startsWith("image/")) {
-          setUploadError("Only image files are allowed");
-          continue;
-        }
-        if (file.size > 5 * 1024 * 1024) {
-          setUploadError("Images must be under 5MB");
+        const validationError = validateVehiclePhotoFile(file);
+        if (validationError) {
+          setUploadError(validationError);
           continue;
         }
 
         const ext = file.name.split(".").pop() || "jpg";
         const fileName = `${deviceId}-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-        const filePath = `vehicle-photos/${deviceId}/${fileName}`;
+        const filePath = `vehicle-avatars/${deviceId}/${fileName}`;
 
         const { error: uploadError } = await supabase.storage
           .from("avatars")
@@ -163,13 +188,8 @@ export function VehicleSettingsPanel({ deviceId, vehicleName, onClose }: Vehicle
         }
 
         const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(filePath);
-        const nextOrder =
-          photos.length > 0
-            ? Math.max(
-                ...photos
-                  .map((p) => (typeof p.sort_order === "number" ? p.sort_order : 0))
-              ) + 1
-            : 0;
+        currentMaxOrder += 1;
+        const nextOrder = currentMaxOrder;
 
         const { data: inserted, error: insertError } = await (supabase as any)
           .from("vehicle_photos")
@@ -436,6 +456,7 @@ export function VehicleSettingsPanel({ deviceId, vehicleName, onClose }: Vehicle
                       size="sm"
                       className="mt-2 gap-2"
                       disabled={uploading}
+                      onClick={() => fileInputRef.current?.click()}
                     >
                       {uploading ? (
                         <>

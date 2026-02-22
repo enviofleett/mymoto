@@ -21,8 +21,7 @@ import { useTripSyncStatus, useTriggerTripSync } from "@/hooks/useTripSync";
 
 // Import sub-components
 import { ProfileHeader } from "./components/ProfileHeader";
-import { VehiclePhotoGallery } from "./components/VehiclePhotoGallery";
-import { CurrentStatusCard } from "./components/CurrentStatusCard";
+import { VehicleSocialCard } from "./components/VehicleSocialCard";
 import { StatusMetricsRow } from "./components/StatusMetricsRow";
 import { EngineControlCard } from "./components/EngineControlCard";
 import { ReportsSection } from "./components/ReportsSection";
@@ -158,6 +157,13 @@ export default function OwnerVehicleProfile() {
     }
     return "online";
   }, [displayData?.isOnline]);
+
+  const socialStatus: "online" | "moving" | "offline" = useMemo(() => {
+    if (!displayData?.isOnline) return "offline";
+    const speed = displayData.speed ?? 0;
+    if (speed > 0) return "moving";
+    return "online";
+  }, [displayData?.isOnline, displayData?.speed]);
 
   // Trips and Events for Reports Section
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
@@ -402,7 +408,17 @@ export default function OwnerVehicleProfile() {
           onSettings={() => setSettingsOpen(true)}
         />
 
-        <VehiclePhotoGallery deviceId={resolvedDeviceId} />
+        <VehicleSocialCard
+          deviceId={resolvedDeviceId}
+          name={displayName}
+          plateNumber={vehicle?.plateNumber ?? null}
+          nickname={llmSettings?.nickname ?? null}
+          avatarUrl={llmSettings?.avatar_url ?? null}
+          createdAt={vehicle?.lastUpdate ?? null}
+          status={socialStatus}
+          lastUpdate={displayData?.lastUpdate ?? null}
+          onChangeAvatar={() => setSettingsOpen(true)}
+        />
 
         {/* Main Content */}
         <div className="flex-1 pb-32 space-y-4">
@@ -415,13 +431,6 @@ export default function OwnerVehicleProfile() {
               className="rounded-lg"
             />
             {/* Map Section moved to bottom */}
-
-            {/* Current Status */}
-            <CurrentStatusCard 
-              status={status} 
-              speed={displayData?.speed ?? null} 
-              lastUpdate={displayData?.lastUpdate ?? null}
-            />
 
             <StatusMetricsRow
               deviceId={resolvedDeviceId}
