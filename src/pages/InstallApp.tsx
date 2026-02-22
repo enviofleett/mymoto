@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import myMotoLogo from "@/assets/mymoto-logo-new.png";
 import { Button } from "@/components/ui/button";
 import {
@@ -6,43 +7,37 @@ import {
   DialogContent,
   DialogDescription,
   DialogFooter,
-  DialogHeader,
-  DialogTitle,
+	DialogHeader,
+	DialogTitle,
 } from "@/components/ui/dialog";
-import { Star, ShieldCheck, CheckCircle2, AlertCircle, WifiOff, HardDrive, XCircle } from "lucide-react";
+import { Star, ShieldCheck, CheckCircle2, AlertCircle, WifiOff } from "lucide-react";
 import { trackEvent, trackEventOnce } from "@/lib/analytics";
+import {
+  getAndroidStageAfterPromptChoice,
+  getInstallEntryStage,
+  getInstallPlatform,
+  isRunningAsInstalledPwa,
+  shouldShowOpenApp,
+  shouldAutostartInstall,
+  type InstallPlatform,
+} from "@/utils/pwa-install";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
 }
 
-type Platform = "android" | "ios" | "mac" | "other";
-
 type InstallStage =
   | "idle"
-  | "checking"
-  | "downloading"
-  | "permissions"
-  | "installing"
+  | "prompting"
+  | "awaiting_install"
+  | "instructions"
   | "success"
-  | "network_error"
-  | "storage_error";
+  | "network_error";
 
 const PRIMARY_COLOR = "#34A853";
 
-const getPlatform = (): Platform => {
-  if (typeof navigator === "undefined") return "other";
-  const ua: string =
-    navigator.userAgent || navigator.vendor || ((window as unknown) as { opera?: string }).opera || "";
-  const lower = ua.toLowerCase();
-  if (/iphone|ipad|ipod/.test(lower)) return "ios";
-  if (/android/.test(lower)) return "android";
-  if (/macintosh|mac os x/.test(lower)) return "mac";
-  return "other";
-};
-
-const formatPlatformName = (platform: Platform) => {
+const formatPlatformName = (platform: InstallPlatform) => {
   if (platform === "android") return "Android";
   if (platform === "ios") return "iPhone";
   if (platform === "mac") return "Mac";
@@ -50,34 +45,44 @@ const formatPlatformName = (platform: Platform) => {
 };
 
 const InstallApp = () => {
-  const [platform, setPlatform] = useState<Platform>("other");
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [platform, setPlatform] = useState<InstallPlatform>("other");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [stage, setStage] = useState<InstallStage>("idle");
-  const [progress, setProgress] = useState(0);
-  const [permissionsAccepted, setPermissionsAccepted] = useState({
-    location: true,
-    notifications: true,
-    storage: true,
-  });
+  const [isInstalled, setIsInstalled] = useState(() => isRunningAsInstalledPwa());
 
-  const isError =
-    stage === "network_error" ||
-    stage === "storage_error";
+  const isError = stage === "network_error";
 
-  const isComplete = stage === "success";
+  const isComplete = shouldShowOpenApp(stage === "success" || isInstalled);
 
   const isAndroid = platform === "android";
   const isIOS = platform === "ios";
   const isMac = platform === "mac";
 
   const deferredPromptRef = useRef<BeforeInstallPromptEvent | null>(null);
+  const autostartAttemptedRef = useRef(false);
+  const installTrackedRef = useRef(false);
+  const manualInstructionTrackedRef = useRef(false);
 
   useEffect(() => {
     trackEventOnce("install_view", "install_page");
   }, []);
 
+  const confirmInstalled = useCallback(() => {
+    if (!isRunningAsInstalledPwa()) return false;
+    setIsInstalled(true);
+    setStage("success");
+    if (!installTrackedRef.current) {
+      installTrackedRef.current = true;
+      void trackEventOnce("install_appinstalled", "global");
+    }
+    return true;
+  }, []);
+
   useEffect(() => {
-    setPlatform(getPlatform());
+    setPlatform(getInstallPlatform(navigator));
+    confirmInstalled();
 
     const handleBeforeInstallPrompt = (event: Event) => {
       event.preventDefault();
@@ -86,39 +91,33 @@ const InstallApp = () => {
     };
 
     const handleAppInstalled = () => {
-      void trackEventOnce("install_appinstalled", "global");
-      setStage("success");
+      confirmInstalled();
+    };
+
+    const handleInstallCheck = () => {
+      confirmInstalled();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        handleInstallCheck();
+      }
     };
 
     window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt as EventListener);
     window.addEventListener("appinstalled", handleAppInstalled);
+    window.addEventListener("focus", handleInstallCheck);
+    window.addEventListener("pageshow", handleInstallCheck);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt as EventListener);
       window.removeEventListener("appinstalled", handleAppInstalled);
+      window.removeEventListener("focus", handleInstallCheck);
+      window.removeEventListener("pageshow", handleInstallCheck);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, []);
-
-  useEffect(() => {
-    if (stage !== "downloading") return;
-    if (progress >= 100) return;
-
-    const interval = window.setInterval(() => {
-      setProgress((prev) => {
-        const next = prev + Math.random() * 18 + 7;
-        if (next >= 100) {
-          window.clearInterval(interval);
-          setTimeout(() => {
-            setStage("permissions");
-          }, 400);
-          return 100;
-        }
-        return next;
-      });
-    }, 500);
-
-    return () => window.clearInterval(interval);
-  }, [stage, progress]);
+  }, [confirmInstalled]);
 
   const ratingSummary = useMemo(
     () => ({
@@ -152,72 +151,83 @@ const InstallApp = () => {
     },
   ];
 
-  const handleStartInstall = async () => {
-    if (deferredPromptRef.current && !isIOS) {
+  const showInstructions = useCallback(async () => {
+    setDialogOpen(true);
+    setStage("instructions");
+    if (!manualInstructionTrackedRef.current) {
+      manualInstructionTrackedRef.current = true;
+      await trackEventOnce("install_instruction_view", isIOS ? "ios_help" : "manual_help");
+    }
+  }, [isIOS]);
+
+  const handleStartInstall = useCallback(async () => {
+    await trackEvent("install_cta_click", { platform });
+
+    if (confirmInstalled()) {
+      navigate("/auth");
+      return;
+    }
+
+    if (navigator.onLine === false) {
+      setDialogOpen(true);
+      setStage("network_error");
+      return;
+    }
+
+    if (isIOS) {
+      await showInstructions();
+      return;
+    }
+
+    if (deferredPromptRef.current && isAndroid) {
       try {
-        await trackEvent("install_cta_click", { platform });
-        deferredPromptRef.current.prompt();
+        setDialogOpen(true);
+        setStage(getInstallEntryStage({ platform, hasDeferredPrompt: true }));
+        await deferredPromptRef.current.prompt();
         const choiceResult = await deferredPromptRef.current.userChoice;
         if (choiceResult.outcome === "accepted") {
           await trackEvent("install_prompt_accepted", { platform });
+          setStage(getAndroidStageAfterPromptChoice(choiceResult.outcome));
         } else {
           await trackEvent("install_prompt_dismissed", { platform });
+          setStage(getAndroidStageAfterPromptChoice(choiceResult.outcome));
+          await showInstructions();
         }
         deferredPromptRef.current = null;
       } catch {
         await trackEvent("install_error", { platform, source: "prompt" });
+        await showInstructions();
       }
-    }
-
-    if (isIOS) {
-      await trackEventOnce("install_instruction_view", "ios_help");
-    }
-
-    setDialogOpen(true);
-    setStage("checking");
-    setProgress(0);
-    setPermissionsAccepted({
-      location: true,
-      notifications: true,
-      storage: true,
-    });
-
-    setTimeout(() => {
-      if (navigator.onLine === false) {
-        setStage("network_error");
-        return;
-      }
-      setStage("downloading");
-    }, 700);
-  };
-
-  const handleRetry = () => {
-    setStage("checking");
-    setProgress(0);
-    setTimeout(() => {
-      if (navigator.onLine === false) {
-        setStage("network_error");
-        return;
-      }
-      setStage("downloading");
-    }, 600);
-  };
-
-  const handlePermissionsContinue = () => {
-    if (!permissionsAccepted.location || !permissionsAccepted.storage) {
-      setStage("storage_error");
       return;
     }
-    setStage("installing");
-    setTimeout(() => {
-      setStage("success");
-    }, 1200);
+
+    await showInstructions();
+  }, [confirmInstalled, isAndroid, isIOS, navigate, platform, showInstructions]);
+
+  const handleRetry = () => {
+    if (navigator.onLine === false) {
+      setStage("network_error");
+      return;
+    }
+    void handleStartInstall();
   };
 
   const handleCloseDialog = () => {
     setDialogOpen(false);
-    setStage("idle");
-    setProgress(0);
+    if (!isInstalled) {
+      setStage("idle");
+    }
+  };
+
+  useEffect(() => {
+    if (!shouldAutostartInstall(location.search)) return;
+    if (autostartAttemptedRef.current) return;
+    autostartAttemptedRef.current = true;
+    void handleStartInstall();
+  }, [handleStartInstall, location.search]);
+
+  const handleOpenApp = () => {
+    navigate("/auth");
   };
 
   const renderCompatibilityBadge = () => {
@@ -248,161 +258,55 @@ const InstallApp = () => {
   };
 
   const renderInstallButtonLabel = () => {
-    if (stage === "checking") return "Checking…";
-    if (stage === "downloading") return "Downloading…";
-    if (stage === "permissions") return "Continue";
-    if (stage === "installing") return "Installing…";
-    if (isComplete) return "Open";
+    if (isComplete) return "Open app";
+    if (stage === "prompting") return "Waiting for prompt…";
+    if (stage === "awaiting_install") return "Waiting for install…";
     return isAndroid ? "Install" : isIOS ? "Get" : "Install";
   };
 
   const renderInstallDialogBody = () => {
-    if (stage === "checking") {
+    if (stage === "prompting") {
       return (
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Checking compatibility with {formatPlatformName(platform)} and available storage.
+            Waiting for your browser&apos;s install prompt on {formatPlatformName(platform)}.
           </p>
           <div className="flex items-center gap-3">
             <div className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
             <span className="text-xs text-muted-foreground">
-              This usually only takes a moment.
+              Accept the prompt to continue.
             </span>
           </div>
         </div>
       );
     }
 
-    if (stage === "downloading") {
+    if (stage === "awaiting_install") {
       return (
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Downloading MyMoto over a secure connection.
+            Install request accepted. We&apos;re waiting for confirmation from your device.
           </p>
-          <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
-            <div
-              className="h-full rounded-full transition-all"
-              style={{ width: `${progress}%`, backgroundColor: PRIMARY_COLOR }}
-            />
-          </div>
-          <div className="flex justify-between text-[11px] text-muted-foreground">
-            <span>{Math.round(progress)}%</span>
-            <span>Downloading app bundle…</span>
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+            <span className="text-xs text-muted-foreground">
+              Once installed, this page will switch to Open app.
+            </span>
           </div>
         </div>
       );
     }
 
-    if (stage === "permissions") {
+    if (stage === "instructions") {
       return (
-        <div className="space-y-4">
+        <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            MyMoto needs a few permissions to work correctly.
+            {isIOS
+              ? "On iPhone/iPad: tap Share, then choose Add to Home Screen."
+              : "If no prompt appears, use your browser menu and select Install app or Add to Home screen."}
           </p>
-          <div className="space-y-3">
-            <button
-              type="button"
-              className="w-full flex items-center justify-between rounded-xl border border-border bg-muted/40 px-3 py-2.5 active:scale-[0.99] transition"
-              onClick={() =>
-                setPermissionsAccepted((prev) => ({
-                  ...prev,
-                  location: !prev.location,
-                }))
-              }
-            >
-              <div className="flex flex-col items-start">
-                <span className="text-sm font-medium">Location access</span>
-                <span className="text-[11px] text-muted-foreground">
-                  Required for live vehicle tracking and trip history.
-                </span>
-              </div>
-              <div
-                className={`h-6 w-10 rounded-full px-1 flex items-center ${
-                  permissionsAccepted.location ? "bg-emerald-500" : "bg-muted-foreground/40"
-                }`}
-              >
-                <div
-                  className={`h-4 w-4 rounded-full bg-background transition-transform ${
-                    permissionsAccepted.location ? "translate-x-4" : ""
-                  }`}
-                />
-              </div>
-            </button>
-            <button
-              type="button"
-              className="w-full flex items-center justify-between rounded-xl border border-border bg-muted/40 px-3 py-2.5 active:scale-[0.99] transition"
-              onClick={() =>
-                setPermissionsAccepted((prev) => ({
-                  ...prev,
-                  notifications: !prev.notifications,
-                }))
-              }
-            >
-              <div className="flex flex-col items-start">
-                <span className="text-sm font-medium">Notifications</span>
-                <span className="text-[11px] text-muted-foreground">
-                  Alerts for movement, battery, and safety events.
-                </span>
-              </div>
-              <div
-                className={`h-6 w-10 rounded-full px-1 flex items-center ${
-                  permissionsAccepted.notifications ? "bg-emerald-500" : "bg-muted-foreground/40"
-                }`}
-              >
-                <div
-                  className={`h-4 w-4 rounded-full bg-background transition-transform ${
-                    permissionsAccepted.notifications ? "translate-x-4" : ""
-                  }`}
-                />
-              </div>
-            </button>
-            <button
-              type="button"
-              className="w-full flex items-center justify-between rounded-xl border border-border bg-muted/40 px-3 py-2.5 active:scale-[0.99] transition"
-              onClick={() =>
-                setPermissionsAccepted((prev) => ({
-                  ...prev,
-                  storage: !prev.storage,
-                }))
-              }
-            >
-              <div className="flex flex-col items-start">
-                <span className="text-sm font-medium">Storage</span>
-                <span className="text-[11px] text-muted-foreground">
-                  Used to cache maps and improve offline performance.
-                </span>
-              </div>
-              <div
-                className={`h-6 w-10 rounded-full px-1 flex items-center ${
-                  permissionsAccepted.storage ? "bg-emerald-500" : "bg-muted-foreground/40"
-                }`}
-              >
-                <div
-                  className={`h-4 w-4 rounded-full bg-background transition-transform ${
-                    permissionsAccepted.storage ? "translate-x-4" : ""
-                  }`}
-                />
-              </div>
-            </button>
-          </div>
-        </div>
-      );
-    }
-
-    if (stage === "installing") {
-      return (
-        <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Installing MyMoto on {formatPlatformName(platform)}.
-          </p>
-          <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
-            <div
-              className="h-full rounded-full animate-pulse"
-              style={{ width: "100%", backgroundColor: PRIMARY_COLOR }}
-            />
-          </div>
-          <p className="text-[11px] text-muted-foreground">
-            This should only take a few seconds.
+          <p className="text-xs text-muted-foreground">
+            Return to this tab after installing. We only show Open app after installation is confirmed.
           </p>
         </div>
       );
@@ -437,25 +341,6 @@ const InstallApp = () => {
               <p className="text-sm font-semibold">Network error</p>
               <p className="text-xs text-muted-foreground">
                 Check your connection and try again. MyMoto could not be downloaded.
-              </p>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (stage === "storage_error") {
-      return (
-        <div className="space-y-3">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-red-50 flex items-center justify-center">
-              <HardDrive className="h-5 w-5 text-red-600" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold">Storage issue</p>
-              <p className="text-xs text-muted-foreground">
-                There is not enough storage or required permissions were denied. Free up space or enable
-                storage access and try again.
               </p>
             </div>
           </div>
@@ -504,7 +389,7 @@ const InstallApp = () => {
                     style={{
                       backgroundColor: PRIMARY_COLOR,
                     }}
-                    onClick={handleStartInstall}
+                    onClick={isComplete ? handleOpenApp : handleStartInstall}
                   >
                     {renderInstallButtonLabel()}
                   </Button>
@@ -765,14 +650,14 @@ const InstallApp = () => {
                 Retry download
               </Button>
             )}
-            {stage === "permissions" && (
+            {stage === "instructions" && (
               <Button
                 type="button"
                 className="w-full sm:w-auto"
                 style={{ backgroundColor: PRIMARY_COLOR }}
-                onClick={handlePermissionsContinue}
+                onClick={handleStartInstall}
               >
-                Continue
+                Re-check install
               </Button>
             )}
             {isComplete && (
@@ -780,12 +665,12 @@ const InstallApp = () => {
                 type="button"
                 className="w-full sm:w-auto"
                 style={{ backgroundColor: PRIMARY_COLOR }}
-                onClick={handleCloseDialog}
+                onClick={handleOpenApp}
               >
-                Done
+                Open app
               </Button>
             )}
-            {!isError && stage !== "permissions" && !isComplete && stage !== "idle" && (
+            {!isError && stage !== "instructions" && !isComplete && stage !== "idle" && (
               <Button
                 type="button"
                 variant="outline"
@@ -804,15 +689,6 @@ const InstallApp = () => {
               >
                 Start install
               </Button>
-            )}
-            {stage === "storage_error" && (
-              <div className="flex items-start gap-2 text-[11px] text-muted-foreground mt-1 w-full">
-                <XCircle className="h-3.5 w-3.5 text-red-500 mt-0.5" />
-                <span>
-                  Free up storage or enable storage access in your browser settings, then tap{" "}
-                  <span className="font-medium">Retry download</span>.
-                </span>
-              </div>
             )}
           </DialogFooter>
         </DialogContent>

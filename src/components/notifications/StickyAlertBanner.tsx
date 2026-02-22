@@ -156,12 +156,32 @@ export function StickyAlertBanner() {
     };
   }, [isAdmin, userDeviceIdsKey]);
 
+  const getVehicleLabel = (deviceId: string) => {
+    const vehicle = ownerVehicles?.find(v => v.deviceId === deviceId);
+    if (!vehicle) return deviceId;
+    return vehicle.plateNumber || vehicle.alias || vehicle.name || deviceId;
+  };
+
+  const getLocationLabel = (metadata: Record<string, unknown>) => {
+    if (!metadata) return null;
+    const address = metadata.address as string | undefined;
+    if (address && address.trim()) return address;
+    const latitude = metadata.latitude as number | string | undefined;
+    const longitude = metadata.longitude as number | string | undefined;
+    if (latitude != null && longitude != null) {
+      return `${latitude}, ${longitude}`;
+    }
+    return null;
+  };
+
   if (alerts.length === 0) return null;
 
   const latestAlert = alerts[0];
   const config = SEVERITY_CONFIG[latestAlert.severity];
   const Icon = config.icon;
-  const hasLocation = latestAlert.metadata?.latitude && latestAlert.metadata?.longitude;
+  const latestVehicleLabel = getVehicleLabel(latestAlert.device_id);
+  const latestLocationLabel = getLocationLabel(latestAlert.metadata);
+  const hasLocation = !!latestLocationLabel;
 
   return (
     <div className="sticky top-0 z-[100] pt-[env(safe-area-inset-top)]">
@@ -185,7 +205,15 @@ export function StickyAlertBanner() {
         
         <div className="flex-1 min-w-0">
           <p className={cn("font-semibold text-sm truncate", config.text)}>{latestAlert.title}</p>
-          <p className="text-xs text-muted-foreground truncate">{latestAlert.message}</p>
+          <p className="text-xs text-muted-foreground truncate">
+            {latestVehicleLabel}
+            {latestLocationLabel && (
+              <>
+                <span className="mx-1">•</span>
+                <span>{latestLocationLabel}</span>
+              </>
+            )}
+          </p>
         </div>
 
         {hasLocation && (
@@ -222,7 +250,9 @@ export function StickyAlertBanner() {
           {alerts.slice(1).map((alert) => {
             const alertConfig = SEVERITY_CONFIG[alert.severity];
             const AlertIcon = alertConfig.icon;
-            const alertHasLocation = alert.metadata?.latitude && alert.metadata?.longitude;
+            const alertVehicleLabel = getVehicleLabel(alert.device_id);
+            const alertLocationLabel = getLocationLabel(alert.metadata);
+            const alertHasLocation = !!alertLocationLabel;
 
             return (
               <div
@@ -240,7 +270,15 @@ export function StickyAlertBanner() {
                 
                 <div className="flex-1 min-w-0">
                   <p className={cn("font-medium text-sm truncate", alertConfig.text)}>{alert.title}</p>
-                  <p className="text-xs text-muted-foreground truncate">{alert.message}</p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {alertVehicleLabel}
+                    {alertLocationLabel && (
+                      <>
+                        <span className="mx-1">•</span>
+                        <span>{alertLocationLabel}</span>
+                      </>
+                    )}
+                  </p>
                 </div>
 
                 {alertHasLocation && (

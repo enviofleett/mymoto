@@ -272,8 +272,15 @@ export function VehicleNotificationSettings({ deviceId, userId }: VehicleNotific
   const [saving, setSaving] = useState(false);
   const { toast } = useToast();
   const { permission, requestPermission, isSupported: notifSupported } = useNotifications();
-  const { isSupported: pushSupported, isSubscribed, isChecking: isCheckingPush, ensureSubscribed, unsubscribe, error: pushError } =
-    usePushSubscription();
+  const {
+    isSupported: pushSupported,
+    isDevMock,
+    isSubscribed,
+    isChecking: isCheckingPush,
+    ensureSubscribed,
+    unsubscribe,
+    error: pushError,
+  } = usePushSubscription();
 
   // Load preferences
   useEffect(() => {
@@ -556,10 +563,16 @@ export function VehicleNotificationSettings({ deviceId, userId }: VehicleNotific
                     : isCheckingPush
                       ? "Checking subscription..."
                       : isSubscribed
-                        ? "Subscribed for background notifications."
-                        : "Not subscribed yet."}
+                        ? isDevMock
+                          ? "Dev mode: simulated subscription (configure VITE_VAPID_PUBLIC_KEY for real push)."
+                          : "Subscribed for background notifications."
+                        : isDevMock
+                          ? "Dev mode: toggle to simulate background notifications."
+                          : "Not subscribed yet."}
                 </div>
-                {pushError ? <div className="text-xs text-destructive mt-1">Push error: {pushError}</div> : null}
+                {pushError && !isDevMock ? (
+                  <div className="text-xs text-destructive mt-1">Push error: {pushError}</div>
+                ) : null}
               </div>
               {permission !== "granted" ? (
                 <Switch

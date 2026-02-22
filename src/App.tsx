@@ -13,6 +13,7 @@ import RatingListener from "@/components/directory/RatingListener";
 import { Loader2 } from "lucide-react";
 import { usePwaUpdatePrompt } from "@/hooks/usePwaUpdatePrompt";
 import { captureAttributionFromUrl } from "@/lib/analytics";
+import { isRunningAsInstalledPwa } from "@/utils/pwa-install";
 
 const Index = lazy(() => import("./pages/Index"));
 const Auth = lazy(() => import("./pages/Auth"));
@@ -82,8 +83,7 @@ function RouteFallback() {
 }
 
 // Check if running as installed PWA
-const isPWA = window.matchMedia('(display-mode: standalone)').matches ||
-  (window.navigator as any).standalone === true;
+const isPWA = isRunningAsInstalledPwa();
 
 // Role-based redirect component
 const RoleBasedRedirect = () => {
