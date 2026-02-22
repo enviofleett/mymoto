@@ -3,8 +3,20 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -48,7 +60,10 @@ const TRANSMISSION_TYPES = [
   { value: "CVT", label: "CVT (Continuously Variable Transmission)" },
 ];
 
-export function VehicleSpecificationsForm({ deviceId, onSaved }: VehicleSpecificationsFormProps) {
+export function VehicleSpecificationsForm({
+  deviceId,
+  onSaved,
+}: VehicleSpecificationsFormProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [specs, setSpecs] = useState<Partial<VehicleSpecs>>({
@@ -67,6 +82,8 @@ export function VehicleSpecificationsForm({ deviceId, onSaved }: VehicleSpecific
     notes: "",
   });
   const { toast } = useToast();
+  const [inheritedFuelMeta, setInheritedFuelMeta] = useState<any>(null);
+  const [requestingProfile, setRequestingProfile] = useState(false);
 
   useEffect(() => {
     fetchSpecs();
@@ -76,9 +93,9 @@ export function VehicleSpecificationsForm({ deviceId, onSaved }: VehicleSpecific
     setLoading(true);
     try {
       const { data, error } = await supabase
-        .from('vehicle_specifications')
-        .select('*')
-        .eq('device_id', deviceId)
+        .from("vehicle_specifications")
+        .select("*")
+        .eq("device_id", deviceId)
         .maybeSingle();
 
       if (error) throw error;
@@ -86,15 +103,58 @@ export function VehicleSpecificationsForm({ deviceId, onSaved }: VehicleSpecific
       if (data) {
         setSpecs(data as VehicleSpecs);
       }
+
+      const { data: vehicleData } = await (supabase as any)
+        .from("vehicles")
+        .select("fuel_metadata")
+        .eq("device_id", deviceId)
+        .maybeSingle();
+
+      setInheritedFuelMeta(vehicleData?.fuel_metadata || null);
     } catch (err) {
-      console.error('Error fetching vehicle specs:', err);
+      console.error("Error fetching vehicle specs:", err);
       toast({
         title: "Error",
         description: "Failed to load vehicle specifications",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const requestProfileCreation = async () => {
+    setRequestingProfile(true);
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      const userId = authData.user?.id;
+      if (!userId) throw new Error("You need to be logged in");
+
+      const { error } = await (supabase as any)
+        .from("vehicle_onboarding_requests")
+        .insert({
+          user_id: userId,
+          plate_number: deviceId,
+          make: specs.brand || "Unknown",
+          model: specs.model || "Unknown",
+          year: specs.year_of_manufacture || null,
+          admin_notes: "Fuel profile creation request from OwnerVehicleProfile",
+        });
+      if (error) throw error;
+
+      toast({
+        title: "Request Submitted",
+        description:
+          "Your profile request has been sent to admins for catalog creation.",
+      });
+    } catch (err: any) {
+      toast({
+        title: "Request Failed",
+        description: err.message || "Could not submit request",
+        variant: "destructive",
+      });
+    } finally {
+      setRequestingProfile(false);
     }
   };
 
@@ -103,22 +163,23 @@ export function VehicleSpecificationsForm({ deviceId, onSaved }: VehicleSpecific
       toast({
         title: "Validation Error",
         description: "Brand and year of manufacture are required",
-        variant: "destructive"
+        variant: "destructive",
       });
       return;
     }
 
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from('vehicle_specifications')
-        .upsert({
+      const { error } = await supabase.from("vehicle_specifications").upsert(
+        {
           ...specs,
           device_id: deviceId,
           updated_at: new Date().toISOString(),
-        }, {
-          onConflict: 'device_id'
-        });
+        },
+        {
+          onConflict: "device_id",
+        },
+      );
 
       if (error) throw error;
 
@@ -131,11 +192,11 @@ export function VehicleSpecificationsForm({ deviceId, onSaved }: VehicleSpecific
       await fetchSpecs();
       onSaved?.();
     } catch (err: any) {
-      console.error('Error saving vehicle specs:', err);
+      console.error("Error saving vehicle specs:", err);
       toast({
         title: "Error",
         description: err.message || "Failed to save vehicle specifications",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setSaving(false);
@@ -172,8 +233,9 @@ export function VehicleSpecificationsForm({ deviceId, onSaved }: VehicleSpecific
         <Alert>
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription className="text-xs">
-            Fuel consumption estimates are assumptions based on manufacturer data and vehicle age. 
-            Actual consumption may vary based on driving conditions, vehicle condition, and other factors.
+            Fuel consumption estimates are assumptions based on manufacturer
+            data and vehicle age. Actual consumption may vary based on driving
+            conditions, vehicle condition, and other factors.
           </AlertDescription>
         </Alert>
 
@@ -208,7 +270,9 @@ export function VehicleSpecificationsForm({ deviceId, onSaved }: VehicleSpecific
             </Label>
             <Select
               value={specs.year_of_manufacture?.toString() || ""}
-              onValueChange={(value) => setSpecs({ ...specs, year_of_manufacture: parseInt(value) })}
+              onValueChange={(value) =>
+                setSpecs({ ...specs, year_of_manufacture: parseInt(value) })
+              }
             >
               <SelectTrigger id="year">
                 <SelectValue placeholder="Select year" />
@@ -228,7 +292,9 @@ export function VehicleSpecificationsForm({ deviceId, onSaved }: VehicleSpecific
             <Label htmlFor="engine_type">Engine Type</Label>
             <Select
               value={specs.engine_type || ""}
-              onValueChange={(value) => setSpecs({ ...specs, engine_type: value })}
+              onValueChange={(value) =>
+                setSpecs({ ...specs, engine_type: value })
+              }
             >
               <SelectTrigger id="engine_type">
                 <SelectValue placeholder="Select engine type" />
@@ -250,7 +316,14 @@ export function VehicleSpecificationsForm({ deviceId, onSaved }: VehicleSpecific
               id="engine_size"
               type="number"
               value={specs.engine_size_cc || ""}
-              onChange={(e) => setSpecs({ ...specs, engine_size_cc: e.target.value ? parseInt(e.target.value) : null })}
+              onChange={(e) =>
+                setSpecs({
+                  ...specs,
+                  engine_size_cc: e.target.value
+                    ? parseInt(e.target.value)
+                    : null,
+                })
+              }
               placeholder="e.g., 2000"
             />
           </div>
@@ -260,7 +333,9 @@ export function VehicleSpecificationsForm({ deviceId, onSaved }: VehicleSpecific
             <Label htmlFor="transmission">Transmission Type</Label>
             <Select
               value={specs.transmission_type || ""}
-              onValueChange={(value) => setSpecs({ ...specs, transmission_type: value })}
+              onValueChange={(value) =>
+                setSpecs({ ...specs, transmission_type: value })
+              }
             >
               <SelectTrigger id="transmission">
                 <SelectValue placeholder="Select transmission" />
@@ -282,68 +357,98 @@ export function VehicleSpecificationsForm({ deviceId, onSaved }: VehicleSpecific
               id="fuel_tank"
               type="number"
               value={specs.fuel_tank_capacity_liters || ""}
-              onChange={(e) => setSpecs({ ...specs, fuel_tank_capacity_liters: e.target.value ? parseInt(e.target.value) : null })}
+              onChange={(e) =>
+                setSpecs({
+                  ...specs,
+                  fuel_tank_capacity_liters: e.target.value
+                    ? parseInt(e.target.value)
+                    : null,
+                })
+              }
               placeholder="e.g., 60"
             />
           </div>
         </div>
 
-        {/* Manufacturer Fuel Consumption */}
+        {/* Inherited Admin Fuel Consumption */}
         <div className="space-y-3 pt-2 border-t">
-          <Label className="text-sm font-semibold">Manufacturer Fuel Consumption (L/100km)</Label>
+          <Label className="text-sm font-semibold">
+            Fuel Specifications (Admin Catalog)
+          </Label>
           <p className="text-xs text-muted-foreground">
-            Optional: Enter manufacturer fuel consumption data for more accurate estimates
+            Specs are inherited automatically from the admin-managed catalog.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="fuel_city">City Driving</Label>
+              <Label>City Driving</Label>
               <Input
-                id="fuel_city"
                 type="number"
                 step="0.1"
-                value={specs.manufacturer_fuel_consumption_city || ""}
-                onChange={(e) => setSpecs({ ...specs, manufacturer_fuel_consumption_city: e.target.value ? parseFloat(e.target.value) : null })}
-                placeholder="e.g., 8.5"
+                readOnly
+                value={inheritedFuelMeta?.city_consumption_rate || ""}
+                placeholder="Inherited"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="fuel_highway">Highway Driving</Label>
+              <Label>Highway Driving</Label>
               <Input
-                id="fuel_highway"
                 type="number"
                 step="0.1"
-                value={specs.manufacturer_fuel_consumption_highway || ""}
-                onChange={(e) => setSpecs({ ...specs, manufacturer_fuel_consumption_highway: e.target.value ? parseFloat(e.target.value) : null })}
-                placeholder="e.g., 6.5"
+                readOnly
+                value={inheritedFuelMeta?.highway_consumption_rate || ""}
+                placeholder="Inherited"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="fuel_combined">Combined</Label>
+              <Label>Idle (L/hour)</Label>
               <Input
-                id="fuel_combined"
                 type="number"
                 step="0.1"
-                value={specs.manufacturer_fuel_consumption_combined || ""}
-                onChange={(e) => setSpecs({ ...specs, manufacturer_fuel_consumption_combined: e.target.value ? parseFloat(e.target.value) : null })}
-                placeholder="e.g., 7.2"
+                readOnly
+                value={inheritedFuelMeta?.idle_consumption_rate || ""}
+                placeholder="Inherited"
               />
             </div>
           </div>
+          {!inheritedFuelMeta?.matched ? (
+            <Button
+              variant="outline"
+              onClick={requestProfileCreation}
+              disabled={requestingProfile}
+            >
+              {requestingProfile ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Request Profile Creation
+            </Button>
+          ) : null}
         </div>
 
         {/* Age Degradation Factor */}
         <div className="space-y-2">
-          <Label htmlFor="degradation">Fuel Consumption Degradation per Year (%)</Label>
+          <Label htmlFor="degradation">
+            Fuel Consumption Degradation per Year (%)
+          </Label>
           <Input
             id="degradation"
             type="number"
             step="0.01"
-            value={((specs.fuel_consumption_degradation_per_year || 0.02) * 100).toString()}
-            onChange={(e) => setSpecs({ ...specs, fuel_consumption_degradation_per_year: e.target.value ? parseFloat(e.target.value) / 100 : 0.02 })}
+            value={(
+              (specs.fuel_consumption_degradation_per_year || 0.02) * 100
+            ).toString()}
+            onChange={(e) =>
+              setSpecs({
+                ...specs,
+                fuel_consumption_degradation_per_year: e.target.value
+                  ? parseFloat(e.target.value) / 100
+                  : 0.02,
+              })
+            }
             placeholder="2.0"
           />
           <p className="text-xs text-muted-foreground">
-            Default: 2% per year. This accounts for engine wear and reduced efficiency over time.
+            Default: 2% per year. This accounts for engine wear and reduced
+            efficiency over time.
           </p>
         </div>
 
@@ -360,19 +465,21 @@ export function VehicleSpecificationsForm({ deviceId, onSaved }: VehicleSpecific
         </div>
 
         {/* Calculated Fields Display */}
-        {specs.vehicle_age_years !== null && specs.vehicle_age_years !== undefined && (
-          <div className="p-3 bg-muted rounded-lg space-y-1">
-            <div className="text-sm font-medium">Calculated Values</div>
-            <div className="text-xs text-muted-foreground">
-              Vehicle Age: {specs.vehicle_age_years} years
-            </div>
-            {specs.estimated_current_fuel_consumption && (
+        {specs.vehicle_age_years !== null &&
+          specs.vehicle_age_years !== undefined && (
+            <div className="p-3 bg-muted rounded-lg space-y-1">
+              <div className="text-sm font-medium">Calculated Values</div>
               <div className="text-xs text-muted-foreground">
-                Estimated Current Consumption: {specs.estimated_current_fuel_consumption.toFixed(2)} L/100km
+                Vehicle Age: {specs.vehicle_age_years} years
               </div>
-            )}
-          </div>
-        )}
+              {specs.estimated_current_fuel_consumption && (
+                <div className="text-xs text-muted-foreground">
+                  Estimated Current Consumption:{" "}
+                  {specs.estimated_current_fuel_consumption.toFixed(2)} L/100km
+                </div>
+              )}
+            </div>
+          )}
 
         <Button onClick={handleSave} disabled={saving} className="w-full">
           {saving ? (

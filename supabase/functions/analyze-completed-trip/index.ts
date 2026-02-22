@@ -1,18 +1,21 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { generateDrivingEmbedding, formatEmbeddingForPg } from '../_shared/embedding-generator.ts';
-import { callLLM } from '../_shared/llm-client.ts';
+import {
+  generateDrivingEmbedding,
+  formatEmbeddingForPg,
+} from "../_shared/embedding-generator.ts";
+import { callLLM } from "../_shared/llm-client.ts";
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
 };
 
-const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 // Replaced by callLLM from shared client
-
 
 interface PositionPoint {
   latitude: number;
@@ -21,10 +24,111 @@ interface PositionPoint {
   gps_time: string;
   battery_percent: number | null;
   heading: number | null;
+  ignition_on: boolean | null;
+}
+
+interface FuelMetadata {
+  city_consumption_rate?: number;
+  highway_consumption_rate?: number;
+  idle_consumption_rate?: number;
+  matched?: boolean;
+}
+
+function haversineDistanceKm(a: PositionPoint, b: PositionPoint): number {
+  const toRad = (v: number) => (v * Math.PI) / 180;
+  const earthRadiusKm = 6371;
+  const dLat = toRad(b.latitude - a.latitude);
+  const dLon = toRad(b.longitude - a.longitude);
+  const lat1 = toRad(a.latitude);
+  const lat2 = toRad(b.latitude);
+
+  const h =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+
+  return 2 * earthRadiusKm * Math.asin(Math.sqrt(h));
+}
+
+function calculateFuelMetrics(
+  positions: PositionPoint[],
+  fuelMetadata: FuelMetadata,
+  fuelPricePerLiter: number,
+) {
+  const cityRate = Number(fuelMetadata.city_consumption_rate || 0);
+  const highwayRate = Number(fuelMetadata.highway_consumption_rate || 0);
+  const idleRate = Number(fuelMetadata.idle_consumption_rate || 0);
+
+  if (!cityRate || !highwayRate || !idleRate || positions.length < 2) {
+    return {
+      totalFuelConsumedL: null,
+      estimatedFuelCost: null,
+      fuelBreakdown: {
+        matched_profile: Boolean(fuelMetadata.matched),
+        city_km: 0,
+        highway_km: 0,
+        idle_hours: 0,
+        city_fuel_l: 0,
+        highway_fuel_l: 0,
+        idle_fuel_l: 0,
+      },
+    };
+  }
+
+  let cityKm = 0;
+  let highwayKm = 0;
+  let idleSeconds = 0;
+  let idleWindowSeconds = 0;
+
+  for (let i = 1; i < positions.length; i++) {
+    const prev = positions[i - 1];
+    const curr = positions[i];
+    const dtSeconds =
+      (new Date(curr.gps_time).getTime() - new Date(prev.gps_time).getTime()) /
+      1000;
+    if (dtSeconds <= 0 || dtSeconds > 600) continue;
+
+    const segmentKm = haversineDistanceKm(prev, curr);
+    const speed = Number(curr.speed || 0);
+
+    if (speed < 45) cityKm += segmentKm;
+    else highwayKm += segmentKm;
+
+    const isIdle = speed === 0 && curr.ignition_on === true;
+    if (isIdle) {
+      idleWindowSeconds += dtSeconds;
+    } else {
+      if (idleWindowSeconds > 120) idleSeconds += idleWindowSeconds;
+      idleWindowSeconds = 0;
+    }
+  }
+
+  if (idleWindowSeconds > 120) idleSeconds += idleWindowSeconds;
+
+  const idleHours = idleSeconds / 3600;
+  const cityFuel = (cityKm * cityRate) / 100;
+  const highwayFuel = (highwayKm * highwayRate) / 100;
+  const idleFuel = idleHours * idleRate;
+  const totalFuelConsumedL = cityFuel + highwayFuel + idleFuel;
+  const estimatedFuelCost = totalFuelConsumedL * fuelPricePerLiter;
+
+  return {
+    totalFuelConsumedL,
+    estimatedFuelCost,
+    fuelBreakdown: {
+      matched_profile: true,
+      city_km: cityKm,
+      highway_km: highwayKm,
+      idle_hours: idleHours,
+      city_fuel_l: cityFuel,
+      highway_fuel_l: highwayFuel,
+      idle_fuel_l: idleFuel,
+      fuel_price_per_liter: fuelPricePerLiter,
+    },
+  };
 }
 
 interface HarshEvent {
-  type: 'harsh_braking' | 'harsh_acceleration' | 'harsh_cornering';
+  type: "harsh_braking" | "harsh_acceleration" | "harsh_cornering";
   timestamp: string;
   speed_delta: number;
   location: { lat: number; lon: number };
@@ -43,94 +147,116 @@ interface TripAnalysis {
 }
 
 // Calculate speed delta (km/h change per second) - proxy for G-force
-function analyzePositionData(positions: PositionPoint[]): { harshEvents: HarshEvent[]; avgSpeed: number; maxSpeed: number; totalDistance: number } {
+function analyzePositionData(positions: PositionPoint[]): {
+  harshEvents: HarshEvent[];
+  avgSpeed: number;
+  maxSpeed: number;
+  totalDistance: number;
+} {
   const harshEvents: HarshEvent[] = [];
   let totalSpeed = 0;
   let maxSpeed = 0;
   let prevPosition: PositionPoint | null = null;
-  
+
   for (const pos of positions) {
     totalSpeed += pos.speed;
     maxSpeed = Math.max(maxSpeed, pos.speed);
-    
+
     if (prevPosition) {
-      const timeDiff = (new Date(pos.gps_time).getTime() - new Date(prevPosition.gps_time).getTime()) / 1000;
-      
-      if (timeDiff > 0 && timeDiff < 60) { // Only consider points within 60 seconds
+      const timeDiff =
+        (new Date(pos.gps_time).getTime() -
+          new Date(prevPosition.gps_time).getTime()) /
+        1000;
+
+      if (timeDiff > 0 && timeDiff < 60) {
+        // Only consider points within 60 seconds
         const speedDelta = pos.speed - prevPosition.speed;
         const speedDeltaPerSec = speedDelta / timeDiff;
-        
+
         // Harsh braking: deceleration > 10 km/h per second (~0.28g)
         if (speedDeltaPerSec < -10) {
           harshEvents.push({
-            type: 'harsh_braking',
+            type: "harsh_braking",
             timestamp: pos.gps_time,
             speed_delta: speedDeltaPerSec,
-            location: { lat: pos.latitude, lon: pos.longitude }
+            location: { lat: pos.latitude, lon: pos.longitude },
           });
         }
-        
+
         // Harsh acceleration: acceleration > 10 km/h per second
         if (speedDeltaPerSec > 10) {
           harshEvents.push({
-            type: 'harsh_acceleration',
+            type: "harsh_acceleration",
             timestamp: pos.gps_time,
             speed_delta: speedDeltaPerSec,
-            location: { lat: pos.latitude, lon: pos.longitude }
+            location: { lat: pos.latitude, lon: pos.longitude },
           });
         }
-        
+
         // Harsh cornering: significant heading change at speed
-        if (prevPosition.heading !== null && pos.heading !== null && pos.speed > 20) {
+        if (
+          prevPosition.heading !== null &&
+          pos.heading !== null &&
+          pos.speed > 20
+        ) {
           let headingDelta = Math.abs(pos.heading - prevPosition.heading);
           if (headingDelta > 180) headingDelta = 360 - headingDelta;
-          
+
           // More than 45 degrees per second at speed
           if (headingDelta / timeDiff > 45) {
             harshEvents.push({
-              type: 'harsh_cornering',
+              type: "harsh_cornering",
               timestamp: pos.gps_time,
               speed_delta: headingDelta / timeDiff,
-              location: { lat: pos.latitude, lon: pos.longitude }
+              location: { lat: pos.latitude, lon: pos.longitude },
             });
           }
         }
       }
     }
-    
+
     prevPosition = pos;
   }
-  
+
   return {
     harshEvents,
     avgSpeed: positions.length > 0 ? totalSpeed / positions.length : 0,
     maxSpeed,
-    totalDistance: 0 // Can be calculated from positions if needed
+    totalDistance: 0, // Can be calculated from positions if needed
   };
 }
 
 // Calculate driver score (100 minus penalties)
-function calculateDriverScore(harshEvents: HarshEvent[], tripDurationMinutes: number): number {
+function calculateDriverScore(
+  harshEvents: HarshEvent[],
+  tripDurationMinutes: number,
+): number {
   let score = 100;
-  
+
   // Penalty points per event (adjusted by trip duration)
   const penaltyPerBraking = 3;
   const penaltyPerAcceleration = 2;
   const penaltyPerCornering = 2;
-  
-  const brakingCount = harshEvents.filter(e => e.type === 'harsh_braking').length;
-  const accelCount = harshEvents.filter(e => e.type === 'harsh_acceleration').length;
-  const corneringCount = harshEvents.filter(e => e.type === 'harsh_cornering').length;
-  
+
+  const brakingCount = harshEvents.filter(
+    (e) => e.type === "harsh_braking",
+  ).length;
+  const accelCount = harshEvents.filter(
+    (e) => e.type === "harsh_acceleration",
+  ).length;
+  const corneringCount = harshEvents.filter(
+    (e) => e.type === "harsh_cornering",
+  ).length;
+
   score -= brakingCount * penaltyPerBraking;
   score -= accelCount * penaltyPerAcceleration;
   score -= corneringCount * penaltyPerCornering;
-  
+
   // Bonus for longer trips without incidents (normalized)
   if (tripDurationMinutes > 30 && harshEvents.length === 0) {
     score = Math.min(100, score + 5);
   }
-  
+
   return Math.max(0, Math.min(100, score));
 }
 
@@ -140,12 +266,18 @@ async function generateDrivingSummary(
   avgSpeed: number,
   maxSpeed: number,
   tripDurationMinutes: number,
-  driverScore: number
+  driverScore: number,
 ): Promise<string> {
-  const brakingCount = harshEvents.filter(e => e.type === 'harsh_braking').length;
-  const accelCount = harshEvents.filter(e => e.type === 'harsh_acceleration').length;
-  const corneringCount = harshEvents.filter(e => e.type === 'harsh_cornering').length;
-  
+  const brakingCount = harshEvents.filter(
+    (e) => e.type === "harsh_braking",
+  ).length;
+  const accelCount = harshEvents.filter(
+    (e) => e.type === "harsh_acceleration",
+  ).length;
+  const corneringCount = harshEvents.filter(
+    (e) => e.type === "harsh_cornering",
+  ).length;
+
   const prompt = `Analyze this driving telemetry and write a 2-sentence summary of the driver's behavior:
   
 Trip Duration: ${tripDurationMinutes.toFixed(0)} minutes
@@ -163,23 +295,26 @@ Write a concise 2-sentence summary focusing on driving safety and behavior patte
   try {
     // Use shared Lovable client
     const result = await callLLM(
-      'You are a driving safety analyst. Analyze driving telemetry and provide concise summaries.',
+      "You are a driving safety analyst. Analyze driving telemetry and provide concise summaries.",
       prompt,
       {
         maxOutputTokens: 150,
         temperature: 0.5,
-        model: 'google/gemini-2.5-flash',
-      }
+        model: "google/gemini-2.5-flash",
+      },
     );
-    
+
     return result.text || generateFallbackSummary(harshEvents, driverScore);
   } catch (error) {
-    console.error('[Trip Analyzer] Error generating summary:', error);
+    console.error("[Trip Analyzer] Error generating summary:", error);
     return generateFallbackSummary(harshEvents, driverScore);
   }
 }
 
-function generateFallbackSummary(harshEvents: HarshEvent[], driverScore: number): string {
+function generateFallbackSummary(
+  harshEvents: HarshEvent[],
+  driverScore: number,
+): string {
   const totalEvents = harshEvents.length;
   if (totalEvents === 0) {
     return `Excellent driving performance with a score of ${driverScore}/100. No harsh events detected during this trip.`;
@@ -192,7 +327,7 @@ function generateFallbackSummary(harshEvents: HarshEvent[], driverScore: number)
 // Note: generateSemanticEmbedding moved to shared embedding-generator.ts
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
+  if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
@@ -200,103 +335,153 @@ serve(async (req) => {
 
   try {
     const { trip_id, lookback_hours = 24 } = await req.json().catch(() => ({}));
-    
-    console.log('[Trip Analyzer] Starting analysis...', { trip_id, lookback_hours });
 
-    let tripsToAnalyze: { id: string; device_id: string; start_time: string; end_time: string; duration_seconds: number }[] = [];
+    console.log("[Trip Analyzer] Starting analysis...", {
+      trip_id,
+      lookback_hours,
+    });
+
+    let tripsToAnalyze: {
+      id: string;
+      device_id: string;
+      start_time: string;
+      end_time: string;
+      duration_seconds: number;
+    }[] = [];
 
     if (trip_id) {
       // Analyze specific trip
       const { data: trip, error } = await supabase
-        .from('vehicle_trips')
-        .select('id, device_id, start_time, end_time, duration_seconds')
-        .eq('id', trip_id)
+        .from("vehicle_trips")
+        .select("id, device_id, start_time, end_time, duration_seconds")
+        .eq("id", trip_id)
         .single();
-      
+
       if (error || !trip) {
-        return new Response(JSON.stringify({ error: 'Trip not found' }), {
+        return new Response(JSON.stringify({ error: "Trip not found" }), {
           status: 404,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      
+
       tripsToAnalyze = [trip];
     } else {
       // Find trips from the last N hours that haven't been analyzed
       // CRITICAL: Filter by source='gps51' for accurate GPS51 parity
-      const lookbackTime = new Date(Date.now() - lookback_hours * 60 * 60 * 1000).toISOString();
+      const lookbackTime = new Date(
+        Date.now() - lookback_hours * 60 * 60 * 1000,
+      ).toISOString();
 
       const { data: recentTrips, error } = await supabase
-        .from('vehicle_trips')
-        .select('id, device_id, start_time, end_time, duration_seconds')
-        .eq('source', 'gps51')  // Only GPS51 trips for accuracy
-        .gte('end_time', lookbackTime)
-        .order('end_time', { ascending: false })
+        .from("vehicle_trips")
+        .select("id, device_id, start_time, end_time, duration_seconds")
+        .eq("source", "gps51") // Only GPS51 trips for accuracy
+        .gte("end_time", lookbackTime)
+        .order("end_time", { ascending: false })
         .limit(50);
-      
+
       if (error) {
-        console.error('[Trip Analyzer] Error fetching trips:', error);
+        console.error("[Trip Analyzer] Error fetching trips:", error);
         return new Response(JSON.stringify({ error: error.message }), {
           status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      
+
       // Filter out already analyzed trips
-      const tripIds = recentTrips?.map(t => t.id) || [];
+      const tripIds = recentTrips?.map((t) => t.id) || [];
       const { data: existingAnalytics } = await supabase
-        .from('trip_analytics')
-        .select('trip_id')
-        .in('trip_id', tripIds);
-      
-      const analyzedIds = new Set(existingAnalytics?.map(a => a.trip_id) || []);
-      tripsToAnalyze = recentTrips?.filter(t => !analyzedIds.has(t.id)) || [];
+        .from("trip_analytics")
+        .select("trip_id")
+        .in("trip_id", tripIds);
+
+      const analyzedIds = new Set(
+        existingAnalytics?.map((a) => a.trip_id) || [],
+      );
+      tripsToAnalyze = recentTrips?.filter((t) => !analyzedIds.has(t.id)) || [];
     }
 
-    console.log(`[Trip Analyzer] Found ${tripsToAnalyze.length} trips to analyze`);
+    console.log(
+      `[Trip Analyzer] Found ${tripsToAnalyze.length} trips to analyze`,
+    );
 
-    const results: { trip_id: string; driver_score: number; success: boolean }[] = [];
+    const { data: fuelPriceSetting } = await supabase
+      .from("app_settings")
+      .select("value")
+      .eq("key", "fuel_price_per_liter")
+      .maybeSingle();
+
+    const fuelPricePerLiter = Number(fuelPriceSetting?.value ?? 1);
+
+    const results: {
+      trip_id: string;
+      driver_score: number;
+      success: boolean;
+    }[] = [];
 
     for (const trip of tripsToAnalyze) {
       try {
         console.log(`[Trip Analyzer] Analyzing trip ${trip.id}...`);
-        
+
         // Fetch position history for this trip
         const { data: positions, error: posError } = await supabase
-          .from('position_history')
-          .select('latitude, longitude, speed, gps_time, battery_percent, heading')
-          .eq('device_id', trip.device_id)
-          .gte('gps_time', trip.start_time)
-          .lte('gps_time', trip.end_time)
-          .order('gps_time', { ascending: true });
-        
+          .from("position_history")
+          .select(
+            "latitude, longitude, speed, gps_time, battery_percent, heading, ignition_on",
+          )
+          .eq("device_id", trip.device_id)
+          .gte("gps_time", trip.start_time)
+          .lte("gps_time", trip.end_time)
+          .order("gps_time", { ascending: true });
+
         if (posError || !positions || positions.length < 2) {
           console.log(`[Trip Analyzer] Insufficient data for trip ${trip.id}`);
           continue;
         }
-        
+
         // Analyze the positions
-        const { harshEvents, avgSpeed, maxSpeed } = analyzePositionData(positions);
+        const { harshEvents, avgSpeed, maxSpeed } =
+          analyzePositionData(positions);
+
+        const { data: vehicleData } = await supabase
+          .from("vehicles")
+          .select("fuel_metadata")
+          .eq("device_id", trip.device_id)
+          .maybeSingle();
+
+        const fuelMetadata = (vehicleData?.fuel_metadata || {}) as FuelMetadata;
+        const { totalFuelConsumedL, estimatedFuelCost, fuelBreakdown } =
+          calculateFuelMetrics(positions, fuelMetadata, fuelPricePerLiter);
+
         const tripDurationMinutes = (trip.duration_seconds || 0) / 60;
         const isLongHaul = tripDurationMinutes > 180;
-        
+
         // Calculate driver score
-        const driverScore = calculateDriverScore(harshEvents, tripDurationMinutes);
-        
+        const driverScore = calculateDriverScore(
+          harshEvents,
+          tripDurationMinutes,
+        );
+
         // Generate AI summary
         const summaryText = await generateDrivingSummary(
           harshEvents,
           avgSpeed,
           maxSpeed,
           tripDurationMinutes,
-          driverScore
+          driverScore,
         );
-        
+
         // Generate embedding for semantic search using shared generator
-        const harshBrakingCount = harshEvents.filter(e => e.type === 'harsh_braking').length;
-        const harshAccelCount = harshEvents.filter(e => e.type === 'harsh_acceleration').length;
-        const harshCorneringCount = harshEvents.filter(e => e.type === 'harsh_cornering').length;
-        
+        const harshBrakingCount = harshEvents.filter(
+          (e) => e.type === "harsh_braking",
+        ).length;
+        const harshAccelCount = harshEvents.filter(
+          (e) => e.type === "harsh_acceleration",
+        ).length;
+        const harshCorneringCount = harshEvents.filter(
+          (e) => e.type === "harsh_cornering",
+        ).length;
+
         const embedding = generateDrivingEmbedding(
           summaryText,
           driverScore,
@@ -304,14 +489,19 @@ serve(async (req) => {
           harshAccelCount,
           harshCorneringCount,
           avgSpeed,
-          maxSpeed
+          maxSpeed,
         );
-        
+
         // Prepare harsh events summary
         const harshEventsSummary = {
-          harsh_braking: harshEvents.filter(e => e.type === 'harsh_braking').length,
-          harsh_acceleration: harshEvents.filter(e => e.type === 'harsh_acceleration').length,
-          harsh_cornering: harshEvents.filter(e => e.type === 'harsh_cornering').length,
+          harsh_braking: harshEvents.filter((e) => e.type === "harsh_braking")
+            .length,
+          harsh_acceleration: harshEvents.filter(
+            (e) => e.type === "harsh_acceleration",
+          ).length,
+          harsh_cornering: harshEvents.filter(
+            (e) => e.type === "harsh_cornering",
+          ).length,
           total_events: harshEvents.length,
           events: harshEvents.slice(0, 10), // Store first 10 events
         };
@@ -319,10 +509,10 @@ serve(async (req) => {
           long_haul: isLongHaul,
           trip_duration_minutes: tripDurationMinutes,
         };
-        
+
         // Insert into trip_analytics
         const { error: insertError } = await supabase
-          .from('trip_analytics')
+          .from("trip_analytics")
           .insert({
             trip_id: trip.id,
             device_id: trip.device_id,
@@ -330,37 +520,62 @@ serve(async (req) => {
             harsh_events: harshEventsSummary,
             summary_text: summaryText,
             weather_data: weatherData,
+            total_fuel_consumed_l: totalFuelConsumedL,
+            estimated_fuel_cost: estimatedFuelCost,
+            fuel_breakdown: fuelBreakdown,
             embedding: formatEmbeddingForPg(embedding),
           });
-        
+
         if (insertError) {
-          console.error(`[Trip Analyzer] Error inserting analytics for trip ${trip.id}:`, insertError);
-          results.push({ trip_id: trip.id, driver_score: driverScore, success: false });
+          console.error(
+            `[Trip Analyzer] Error inserting analytics for trip ${trip.id}:`,
+            insertError,
+          );
+          results.push({
+            trip_id: trip.id,
+            driver_score: driverScore,
+            success: false,
+          });
         } else {
-          console.log(`[Trip Analyzer] Successfully analyzed trip ${trip.id}, score: ${driverScore}`);
-          results.push({ trip_id: trip.id, driver_score: driverScore, success: true });
+          console.log(
+            `[Trip Analyzer] Successfully analyzed trip ${trip.id}, score: ${driverScore}`,
+          );
+          results.push({
+            trip_id: trip.id,
+            driver_score: driverScore,
+            success: true,
+          });
         }
-        
       } catch (tripError) {
-        console.error(`[Trip Analyzer] Error analyzing trip ${trip.id}:`, tripError);
+        console.error(
+          `[Trip Analyzer] Error analyzing trip ${trip.id}:`,
+          tripError,
+        );
         results.push({ trip_id: trip.id, driver_score: 0, success: false });
       }
     }
 
-    return new Response(JSON.stringify({
-      message: 'Trip analysis complete',
-      trips_found: tripsToAnalyze.length,
-      trips_analyzed: results.filter(r => r.success).length,
-      results,
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-
+    return new Response(
+      JSON.stringify({
+        message: "Trip analysis complete",
+        trips_found: tripsToAnalyze.length,
+        trips_analyzed: results.filter((r) => r.success).length,
+        results,
+      }),
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   } catch (error) {
-    console.error('[Trip Analyzer] Error:', error);
-    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    console.error("[Trip Analyzer] Error:", error);
+    return new Response(
+      JSON.stringify({
+        error: error instanceof Error ? error.message : "Unknown error",
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 });

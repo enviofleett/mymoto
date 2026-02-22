@@ -2,12 +2,12 @@ import { useNavigate } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
-import { 
-  LayoutDashboard, 
-  Truck, 
-  Map, 
-  Brain, 
-  Settings, 
+import {
+  LayoutDashboard,
+  Truck,
+  Map,
+  Brain,
+  Settings,
   LogOut,
   Wallet,
   Database,
@@ -17,9 +17,9 @@ import {
   Shield,
   BookOpen,
   Building2,
-  TrendingUp
-  ,
-  Headset
+  TrendingUp,
+  Headset,
+  Fuel,
 } from "lucide-react";
 import { ConnectionStatus } from "@/hooks/useFleetData";
 
@@ -85,7 +85,9 @@ export function TopNavigation({ connectionStatus }: TopNavigationProps) {
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
             <Truck className="h-4 w-4 text-primary-foreground" />
           </div>
-          <span className="font-bold text-foreground hidden sm:inline">FleetHub</span>
+          <span className="font-bold text-foreground hidden sm:inline">
+            FleetHub
+          </span>
         </div>
 
         {/* Nav Links - Desktop */}
@@ -175,6 +177,14 @@ export function TopNavigation({ connectionStatus }: TopNavigationProps) {
               >
                 <Building2 className="h-4 w-4" />
                 <span>Directory</span>
+              </NavLink>
+              <NavLink
+                to="/admin/vehicle-catalog"
+                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground rounded-md transition-colors hover:text-foreground hover:bg-muted"
+                activeClassName="text-primary bg-primary/10"
+              >
+                <Fuel className="h-4 w-4" />
+                <span>Fuel Catalog</span>
               </NavLink>
               <NavLink
                 to="/admin/growth"

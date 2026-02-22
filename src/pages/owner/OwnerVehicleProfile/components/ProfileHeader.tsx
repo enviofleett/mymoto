@@ -1,13 +1,16 @@
 import { ArrowLeft, Settings } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 interface ProfileHeaderProps {
   onBack: () => void;
   onSettings: () => void;
+  hasVerifiedFuelProfile?: boolean;
 }
 
 export function ProfileHeader({
   onBack,
   onSettings,
+  hasVerifiedFuelProfile,
 }: ProfileHeaderProps) {
   return (
     <>
@@ -27,9 +30,12 @@ export function ProfileHeader({
             <Settings className="h-5 w-5 text-foreground" />
           </button>
         </div>
+        {hasVerifiedFuelProfile ? (
+          <div className="mt-2 flex justify-center">
+            <Badge variant="secondary">Verified Fuel Profile</Badge>
+          </div>
+        ) : null}
       </div>
-
-      
     </>
   );
 }
