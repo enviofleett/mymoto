@@ -12,6 +12,11 @@ import {
 import { Star, ShieldCheck, CheckCircle2, AlertCircle, WifiOff, HardDrive, XCircle } from "lucide-react";
 import { trackEvent, trackEventOnce } from "@/lib/analytics";
 
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+}
+
 type Platform = "android" | "ios" | "mac" | "other";
 
 type InstallStage =
@@ -28,7 +33,8 @@ const PRIMARY_COLOR = "#34A853";
 
 const getPlatform = (): Platform => {
   if (typeof navigator === "undefined") return "other";
-  const ua = navigator.userAgent || navigator.vendor || (window as any).opera || "";
+  const ua: string =
+    navigator.userAgent || navigator.vendor || ((window as unknown) as { opera?: string }).opera || "";
   const lower = ua.toLowerCase();
   if (/iphone|ipad|ipod/.test(lower)) return "ios";
   if (/android/.test(lower)) return "android";
@@ -64,8 +70,7 @@ const InstallApp = () => {
   const isIOS = platform === "ios";
   const isMac = platform === "mac";
 
-  const deferredPromptRef = useRef<any | null>(null);
-  const [installPromptSeen, setInstallPromptSeen] = useState(false);
+  const deferredPromptRef = useRef<BeforeInstallPromptEvent | null>(null);
 
   useEffect(() => {
     trackEventOnce("install_view", "install_page");
@@ -76,8 +81,7 @@ const InstallApp = () => {
 
     const handleBeforeInstallPrompt = (event: Event) => {
       event.preventDefault();
-      deferredPromptRef.current = event as any;
-      setInstallPromptSeen(true);
+      deferredPromptRef.current = event as BeforeInstallPromptEvent;
       void trackEventOnce("install_beforeinstallprompt", "global");
     };
 
