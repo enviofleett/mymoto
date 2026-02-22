@@ -1,10 +1,10 @@
 import { useLocation, useNavigate } from "react-router-dom";
 import { useState } from "react";
-import { 
-  LayoutDashboard, 
-  Truck, 
-  Brain, 
-  Wallet, 
+import {
+  LayoutDashboard,
+  Truck,
+  Brain,
+  Wallet,
   Database,
   MoreHorizontal,
   Map,
@@ -19,9 +19,9 @@ import {
   LogOut,
   Building2,
   BookOpen,
-  TrendingUp
-  ,
-  Headset
+  TrendingUp,
+  Headset,
+  Fuel,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NavLink } from "@/components/NavLink";
@@ -36,35 +36,36 @@ import {
 } from "@/components/ui/sheet";
 
 const ADMIN_NAV_ITEMS = [
-  { 
-    label: "Command", 
-    path: "/admin/dashboard", 
+  {
+    label: "Command",
+    path: "/admin/dashboard",
     icon: LayoutDashboard,
-    activeMatch: /^\/admin\/dashboard$|^\/admin$/
+    activeMatch: /^\/admin\/dashboard$|^\/admin$/,
   },
-  { 
-    label: "Fleet", 
-    path: "/fleet", 
+  {
+    label: "Fleet",
+    path: "/fleet",
     icon: Truck,
-    activeMatch: /^\/fleet/
+    activeMatch: /^\/fleet/,
   },
-  { 
-    label: "Cortex", 
-    path: "/admin/ai-settings", 
+  {
+    label: "Cortex",
+    path: "/admin/ai-settings",
     icon: Brain,
-    activeMatch: /^\/admin\/(ai-settings|intelligence)/
+    activeMatch: /^\/admin\/(ai-settings|intelligence)/,
   },
-  { 
-    label: "Finance", 
-    path: "/admin/wallets", 
+  {
+    label: "Finance",
+    path: "/admin/wallets",
     icon: Wallet,
-    activeMatch: /^\/admin\/(wallets|finance)/
+    activeMatch: /^\/admin\/(wallets|finance)/,
   },
-  { 
-    label: "System", 
-    path: "/admin/storage", 
+  {
+    label: "System",
+    path: "/admin/storage",
     icon: Database,
-    activeMatch: /^\/admin\/(storage|alerts|assignments|privacy-settings|directory|system|resources|email-templates|report-templates)/
+    activeMatch:
+      /^\/admin\/(storage|alerts|assignments|privacy-settings|directory|vehicle-catalog|system|resources|email-templates|report-templates)/,
   },
 ];
 
@@ -80,6 +81,7 @@ const MORE_MENU_ITEMS = [
   { title: "Resources", url: "/admin/resources", icon: BookOpen },
   { title: "Privacy & Terms", url: "/admin/privacy-settings", icon: Shield },
   { title: "Directory", url: "/admin/directory", icon: Building2 },
+  { title: "Fuel Catalog", url: "/admin/vehicle-catalog", icon: Fuel },
   { title: "Growth", url: "/admin/growth", icon: TrendingUp },
   { title: "Support Agent", url: "/admin/support-agent", icon: Headset },
 ];
@@ -102,8 +104,9 @@ export function AdminBottomNav() {
   };
 
   // Check if any "More" menu item is active
-  const isMoreMenuActive = MORE_MENU_ITEMS.some(item => {
-    if (item.url === "/admin/dashboard") return location.pathname === "/admin/dashboard";
+  const isMoreMenuActive = MORE_MENU_ITEMS.some((item) => {
+    if (item.url === "/admin/dashboard")
+      return location.pathname === "/admin/dashboard";
     return location.pathname.startsWith(item.url);
   });
 
@@ -115,7 +118,7 @@ export function AdminBottomNav() {
       <div className="flex items-center justify-around h-20 max-w-lg mx-auto px-4 max-[360px]:px-2">
         {ADMIN_NAV_ITEMS.map((item) => {
           const isActive = item.activeMatch.test(location.pathname);
-          
+
           return (
             <button
               key={item.path}
@@ -123,27 +126,35 @@ export function AdminBottomNav() {
               className="flex flex-col items-center justify-center gap-1.5 transition-all duration-200 active:scale-95"
             >
               {/* Neumorphic icon container */}
-              <div className={cn(
-                "flex items-center justify-center w-12 h-12 max-[360px]:w-10 max-[360px]:h-10 rounded-full transition-all duration-300",
-                isActive 
-                  ? "shadow-neumorphic-inset ring-2 ring-accent/70 bg-card" 
-                  : "shadow-neumorphic-sm bg-card hover:shadow-neumorphic"
-              )}>
-                <item.icon className={cn(
-                  "h-5 w-5 transition-colors duration-200",
-                  isActive ? "text-accent" : "text-muted-foreground"
-                )} />
+              <div
+                className={cn(
+                  "flex items-center justify-center w-12 h-12 max-[360px]:w-10 max-[360px]:h-10 rounded-full transition-all duration-300",
+                  isActive
+                    ? "shadow-neumorphic-inset ring-2 ring-accent/70 bg-card"
+                    : "shadow-neumorphic-sm bg-card hover:shadow-neumorphic",
+                )}
+              >
+                <item.icon
+                  className={cn(
+                    "h-5 w-5 transition-colors duration-200",
+                    isActive ? "text-accent" : "text-muted-foreground",
+                  )}
+                />
               </div>
               {/* Active indicator dot */}
-              <div className={cn(
-                "w-1.5 h-1.5 rounded-full transition-all duration-300",
-                isActive ? "bg-accent scale-100" : "bg-transparent scale-0"
-              )} />
+              <div
+                className={cn(
+                  "w-1.5 h-1.5 rounded-full transition-all duration-300",
+                  isActive ? "bg-accent scale-100" : "bg-transparent scale-0",
+                )}
+              />
               {/* Label */}
-              <span className={cn(
-                "text-[10px] font-medium transition-colors duration-200 max-[360px]:hidden",
-                isActive ? "text-accent" : "text-muted-foreground"
-              )}>
+              <span
+                className={cn(
+                  "text-[10px] font-medium transition-colors duration-200 max-[360px]:hidden",
+                  isActive ? "text-accent" : "text-muted-foreground",
+                )}
+              >
                 {item.label}
               </span>
             </button>
@@ -155,32 +166,45 @@ export function AdminBottomNav() {
           <SheetTrigger asChild>
             <button className="flex flex-col items-center justify-center gap-1.5 transition-all duration-200 active:scale-95">
               {/* Neumorphic icon container */}
-              <div className={cn(
-                "flex items-center justify-center w-12 h-12 max-[360px]:w-10 max-[360px]:h-10 rounded-full transition-all duration-300",
-                isMoreMenuActive
-                  ? "shadow-neumorphic-inset ring-2 ring-accent/70 bg-card"
-                  : "shadow-neumorphic-sm bg-card hover:shadow-neumorphic"
-              )}>
-                <MoreHorizontal className={cn(
-                  "h-5 w-5 transition-colors duration-200",
-                  isMoreMenuActive ? "text-accent" : "text-muted-foreground"
-                )} />
+              <div
+                className={cn(
+                  "flex items-center justify-center w-12 h-12 max-[360px]:w-10 max-[360px]:h-10 rounded-full transition-all duration-300",
+                  isMoreMenuActive
+                    ? "shadow-neumorphic-inset ring-2 ring-accent/70 bg-card"
+                    : "shadow-neumorphic-sm bg-card hover:shadow-neumorphic",
+                )}
+              >
+                <MoreHorizontal
+                  className={cn(
+                    "h-5 w-5 transition-colors duration-200",
+                    isMoreMenuActive ? "text-accent" : "text-muted-foreground",
+                  )}
+                />
               </div>
               {/* Active indicator dot */}
-              <div className={cn(
-                "w-1.5 h-1.5 rounded-full transition-all duration-300",
-                isMoreMenuActive ? "bg-accent scale-100" : "bg-transparent scale-0"
-              )} />
+              <div
+                className={cn(
+                  "w-1.5 h-1.5 rounded-full transition-all duration-300",
+                  isMoreMenuActive
+                    ? "bg-accent scale-100"
+                    : "bg-transparent scale-0",
+                )}
+              />
               {/* Label */}
-              <span className={cn(
-                "text-[10px] font-medium transition-colors duration-200 max-[360px]:hidden",
-                isMoreMenuActive ? "text-accent" : "text-muted-foreground"
-              )}>
+              <span
+                className={cn(
+                  "text-[10px] font-medium transition-colors duration-200 max-[360px]:hidden",
+                  isMoreMenuActive ? "text-accent" : "text-muted-foreground",
+                )}
+              >
                 More
               </span>
             </button>
           </SheetTrigger>
-          <SheetContent side="bottom" className="max-h-[85vh] rounded-t-xl flex flex-col p-0 gap-0">
+          <SheetContent
+            side="bottom"
+            className="max-h-[85vh] rounded-t-xl flex flex-col p-0 gap-0"
+          >
             <SheetHeader className="p-4 pt-6 pb-2 text-left border-b border-border/10">
               <SheetTitle className="flex items-center gap-2">
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
@@ -191,9 +215,11 @@ export function AdminBottomNav() {
             </SheetHeader>
             <div className="space-y-2 overflow-y-auto flex-1 p-4 pb-8">
               {MORE_MENU_ITEMS.map((item) => {
-                const isActive = location.pathname.startsWith(item.url) || 
-                  (item.url === "/admin/dashboard" && location.pathname === "/admin/dashboard");
-                
+                const isActive =
+                  location.pathname.startsWith(item.url) ||
+                  (item.url === "/admin/dashboard" &&
+                    location.pathname === "/admin/dashboard");
+
                 return (
                   <NavLink
                     key={item.url}

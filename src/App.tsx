@@ -3,7 +3,14 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import SplashScreen from "@/components/SplashScreen";
@@ -46,11 +53,17 @@ const PartnerDashboard = lazy(() => import("./pages/partner/PartnerDashboard"));
 const OwnerChat = lazy(() => import("./pages/owner/OwnerChat"));
 const OwnerChatDetail = lazy(() => import("./pages/owner/OwnerChatDetail"));
 const OwnerVehicles = lazy(() => import("./pages/owner/OwnerVehicles"));
-const OwnerVehiclesDashboard = lazy(() => import("./pages/owner/OwnerVehiclesDashboard"));
-const OwnerVehicleProfile = lazy(() => import("./pages/owner/OwnerVehicleProfile"));
+const OwnerVehiclesDashboard = lazy(
+  () => import("./pages/owner/OwnerVehiclesDashboard"),
+);
+const OwnerVehicleProfile = lazy(
+  () => import("./pages/owner/OwnerVehicleProfile"),
+);
 const OwnerWallet = lazy(() => import("./pages/owner/OwnerWallet"));
 const OwnerProfile = lazy(() => import("./pages/owner/OwnerProfile"));
-const OwnerNotificationSettings = lazy(() => import("./pages/owner/OwnerNotificationSettings"));
+const OwnerNotificationSettings = lazy(
+  () => import("./pages/owner/OwnerNotificationSettings"),
+);
 const OwnerPrivacy = lazy(() => import("./pages/owner/OwnerPrivacy"));
 const OwnerResources = lazy(() => import("./pages/owner/OwnerResources"));
 const OwnerHelpSupport = lazy(() => import("./pages/owner/OwnerHelpSupport"));
@@ -59,6 +72,9 @@ const OwnerHelpSupport = lazy(() => import("./pages/owner/OwnerHelpSupport"));
 const OwnerDirectory = lazy(() => import("./pages/owner/OwnerDirectory"));
 const AdminDirectory = lazy(() => import("./pages/AdminDirectory"));
 const AdminVehicleRequests = lazy(() => import("./pages/AdminVehicleRequests"));
+const AdminVehicleCatalog = lazy(
+  () => import("./pages/admin/AdminVehicleCatalog"),
+);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -82,26 +98,27 @@ function RouteFallback() {
 }
 
 // Check if running as installed PWA
-const isPWA = window.matchMedia('(display-mode: standalone)').matches ||
+const isPWA =
+  window.matchMedia("(display-mode: standalone)").matches ||
   (window.navigator as any).standalone === true;
 
 // Role-based redirect component
 const RoleBasedRedirect = () => {
   const { user, isAdmin, isProvider, isLoading, isRoleLoaded } = useAuth();
   const navigate = useNavigate();
-  
+
   useEffect(() => {
     if (!isLoading && isRoleLoaded && user) {
       if (isAdmin) {
-        navigate('/admin/dashboard', { replace: true });
+        navigate("/admin/dashboard", { replace: true });
       } else if (isProvider) {
-        navigate('/partner/dashboard', { replace: true });
+        navigate("/partner/dashboard", { replace: true });
       } else {
-        navigate('/owner/vehicles', { replace: true });
+        navigate("/owner/vehicles", { replace: true });
       }
     }
   }, [user, isAdmin, isProvider, isLoading, isRoleLoaded, navigate]);
-  
+
   return null;
 };
 
@@ -122,15 +139,13 @@ const App = () => {
   }, []);
 
   useEffect(() => {
-    const handleOnline = () => {
-    };
-    const handleOffline = () => {
-    };
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
+    const handleOnline = () => {};
+    const handleOffline = () => {};
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
     return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
     };
   }, []);
 
@@ -141,73 +156,315 @@ const App = () => {
           {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
           <Toaster />
           <Sonner />
-          <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          <BrowserRouter
+            future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+          >
             <AuthProvider>
               <TermsChecker>
-            <Suspense fallback={<RouteFallback />}>
-            <Routes>
-              <Route path="/" element={<OwnerLanding />} />
-              <Route path="/go/:channel" element={<OwnerLanding />} />
-              <Route path="/auth" element={<Auth />} />
-              <Route path="/forgot-password" element={<ForgotPassword />} />
-              <Route path="/reset-password" element={<ResetPassword />} />
-              <Route path="/login" element={<PwaLogin />} />
-              <Route path="/install" element={<InstallApp />} />
-              <Route path="/install/direct" element={<InstallDirectRedirect />} />
-              
-              {/* Role-based redirect */}
-              <Route path="/redirect" element={<RoleBasedRedirect />} />
-              
-              {/* Admin Dashboard Routes */}
-              <Route path="/admin/dashboard" element={<ProtectedRoute requireAdmin><Index /></ProtectedRoute>} />
-              <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
-              <Route path="/fleet" element={<ProtectedRoute><Fleet /></ProtectedRoute>} />
-              <Route path="/map" element={<Navigate to="/fleet" replace />} />
-              <Route path="/insights" element={<ProtectedRoute><Insights /></ProtectedRoute>} />
-              <Route path="/settings" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-              <Route path="/profile" element={<Navigate to="/settings" replace />} />
-              <Route path="/notifications" element={<ProtectedRoute><NotificationSettings /></ProtectedRoute>} />
-              
-              {/* Admin Routes */}
-              <Route path="/admin/wallets" element={<ProtectedRoute><AdminWallets /></ProtectedRoute>} />
-              <Route path="/admin/storage" element={<ProtectedRoute><AdminStorage /></ProtectedRoute>} />
-              <Route path="/admin/alerts" element={<ProtectedRoute><AdminAlerts /></ProtectedRoute>} />
-              <Route path="/admin/ai-settings" element={<ProtectedRoute><AdminAiSettings /></ProtectedRoute>} />
-              <Route path="/admin/assignments" element={<ProtectedRoute><AdminAssignments /></ProtectedRoute>} />
-              <Route path="/admin/privacy-settings" element={<ProtectedRoute><AdminPrivacySettings /></ProtectedRoute>} />
-              <Route path="/admin/email-templates" element={<ProtectedRoute><AdminEmailTemplates /></ProtectedRoute>} />
-              <Route path="/admin/report-templates" element={<ProtectedRoute><AdminReportTemplates /></ProtectedRoute>} />
-              <Route path="/admin/resources" element={<ProtectedRoute><AdminResources /></ProtectedRoute>} />
-              <Route path="/admin/growth" element={<ProtectedRoute requireAdmin><AdminGrowthDashboard /></ProtectedRoute>} />
-              <Route path="/admin/support-agent" element={<ProtectedRoute requireAdmin><AdminSupportAgent /></ProtectedRoute>} />
-              <Route path="/admin/directory" element={<ProtectedRoute requireAdmin><AdminDirectory /></ProtectedRoute>} />
-              <Route path="/admin/vehicle-requests" element={<ProtectedRoute requireAdmin><AdminVehicleRequests /></ProtectedRoute>} />
-              
-              {/* Partner Routes */}
-              <Route path="/partner/signup" element={<PartnerSignup />} />
-              <Route path="/partner/dashboard" element={<ProtectedRoute requireProvider><PartnerDashboard /></ProtectedRoute>} />
-              
-              {/* Owner PWA Routes */}
-              <Route path="/owner" element={<ProtectedRoute><OwnerChat /></ProtectedRoute>} />
-              <Route path="/owner/chat/:deviceId" element={<ProtectedRoute><OwnerChatDetail /></ProtectedRoute>} />
-              <Route path="/owner/vehicles" element={<ProtectedRoute><OwnerVehiclesDashboard /></ProtectedRoute>} />
-              <Route path="/owner/vehicles/list" element={<ProtectedRoute><OwnerVehicles /></ProtectedRoute>} />
-              <Route path="/owner/vehicle/:deviceId" element={<ProtectedRoute><OwnerVehicleProfile /></ProtectedRoute>} />
-              <Route path="/owner/wallet" element={<ProtectedRoute><OwnerWallet /></ProtectedRoute>} />
-              <Route path="/owner/profile" element={<ProtectedRoute><OwnerProfile /></ProtectedRoute>} />
-              <Route path="/owner/notifications" element={<ProtectedRoute><OwnerNotificationSettings /></ProtectedRoute>} />
-              <Route path="/owner/privacy" element={<ProtectedRoute><OwnerPrivacy /></ProtectedRoute>} />
-              <Route path="/owner/resources" element={<ProtectedRoute><OwnerResources /></ProtectedRoute>} />
-              <Route path="/owner/help" element={<ProtectedRoute><OwnerHelpSupport /></ProtectedRoute>} />
-              <Route path="/owner/directory" element={<ProtectedRoute><OwnerDirectory /></ProtectedRoute>} />
-              
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-            </Suspense>
-            <RatingListener />
-            </TermsChecker>
-          </AuthProvider>
-        </BrowserRouter>
+                <Suspense fallback={<RouteFallback />}>
+                  <Routes>
+                    <Route path="/" element={<OwnerLanding />} />
+                    <Route path="/go/:channel" element={<OwnerLanding />} />
+                    <Route path="/auth" element={<Auth />} />
+                    <Route
+                      path="/forgot-password"
+                      element={<ForgotPassword />}
+                    />
+                    <Route path="/reset-password" element={<ResetPassword />} />
+                    <Route path="/login" element={<PwaLogin />} />
+                    <Route path="/install" element={<InstallApp />} />
+                    <Route
+                      path="/install/direct"
+                      element={<InstallDirectRedirect />}
+                    />
+
+                    {/* Role-based redirect */}
+                    <Route path="/redirect" element={<RoleBasedRedirect />} />
+
+                    {/* Admin Dashboard Routes */}
+                    <Route
+                      path="/admin/dashboard"
+                      element={
+                        <ProtectedRoute requireAdmin>
+                          <Index />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/admin"
+                      element={<Navigate to="/admin/dashboard" replace />}
+                    />
+                    <Route
+                      path="/fleet"
+                      element={
+                        <ProtectedRoute>
+                          <Fleet />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/map"
+                      element={<Navigate to="/fleet" replace />}
+                    />
+                    <Route
+                      path="/insights"
+                      element={
+                        <ProtectedRoute>
+                          <Insights />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/settings"
+                      element={
+                        <ProtectedRoute>
+                          <Profile />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/profile"
+                      element={<Navigate to="/settings" replace />}
+                    />
+                    <Route
+                      path="/notifications"
+                      element={
+                        <ProtectedRoute>
+                          <NotificationSettings />
+                        </ProtectedRoute>
+                      }
+                    />
+
+                    {/* Admin Routes */}
+                    <Route
+                      path="/admin/wallets"
+                      element={
+                        <ProtectedRoute>
+                          <AdminWallets />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/admin/storage"
+                      element={
+                        <ProtectedRoute>
+                          <AdminStorage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/admin/alerts"
+                      element={
+                        <ProtectedRoute>
+                          <AdminAlerts />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/admin/ai-settings"
+                      element={
+                        <ProtectedRoute>
+                          <AdminAiSettings />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/admin/assignments"
+                      element={
+                        <ProtectedRoute>
+                          <AdminAssignments />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/admin/privacy-settings"
+                      element={
+                        <ProtectedRoute>
+                          <AdminPrivacySettings />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/admin/email-templates"
+                      element={
+                        <ProtectedRoute>
+                          <AdminEmailTemplates />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/admin/report-templates"
+                      element={
+                        <ProtectedRoute>
+                          <AdminReportTemplates />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/admin/resources"
+                      element={
+                        <ProtectedRoute>
+                          <AdminResources />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/admin/growth"
+                      element={
+                        <ProtectedRoute requireAdmin>
+                          <AdminGrowthDashboard />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/admin/support-agent"
+                      element={
+                        <ProtectedRoute requireAdmin>
+                          <AdminSupportAgent />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/admin/directory"
+                      element={
+                        <ProtectedRoute requireAdmin>
+                          <AdminDirectory />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/admin/vehicle-requests"
+                      element={
+                        <ProtectedRoute requireAdmin>
+                          <AdminVehicleRequests />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/admin/vehicle-catalog"
+                      element={
+                        <ProtectedRoute requireAdmin>
+                          <AdminVehicleCatalog />
+                        </ProtectedRoute>
+                      }
+                    />
+
+                    {/* Partner Routes */}
+                    <Route path="/partner/signup" element={<PartnerSignup />} />
+                    <Route
+                      path="/partner/dashboard"
+                      element={
+                        <ProtectedRoute requireProvider>
+                          <PartnerDashboard />
+                        </ProtectedRoute>
+                      }
+                    />
+
+                    {/* Owner PWA Routes */}
+                    <Route
+                      path="/owner"
+                      element={
+                        <ProtectedRoute>
+                          <OwnerChat />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/owner/chat/:deviceId"
+                      element={
+                        <ProtectedRoute>
+                          <OwnerChatDetail />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/owner/vehicles"
+                      element={
+                        <ProtectedRoute>
+                          <OwnerVehiclesDashboard />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/owner/vehicles/list"
+                      element={
+                        <ProtectedRoute>
+                          <OwnerVehicles />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/owner/vehicle/:deviceId"
+                      element={
+                        <ProtectedRoute>
+                          <OwnerVehicleProfile />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/owner/wallet"
+                      element={
+                        <ProtectedRoute>
+                          <OwnerWallet />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/owner/profile"
+                      element={
+                        <ProtectedRoute>
+                          <OwnerProfile />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/owner/notifications"
+                      element={
+                        <ProtectedRoute>
+                          <OwnerNotificationSettings />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/owner/privacy"
+                      element={
+                        <ProtectedRoute>
+                          <OwnerPrivacy />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/owner/resources"
+                      element={
+                        <ProtectedRoute>
+                          <OwnerResources />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/owner/help"
+                      element={
+                        <ProtectedRoute>
+                          <OwnerHelpSupport />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/owner/directory"
+                      element={
+                        <ProtectedRoute>
+                          <OwnerDirectory />
+                        </ProtectedRoute>
+                      }
+                    />
+
+                    <Route path="*" element={<NotFound />} />
+                  </Routes>
+                </Suspense>
+                <RatingListener />
+              </TermsChecker>
+            </AuthProvider>
+          </BrowserRouter>
         </TooltipProvider>
       </QueryClientProvider>
     </ErrorBoundary>
