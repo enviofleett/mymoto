@@ -12,7 +12,7 @@ import {
 import { Star, ShieldCheck, CheckCircle2, AlertCircle, WifiOff, HardDrive, XCircle } from "lucide-react";
 import { trackEvent, trackEventOnce } from "@/lib/analytics";
 
-type Platform = "android" | "ios" | "other";
+type Platform = "android" | "ios" | "mac" | "other";
 
 type InstallStage =
   | "idle"
@@ -30,14 +30,16 @@ const getPlatform = (): Platform => {
   if (typeof navigator === "undefined") return "other";
   const ua = navigator.userAgent || navigator.vendor || (window as any).opera || "";
   const lower = ua.toLowerCase();
-  if (/android/.test(lower)) return "android";
   if (/iphone|ipad|ipod/.test(lower)) return "ios";
+  if (/android/.test(lower)) return "android";
+  if (/macintosh|mac os x/.test(lower)) return "mac";
   return "other";
 };
 
 const formatPlatformName = (platform: Platform) => {
   if (platform === "android") return "Android";
   if (platform === "ios") return "iPhone";
+  if (platform === "mac") return "Mac";
   return "your device";
 };
 
@@ -60,8 +62,9 @@ const InstallApp = () => {
 
   const isAndroid = platform === "android";
   const isIOS = platform === "ios";
+  const isMac = platform === "mac";
 
-  const deferredPromptRef = useRef<BeforeInstallPromptEvent | null>(null);
+  const deferredPromptRef = useRef<any | null>(null);
   const [installPromptSeen, setInstallPromptSeen] = useState(false);
 
   useEffect(() => {
@@ -73,7 +76,7 @@ const InstallApp = () => {
 
     const handleBeforeInstallPrompt = (event: Event) => {
       event.preventDefault();
-      deferredPromptRef.current = event as BeforeInstallPromptEvent;
+      deferredPromptRef.current = event as any;
       setInstallPromptSeen(true);
       void trackEventOnce("install_beforeinstallprompt", "global");
     };
@@ -146,19 +149,19 @@ const InstallApp = () => {
   ];
 
   const handleStartInstall = async () => {
-    if (isAndroid && deferredPromptRef.current) {
+    if (deferredPromptRef.current && !isIOS) {
       try {
-        await trackEvent("install_cta_click", { platform: "android" });
+        await trackEvent("install_cta_click", { platform });
         deferredPromptRef.current.prompt();
         const choiceResult = await deferredPromptRef.current.userChoice;
         if (choiceResult.outcome === "accepted") {
-          await trackEvent("install_prompt_accepted", { platform: "android" });
+          await trackEvent("install_prompt_accepted", { platform });
         } else {
-          await trackEvent("install_prompt_dismissed", { platform: "android" });
+          await trackEvent("install_prompt_dismissed", { platform });
         }
         deferredPromptRef.current = null;
       } catch {
-        await trackEvent("install_error", { platform: "android", source: "prompt" });
+        await trackEvent("install_error", { platform, source: "prompt" });
       }
     }
 
@@ -530,7 +533,7 @@ const InstallApp = () => {
             <div className="w-px bg-border/40 h-8 self-center" />
             <div className="flex-1 flex flex-col items-center justify-center space-y-1">
               <div className="text-[22px] font-semibold text-foreground h-6 truncate max-w-full px-1">
-                {isAndroid ? "Android" : isIOS ? "iPhone" : "Mobile"}
+                {isAndroid ? "Android" : isIOS ? "iPhone" : isMac ? "Mac" : "Mobile"}
               </div>
               <p className="text-[11px] text-muted-foreground">Platform</p>
             </div>
@@ -736,8 +739,12 @@ const InstallApp = () => {
             </DialogTitle>
             <DialogDescription className="text-xs">
               {isIOS
-                ? "On iPhone, tap the share icon in Safari, then choose “Add to Home Screen”."
-                : `Follow the steps below to complete installation on ${formatPlatformName(platform)}.`}
+                ? "On iPhone, tap the share icon in Safari, then choose “Add to Home Screen”. After that, open MyMoto from your Home Screen like a regular app."
+                : isAndroid
+                  ? "When your browser shows the install prompt, tap Install. If you don’t see a prompt, open the browser menu and choose “Install app” or “Add to Home screen”."
+                  : isMac
+                    ? "On your Mac, use the browser menu to install MyMoto. In Chrome, click the install icon or use “Install MyMoto”. In Safari, choose “Add to Dock”."
+                    : `Follow the steps below to complete installation on ${formatPlatformName(platform)}.`}
             </DialogDescription>
           </DialogHeader>
 
